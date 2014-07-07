@@ -65,12 +65,43 @@
     </properties>
 
     <profiles>
-        <profile>
-            <id>debug-tests</id>
-            <properties>
-                <maven.test.jvmargs>-Xms1g -Xmx2g -XX:MaxPermSize=512m -XX:-UseGCOverheadLimit -Xrunjdwp:transport=dt_socket,address=5000,server=y,suspend=y</maven.test.jvmargs>
-            </properties>
-        </profile>
+      <profile>
+        <id>integration</id>
+        <properties>
+          <geomesa.shading>${user.name}</geomesa.shading>
+        </properties>
+        <build>
+          <plugins>
+            <plugin>
+              <groupId>com.google.code.maven-replacer-plugin</groupId>
+              <artifactId>replacer</artifactId>
+              <version>1.5.3</version>
+              <executions>
+                <execution>
+                  <phase>prepare-package</phase>
+                  <goals>
+                    <goal>replace</goal>
+                  </goals>
+                </execution>
+              </executions>
+              <configuration>
+                <includes>
+                  <include>${project.basedir}/target/classes/META-INF/**</include>
+                </includes>
+                <token>geomesa.</token>
+                <regex>false</regex>
+                <value>geomesa.${geomesa.shading}.</value>
+              </configuration>
+            </plugin>
+          </plugins>
+        </build>
+      </profile>
+      <profile>
+        <id>debug-tests</id>
+          <properties>
+            <maven.test.jvmargs>-Xms1g -Xmx2g -XX:MaxPermSize=512m -XX:-UseGCOverheadLimit -Xrunjdwp:transport=dt_socket,address=5000,server=y,suspend=y</maven.test.jvmargs>
+          </properties>
+      </profile>
     </profiles>
 
     <dependencyManagement>
