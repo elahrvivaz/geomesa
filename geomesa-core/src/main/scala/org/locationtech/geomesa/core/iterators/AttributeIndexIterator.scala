@@ -16,6 +16,7 @@
 
 package org.locationtech.geomesa.core.iterators
 
+import java.lang.Exception
 import java.util.Date
 
 import com.typesafe.scalalogging.slf4j.Logging
@@ -66,7 +67,6 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
     TServerClassLoader.initClassLoader(logger)
 
     val simpleFeatureTypeSpec = options.get(GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE)
-
     val featureType = SimpleFeatureTypes.createType(getClass.getCanonicalName, simpleFeatureTypeSpec)
     featureType.decodeUserData(options, GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE)
 

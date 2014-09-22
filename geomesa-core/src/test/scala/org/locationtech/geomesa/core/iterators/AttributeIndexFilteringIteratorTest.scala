@@ -35,6 +35,7 @@ import org.joda.time.{DateTime, DateTimeZone}
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.core.data._
 import org.locationtech.geomesa.core.data.tables.AttributeTable
+import org.locationtech.geomesa.core.index
 import org.locationtech.geomesa.core.index.{AttributeIdxEqualsStrategy, STIdxStrategy, AttributeIdxLikeStrategy, QueryStrategyDecider}
 import org.locationtech.geomesa.utils.geotools.Conversions._
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -49,6 +50,7 @@ class AttributeIndexFilteringIteratorTest extends Specification {
 
   val sftName = "AttributeIndexFilteringIteratorTest"
   val sft = SimpleFeatureTypes.createType(sftName, s"name:String:index=true,age:Integer:index=true,dtg:Date,*geom:Geometry:srid=4326")
+  index.setDtgDescriptor(sft, "dtg")
 
   val sdf = new SimpleDateFormat("yyyyMMdd")
   sdf.setTimeZone(TimeZone.getTimeZone("Zulu"))
@@ -167,6 +169,7 @@ class AttributeIndexFilteringIteratorTest extends Specification {
         forall(features.features) { sf =>
           sf.getAttributeCount mustEqual 1
         }
+        success
       }
     }
   }

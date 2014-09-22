@@ -24,6 +24,8 @@ import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{Key, Value, Range => AccRange}
 import org.apache.hadoop.io.Text
 import org.geotools.data.Query
+import org.geotools.feature.AttributeTypeBuilder
+import org.geotools.feature.simple.SimpleFeatureTypeBuilder
 import org.geotools.filter.text.ecql.ECQL
 import org.geotools.temporal.`object`.DefaultPeriod
 import org.locationtech.geomesa.core.DEFAULT_FILTER_PROPERTY_NAME
@@ -86,7 +88,21 @@ trait AttributeIdxStrategy extends Strategy with Logging {
                                       "attrIndexIterator",
                                       classOf[AttributeIndexIterator].getCanonicalName,
                                       opts)
-        configureFeatureType(cfg, featureType)
+
+        // create a new type with only the attributes we're returning
+        val builder = new SimpleFeatureTypeBuilder()
+        builder.setName(featureType.getName)
+        builder.add(featureType.getGeometryDescriptor)
+        builder.setDefaultGeometry(featureType.getGeometryDescriptor.getLocalName)
+        // add the attribute we're querying
+        builder.add(featureType.getDescriptor(attributeName))
+        // dtg attribute is optional -- if it exists add it to the builder
+        getDtgDescriptor(featureType).foreach(builder.add)
+        val trimmedType = builder.buildFeatureType()
+        // dtg attribute is optional -- if it exists add the pointer to UserData
+        getDtgFieldName(featureType).foreach(trimmedType.getUserData.put(SF_PROPERTY_START_TIME,_))
+        configureFeatureType(cfg, trimmedType)
+        configureFeatureEncoding(cfg, featureEncoder)
         attrScanner.addScanIterator(cfg)
         // there won't be any non-st-filters if the index only iterator has been selected
         SelfClosingIterator(attrScanner)
