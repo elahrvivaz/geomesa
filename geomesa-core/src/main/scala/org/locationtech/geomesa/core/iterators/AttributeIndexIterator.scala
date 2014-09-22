@@ -49,8 +49,6 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
 
   var indexSource: SortedKeyValueIterator[Key, Value] = null
 
-  var nextKey: Option[Key] = None
-  var nextValue: Option[Value] = None
   var topKey: Option[Key] = None
   var topValue: Option[Value] = None
 
@@ -100,12 +98,12 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
 
   override def hasTop = topKey.isDefined
 
-  override def getTopKey = topKey.get
+  override def getTopKey = topKey.orNull
 
-  override def getTopValue = topValue.get
+  override def getTopValue = topValue.orNull
 
   /**
-   * Position the index-source.  Consequently, updates the data-source.
+   * Seeks to the start of a range and fetches the top key/value
    *
    * @param range
    * @param columnFamilies
@@ -114,44 +112,33 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
   override def seek(range: Range, columnFamilies: java.util.Collection[ByteSequence], inclusive: Boolean) {
     // move the source iterator to the right starting spot
     indexSource.seek(range, columnFamilies, inclusive)
-    // find the first index-entry that matches the filter
     findTop()
-    // pre-fetch the next entry, if one exists (the idea is to always be one entry ahead)
-    next()
   }
 
   /**
-   * If there was a next, then we pre-fetched it, so we report those entries
-   * back to the user, and make an attempt to pre-fetch another row, allowing
-   * us to know whether there exists, in fact, a next entry.
+   * Reads the next qualifying key/value
    */
-  override def next(): Unit = {
-    topKey = nextKey
-    topValue = nextValue
-    if (nextKey.isDefined) {
-      findTop()
-    }
-  }
+  override def next() = findTop()
 
   /**
    * Advances the index-iterator to the next qualifying entry
    */
   def findTop() {
-    // clear out the reference to the next entry
-    nextKey = None
-    nextValue = None
 
-    do {
-      // increment the underlying iterator
-      indexSource.next()
+    // clear out the reference to the last entry
+    topKey = None
+    topValue = None
+
+    // loop while there is more data and we haven't matched our filter
+    while (topValue.isEmpty && indexSource.hasTop) {
 
       // the value contains the full-resolution geometry and time
       val decodedValue = IndexEntry.decodeIndexValue(indexSource.getTopValue)
 
       if (filterTest(decodedValue.geom, decodedValue.dtgMillis)) {
-        // current entry matches our filter - update the nextKey and nextValue
+        // current entry matches our filter - update the key and value
         // copy the key because reusing it is UNSAFE
-        nextKey = Some(new Key(indexSource.getTopKey))
+        topKey = Some(new Key(indexSource.getTopKey))
         // using the already decoded index value, generate a SimpleFeature
         val sf = IndexIterator.encodeIndexValueToSF(featureBuilder,
                                                     decodedValue.id,
@@ -160,13 +147,15 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
 
         // TODO also encode the attribute from the row
         // set the encoded simple feature as the value
-        nextValue = Some(new Value(featureEncoder.encode(sf)))
+        topValue = Some(new Value(featureEncoder.encode(sf)))
+
+        // increment the underlying iterator
+        indexSource.next()
       } else {
         // increment the underlying iterator and loop again to the next entry
         indexSource.next()
       }
-      // while there is more data and we haven't matched our filter
-    } while (nextValue.isEmpty && indexSource.hasTop)
+    }
   }
 
   override def deepCopy(env: IteratorEnvironment) =

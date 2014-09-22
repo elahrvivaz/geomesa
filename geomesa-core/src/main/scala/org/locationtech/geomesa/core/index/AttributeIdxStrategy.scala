@@ -60,6 +60,9 @@ trait AttributeIdxStrategy extends Strategy with Logging {
     output(s"Scanning attribute table for feature type ${featureType.getTypeName}")
     val attrScanner = acc.createAttrIdxScanner(featureType)
 
+    logger.trace(s"Attribute Scan Range: ${range.toString}")
+    attrScanner.setRange(range)
+
     val (geomFilters, otherFilters) = partitionGeom(query.getFilter)
     val (temporalFilters, nonSTFilters) = partitionTemporal(otherFilters, getDtgFieldName(featureType))
 
@@ -68,7 +71,7 @@ trait AttributeIdxStrategy extends Strategy with Logging {
 
     output(s"The geom filters are $geomFilters.\nThe temporal filters are $temporalFilters.")
     val oFilter: Option[Filter] = filterListAsAnd(geomFilters ++ temporalFilters)
-    val oNonStFilters: Option[Filter] = filterListAsAnd(nonSTFilters)
+    val oNonStFilters: Option[Filter] = nonSTFilters.map(_ => recomposeAnd(nonSTFilters)).headOption
 
     // choose which iterator we want to use - joining iterator or attribute only iterator
     val iteratorChoice: IteratorConfig = IteratorTrigger
@@ -98,7 +101,7 @@ trait AttributeIdxStrategy extends Strategy with Logging {
           attrScanner.addScanIterator(cfg)
         }
         val recordScanner = acc.createRecordScanner(featureType)
-        if (iteratorChoice.useSFFI || nonSTFilters.size > 1 || (nonSTFilters.mkString("") != "INCLUDE")) {
+        if (iteratorChoice.useSFFI || oNonStFilters.map(_.toString != "INCLUDE").getOrElse(false)) {
           val iterSetting = configureSimpleFeatureFilteringIterator(featureType,
                                                                     oNonStFilters.map(ECQL.toCQL),
                                                                     schema,

@@ -55,8 +55,8 @@ object IteratorTrigger {
    * Scans the ECQL, query, and sourceSFTspec and determines which Iterators should be configured.
    */
   def chooseIterator(ecqlPredicate: Option[String], query: Query, sourceSFT: SimpleFeatureType): IteratorConfig = {
-    val filter = ecqlPredicate.map(ECQL.toFilter(_))
-    if(useIndexOnlyIterator(filter, query, sourceSFT)) {
+    val filter = ecqlPredicate.map(ECQL.toFilter)
+    if (useIndexOnlyIterator(filter, query, sourceSFT)) {
       IteratorConfig(IndexOnlyIterator, false)
     } else {
       IteratorConfig(SpatioTemporalIterator, useSimpleFeatureFilteringIterator(filter, query))
@@ -77,7 +77,8 @@ object IteratorTrigger {
 
     // if the transforms exist, check if the transform is simple enough to be handled by the IndexIterator
     // if it does not exist, then set this variable to false
-    val isIndexTransform = transformDefs.map { tDef => isOneToOneIndexTransformation(tDef, sourceSFT, indexedAttribute)}
+    val isIndexTransform = transformDefs
+        .map(tDef => isOneToOneIndexTransformation(tDef, sourceSFT, indexedAttribute))
         .orElse(Some(false))
     // if the ecql predicate exists, check that it is a trivial filter that does nothing
     val isPassThroughFilter = ecqlPredicate.map { ecql => passThroughFilter(ecql)}
