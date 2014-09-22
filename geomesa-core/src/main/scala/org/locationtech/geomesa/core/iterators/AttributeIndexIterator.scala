@@ -27,6 +27,7 @@ import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.text.ecql.ECQL
 import org.joda.time.DateTime
 import org.locationtech.geomesa.core.data._
+import org.locationtech.geomesa.core.filter
 import org.locationtech.geomesa.core.index._
 import org.locationtech.geomesa.feature.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -46,20 +47,19 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
 
   import org.locationtech.geomesa.core._
 
+  var indexSource: SortedKeyValueIterator[Key, Value] = null
+
   var nextKey: Option[Key] = None
   var nextValue: Option[Value] = None
   var topKey: Option[Key] = None
   var topValue: Option[Value] = None
 
-  var indexSource: SortedKeyValueIterator[Key, Value] = null
-
-  var dateAttributeName: Option[String] = None
+  var dtgFieldName: Option[String] = None
+  var attributeRowPrefix: String = null
   var featureBuilder: SimpleFeatureBuilder = null
   var featureEncoder: SimpleFeatureEncoder = null
-  var decoder: IndexEntryDecoder = null
 
-  var filter: Option[org.opengis.filter.Filter] = None
-  var testSimpleFeature: Option[SimpleFeature] = None
+  var filterTest: (Geometry, Option[Long]) => Boolean = (_, _) => true
 
   override def init(source: SortedKeyValueIterator[Key, Value],
                     options: java.util.Map[String, String],
@@ -72,7 +72,8 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
     val featureType = SimpleFeatureTypes.createType(getClass.getCanonicalName, simpleFeatureTypeSpec)
     featureType.decodeUserData(options, GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE)
 
-    dateAttributeName = getDtgFieldName(featureType)
+    dtgFieldName = getDtgFieldName(featureType)
+    attributeRowPrefix = index.getTableSharingPrefix(featureType)
 
     // default to text if not found for backwards compatibility
     val encodingOpt = Option(options.get(FEATURE_ENCODING)).getOrElse(FeatureEncoding.TEXT.toString)
@@ -80,18 +81,28 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
 
     featureBuilder = AvroSimpleFeatureFactory.featureBuilder(featureType)
 
-    val schemaEncoding = options.get(DEFAULT_SCHEMA_NAME)
-    decoder = IndexSchema.getIndexEntryDecoder(schemaEncoding)
-
     if (options.containsKey(DEFAULT_FILTER_PROPERTY_NAME)) {
       val filterString  = options.get(DEFAULT_FILTER_PROPERTY_NAME)
-      filter = Some(ECQL.toFilter(filterString))
       val sfb = new SimpleFeatureBuilder(featureType)
-      testSimpleFeature = Some(sfb.buildFeature("test"))
+
+      val filter = ECQL.toFilter(filterString)
+      val testFeature = sfb.buildFeature("test")
+
+      filterTest = (geom: Geometry, odate: Option[Long]) => {
+        testFeature.setDefaultGeometry(geom)
+        dtgFieldName.foreach(dtgField => odate.foreach(date => testFeature.setAttribute(dtgField, new Date(date))))
+        filter.evaluate(testFeature)
+      }
     }
 
     this.indexSource = source.deepCopy(env)
   }
+
+  override def hasTop = topKey.isDefined
+
+  override def getTopKey = topKey.get
+
+  override def getTopValue = topValue.get
 
   /**
    * Position the index-source.  Consequently, updates the data-source.
@@ -103,13 +114,9 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
   override def seek(range: Range, columnFamilies: java.util.Collection[ByteSequence], inclusive: Boolean) {
     // move the source iterator to the right starting spot
     indexSource.seek(range, columnFamilies, inclusive)
-
-    // find the first index-entry that is inside the search polygon
-    // (use the current entry, if it's already inside the search polygon)
+    // find the first index-entry that matches the filter
     findTop()
-
-    // pre-fetch the next entry, if one exists
-    // (the idea is to always be one entry ahead)
+    // pre-fetch the next entry, if one exists (the idea is to always be one entry ahead)
     next()
   }
 
@@ -121,109 +128,45 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
   override def next(): Unit = {
     topKey = nextKey
     topValue = nextValue
-    nextKey.foreach(_ => findTop())
-  }
-
-  override def hasTop = topKey.isDefined
-
-  override def getTopKey = topKey.get
-
-  override def getTopValue = topValue.get
-
-  // NB: This is duplicated in the AIFI.  Consider refactoring.
-  lazy val wrappedSTFilter: (Geometry, Option[Long]) => Boolean = {
-    if (filter != null && testSimpleFeature != null) {
-      (geom: Geometry, olong: Option[Long]) => {
-        testSimpleFeature.setDefaultGeometry(geom)
-        for {
-          dateAttribute <- dateAttributeName
-          long <- olong
-        } {
-          testSimpleFeature.setAttribute(dateAttribute, new Date(long))
-        }
-        filter.evaluate(testSimpleFeature)
-      }
-    } else {
-      (_, _) => true
+    if (nextKey.isDefined) {
+      findTop()
     }
   }
 
   /**
-   * Advances the index-iterator to the next qualifying entry, and then
-   * updates the data-iterator to match what ID the index-iterator found
+   * Advances the index-iterator to the next qualifying entry
    */
   def findTop() {
     // clear out the reference to the next entry
-    nextKey = null
-    nextValue = null
+    nextKey = None
+    nextValue = None
 
-    // be sure to start on an index entry
-    skipDataEntries(indexSource)
-    decoder.decode(key)
-    while (nextValue == null && indexSource.hasTop && indexSource.getTopKey != null) {
-      // only consider this index entry if we could fully decode the key
-      decodeKey(indexSource.getTopKey).map { decodedKey =>
-        curFeature = decodedKey
-        // the value contains the full-resolution geometry and time; use them
-        lazy val decodedValue = IndexEntry.decodeIndexValue(indexSource.getTopValue)
-        lazy val isSTAcceptable = wrappedSTFilter(decodedValue.geom, decodedValue.dtgMillis)
-
-        // see whether this box is acceptable
-        // (the tests are ordered from fastest to slowest to take advantage of
-        // short-circuit evaluation)
-        if (isIdUnique(decodedValue.id) && isSTAcceptable) {
-          // stash this ID
-          rememberId(decodedValue.id)
-
-          // advance the data-iterator to its corresponding match
-          seekData(decodedValue)
-        }
-                                           }
-
-      // you MUST advance to the next key
+    do {
+      // increment the underlying iterator
       indexSource.next()
 
-      // skip over any intervening data entries, should they exist
-      skipDataEntries(indexSource)
-    }
+      // the value contains the full-resolution geometry and time
+      val decodedValue = IndexEntry.decodeIndexValue(indexSource.getTopValue)
 
-    nextValue = new Value(featureEncoder.encode(nextSimpleFeature))
-  }
+      if (filterTest(decodedValue.geom, decodedValue.dtgMillis)) {
+        // current entry matches our filter - update the nextKey and nextValue
+        // copy the key because reusing it is UNSAFE
+        nextKey = Some(new Key(indexSource.getTopKey))
+        // using the already decoded index value, generate a SimpleFeature
+        val sf = IndexIterator.encodeIndexValueToSF(featureBuilder,
+                                                    decodedValue.id,
+                                                    decodedValue.geom,
+                                                    decodedValue.dtgMillis)
 
-  /**
-   * Updates the data-iterator to seek the first row that matches the current
-   * (top) reference of the index-iterator.
-   *
-   * We emit the top-key from the index-iterator, and the top-value from the
-   * data-iterator.  This is *IMPORTANT*, as otherwise we do not emit rows
-   * that honor the SortedKeyValueIterator expectation, and Bad Things Happen.
-   */
-  def seekData(indexValue: IndexEntry.DecodedIndexValue) {
-    val nextId = indexValue.id
-    curId = new Text(nextId)
-    val indexSourceTopKey = indexSource.getTopKey
-
-    val dataSeekKey = new Key(indexSourceTopKey.getRow, curId)
-    val range = new Range(dataSeekKey, null)
-    val colFamilies = List[ByteSequence](new ArrayByteSequence(nextId.getBytes)).asJavaCollection
-    dataSource.seek(range, colFamilies, true)
-
-    // it may be possible to pollute the key space so that index rows can be
-    // confused for data rows; skip until you know you've found a data row
-    skipIndexEntries(dataSource)
-
-    if (!dataSource.hasTop || dataSource.getTopKey == null || dataSource.getTopKey.getColumnFamily.toString != nextId)
-      logger.error(s"Could not find the data key corresponding to index key $indexSourceTopKey and dataId is $nextId.")
-    else {
-      nextKey = new Key(indexSourceTopKey)
-      nextValue = dataSource.getTopValue
-    }
-
-    // now increment the value of nextKey, copy because reusing it is UNSAFE
-    nextKey = new Key(indexSource.getTopKey)
-    // using the already decoded index value, generate a SimpleFeature and set as the Value
-    val nextSimpleFeature = IndexIterator.encodeIndexValueToSF(featureBuilder, decodedValue.id,
-                                                               decodedValue.geom, decodedValue.dtgMillis)
+        // TODO also encode the attribute from the row
+        // set the encoded simple feature as the value
+        nextValue = Some(new Value(featureEncoder.encode(sf)))
+      } else {
+        // increment the underlying iterator and loop again to the next entry
+        indexSource.next()
+      }
+      // while there is more data and we haven't matched our filter
+    } while (nextValue.isEmpty && indexSource.hasTop)
   }
 
   override def deepCopy(env: IteratorEnvironment) =

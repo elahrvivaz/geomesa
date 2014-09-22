@@ -113,8 +113,20 @@ object AttributeTable extends GeoMesaTable with Logging {
    * @param attributeName
    * @return
    */
-  def getAttributeIndexRowPrefix(rowIdPrefix: String, attributeName: String): String = rowIdPrefix ++ attributeName ++ NULLBYTE
+  def getAttributeIndexRowPrefix(rowIdPrefix: String, attributeName: String): String =
+    rowIdPrefix ++ attributeName ++ NULLBYTE
 
+//  def decodeAttributeIndexRow[T](rowIdPrefix: String, attributeType: Class[T], row: String): AttributeIndexRow[T] = {
+//    for {
+//      suffix <- Try(row.substring(rowIdPrefix.length))
+//      separator <- suffix.indexOf(NULLBYTE)
+//      name <- Try(suffix.substring(0, separator))
+//      encodedValue <- Try(suffix.substring(separator + 1))
+//      value <- Try(decode(encodedValue, attributeType))
+//    } yield {
+//      AttributeIndexRow(name, value)
+//    }
+//  }
 
   /**
    * Lexicographically encode the value
@@ -126,6 +138,10 @@ object AttributeTable extends GeoMesaTable with Logging {
     val value = valueOption.getOrElse(nullString)
     Try(typeRegistry.encode(value)).getOrElse(value.toString)
   }
+
+//  def decode[T](encoded: String, attributeType: Class[T]): Option[T] = {
+//    Try(typeRegistry.decode(attributeType, encoded)).getOrElse(value.toString)
+//  }
 
   private val dateFormat = ISODateTimeFormat.dateTime();
   private val simpleEncoders = SimpleTypeEncoders.SIMPLE_TYPES.getAllEncoders
@@ -168,3 +184,5 @@ object AttributeTable extends GeoMesaTable with Logging {
     }
   }
 }
+
+case class AttributeIndexRow[T](attributeName: String, attributeValue: Option[T])
