@@ -92,11 +92,11 @@ class IteratorTriggerTest extends Specification {
      * This will attempt to factor out the time and space components of the ECQL query.
      */
 
-    def extractReWrittenCQL(query: Query, featureType: SimpleFeatureType): Option[String] = {
+    def extractReWrittenCQL(query: Query, featureType: SimpleFeatureType): Option[Filter] = {
       val (_, otherFilters) = partitionGeom(query.getFilter)
       val (_, ecqlFilters: Seq[Filter]) = partitionTemporal(otherFilters, getDtgFieldName(featureType))
 
-      filterListAsAnd(ecqlFilters).map(ECQL.toCQL)
+      filterListAsAnd(ecqlFilters)
     }
   }
 

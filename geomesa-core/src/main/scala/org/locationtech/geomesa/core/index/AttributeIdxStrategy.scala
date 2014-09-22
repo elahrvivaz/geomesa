@@ -20,7 +20,7 @@ package org.locationtech.geomesa.core.index
 import java.util.Map.Entry
 
 import com.typesafe.scalalogging.slf4j.Logging
-import org.apache.accumulo.core.client.{IteratorSetting, Scanner}
+import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{Key, Value, Range => AccRange}
 import org.apache.hadoop.io.Text
 import org.geotools.data.Query
@@ -32,7 +32,7 @@ import org.locationtech.geomesa.core.data.tables.AttributeTable
 import org.locationtech.geomesa.core.filter._
 import org.locationtech.geomesa.core.index.FilterHelper._
 import org.locationtech.geomesa.core.index.QueryPlanner._
-import org.locationtech.geomesa.core.iterators.AttributeIndexFilteringIterator
+import org.locationtech.geomesa.core.iterators._
 import org.locationtech.geomesa.core.util.{BatchMultiScanner, SelfClosingIterator}
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.expression.{Expression, Literal, PropertyName}
@@ -76,7 +76,7 @@ trait AttributeIdxStrategy extends Strategy with Logging {
 
     val opts = oFilter.map { f => DEFAULT_FILTER_PROPERTY_NAME -> ECQL.toCQL(f)}.toMap
 
-    iteratorChoice match {
+    iteratorChoice.iterator match {
       case IndexOnlyIterator =>
         // the attribute index iterator also checks any ST filters
         val cfg = new IteratorSetting(iteratorPriority_AttributeIndexIterator,
@@ -98,7 +98,7 @@ trait AttributeIdxStrategy extends Strategy with Logging {
           attrScanner.addScanIterator(cfg)
         }
         val recordScanner = acc.createRecordScanner(featureType)
-        if (nonSTFilters.nonEmpty || iteratorChoice.useSFFI) {
+        if (iteratorChoice.useSFFI || nonSTFilters.size > 1 || (nonSTFilters.mkString("") != "INCLUDE")) {
           val iterSetting = configureSimpleFeatureFilteringIterator(featureType,
                                                                     oNonStFilters.map(ECQL.toCQL),
                                                                     schema,
