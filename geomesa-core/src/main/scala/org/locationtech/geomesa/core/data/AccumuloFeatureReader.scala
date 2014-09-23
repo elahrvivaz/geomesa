@@ -17,9 +17,11 @@
 package org.locationtech.geomesa.core.data
 
 import org.geotools.data.{FeatureReader, Query}
+import org.geotools.process.vector.TransformProcess
 import org.locationtech.geomesa.core.index._
 import org.locationtech.geomesa.core.stats.{MethodProfiling, QueryStat, QueryStatTransform, StatWriter}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
+import scala.collection.JavaConverters._
 
 class AccumuloFeatureReader(dataStore: AccumuloDataStore,
                             query: Query,
@@ -34,9 +36,9 @@ class AccumuloFeatureReader(dataStore: AccumuloDataStore,
   private val indexSchema = IndexSchema(indexSchemaFmt, sft, featureEncoder)
   private val queryPlanner = indexSchema.planner
 
-  def explainQuery(q: Query = query) {
+  def explainQuery(q: Query = query, o: ExplainerOutputType = ExplainPrintln) {
     val (_, explainTime) = profile {
-      indexSchema.explainQuery(q, ExplainPrintln)
+      indexSchema.explainQuery(q, o)
     }
     ExplainPrintln(s"Query Planning took $explainTime milliseconds.")
   }

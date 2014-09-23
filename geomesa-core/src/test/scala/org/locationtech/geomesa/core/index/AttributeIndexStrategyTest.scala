@@ -43,7 +43,7 @@ import scala.collection.JavaConverters._
 
 @RunWith(classOf[JUnitRunner])
 class AttributeIndexStrategyTest extends Specification {
-sequential
+
   val sftName = "AttributeIndexStrategyTest"
   val spec = "name:String:index=true,age:Integer:index=true,count:Long:index=true," +
                "weight:Double:index=true,height:Float:index=true,admin:Boolean:index=true," +

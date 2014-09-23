@@ -139,7 +139,6 @@ class STIdxStrategy extends Strategy with Logging {
                      featureEncoder: SimpleFeatureEncoder): IteratorSetting = {
     iteratorConfig.iterator match {
       case IndexOnlyIterator =>
-        println("INDEX ONLY")
         configureIndexIterator(ofilter, query, schema, featureEncoder, featureType)
       case SpatioTemporalIterator =>
         val isDensity = query.getHints.containsKey(DENSITY_KEY)

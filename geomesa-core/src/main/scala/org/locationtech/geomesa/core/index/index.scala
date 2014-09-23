@@ -101,6 +101,14 @@ package object index {
     override def apply(v1: => String): Unit = {}
   }
 
+  class ExplainString extends ExplainerOutputType {
+    private var string: StringBuilder = new StringBuilder()
+    override def apply(v1: => String) = {
+      string.append(v1).append('\n')
+    }
+    override def toString() = string.toString()
+  }
+
   trait ExplainingLogging extends Logging {
     def log(stringFnx: => String) = {
       lazy val s: String = stringFnx

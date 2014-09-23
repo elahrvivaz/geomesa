@@ -29,7 +29,7 @@ import org.geotools.feature.simple.SimpleFeatureTypeBuilder
 import org.geotools.filter.text.ecql.ECQL
 import org.geotools.temporal.`object`.DefaultPeriod
 import org.locationtech.geomesa.core.DEFAULT_FILTER_PROPERTY_NAME
-import org.locationtech.geomesa.core.data.AccumuloConnectorCreator
+import org.locationtech.geomesa.core.data._
 import org.locationtech.geomesa.core.data.tables.AttributeTable
 import org.locationtech.geomesa.core.filter._
 import org.locationtech.geomesa.core.index.FilterHelper._
@@ -56,8 +56,6 @@ trait AttributeIdxStrategy extends Strategy with Logging {
                    range: AccRange,
                    output: ExplainerOutputType): SelfClosingIterator[Entry[Key, Value]] = {
     output(s"Searching the attribute table with filter ${query.getFilter}")
-    val schema         = iqp.schema
-    val featureEncoder = iqp.featureEncoder
 
     output(s"Scanning attribute table for feature type ${featureType.getTypeName}")
     val attrScanner = acc.createAttrIdxScanner(featureType)
@@ -88,22 +86,24 @@ trait AttributeIdxStrategy extends Strategy with Logging {
                                       "attrIndexIterator",
                                       classOf[AttributeIndexIterator].getCanonicalName,
                                       opts)
-
-        // create a new type with only the attributes we're returning
-        val builder = new SimpleFeatureTypeBuilder()
-        builder.setName(featureType.getName)
-        builder.add(featureType.getGeometryDescriptor)
-        builder.setDefaultGeometry(featureType.getGeometryDescriptor.getLocalName)
-        // add the attribute we're querying
-        builder.add(featureType.getDescriptor(attributeName))
-        // dtg attribute is optional -- if it exists add it to the builder
-        getDtgDescriptor(featureType).foreach(builder.add)
-        val trimmedType = builder.buildFeatureType()
-        // dtg attribute is optional -- if it exists add the pointer to UserData
-        getDtgFieldName(featureType).foreach(trimmedType.getUserData.put(SF_PROPERTY_START_TIME,_))
-        configureFeatureType(cfg, trimmedType)
-        configureFeatureEncoding(cfg, featureEncoder)
+//
+//        // create a new type with only the attributes we're returning
+//        val builder = new SimpleFeatureTypeBuilder()
+//        builder.setName(featureType.getName)
+//        builder.add(featureType.getGeometryDescriptor)
+//        builder.setDefaultGeometry(featureType.getGeometryDescriptor.getLocalName)
+//        // add the attribute we're querying
+//        builder.add(featureType.getDescriptor(attributeName))
+//        // dtg attribute is optional -- if it exists add it to the builder
+//        getDtgDescriptor(featureType).foreach(builder.add)
+//        val trimmedType = builder.buildFeatureType()
+//        // dtg attribute is optional -- if it exists add the pointer to UserData
+//        getDtgFieldName(featureType).foreach(trimmedType.getUserData.put(SF_PROPERTY_START_TIME,_))
+        val transformedType = query.getHints.get(TRANSFORM_SCHEMA).asInstanceOf[SimpleFeatureType]
+        configureFeatureType(cfg, transformedType)
+        configureFeatureEncoding(cfg, iqp.featureEncoder)
         attrScanner.addScanIterator(cfg)
+        output(s"AttributeIndexIterator: ${cfg.toString}")
         // there won't be any non-st-filters if the index only iterator has been selected
         SelfClosingIterator(attrScanner)
       case RecordJoinIterator =>
@@ -120,8 +120,8 @@ trait AttributeIdxStrategy extends Strategy with Logging {
         if (iteratorChoice.useSFFI || oNonStFilters.map(_.toString != "INCLUDE").getOrElse(false)) {
           val iterSetting = configureSimpleFeatureFilteringIterator(featureType,
                                                                     oNonStFilters.map(ECQL.toCQL),
-                                                                    schema,
-                                                                    featureEncoder,
+                                                                    iqp.schema,
+                                                                    iqp.featureEncoder,
                                                                     query)
           recordScanner.addScanIterator(iterSetting)
         }

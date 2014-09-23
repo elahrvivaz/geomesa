@@ -47,7 +47,7 @@ class IteratorTriggerTest extends Specification {
       "POINT:String," + "LINESTRING:String," + "POLYGON:String," + "attr2:String," + spec
     }
 
-    def testFeatureType: SimpleFeatureType = {
+    val testFeatureType: SimpleFeatureType = {
       val featureType: SimpleFeatureType = SimpleFeatureTypes.createType(featureName, testFeatureTypeSpec)
       featureType.getUserData.put(SF_PROPERTY_START_TIME, "dtg")
       featureType
@@ -56,34 +56,8 @@ class IteratorTriggerTest extends Specification {
 
     def sampleQuery(ecql: org.opengis.filter.Filter, finalAttributes: Array[String]): Query = {
       val aQuery = new Query(testFeatureType.getTypeName, ecql, finalAttributes)
-      val fs = TestTable.setupMockFeatureSource
-      fs.getFeatures(aQuery) // only used to mutate the state of aQuery. yuck.
+      AccumuloDataStore.setQueryTransforms(aQuery, testFeatureType) // normally called by data store when getting feature reader
       aQuery
-    }
-
-    def setupMockFeatureSource: SimpleFeatureStore = {
-      val mockInstance = new MockInstance("dummy")
-      val c = mockInstance.getConnector("user", new PasswordToken("pass".getBytes))
-      if (c.tableOperations.exists(TEST_TABLE)) c.tableOperations.delete(TEST_TABLE)
-
-      val dsf = new AccumuloDataStoreFactory
-
-      import org.locationtech.geomesa.core.data.AccumuloDataStoreFactory.params._
-
-      val ds = dsf.createDataStore(
-        Map(
-          zookeepersParam.key -> "dummy",
-          instanceIdParam.key -> "dummy",
-          userParam.key -> "user",
-          passwordParam.key -> "pass",
-          authsParam.key -> "S,USA",
-          tableNameParam.key -> "test_table",
-          mockParam.key -> "true",
-          featureEncParam.key -> "avro"
-       ))
-
-      ds.createSchema(testFeatureType)
-      ds.getFeatureSource(featureName).asInstanceOf[SimpleFeatureStore]
     }
 
     /**
@@ -227,5 +201,18 @@ class IteratorTriggerTest extends Specification {
       val isTriggered = TriggerTest.useSimpleFeatureFilteringIteratorTest(TriggerTest.anotherTrivialFilterString, TriggerTest.nullTransform)
       isTriggered must beFalse
    }
+  }
+
+  "AttributeIndexIterator" should {
+    val sftName = "test"
+    val spec = "name:String:index=true,age:Integer:index=true,dtg:Date:index=true,*geom:Geometry:srid=4326"
+    val sft = SimpleFeatureTypes.createType(sftName, spec)
+
+    "be run when requesting simple attributes" in {
+      val query = new Query(sftName, Filter.INCLUDE, Array("geom", "dtg", "name"))
+      AccumuloDataStore.setQueryTransforms(query, sft) // normally called by data store when getting feature reader
+      val iteratorChoice = IteratorTrigger.chooseAttributeIterator(None, query, sft, "name")
+      iteratorChoice.iterator mustEqual(IndexOnlyIterator)
+    }
   }
 }

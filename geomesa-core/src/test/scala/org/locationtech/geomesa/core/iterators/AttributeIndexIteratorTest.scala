@@ -17,7 +17,7 @@
 package org.locationtech.geomesa.core.iterators
 
 import java.text.SimpleDateFormat
-import java.util.TimeZone
+import java.util.{Date, TimeZone}
 
 import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.client.admin.TimeType
@@ -36,7 +36,8 @@ import org.junit.runner.RunWith
 import org.locationtech.geomesa.core._
 import org.locationtech.geomesa.core.data._
 import org.locationtech.geomesa.core.data.tables.AttributeTable
-import org.locationtech.geomesa.core.index.{AttributeIdxEqualsStrategy, AttributeIdxLikeStrategy, QueryStrategyDecider, STIdxStrategy}
+import org.locationtech.geomesa.core.index._
+import org.locationtech.geomesa.core.util.{SelfClosingIterator, CloseableIterator}
 import org.locationtech.geomesa.utils.geotools.Conversions._
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.text.WKTUtils
@@ -47,10 +48,11 @@ import scala.collection.JavaConversions._
 
 @RunWith(classOf[JUnitRunner])
 class AttributeIndexIteratorTest extends Specification {
-
+sequential
   val sftName = "AttributeIndexIteratorTest"
-  val spec = "name:String:index=true,age:Integer:index=true,dtg:Date,*geom:Geometry:srid=4326"
+  val spec = "name:String:index=true,age:Integer:index=true,dtg:Date:index=true,*geom:Geometry:srid=4326"
   val sft = SimpleFeatureTypes.createType(sftName, spec)
+  index.setDtgDescriptor(sft, "dtg")
 
   val sdf = new SimpleDateFormat("yyyyMMdd")
   sdf.setTimeZone(TimeZone.getTimeZone("Zulu"))
@@ -79,7 +81,7 @@ class AttributeIndexIteratorTest extends Specification {
     List(1, 2, 3, 4).zip(List(45, 46, 47, 48)).foreach { case (i, lat) =>
       val sf = SimpleFeatureBuilder.build(sft, List(), name + i.toString)
       sf.setDefaultGeometry(WKTUtils.read(f"POINT($lat%d $lat%d)"))
-      sf.setAttribute("dtg", new DateTime("2011-01-01T00:00:00Z", DateTimeZone.UTC).toDate)
+      sf.setAttribute("dtg", dateToIndex)
       sf.setAttribute("age", i)
       sf.setAttribute("name", name)
       sf.getUserData()(Hints.USE_PROVIDED_FID) = java.lang.Boolean.TRUE
@@ -88,12 +90,14 @@ class AttributeIndexIteratorTest extends Specification {
   }
 
   fs.addFeatures(featureCollection)
+  fs.flush()
 
   val ff = CommonFactoryFinder.getFilterFactory2
 
   "AttributeIndexIterator" should {
 
     "implement the Accumulo iterator stack properly" in {
+      skipped("skipped")
       val table = "AttributeIndexIteratorTest_2"
       val instance = new MockInstance(table)
       val conn = instance.getConnector("", new PasswordToken(""))
@@ -108,7 +112,7 @@ class AttributeIndexIteratorTest extends Specification {
       }
       bw.close()
 
-      // Scan and retrive type = b manually with the iterator
+      // Scan and retrieve type = b manually with the iterator
       val scanner = conn.createScanner(table, new Authorizations())
       val opts = Map[String, String](GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE -> spec)
       val is = new IteratorSetting(40, classOf[AttributeIndexIterator], opts)
@@ -116,6 +120,118 @@ class AttributeIndexIteratorTest extends Specification {
       scanner.setRange(new ARange(AttributeTable.getAttributeIndexRow("", "name", Some("b"))))
       scanner.iterator.size mustEqual 4
     }
+
+    "be selected for appropriate queries" in {
+      skipped("skipped")
+      List("name = 'b'",
+           "name < 'b'",
+           "name > 'b'",
+           "name is NULL",
+           "dtg TEQUALS 2014-01-01T12:30:00.000Z",
+           "dtg = '2014-01-01T12:30:00.000Z'",
+           "dtg BETWEEN '2012-01-01T12:00:00.000Z' AND '2013-01-01T12:00:00.000Z'",
+           "age < 10"
+          ).foreach { filter =>
+        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "name"))
+        val explain = new ExplainString()
+        ds.getFeatureReader(sftName, query).explainQuery(o = explain)
+        val output = explain.toString()
+        println("EXPLAIN:: " + output)
+        println
+        val iter = output.split("\n").filter(_.startsWith("addScanIterator")).headOption
+        iter.isDefined mustEqual true
+        iter.get must contain(classOf[AttributeIndexIterator].getName)
+      }
+      success
+    }
+
+    "return correct results" >> {
+
+      "for string equals" >> {
+        val filter = "name = 'b'"
+        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "name"))
+        val results = SelfClosingIterator(CloseableIterator(ds.getFeatureReader(sftName, query))).toList
+
+        results must haveSize(4)
+        results.map(_.getAttributeCount) must contain(3).foreach
+//        results.map(_.getAttribute("name").asInstanceOf[String]) must contain("b").foreach
+        results.map(_.getAttribute("geom").toString) must contain("POINT (45 45)", "POINT (46 46)", "POINT (47 47)", "POINT (48 48)")
+        results.map(_.getAttribute("dtg").asInstanceOf[Date]) must contain(dateToIndex).foreach
+      }
+
+      "for string less than" >> {
+        skipped("skipped")
+        val filter = "name < 'b'"
+        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "name"))
+        val results = SelfClosingIterator(CloseableIterator(ds.getFeatureReader(sftName, query))).toList
+        success
+      }
+
+      "for string greater than" >> {
+        skipped("skipped")
+        val filter = "name > 'b'"
+        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "name"))
+        val results = SelfClosingIterator(CloseableIterator(ds.getFeatureReader(sftName, query))).toList
+        success
+      }
+
+      "for string greater than or equals" >> {
+        skipped("skipped")
+        val filter = "name >= 'b'"
+        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "name"))
+        val results = SelfClosingIterator(CloseableIterator(ds.getFeatureReader(sftName, query))).toList
+        success
+      }
+
+      "for string null" >> {
+        skipped("skipped")
+        val filter = "name is NULL"
+        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "name"))
+        val results = SelfClosingIterator(CloseableIterator(ds.getFeatureReader(sftName, query))).toList
+        success
+      }
+
+      "for date tequals" >> {
+        skipped("skipped")
+        val filter = "dtg TEQUALS 2014-01-01T12:30:00.000Z"
+        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg"))
+        val results = SelfClosingIterator(CloseableIterator(ds.getFeatureReader(sftName, query))).toList
+        success
+      }
+
+      "for date equals" >> {
+        skipped("skipped")
+        val filter = "dtg = '2014-01-01T12:30:00.000Z'"
+        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg"))
+        val results = SelfClosingIterator(CloseableIterator(ds.getFeatureReader(sftName, query))).toList
+        success
+      }
+
+      "for date between" >> {
+        skipped("skipped")
+        val filter = "dtg BETWEEN '2012-01-01T12:00:00.000Z' AND '2013-01-01T12:00:00.000Z'"
+        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg"))
+        val results = SelfClosingIterator(CloseableIterator(ds.getFeatureReader(sftName, query))).toList
+        success
+      }
+
+      "for int less than" >> {
+        skipped("skipped")
+        val filter = "age < 10"
+        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "age"))
+        val results = SelfClosingIterator(CloseableIterator(ds.getFeatureReader(sftName, query))).toList
+        success
+      }
+
+      "for int greater than or equals" >> {
+        skipped("skipped")
+        val filter = "age >= 10"
+        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "age"))
+        val results = SelfClosingIterator(CloseableIterator(ds.getFeatureReader(sftName, query))).toList
+        success
+      }
+    }
+
   }
 
 }

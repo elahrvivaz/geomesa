@@ -65,19 +65,8 @@ trait AccumuloAbstractFeatureSource extends AbstractFeatureSource {
     }
   }
 
-
   override def getFeatures(query: Query): SimpleFeatureCollection = {
-    if(query.getProperties != null && query.getProperties.size > 0) {
-      val (transformProps, regularProps) = query.getPropertyNames.partition(_.contains('='))
-      val convertedRegularProps = regularProps.map { p => s"$p=$p" }
-      val allTransforms = convertedRegularProps ++ transformProps
-      val transforms = allTransforms.mkString(";")
-      val transformDefs = TransformProcess.toDefinition(transforms)
-      val derivedSchema = AccumuloFeatureStore.computeSchema(getSchema, transformDefs)
-      query.setProperties(Query.ALL_PROPERTIES)
-      query.getHints.put(TRANSFORMS, transforms)
-      query.getHints.put(TRANSFORM_SCHEMA, derivedSchema)
-    }
+    AccumuloDataStore.setQueryTransforms(query, getSchema)
     new AccumuloFeatureCollection(this, query)
   }
 

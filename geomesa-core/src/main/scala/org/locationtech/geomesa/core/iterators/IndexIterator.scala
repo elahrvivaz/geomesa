@@ -55,7 +55,6 @@ class IndexIterator extends SpatioTemporalIntersectingIterator with SortedKeyVal
     TServerClassLoader.initClassLoader(logger)
 
     val simpleFeatureTypeSpec = options.get(GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE)
-    println("SPEC:: " + simpleFeatureTypeSpec)
 
     val featureType = SimpleFeatureTypes.createType(this.getClass.getCanonicalName, simpleFeatureTypeSpec)
     featureType.decodeUserData(options, GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE)
