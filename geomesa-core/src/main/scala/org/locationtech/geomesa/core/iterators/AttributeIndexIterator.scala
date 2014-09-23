@@ -24,11 +24,12 @@ import org.apache.accumulo.core.data._
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.text.ecql.ECQL
+import org.locationtech.geomesa.core._
 import org.locationtech.geomesa.core.data._
+import org.locationtech.geomesa.core.data.tables.AttributeTable._
 import org.locationtech.geomesa.core.index._
 import org.locationtech.geomesa.feature.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
-
 /**
  * This is an Attribute Index Only Iterator. It should be used to avoid a join on the records table
  * in cases where only the geom, dtg and attribute in question are needed.
@@ -38,15 +39,14 @@ import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
  */
 class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Logging {
 
-  import org.locationtech.geomesa.core._
-
   var indexSource: SortedKeyValueIterator[Key, Value] = null
 
   var topKey: Option[Key] = None
   var topValue: Option[Value] = None
 
-  var dtgFieldName: Option[String] = None
+  var dtgFieldName: Option[String] = null
   var attributeRowPrefix: String = null
+  var attributeType: Option[Class[_]] = null
   var featureBuilder: SimpleFeatureBuilder = null
   var featureEncoder: SimpleFeatureEncoder = null
 
@@ -59,11 +59,16 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
     TServerClassLoader.initClassLoader(logger)
 
     val simpleFeatureTypeSpec = options.get(GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE)
-    val featureType = SimpleFeatureTypes.createType(getClass.getCanonicalName, simpleFeatureTypeSpec)
+
+    val featureType = SimpleFeatureTypes
+        .createType(options.get(GEOMESA_ITERATORS_SFT_NAME), simpleFeatureTypeSpec)
     featureType.decodeUserData(options, GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE)
 
     dtgFieldName = getDtgFieldName(featureType)
     attributeRowPrefix = index.getTableSharingPrefix(featureType)
+    attributeType = Option(options.get(GEOMESA_ITERATORS_ATTRIBUTE_NAME))
+        .map(featureType.getDescriptor(_))
+        .map(_.getType.getBinding)
 
     // default to text if not found for backwards compatibility
     val encodingOpt = Option(options.get(FEATURE_ENCODING)).getOrElse(FeatureEncoding.TEXT.toString)
@@ -137,7 +142,11 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
                                                     decodedValue.geom,
                                                     decodedValue.dtgMillis)
 
-        // TODO also encode the attribute from the row
+        // if they requested the attribute value, decode it from the row key
+        attributeType
+            .flatMap(t => decodeAttributeIndexRow(attributeRowPrefix, t, indexSource.getTopKey.getRow.toString))
+            .foreach(a => sf.setAttribute(a.attributeName, a.attributeValue))
+
         // set the encoded simple feature as the value
         topValue = Some(new Value(featureEncoder.encode(sf)))
 

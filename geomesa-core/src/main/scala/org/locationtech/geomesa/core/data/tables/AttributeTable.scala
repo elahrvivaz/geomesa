@@ -17,7 +17,7 @@
 
 package org.locationtech.geomesa.core.data.tables
 
-import java.util.Date
+import java.util.{Date, Locale}
 
 import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.accumulo.core.client.BatchWriter
@@ -116,17 +116,25 @@ object AttributeTable extends GeoMesaTable with Logging {
   def getAttributeIndexRowPrefix(rowIdPrefix: String, attributeName: String): String =
     rowIdPrefix ++ attributeName ++ NULLBYTE
 
-//  def decodeAttributeIndexRow[T](rowIdPrefix: String, attributeType: Class[T], row: String): AttributeIndexRow[T] = {
-//    for {
-//      suffix <- Try(row.substring(rowIdPrefix.length))
-//      separator <- suffix.indexOf(NULLBYTE)
-//      name <- Try(suffix.substring(0, separator))
-//      encodedValue <- Try(suffix.substring(separator + 1))
-//      value <- Try(decode(encodedValue, attributeType))
-//    } yield {
-//      AttributeIndexRow(name, value)
-//    }
-//  }
+  def decodeAttributeIndexRow(rowIdPrefix: String, attributeType: Class[_], row: String): Option[AttributeIndexRow] = {
+    val t: Try[AttributeIndexRow] =
+      for {
+        suffix <- Try(row.substring(rowIdPrefix.length))
+        separator = suffix.indexOf(NULLBYTE)
+        name <- Try(suffix.substring(0, separator))
+        encodedValue <- Try(suffix.substring(separator + 1))
+        decodedValue <- Try(decode(encodedValue, attributeType))
+      } yield {
+        AttributeIndexRow(name, decodedValue)
+      }
+
+    t match {
+      case Success(row) => Some(row)
+      case Failure(e) =>
+        logger.error(s"Error decoding attribute row: prefix: $rowIdPrefix row: $row error: ${e.toString}")
+        None
+    }
+  }
 
   /**
    * Lexicographically encode the value
@@ -139,9 +147,10 @@ object AttributeTable extends GeoMesaTable with Logging {
     Try(typeRegistry.encode(value)).getOrElse(value.toString)
   }
 
-//  def decode[T](encoded: String, attributeType: Class[T]): Option[T] = {
-//    Try(typeRegistry.decode(attributeType, encoded)).getOrElse(value.toString)
-//  }
+  def decode[T](encoded: String, attributeType: Class[T]): T = {
+    val alias = attributeType.getSimpleName.toLowerCase(Locale.US)
+    typeRegistry.decode(alias, encoded).asInstanceOf[T]
+  }
 
   private val dateFormat = ISODateTimeFormat.dateTime();
   private val simpleEncoders = SimpleTypeEncoders.SIMPLE_TYPES.getAllEncoders
@@ -185,4 +194,4 @@ object AttributeTable extends GeoMesaTable with Logging {
   }
 }
 
-case class AttributeIndexRow[T](attributeName: String, attributeValue: Option[T])
+case class AttributeIndexRow(attributeName: String, attributeValue: Any)

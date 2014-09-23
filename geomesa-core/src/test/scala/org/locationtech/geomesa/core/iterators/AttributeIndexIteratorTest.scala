@@ -151,7 +151,7 @@ sequential
 
         results must haveSize(4)
         results.map(_.getAttributeCount) must contain(3).foreach
-//        results.map(_.getAttribute("name").asInstanceOf[String]) must contain("b").foreach
+        results.map(_.getAttribute("name").asInstanceOf[String]) must contain("b").foreach
         results.map(_.getAttribute("geom").toString) must contain("POINT (45 45)", "POINT (46 46)", "POINT (47 47)", "POINT (48 48)")
         results.map(_.getAttribute("dtg").asInstanceOf[Date]) must contain(dateToIndex).foreach
       }

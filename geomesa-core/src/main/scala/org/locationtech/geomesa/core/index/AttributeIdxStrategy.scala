@@ -86,6 +86,8 @@ trait AttributeIdxStrategy extends Strategy with Logging {
                                       opts)
         val transformedType = query.getHints.get(TRANSFORM_SCHEMA).asInstanceOf[SimpleFeatureType]
         configureFeatureType(cfg, transformedType)
+        configureFeatureTypeName(cfg, featureType.getTypeName)
+        configureAttributeName(cfg, attributeName)
         configureFeatureEncoding(cfg, iqp.featureEncoder)
         attrScanner.addScanIterator(cfg)
         output(s"AttributeIndexIterator: ${cfg.toString}")

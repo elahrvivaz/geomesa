@@ -18,7 +18,7 @@ package org.locationtech.geomesa.core.index
 
 import java.util.Map.Entry
 
-import com.vividsolutions.jts.geom.{Polygon, Geometry}
+import com.vividsolutions.jts.geom.{Geometry, Polygon}
 import org.apache.accumulo.core.client.{BatchScanner, IteratorSetting}
 import org.apache.accumulo.core.data.{Key, Value}
 import org.geotools.data.Query
@@ -55,6 +55,14 @@ trait Strategy {
     val encodedSimpleFeatureType = SimpleFeatureTypes.encodeType(featureType)
     cfg.addOption(GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE, encodedSimpleFeatureType)
     cfg.encodeUserData(featureType.getUserData, GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE)
+  }
+
+  def configureFeatureTypeName(cfg: IteratorSetting, featureType: String) {
+    cfg.addOption(GEOMESA_ITERATORS_SFT_NAME, featureType)
+  }
+
+  def configureAttributeName(cfg: IteratorSetting, attributeName: String) {
+    cfg.addOption(GEOMESA_ITERATORS_ATTRIBUTE_NAME, attributeName)
   }
 
   // returns the SimpleFeatureType for the query's transform
