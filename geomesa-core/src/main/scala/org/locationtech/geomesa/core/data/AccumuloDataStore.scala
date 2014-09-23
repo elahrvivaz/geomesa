@@ -1098,9 +1098,7 @@ object AccumuloDataStore {
    * @return
    */
   def setQueryTransforms(query: Query, sft: SimpleFeatureType) =
-    if (!query.getHints.containsKey(TRANSFORMS)
-        && query.getProperties != null
-        && query.getProperties.size > 0) {
+    if (query.getProperties != null && query.getProperties.size > 0) {
       val (transformProps, regularProps) = query.getPropertyNames.partition(_.contains('='))
       val convertedRegularProps = regularProps.map { p => s"$p=$p" }
       val allTransforms = convertedRegularProps ++ transformProps

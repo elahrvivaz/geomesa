@@ -67,7 +67,7 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
     dtgFieldName = getDtgFieldName(featureType)
     attributeRowPrefix = index.getTableSharingPrefix(featureType)
     attributeType = Option(options.get(GEOMESA_ITERATORS_ATTRIBUTE_NAME))
-        .map(featureType.getDescriptor(_))
+        .flatMap(n => Option(featureType.getDescriptor(n)))
         .map(_.getType.getBinding)
 
     // default to text if not found for backwards compatibility

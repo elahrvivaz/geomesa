@@ -142,6 +142,7 @@ sequential
       success
     }
 //TODO also check extra filters
+    // TODO check returning fewer attributes
     "return correct results" >> {
 
       "for string equals" >> {
