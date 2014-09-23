@@ -16,10 +16,7 @@
 
 package org.locationtech.geomesa.core.iterators
 
-import org.apache.accumulo.core.client.mock.MockInstance
-import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.geotools.data.Query
-import org.geotools.data.simple.SimpleFeatureStore
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.core.data._
@@ -31,8 +28,6 @@ import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
-
-import scala.collection.JavaConversions._
 
 @RunWith(classOf[JUnitRunner])
 class IteratorTriggerTest extends Specification {

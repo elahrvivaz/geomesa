@@ -16,26 +16,18 @@
 
 package org.locationtech.geomesa.core.iterators
 
-import java.lang.Exception
 import java.util.Date
 
 import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom._
 import org.apache.accumulo.core.data._
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
-import org.apache.hadoop.io.Text
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.text.ecql.ECQL
-import org.joda.time.DateTime
 import org.locationtech.geomesa.core.data._
-import org.locationtech.geomesa.core.filter
 import org.locationtech.geomesa.core.index._
 import org.locationtech.geomesa.feature.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
-import org.opengis.feature.`type`.AttributeDescriptor
-import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
-
-import scala.util.Try
 
 /**
  * This is an Attribute Index Only Iterator. It should be used to avoid a join on the records table

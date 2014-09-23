@@ -17,11 +17,9 @@
 package org.locationtech.geomesa.core.data
 
 import org.geotools.data.{FeatureReader, Query}
-import org.geotools.process.vector.TransformProcess
 import org.locationtech.geomesa.core.index._
 import org.locationtech.geomesa.core.stats.{MethodProfiling, QueryStat, QueryStatTransform, StatWriter}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
-import scala.collection.JavaConverters._
 
 class AccumuloFeatureReader(dataStore: AccumuloDataStore,
                             query: Query,

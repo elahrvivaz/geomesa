@@ -26,7 +26,7 @@ import org.apache.accumulo.core.client.admin.TimeType
 import org.apache.accumulo.core.client.mock.MockConnector
 import org.apache.accumulo.core.client.security.tokens.AuthenticationToken
 import org.apache.accumulo.core.data.{Key, Mutation, Range, Value}
-import org.apache.accumulo.core.file.keyfunctor.{RowFunctor, ColumnFamilyFunctor}
+import org.apache.accumulo.core.file.keyfunctor.{ColumnFamilyFunctor, RowFunctor}
 import org.apache.accumulo.core.iterators.user.VersioningIterator
 import org.apache.accumulo.core.security.ColumnVisibility
 import org.apache.commons.codec.binary.Hex
