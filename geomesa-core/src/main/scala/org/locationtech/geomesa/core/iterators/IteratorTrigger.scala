@@ -61,13 +61,13 @@ object IteratorTrigger {
   def chooseIterator(ecqlPredicate: Option[String], query: Query, sourceSFT: SimpleFeatureType): IteratorConfig = {
     val filter = ecqlPredicate.map(ECQL.toFilter)
     val transformsCoverFilter = doTransformsCoverFilters(query)
-    if (useIndexOnlyIterator(filter, query, sourceSFT)) {
-      // if the transforms cover the filtered attributes, we can decode into the transformed feature
-      // otherwise, we need to decode into the original feature, apply the filter, and then transform
-      IteratorConfig(IndexOnlyIterator, false, transformsCoverFilter)
-    } else {
+//    if (useIndexOnlyIterator(filter, query, sourceSFT)) {
+//      // if the transforms cover the filtered attributes, we can decode into the transformed feature
+//      // otherwise, we need to decode into the original feature, apply the filter, and then transform
+//      IteratorConfig(IndexOnlyIterator, false, transformsCoverFilter)
+//    } else {
       IteratorConfig(SpatioTemporalIterator, useSimpleFeatureFilteringIterator(filter, query), transformsCoverFilter)
-    }
+//    }
   }
 
   /**
@@ -108,7 +108,8 @@ object IteratorTrigger {
     Option(query.getHints.get(TRANSFORMS).asInstanceOf[String]).map { transformString =>
       val filterAttributes = getFilterAttributes(query.getFilter)
       val transforms = TransformProcess.toDefinition(transformString).asScala
-          .map(_.expression.asInstanceOf[PropertyName].getPropertyName)
+          .map(_.expression).filter(_.isInstanceOf[PropertyName]).map(_.asInstanceOf[PropertyName].getPropertyName)
+      // TODO org.geotools.filter.function.FilterFunction_strConcat cannot be cast to org.opengis.filter.expression.PropertyName
       filterAttributes.forall(transforms.contains(_))
     }.getOrElse(true)
 

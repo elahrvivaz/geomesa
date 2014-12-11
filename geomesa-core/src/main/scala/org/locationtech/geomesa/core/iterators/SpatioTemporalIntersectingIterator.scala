@@ -16,9 +16,10 @@
 
 package org.locationtech.geomesa.core.iterators
 
-import java.util.{HashSet => JHashSet}
+import java.util.{HashSet => JHashSet, Date}
 
 import com.typesafe.scalalogging.slf4j.Logging
+import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.data.{ByteSequence, Key, Range, Value}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.apache.hadoop.io.Text
@@ -90,45 +91,20 @@ class SpatioTemporalIntersectingIterator
 
     // loop while there is more data and we haven't matched our filter
     while (topValue.isEmpty && source.hasTop) {
+     // TODO optimize transform/decode
+      val value = source.getTopValue
+      lazy val feature = featureDecoder.decode(value)
 
-      val indexKey = source.getTopKey
+      val meetsFilters = checkUniqueId.forall(fn => fn(feature.getID)) &&
+          stFilter.forall(fn => fn(feature.getDefaultGeometry.asInstanceOf[Geometry],
+            dateAttributeName.flatMap(d => Option(feature.getAttribute(d).asInstanceOf[Date])).map(_.getTime))) &&
+          ecqlFilter.forall(fn => fn(feature))
 
-      if (SpatioTemporalTable.isIndexEntry(indexKey)) { // if this is a data entry, skip it
-        // only decode it if we have a filter to evaluate
-        // the value contains the full-resolution geometry and time plus feature ID
-        lazy val decodedValue = IndexEntry.decodeIndexValue(source.getTopValue)
-
-        // evaluate the filter checks, in least to most expensive order
-        val meetsIndexFilters = checkUniqueId.forall(fn => fn(decodedValue.id)) &&
-            stFilter.forall(fn => fn(decodedValue.geom, decodedValue.dtgMillis))
-
-        if (meetsIndexFilters) { // we hit a valid geometry, date and id
-          // we increment the source iterator, which should point to a data entry
-          source.next()
-          if (source.hasTop) {
-            val dataKey = source.getTopKey
-            if (SpatioTemporalTable.isDataEntry(dataKey)) {
-              val dataValue = source.getTopValue
-              lazy val decodedFeature = featureDecoder.decode(dataValue)
-              val meetsEcqlFilter = ecqlFilter.forall(fn => fn(decodedFeature))
-              if (meetsEcqlFilter) {
-                // update the key and value
-                // copy the key because reusing it is UNSAFE
-                topKey = Some(new Key(dataKey))
-                // apply any transform here
-                topValue = transform.map(fn => new Value(fn(decodedFeature)))
-                    .orElse(Some(new Value(dataValue)))
-              }
-            } else {
-              logger.error(s"Could not find the data key corresponding to index key '$indexKey' - " +
-                  "there is no data entry.")
-            }
-          } else {
-            logger.error(s"Could not find the data key corresponding to index key '$indexKey' - " +
-                "there are no more entries")
-          }
-        }
-        // TODO we have a lot of nested ifs here, try to clean it up
+      if (meetsFilters) {
+        // update the key and value
+        topKey = Some(source.getTopKey)
+        // apply any transform here
+        topValue = transform.map(fn => new Value(fn(feature))).orElse(Some(value))
       }
 
       // increment the underlying iterator

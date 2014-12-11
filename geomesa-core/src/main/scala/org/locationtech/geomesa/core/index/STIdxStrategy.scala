@@ -59,7 +59,7 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
     }
     val scanner = tryScanner.recover {
       case e: Throwable =>
-        logger.warn(s"Error in creating scanner: $e")
+        logger.warn(s"Error in creating scanner", e)
         // since GeoTools would eat the error and return no records anyway,
         // there's no harm in returning an empty iterator.
         SelfClosingIterator[Entry[Key, Value]](Iterator.empty)
@@ -151,10 +151,10 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
         configureIndexIterator(featureType, query, featureEncoding, stFilter, iteratorConfig.transformCoversFilter)
       case SpatioTemporalIterator =>
         val isDensity = query.getHints.containsKey(DENSITY_KEY)
-        configureSpatioTemporalIntersectingIterator(featureType, query, featureEncoding, stFilter, ecqlFilter, isDensity)
+        configureSpatioTemporalIntersectingIterator(featureType, query, featureEncoding, stFilter,
+          ecqlFilter, iteratorConfig.transformCoversFilter, isDensity)
     }
   }
-
 
   // establishes the regular expression that defines (minimally) acceptable rows
   def configureRowRegexIterator(regex: String): IteratorSetting = {
@@ -203,14 +203,17 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
       featureEncoding: FeatureEncoding,
       stFilter: Option[Filter],
       ecqlFilter: Option[String],
+      transformsCoverFilter: Boolean,
       isDensity: Boolean): IteratorSetting = {
     val cfg = new IteratorSetting(iteratorPriority_SpatioTemporalIterator,
-      "within-" + randomPrintableString(5),
+      classOf[SpatioTemporalIntersectingIterator].getSimpleName,
       classOf[SpatioTemporalIntersectingIterator])
     configureStFilter(cfg, stFilter)
+    // we need to evaluate the original feature before transforming
+    // transforms are applied afterwards
     configureFeatureType(cfg, featureType)
-    configureFeatureEncoding(cfg, featureEncoding)
     configureTransforms(cfg, query)
+    configureFeatureEncoding(cfg, featureEncoding)
     configureEcqlFilter(cfg, ecqlFilter)
     if (isDensity) cfg.addOption(GEOMESA_ITERATORS_IS_DENSITY_TYPE, "isDensity")
     cfg

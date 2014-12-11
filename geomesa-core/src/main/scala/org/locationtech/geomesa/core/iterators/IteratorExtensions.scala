@@ -144,7 +144,7 @@ trait HasFeatureDecoder extends IteratorExtensions {
 trait HasSpatioTemporalFilter extends IteratorExtensions {
 
   private var filterOption: Option[Filter] = None
-  private var dateAttributeName: Option[String] = None
+  var dateAttributeName: Option[String] = None
   private var testSimpleFeature: Option[SimpleFeature] = None
 
   lazy val stFilter: Option[(Geometry, Option[Long]) => Boolean] =
@@ -203,11 +203,17 @@ trait HasTransforms extends IteratorExtensions {
   private var transformString: Option[String] = None
   private var transformEncoding: FeatureEncoding = null
 
-  lazy val transform: Option[(SimpleFeature) => Array[Byte]] =
+  lazy val transform: Option[(SimpleFeature) => Array[Byte]] = {
+    try {
     for { featureType <- targetFeatureType; string <- transformString } yield {
       val transform = TransformCreator.createTransform(featureType, transformEncoding, string)
       (sf: SimpleFeature) => transform(sf)
     }
+    } catch {
+      case e: Exception => e.printStackTrace()
+        None
+    }
+  }
 
   // feature type transforms
   abstract override def init(featureType: SimpleFeatureType, options: OptionMap) = {
