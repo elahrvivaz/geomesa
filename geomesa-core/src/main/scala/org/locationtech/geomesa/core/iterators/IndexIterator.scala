@@ -45,8 +45,8 @@ class IndexIterator
     with MethodProfiling
     with Logging {
 
-  // replace this with 'timings' to enable profile logging
-  import IndexIterator.noOpTimings
+  // TODO replace this with 'timings' to enable profile logging
+  import IndexIterator.timings
 
   protected var topKey: Option[Key] = None
   protected var topValue: Option[Value] = None
@@ -104,7 +104,8 @@ class IndexIterator
 
       if (SpatioTemporalTable.isIndexEntry(indexKey)) { // if this is a data entry, skip it
         // the value contains the full-resolution geometry and time plus feature ID
-        val decodedValue = profile(IndexEntry.decodeIndexValue(source.getTopValue), "decodeIndexValue")
+        val indexValue = profile(source.getTopValue, "source.getTopValue")
+        val decodedValue = profile(IndexEntry.decodeIndexValue(indexValue), "decodeIndexValue")
 
         // evaluate the filter checks, in least to most expensive order
         val meetsIndexFilters = profile(checkUniqueId.forall(fn => fn(decodedValue.id)), "checkUniqueId") &&

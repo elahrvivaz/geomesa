@@ -49,8 +49,8 @@ class SpatioTemporalIntersectingIterator
     with MethodProfiling
     with Logging {
 
-  // replace this with 'timings' to enable profile logging
-  import SpatioTemporalIntersectingIterator.noOpTimings
+  // TODO replace this with 'timings' to enable profile logging
+  import SpatioTemporalIntersectingIterator.timings
 
   var topKey: Option[Key] = None
   var topValue: Option[Value] = None

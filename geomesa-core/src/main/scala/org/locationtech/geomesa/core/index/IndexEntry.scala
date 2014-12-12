@@ -132,7 +132,7 @@ case class IndexEntryEncoder(rowf: TextFormatter,
       (new Key(row, cf, cq, v), dataValue)
     }
 
-    (indexEntries ++ dataEntries).toList
+    (indexEntries/* ++ dataEntries*/).toList
   }
 
 }
