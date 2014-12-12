@@ -21,7 +21,7 @@ import java.util.{Date, Locale, Collection => JCollection, Map => JMap}
 
 import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.accumulo.core.client.BatchWriter
-import org.apache.accumulo.core.data.Mutation
+import org.apache.accumulo.core.data.{Value, Mutation}
 import org.apache.accumulo.core.security.ColumnVisibility
 import org.apache.hadoop.io.Text
 import org.calrissian.mango.types.{LexiTypeEncoders, SimpleTypeEncoders, TypeEncoder}
@@ -87,7 +87,7 @@ object AttributeTable extends GeoMesaTable with Logging {
                                  rowIdPrefix: String,
                                  delete: Boolean = false): Seq[Mutation] = {
     val cq = new Text(feature.getID)
-    lazy val value = IndexEntry.encodeIndexValue(feature)
+    lazy val value = new Value(IndexEntry.encodeIndexValue(feature))
     indexedAttributes.flatMap { descriptor =>
       val attribute = Option(feature.getAttribute(descriptor.getName))
       val mutations = getAttributeIndexRows(rowIdPrefix, descriptor, attribute).map(new Mutation(_))

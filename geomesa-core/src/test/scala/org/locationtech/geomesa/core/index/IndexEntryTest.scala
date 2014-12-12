@@ -16,6 +16,9 @@
 
 package org.locationtech.geomesa.core.index
 
+import java.util.Date
+
+import org.apache.accumulo.core.data.Value
 import org.joda.time.DateTime
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.core._
@@ -48,7 +51,7 @@ class IndexEntryTest extends Specification {
       value must not beNull
 
       // return trip
-      val decoded = IndexEntry.decodeIndexValue(value)
+      val decoded = IndexEntry.decodeIndexValue(new Value(value))
 
       // requirements
       decoded must not equalTo null
@@ -73,7 +76,7 @@ class IndexEntryTest extends Specification {
       value must not beNull
 
       // return trip
-      val decoded = IndexEntry.decodeIndexValue(value)
+      val decoded = IndexEntry.decodeIndexValue(new Value(value))
 
       // requirements
       decoded must not equalTo null
@@ -82,5 +85,29 @@ class IndexEntryTest extends Specification {
       dt.isDefined must beFalse
     }
 
+    "be faster" in {
+      // inputs
+      val ctm = System.currentTimeMillis()
+      val entries = (0 to 1000).map { i =>
+        val wkt = s"POINT (-78.$i 38.${1000 - i})"
+        val id = "Feature" + i
+        val geom = WKTUtils.read(wkt)
+        val dt = new Date(ctm - i)
+        AvroSimpleFeatureFactory.buildAvroFeature(dummyType, List(null, geom, null, geom, dt, null), id)
+      }
+
+      val encodeStart = System.currentTimeMillis()
+      val encoded = entries.map(IndexEntry.encodeIndexValue)
+      val encodeTime = System.currentTimeMillis() - encodeStart
+
+      val values = encoded.map(new Value(_))
+
+      val decodeStart = System.currentTimeMillis()
+      val decoded = values.map(IndexEntry.decodeIndexValue(_))
+      val decodeTime = System.currentTimeMillis() - decodeStart
+//TODO remove this test
+      println(s"encode: $encodeTime\ndecode: $decodeTime")
+      success
+    }
   }
 }

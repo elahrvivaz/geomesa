@@ -1,6 +1,7 @@
 package org.locationtech.geomesa.core.index
 
 import java.nio.ByteBuffer
+import java.util.Date
 
 import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom.Geometry
@@ -46,34 +47,51 @@ object IndexEntry {
     def setEndTime(time: DateTime)   = setTime(dtgEndField, time)
   }
 
+  val dtAttributeCache = new ThreadLocal[scala.collection.mutable.Map[String, String]] {
+    override def initialValue() = scala.collection.mutable.Map.empty[String, String]
+  }
+
   // the index value consists of the feature's:
   // 1.  ID
   // 2.  WKB-encoded geometry
   // 3.  start-date/time
-  def encodeIndexValue(entry: SimpleFeature): Value = {
-    val encodedId = entry.sid.getBytes
-    val encodedGeom = WKBUtils.write(entry.geometry)
-    val encodedDtg = entry.dt.map(dtg => ByteBuffer.allocate(8).putLong(dtg.getMillis).array()).getOrElse(Array[Byte]())
+  def encodeIndexValue(entry: SimpleFeature): Array[Byte] = {
+    val dtAttribute = dtAttributeCache.get()
+        .getOrElseUpdate(entry.getFeatureType.getTypeName, entry.dtgStartField)
 
-    new Value(
-      ByteBuffer.allocate(4).putInt(encodedId.length).array() ++ encodedId ++
-      ByteBuffer.allocate(4).putInt(encodedGeom.length).array() ++ encodedGeom ++
-      encodedDtg
-    )
+    val encodedId = entry.getID.getBytes("UTF-8")
+    val encodedGeom = WKBUtils.write(entry.getDefaultGeometry.asInstanceOf[Geometry])
+    val dtg = Option(entry.getAttribute(dtAttribute).asInstanceOf[Date]).map(_.getTime())
+    val dtgSize = if(dtg.isDefined) 8 else 0
+
+    val buf = ByteBuffer.allocate(8 + encodedId.size + encodedGeom.size + dtgSize)
+    buf.putInt(encodedId.size).put(encodedId)
+    buf.putInt(encodedGeom.size).put(encodedGeom)
+    dtg.foreach(buf.putLong)
+
+    buf.array()
   }
 
   def decodeIndexValue(v: Value): DecodedIndexValue = {
-    val buf = v.get()
-    val idLength = ByteBuffer.wrap(buf, 0, 4).getInt
-    val (idPortion, geomDatePortion) = buf.drop(4).splitAt(idLength)
-    val id = new String(idPortion)
-    val geomLength = ByteBuffer.wrap(geomDatePortion, 0, 4).getInt
-    if(geomLength < (geomDatePortion.length - 4)) {
-      val (l,r) = geomDatePortion.drop(4).splitAt(geomLength)
-      DecodedIndexValue(id, WKBUtils.read(l), Some(ByteBuffer.wrap(r).getLong))
-    } else {
-      DecodedIndexValue(id, WKBUtils.read(geomDatePortion.drop(4)), None)
+    val buf = ByteBuffer.wrap(v.get())
+    val id = {
+      val size = buf.getInt
+      val bytes = new Array[Byte](size)
+      buf.get(bytes)
+      new String(bytes, "UTF-8")
     }
+    val geom = {
+      val size = buf.getInt
+      val bytes = new Array[Byte](size)
+      buf.get(bytes)
+      WKBUtils.read(bytes)
+    }
+    val dtg = if (buf.hasRemaining) {
+      Some(buf.getLong)
+    } else {
+      None
+    }
+    DecodedIndexValue(id, geom, dtg)
   }
 
   case class DecodedIndexValue(id: String, geom: Geometry, dtgMillis: Option[Long])
