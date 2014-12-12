@@ -106,14 +106,18 @@ class IndexIterator
         // the value contains the full-resolution geometry and time plus feature ID
         val indexValue = profile(source.getTopValue, "source.getTopValue")
         val decodedValue = profile(IndexEntry.decodeIndexValue(indexValue), "decodeIndexValue")
+        lazy val id = {
+          val bytes = indexKey.getColumnQualifier.getBytes
+          new String(bytes, 0, bytes.length - SpatioTemporalTable.INDEX_CQ_SUFFIX.length, "UTF-8")
+        }
 
         // evaluate the filter checks, in least to most expensive order
-        val meetsIndexFilters = profile(checkUniqueId.forall(fn => fn(decodedValue.id)), "checkUniqueId") &&
+        val meetsIndexFilters = profile(checkUniqueId.forall(fn => fn(id)), "checkUniqueId") &&
             profile(stFilter.forall(fn => fn(decodedValue.geom, decodedValue.dtgMillis)), "stFilter")
 
         if (meetsIndexFilters) { // we hit a valid geometry, date and id
           val transformedFeature =
-            profile(encodeIndexValueToSF(decodedValue.id, decodedValue.geom, decodedValue.dtgMillis), "encodeIndexValueToSF")
+            profile(encodeIndexValueToSF(id, decodedValue.geom, decodedValue.dtgMillis), "encodeIndexValueToSF")
           // update the key and value
           // copy the key because reusing it is UNSAFE
           topKey = Some(indexKey)

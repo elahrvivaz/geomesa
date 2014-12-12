@@ -20,7 +20,6 @@ import java.awt.geom.Point2D
 
 import com.vividsolutions.jts.geom.{Coordinate, GeometryFactory, Point, PrecisionModel}
 import org.geotools.referencing.GeodeticCalculator
-import org.locationtech.geomesa.utils.text.ObjectPoolFactory
 
 /**
  * Encapsulates the notion of a geographic distance, and is primarily intended
@@ -83,7 +82,9 @@ trait GeomDistance {
 
 object VincentyModel extends GeomDistance {
   private val geometryFactory = new GeometryFactory(new PrecisionModel, 4326)
-  private val geodeticCalculatorPool = ObjectPoolFactory { new GeodeticCalculator }
+  private val geodeticCalculatorPool = new ThreadLocal[GeodeticCalculator] {
+    override def initialValue() = new GeodeticCalculator
+  }
 
   /**
    * Computation of the distance between two points.
@@ -104,12 +105,12 @@ object VincentyModel extends GeomDistance {
    * @param y2   The ending point's y value
    * @return   The distance between the two points
    */
-  def getDistanceBetweenTwoPoints(x1: Double, y1: Double, x2: Double, y2: Double) : Distance =
-    geodeticCalculatorPool.withResource{ calc => {
-      calc.setStartingGeographicPoint(x1, y1)
-      calc.setDestinationGeographicPoint(x2, y2)
-      new Distance(calc.getOrthodromicDistance)
-    }}
+  def getDistanceBetweenTwoPoints(x1: Double, y1: Double, x2: Double, y2: Double) : Distance = {
+    val calc = geodeticCalculatorPool.get
+    calc.setStartingGeographicPoint(x1, y1)
+    calc.setDestinationGeographicPoint(x2, y2)
+    new Distance(calc.getOrthodromicDistance)
+  }
 
   /**
    *
@@ -131,11 +132,11 @@ object VincentyModel extends GeomDistance {
    * @param distance   The orthodromic distance from the starting point expressed in meters.
    * @return           The destination point.
    */
-  def moveWithBearingAndDistance(x: Double, y: Double, bearing: Double, distance: Double): Point =
-    geodeticCalculatorPool.withResource{ calc => {
-      calc.setStartingGeographicPoint(x, y)
-      calc.setDirection(bearing, distance)
-      val point: Point2D = calc.getDestinationGeographicPoint
-      geometryFactory.createPoint(new Coordinate(point.getX, point.getY))
-    }}
+  def moveWithBearingAndDistance(x: Double, y: Double, bearing: Double, distance: Double): Point = {
+    val calc = geodeticCalculatorPool.get
+    calc.setStartingGeographicPoint(x, y)
+    calc.setDirection(bearing, distance)
+    val point: Point2D = calc.getDestinationGeographicPoint
+    geometryFactory.createPoint(new Coordinate(point.getX, point.getY))
+  }
 }

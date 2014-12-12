@@ -5,6 +5,7 @@ import java.util.Date
 
 import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom.Geometry
+import com.vividsolutions.jts.io.{WKBWriter, WKBReader}
 import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.hadoop.io.Text
 import org.geotools.feature.simple.SimpleFeatureBuilder
@@ -56,17 +57,16 @@ object IndexEntry {
   // 2.  WKB-encoded geometry
   // 3.  start-date/time
   def encodeIndexValue(entry: SimpleFeature): Array[Byte] = {
-    val dtAttribute = dtAttributeCache.get()
+    val dtAttribute = dtAttributeCache.get
         .getOrElseUpdate(entry.getFeatureType.getTypeName, entry.dtgStartField)
 
-    val encodedId = entry.getID.getBytes("UTF-8")
     val encodedGeom = WKBUtils.write(entry.getDefaultGeometry.asInstanceOf[Geometry])
     val dtg = Option(entry.getAttribute(dtAttribute).asInstanceOf[Date]).map(_.getTime())
     val dtgSize = if(dtg.isDefined) 8 else 0
 
-    val buf = ByteBuffer.allocate(8 + encodedId.size + encodedGeom.size + dtgSize)
-    buf.putInt(encodedId.size).put(encodedId)
-    buf.putInt(encodedGeom.size).put(encodedGeom)
+    val buf = ByteBuffer.allocate(4 + encodedGeom.size + dtgSize)
+    buf.putInt(encodedGeom.size)
+    buf.put(encodedGeom)
     dtg.foreach(buf.putLong)
 
     buf.array()
@@ -74,12 +74,6 @@ object IndexEntry {
 
   def decodeIndexValue(v: Value): DecodedIndexValue = {
     val buf = ByteBuffer.wrap(v.get())
-    val id = {
-      val size = buf.getInt
-      val bytes = new Array[Byte](size)
-      buf.get(bytes)
-      new String(bytes, "UTF-8")
-    }
     val geom = {
       val size = buf.getInt
       val bytes = new Array[Byte](size)
@@ -91,10 +85,10 @@ object IndexEntry {
     } else {
       None
     }
-    DecodedIndexValue(id, geom, dtg)
+    DecodedIndexValue(geom, dtg)
   }
 
-  case class DecodedIndexValue(id: String, geom: Geometry, dtgMillis: Option[Long])
+  case class DecodedIndexValue(geom: Geometry, dtgMillis: Option[Long])
 }
 
 case class IndexEntryEncoder(rowf: TextFormatter,

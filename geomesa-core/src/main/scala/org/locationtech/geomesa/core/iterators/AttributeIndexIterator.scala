@@ -116,7 +116,7 @@ class AttributeIndexIterator
         // copy the key because reusing it is UNSAFE
         topKey = Some(new Key(indexSource.getTopKey))
         val transformedFeature =
-          encodeIndexValueToSF(decodedValue.id, decodedValue.geom, decodedValue.dtgMillis)
+          encodeIndexValueToSF(null, decodedValue.geom, decodedValue.dtgMillis) //TODO fix this
 
         // if they requested the attribute value, decode it from the row key
         if (attributeType.isDefined) {

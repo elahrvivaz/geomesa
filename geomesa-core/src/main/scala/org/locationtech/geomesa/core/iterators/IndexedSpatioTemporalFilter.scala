@@ -71,7 +71,7 @@ class IndexedSpatioTemporalFilter
     while (topValue.isEmpty && source.hasTop) {
       val sourceValue = source.getTopValue
       val meetsFilter = stFilter.forall { fn =>
-        val DecodedIndexValue(_, geom, dtgOpt) = IndexEntry.decodeIndexValue(sourceValue)
+        val DecodedIndexValue(geom, dtgOpt) = IndexEntry.decodeIndexValue(sourceValue)
         fn(geom, dtgOpt)
       }
       if (meetsFilter) {

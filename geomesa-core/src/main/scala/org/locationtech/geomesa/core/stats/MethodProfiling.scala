@@ -78,9 +78,7 @@ class Timing extends Serializable {
    *
    * @return
    */
-  def average(): Long = this.synchronized {
-    if (count == 0) 0 else total / count
-  }
+  def average(): Double = total / count.toDouble
 }
 
 trait Timings extends Serializable {
@@ -132,20 +130,20 @@ class TimingsImpl extends Timings {
   private val map = scala.collection.mutable.Map.empty[String, Timing]
 
   override def occurrence(identifier: String, time: Long): Unit = {
-    val timing = this.synchronized(map.getOrElseUpdate(identifier, new Timing))
+    val timing = map.synchronized(map.getOrElseUpdate(identifier, new Timing))
     timing.synchronized(timing.occurrence(time))
   }
 
   override def time(identifier: String): Long =
-    this.synchronized(map.getOrElseUpdate(identifier, new Timing)).time
+    map.synchronized(map.getOrElseUpdate(identifier, new Timing)).time
 
   override def occurrences(identifier: String): Long =
-    this.synchronized(map.getOrElseUpdate(identifier, new Timing)).occurrences
+    map.synchronized(map.getOrElseUpdate(identifier, new Timing)).occurrences
 
   override def averageOccurrences(): String = if (map.isEmpty) {
     "No occurrences"
   } else {
-    val entries = this.synchronized(map.toList).sortBy(_._1)
+    val entries = map.synchronized(map.toList).sortBy(_._1)
     val total = entries.map(_._2.occurrences).sum
     val percentOccurrences = entries.map { case (id, timing) =>
       s"$id: ${(timing.occurrences * 100 / total.toDouble).formatted("%.1f%%")}"
@@ -156,10 +154,11 @@ class TimingsImpl extends Timings {
   override def averageTimes(): String = if (map.isEmpty) {
     "No occurrences"
   } else {
-    val entries = this.synchronized(map.toList).sortBy(_._1)
+    val entries = map.synchronized(map.toList).sortBy(_._1)
     val total = entries.map(_._2.time).sum
     val percentTimes = entries.map { case (id, timing) =>
-      s"$id: ${(timing.time * 100 / total.toDouble).formatted("%.1f%%")}"
+      timing.synchronized(s"$id: ${timing.average.formatted("%.3f%")} avg ms " +
+          s"${(timing.time * 100 / total.toDouble).formatted("%.1f%%")}")
     }
     percentTimes.mkString(s"Total time: $total ms. Percent of time - ", ", ", "")
   }

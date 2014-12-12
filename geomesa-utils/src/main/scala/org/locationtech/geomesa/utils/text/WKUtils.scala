@@ -21,42 +21,31 @@ import com.vividsolutions.jts.io.{WKBReader, WKBWriter, WKTReader, WKTWriter}
 import org.apache.commons.pool.BasePoolableObjectFactory
 import org.apache.commons.pool.impl.GenericObjectPool
 
-trait ObjectPoolUtils[A] {
-  val pool: GenericObjectPool[A]
-
-  def withResource[B](f: A => B): B = {
-    val obj = pool.borrowObject()
-    try {
-      f(obj)
-    } finally {
-      pool.returnObject(obj)
-    }
-  }
-}
-
-object ObjectPoolFactory {
-  def apply[A](f: => A, size:Int=10): ObjectPoolUtils[A] = new ObjectPoolUtils[A] {
-    val pool = new GenericObjectPool[A](new BasePoolableObjectFactory[A] {
-      def makeObject() = f
-    }, size)
-  }
-}
-
 trait WKTUtils {
-  private val readerPool = ObjectPoolFactory { new WKTReader }
-  private val writerPool = ObjectPoolFactory { new WKTWriter }
 
-  def read(s: String): Geometry = readerPool.withResource { reader => reader.read(s) }
-  def write(g: Geometry): String = writerPool.withResource { writer => writer.write(g) }
+  private[this] val wktReaders = new ThreadLocal[WKTReader] {
+    override def initialValue() = new WKTReader
+  }
+  private[this] val wktWriters = new ThreadLocal[WKTWriter] {
+    override def initialValue() = new WKTWriter
+  }
+
+  def read(s: String): Geometry = wktReaders.get.read(s)
+  def write(g: Geometry): String = wktWriters.get.write(g)
 }
 
 trait WKBUtils {
-  private[this] val readerPool = ObjectPoolFactory { new WKBReader }
-  private[this] val writerPool = ObjectPoolFactory { new WKBWriter }
+
+  private[this] val wkbReaders = new ThreadLocal[WKBReader] {
+    override def initialValue() = new WKBReader
+  }
+  private[this] val wkbWriters = new ThreadLocal[WKBWriter] {
+    override def initialValue() = new WKBWriter
+  }
 
   def read(s: String): Geometry = read(s.getBytes)
-  def read(b: Array[Byte]): Geometry = readerPool.withResource { reader => reader.read(b) }
-  def write(g: Geometry): Array[Byte] = writerPool.withResource { writer => writer.write(g) }
+  def read(b: Array[Byte]): Geometry = wkbReaders.get.read(b)
+  def write(g: Geometry): Array[Byte] = wkbWriters.get.write(g)
 }
 
 object WKTUtils extends WKTUtils

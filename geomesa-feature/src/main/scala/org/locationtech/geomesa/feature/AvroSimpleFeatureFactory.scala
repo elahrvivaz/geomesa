@@ -16,12 +16,10 @@
 
 package org.locationtech.geomesa.feature
 
-import com.google.common.cache.{CacheBuilder, CacheLoader}
 import org.geotools.factory.{CommonFactoryFinder, Hints}
 import org.geotools.feature.AbstractFeatureFactoryImpl
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.identity.FeatureIdImpl
-import org.locationtech.geomesa.utils.text.{ObjectPoolFactory, ObjectPoolUtils}
 import org.opengis.feature.`type`.AttributeDescriptor
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
@@ -49,24 +47,18 @@ object AvroSimpleFeatureFactory {
     Hints.putSystemDefault(Hints.FEATURE_FACTORY, classOf[AvroSimpleFeatureFactory])
   }
 
-  private val builderCache =
-    CacheBuilder
-      .newBuilder()
-      .build(
-        new CacheLoader[SimpleFeatureType, ObjectPoolUtils[SimpleFeatureBuilder]] {
-          override def load(sft: SimpleFeatureType): ObjectPoolUtils[SimpleFeatureBuilder] =
-            ObjectPoolFactory(new SimpleFeatureBuilder(sft, featureFactory), size = 1024)
-        }
-      )
+  private val builderCache = new ThreadLocal[scala.collection.mutable.Map[SimpleFeatureType, SimpleFeatureBuilder]] {
+    override def initialValue = scala.collection.mutable.Map.empty
+  }
 
   private val hints = new Hints(Hints.FEATURE_FACTORY, classOf[AvroSimpleFeatureFactory])
   private val featureFactory = CommonFactoryFinder.getFeatureFactory(hints)
 
-  def buildAvroFeature(sft: SimpleFeatureType, attrs: Seq[AnyRef], id: String) =
-    builderCache(sft).withResource { builder =>
-      builder.addAll(attrs)
-      builder.buildFeature(id)
-    }
+  def buildAvroFeature(sft: SimpleFeatureType, attrs: Seq[AnyRef], id: String) = {
+    val builder = builderCache.get.getOrElseUpdate(sft, new SimpleFeatureBuilder(sft, featureFactory))
+    builder.addAll(attrs)
+    builder.buildFeature(id)
+  }
 
   def featureBuilder(sft: SimpleFeatureType): SimpleFeatureBuilder = new SimpleFeatureBuilder(sft, featureFactory)
 }

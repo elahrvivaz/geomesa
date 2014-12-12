@@ -62,7 +62,7 @@ class ConsistencyCheckingIterator
     while (nextKey == null && indexSource.hasTop && !isData) {
       logger.trace(s"Checking ${indexSource.getTopKey}")
       nextKey = indexSource.getTopKey
-      curId = IndexEntry.decodeIndexValue(indexSource.getTopValue).id
+//      curId = IndexEntry.decodeIndexValue(indexSource.getTopValue).id //TODO fix this
 
       val dataSeekKey = new Key(indexSource.getTopKey.getRow, new Text(curId))
       val range = new Range(dataSeekKey, null)

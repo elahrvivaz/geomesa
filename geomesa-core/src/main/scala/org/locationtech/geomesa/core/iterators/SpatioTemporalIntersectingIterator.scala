@@ -99,9 +99,13 @@ class SpatioTemporalIntersectingIterator
         // only decode it if we have a filter to evaluate
         // the value contains the full-resolution geometry and time plus feature ID
         lazy val decodedValue = profile(IndexEntry.decodeIndexValue(source.getTopValue), "decodeIndexValue")
+        lazy val id = {
+          val bytes = indexKey.getColumnQualifier.getBytes
+          new String(bytes, 0, bytes.length - SpatioTemporalTable.INDEX_CQ_SUFFIX.length, "UTF-8")
+        }
 
         // evaluate the filter checks, in least to most expensive order
-        val meetsIndexFilters = profile(checkUniqueId.forall(fn => fn(decodedValue.id)), "checkUniqueId") &&
+        val meetsIndexFilters = profile(checkUniqueId.forall(fn => fn(id)), "checkUniqueId") &&
             profile(stFilter.forall(fn => fn(decodedValue.geom, decodedValue.dtgMillis)), "stFilter")
 
         if (meetsIndexFilters) { // we hit a valid geometry, date and id

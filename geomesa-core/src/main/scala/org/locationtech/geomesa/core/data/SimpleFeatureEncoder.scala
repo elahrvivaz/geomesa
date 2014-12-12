@@ -23,7 +23,6 @@ import org.apache.avro.io._
 import org.geotools.data.DataUtilities
 import org.locationtech.geomesa.core.data.FeatureEncoding.FeatureEncoding
 import org.locationtech.geomesa.feature.{AvroSimpleFeatureFactory, AvroSimpleFeatureWriter, FeatureSpecificReader}
-import org.locationtech.geomesa.utils.text.ObjectPoolFactory
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 
@@ -140,16 +139,13 @@ class ProjectingTextDecoder(original: SimpleFeatureType, projected: SimpleFeatur
  * existed, so it was quickest, easiest simply to abuse it.
  */
 object ThreadSafeDataUtilities {
-  private[this] val dataUtilitiesPool = ObjectPoolFactory(new Object, 1)
 
-  def encodeFeature(feature:SimpleFeature): String = dataUtilitiesPool.withResource {
-    _ => DataUtilities.encodeFeature(feature)
-  }
+  //TODO i'm pretty sure the proxied calls are thread safe??
+  def encodeFeature(feature:SimpleFeature): String =
+    DataUtilities.encodeFeature(feature)
 
   def createFeature(simpleFeatureType:SimpleFeatureType, featureString:String): SimpleFeature =
-    dataUtilitiesPool.withResource {
-      _ => DataUtilities.createFeature(simpleFeatureType, featureString)
-    }
+      DataUtilities.createFeature(simpleFeatureType, featureString)
 }
 
 class AvroFeatureEncoder(sft: SimpleFeatureType) extends SimpleFeatureEncoder {
