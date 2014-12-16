@@ -21,12 +21,9 @@ import java.util.concurrent.atomic.AtomicInteger
 
 import org.joda.time.DateTime
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.core
-import org.locationtech.geomesa.core._
 import org.locationtech.geomesa.feature.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.text.WKTUtils
-import org.opengis.feature.simple.SimpleFeatureType
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
@@ -34,6 +31,7 @@ import org.specs2.runner.JUnitRunner
 class IndexValueEncoderTest extends Specification {
 
   val defaultSchema = "*geom:Geometry,dtg:Date,s:String,i:Int,d:Double,f:Float,u:UUID,l:List[String]"
+  val allSchema = "*geom:Geometry:stidx=true,dtg:Date:stidx=true,s:String:stidx=true,i:Int:stidx=true,d:Double:stidx=true,f:Float:stidx=true,u:UUID:stidx=true,l:List[String]"
   val id = "Feature0123456789"
   val geom = WKTUtils.read("POINT (-78.495356 38.075215)")
   val dt = new DateTime().toDate
@@ -46,27 +44,27 @@ class IndexValueEncoderTest extends Specification {
   "IndexValueEncoder" should {
     "default to id,geom,date" in {
       val sft = getSft()
-      core.index.setDtgDescriptor(sft, "dtg")
-      IndexValueEncoder(sft).fields mustEqual Seq("id", "geom", "dtg")
+      IndexValueEncoder(sft).fields must containAllOf(Seq("id", "geom", "dtg"))
     }
     "default to id,geom if no date" in {
       val sft = getSft("*geom:Geometry,foo:String")
-      IndexValueEncoder(sft).fields mustEqual Seq("id", "geom")
+      IndexValueEncoder(sft).fields must containAllOf(Seq("id", "geom"))
     }
     "allow custom fields to be set" in {
-      val sft = getSft()
-      core.index.setIndexValueSchema(sft, "id,geom,dtg,i,f")
-      IndexValueEncoder(sft).fields mustEqual Seq("id", "geom", "dtg", "i", "f")
+      val sft = getSft("*geom:Geometry:stidx=true,dtg:Date:stidx=true,s:String,i:Int:stidx=true,d:Double,f:Float:stidx=true,u:UUID,l:List[String]")
+      IndexValueEncoder(sft).fields must containAllOf(Seq("id", "geom", "dtg", "i", "f"))
     }
     "always include id,geom,dtg" in {
-      val sft = getSft()
-      core.index.setIndexValueSchema(sft, "foo,bar")
-      IndexValueEncoder(sft) must throwA[IllegalArgumentException]
+      val sft = getSft("*geom:Geometry,dtg:Date,s:String,i:Int:stidx=true,d:Double,f:Float:stidx=true,u:UUID,l:List[String]")
+      IndexValueEncoder(sft).fields must containAllOf(Seq("id", "geom", "dtg", "i", "f"))
+    }
+    "not allow complex types" in {
+      val sft = getSft("*geom:Geometry:stidx=true,dtg:Date:stidx=true,l:List[String]:stidx=true")
+      IndexValueEncoder(sft).fields must containAllOf(Seq("id", "geom", "dtg"))
     }
 
     "encode and decode id,geom,date" in {
       val sft = getSft()
-      core.index.setDtgDescriptor(sft, "dtg")
 
       // inputs
       val entry = AvroSimpleFeatureFactory.buildAvroFeature(sft,
@@ -85,14 +83,14 @@ class IndexValueEncoderTest extends Specification {
 
       // requirements
       decoded must not beNull;
-      decoded(0) mustEqual(id)
+      decoded must haveSize(3)
+      decoded(0) mustEqual(dt)
       decoded(1) mustEqual(geom)
-      decoded(2) mustEqual(dt)
+      decoded(2) mustEqual(id)
     }
 
     "encode and decode id,geom,date when there is no date" in {
       val sft = getSft()
-      core.index.setDtgDescriptor(sft, "dtg")
 
       val entry = AvroSimpleFeatureFactory.buildAvroFeature(sft,
         List(geom, null, null, null, null, null, null, null), id)
@@ -110,14 +108,14 @@ class IndexValueEncoderTest extends Specification {
 
       // requirements
       decoded must not beNull;
-      decoded(0) mustEqual(id)
+      decoded must haveSize(3)
+      decoded(0) must beNull
       decoded(1) mustEqual(geom)
-      decoded(2) must beNull
+      decoded(2) mustEqual(id)
     }
 
     "encode and decode custom fields" in {
-      val sft = getSft()
-      core.index.setIndexValueSchema(sft, "id,geom,dtg,s,i,d,f,u")
+      val sft = getSft(allSchema)
 
       val s = "test"
       val i: java.lang.Integer = 5
@@ -141,19 +139,19 @@ class IndexValueEncoderTest extends Specification {
 
       // requirements
       decoded must not beNull;
-      decoded(0) mustEqual id
-      decoded(1) mustEqual geom
-      decoded(2) mustEqual dt
-      decoded(3) mustEqual s
+      decoded must haveSize(8)
+      decoded(0) mustEqual d
+      decoded(1) mustEqual dt
+      decoded(2) mustEqual f
+      decoded(3) mustEqual geom
       decoded(4) mustEqual i
-      decoded(5) mustEqual d
-      decoded(6) mustEqual f
+      decoded(5) mustEqual id
+      decoded(6) mustEqual s
       decoded(7) mustEqual u
     }
 
     "encode and decode null values" in {
-      val sft = getSft()
-      core.index.setIndexValueSchema(sft, "id,geom,dtg,s,i,d,f,u")
+      val sft = getSft(allSchema)
 
       val i: java.lang.Integer = 5
       val d: java.lang.Double = 10d
@@ -175,28 +173,21 @@ class IndexValueEncoderTest extends Specification {
 
       // requirements
       decoded must not beNull;
-      decoded(0) mustEqual id
-      decoded(1) mustEqual geom
-      decoded(2) must beNull
-      decoded(3) must beNull
-      decoded(4) mustEqual i
-      decoded(5) mustEqual d
-      decoded(6) mustEqual f
+      decoded must haveSize(8)
+      decoded(0) mustEqual d
       decoded(7) must beNull
-    }
-
-    "not allow complex types" in {
-      val sft = getSft()
-      core.index.setIndexValueSchema(sft, "id,geom,dtg,l")
-
-      IndexValueEncoder(sft) must throwAn[IllegalArgumentException]
+      decoded(2) mustEqual f
+      decoded(3) mustEqual geom
+      decoded(4) mustEqual i
+      decoded(5) mustEqual id
+      decoded(7) must beNull
+      decoded(7) must beNull
     }
 
     "be at least as fast as before" in {
       skipped("for integration")
 
       val sft = getSft()
-      core.index.setDtgDescriptor(sft, "dtg")
 
       val entry = AvroSimpleFeatureFactory.buildAvroFeature(sft,
         List(geom, dt, null, null, null, null, null, null), id)

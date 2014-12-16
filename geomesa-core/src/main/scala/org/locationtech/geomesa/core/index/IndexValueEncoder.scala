@@ -72,12 +72,21 @@ object IndexValueEncoder {
   def apply(sft: SimpleFeatureType) = cache.get.getOrElseUpdate(sft.getTypeName, createNew(sft))
 
   def getDefaultSchema(sft: SimpleFeatureType): Seq[String] =
-    Seq(ID_FIELD, sft.getGeometryDescriptor.getLocalName) ++ core.index.getDtgFieldName(sft).toSeq
+    (Seq(ID_FIELD, sft.getGeometryDescriptor.getLocalName) ++ core.index.getDtgFieldName(sft).toSeq).sorted
 
   private def createNew(sft: SimpleFeatureType) = {
-    val schema = core.index.getIndexValueSchema(sft).map(decodeSchema(_)).getOrElse(getDefaultSchema(sft))
-    require(getDefaultSchema(sft).forall(schema.contains),
-      "IndexValueSchema must include id, geometry and date (if present)")
+    import scala.collection.JavaConversions._
+    val schema = {
+      val defaults = getDefaultSchema(sft)
+      val descriptors =  sft.getAttributeDescriptors
+          .filter(d => Option(d.getUserData.get("stidx").asInstanceOf[Boolean]).getOrElse(false))
+          .map(_.getLocalName)
+      if (descriptors.isEmpty) {
+        defaults
+      } else {
+        (defaults.filterNot(descriptors.contains(_)) ++ descriptors).sorted
+      }
+    }
     new IndexValueEncoder(sft, schema)
   }
 

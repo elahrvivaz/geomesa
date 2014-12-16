@@ -33,7 +33,7 @@ class QueryStrategyDeciderTest extends Specification {
 
   val sftIndex = new SftBuilder()
     .intType("id")
-    .point("geom", default=true, index=true)
+    .point("geom", default = true)
     .date("dtg", default=true)
     .stringType("attr1")
     .stringType("attr2", true)

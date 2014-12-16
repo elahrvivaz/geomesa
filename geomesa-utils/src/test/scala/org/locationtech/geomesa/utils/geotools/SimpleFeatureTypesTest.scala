@@ -183,6 +183,13 @@ class SimpleFeatureTypesTest extends Specification {
       opts("min") must be equalTo "0"
       opts("max") must be equalTo "99"
     }
+
+    "allow specification of ST index entry values" >> {
+      val spec = "name:String:index=true:stidx=true,dtg:Date,*geom:Point:srid=4326"
+      val sft = SimpleFeatureTypes.createType("test", spec)
+//      println(SimpleFeatureTypes.encodeType(sft))
+      sft.getDescriptor("name").getUserData.get("stidx") mustEqual(true)
+    }
   }
 
 }
