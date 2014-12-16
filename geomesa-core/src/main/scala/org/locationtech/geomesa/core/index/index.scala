@@ -41,6 +41,7 @@ package object index {
   val SF_PROPERTY_END_TIME   = "geomesa_index_end_time"
   val SFT_INDEX_SCHEMA       = "geomesa_index_schema"
   val SF_TABLE_SHARING       = "geomesa_table_sharing"
+  val SF_INDEX_VALUE_SCHEMA  = "geomesa_index_value_schema"
 
   // wrapping function in option to protect against incorrect values in SF_PROPERTY_START_TIME
   def getDtgFieldName(sft: SimpleFeatureType) =
@@ -54,6 +55,14 @@ package object index {
 
   def setDtgDescriptor(sft: SimpleFeatureType, dateFieldName: String) {
     sft.getUserData.put(SF_PROPERTY_START_TIME, dateFieldName)
+  }
+
+  def getIndexValueSchema(sft: SimpleFeatureType): Option[String] =
+    Option(sft.getUserData.get(SF_INDEX_VALUE_SCHEMA).asInstanceOf[String])
+
+  def setIndexValueSchema(sft: SimpleFeatureType, indexSchema: String) = {
+    require(getIndexValueSchema(sft).isEmpty, "Cannot update index value schema after setting it once")
+    sft.getUserData.put(SF_INDEX_VALUE_SCHEMA, indexSchema)
   }
 
   def getIndexSchema(sft: SimpleFeatureType) = Option(sft.getUserData.get(SFT_INDEX_SCHEMA)).map { _.toString }
