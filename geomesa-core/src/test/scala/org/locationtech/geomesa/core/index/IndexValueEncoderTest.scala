@@ -193,6 +193,8 @@ class IndexValueEncoderTest extends Specification {
     }
 
     "be at least as fast as before" in {
+      skipped("for integration")
+
       val sft = getSft()
       core.index.setDtgDescriptor(sft, "dtg")
 
