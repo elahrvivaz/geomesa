@@ -149,7 +149,7 @@ class AttributeIndexIterator extends SortedKeyValueIterator[Key, Value] with Log
         // copy the key because reusing it is UNSAFE
         topKey = Some(new Key(indexSource.getTopKey))
         // using the already decoded index value, generate a SimpleFeature
-        val sf = IndexIterator.encodeIndexValueToSF(featureBuilder, id, geom, dtg)
+        val sf = IndexIterator.encodeIndexValueToSF(featureBuilder, id, decodedValue)
 
         // if they requested the attribute value, decode it from the row key
         if (attributeType.isDefined) {

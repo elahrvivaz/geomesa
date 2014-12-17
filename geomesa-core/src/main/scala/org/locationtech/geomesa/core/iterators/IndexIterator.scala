@@ -16,6 +16,8 @@
 
 package org.locationtech.geomesa.core.iterators
 
+import java.util.Date
+
 import com.vividsolutions.jts.geom._
 import org.apache.accumulo.core.data._
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
@@ -91,11 +93,11 @@ class IndexIterator extends SpatioTemporalIntersectingIterator with SortedKeyVal
    * converted key value.  This is *IMPORTANT*, as otherwise we do not emit rows
    * that honor the SortedKeyValueIterator expectation, and Bad Things Happen.
    */
-  override def seekData(nextId: String, geom: Geometry, date: Option[Long]) {
+  override def seekData(nextId: String, attributes: Map[String, Any]) {
     // now increment the value of nextKey, copy because reusing it is UNSAFE
     nextKey = new Key(indexSource.getTopKey)
     // using the already decoded index value, generate a SimpleFeature and set as the Value
-    val nextSimpleFeature = IndexIterator.encodeIndexValueToSF(featureBuilder, nextId, geom, date)
+    val nextSimpleFeature = IndexIterator.encodeIndexValueToSF(featureBuilder, nextId, attributes)
     nextValue = new Value(featureEncoder.encode(nextSimpleFeature))
   }
 
@@ -104,7 +106,8 @@ class IndexIterator extends SpatioTemporalIntersectingIterator with SortedKeyVal
 }
 
 object IndexIterator {
-  import org.locationtech.geomesa.core.iterators.IteratorTrigger.IndexAttributeNames
+
+  import IndexValueEncoder.ID_FIELD
 
   /**
    * Converts values taken from the Index Value to a SimpleFeature, using the passed SimpleFeatureBuilder
@@ -112,23 +115,19 @@ object IndexIterator {
    * Also note that the SimpleFeature's other attributes may not be fully parsed and may be left as null;
    * the SimpleFeatureFilteringIterator *may* remove the extraneous attributes later in the Iterator stack
    */
-  def encodeIndexValueToSF(featureBuilder: SimpleFeatureBuilder, id: String,
-                           geom: Geometry, dtgMillis: Option[Long]): SimpleFeature = {
-    val theType = featureBuilder.getFeatureType
-    val dtgDate = dtgMillis.map{time => new DateTime(time).toDate}
+  def encodeIndexValueToSF(featureBuilder: SimpleFeatureBuilder, id: String, attributes: Map[String, Any]): SimpleFeature = {
     // Build and fill the Feature. This offers some performance gain over building and then setting the attributes.
-    featureBuilder.buildFeature(id, attributeArray(theType, geom, dtgDate ))
+    featureBuilder.buildFeature(id, attributeArray(featureBuilder.getFeatureType, attributes))
   }
 
   /**
    * Construct and fill an array of the SimpleFeature's attribute values
    */
-  def attributeArray(theType: SimpleFeatureType, geomValue: Geometry, date: Option[java.util.Date]) = {
+  def attributeArray(theType: SimpleFeatureType, attributes: Map[String, Any]) = {
     val attrArray = new Array[AnyRef](theType.getAttributeCount)
-    // always set the mandatory geo element
-    attrArray(theType.indexOf(theType.geoName)) = geomValue
-    // if dtgDT exists, attempt to fill the elements corresponding to the start and/or end times
-    date.map{time => (theType.startTimeName ++ theType.endTimeName).map{name =>attrArray(theType.indexOf(name)) = time}}
+    attributes.foreach { case (name, value) => // TODO we could cache the indices
+      if (name != ID_FIELD && value != null) attrArray.update(theType.indexOf(name), value.asInstanceOf[AnyRef])
+    }
     attrArray
   }
 }

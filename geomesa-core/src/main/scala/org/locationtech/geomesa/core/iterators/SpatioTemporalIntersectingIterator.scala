@@ -183,7 +183,7 @@ class SpatioTemporalIntersectingIterator
         // stash this ID
         rememberId(id)
         // advance the data-iterator to its corresponding match
-        seekData(id, geom, dtg)
+        seekData(id, decodedValue)
       }
 
       // you MUST advance to the next key
@@ -202,7 +202,7 @@ class SpatioTemporalIntersectingIterator
    * data-iterator.  This is *IMPORTANT*, as otherwise we do not emit rows
    * that honor the SortedKeyValueIterator expectation, and Bad Things Happen.
    */
-  def seekData(nextId: String, geom: Geometry, date: Option[Long]) {
+  def seekData(nextId: String, attributes: Map[String, Any]) {
     curId = new Text(nextId)
     val indexSourceTopKey = indexSource.getTopKey
 
