@@ -1,7 +1,5 @@
 package org.locationtech.geomesa.core.index
 
-import java.nio.ByteBuffer
-
 import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.data.{Key, Value}
@@ -11,7 +9,6 @@ import org.joda.time.{DateTime, DateTimeZone}
 import org.locationtech.geomesa.core._
 import org.locationtech.geomesa.core.data.{DATA_CQ, SimpleFeatureEncoder}
 import org.locationtech.geomesa.utils.geohash.{GeoHash, GeohashUtils}
-import org.locationtech.geomesa.utils.text.WKBUtils
 import org.opengis.feature.simple.SimpleFeature
 
 import scala.collection.JavaConversions._

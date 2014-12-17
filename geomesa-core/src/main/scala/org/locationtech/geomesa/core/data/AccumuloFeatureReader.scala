@@ -42,9 +42,9 @@ class AccumuloFeatureReader(dataStore: AccumuloDataStore,
 
   override def getFeatureType = sft
 
-  override def next() = profile(iter.next(), "scan")
+  override def next() = profile(iter.next(), "next")
 
-  override def hasNext = profile(iter.hasNext, "scan")
+  override def hasNext = profile(iter.hasNext, "hasNext")
 
   override def close() = {
     iter.close()
@@ -57,8 +57,8 @@ class AccumuloFeatureReader(dataStore: AccumuloDataStore,
           QueryStatTransform.hintsToString(query.getHints),
           timings.time("planning"),
           // planning time gets added to scan time due to lazy val... Revisit in GEOMESA-408
-          timings.time("scan") - timings.time("planning"),
-          timings.occurrences("scan").toInt)
+          timings.time("next") + timings.time("hasNext") - timings.time("planning"),
+          timings.occurrences("next").toInt)
         sw.writeStat(stat, dataStore.getQueriesTableName(sft))
       case _ => // do nothing
     }

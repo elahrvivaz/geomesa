@@ -24,39 +24,72 @@ import org.locationtech.geomesa.core
 import org.locationtech.geomesa.utils.text.WKBUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
-case class IndexValueEncoder(sft: SimpleFeatureType, fields: Seq[String]) {
+/**
+ * Encoder/decoder for index values. Allows customizable fields to be encoded. Thread-safe.
+ *
+ * @param sft
+ * @param fields
+ */
+class IndexValueEncoder(val sft: SimpleFeatureType, val fields: Seq[String]) {
 
   import org.locationtech.geomesa.core.index.IndexValueEncoder._
 
   fields.foreach(f => require(sft.getDescriptor(f) != null || f == ID_FIELD, s"Encoded field does not exist: $f"))
-  val needsBackCompatible = fields == getDefaultSchema(sft) // this may need to decode data encoded the old way
 
-  val types = fields.toIndexedSeq
+  // check to see if we need to look for data encoded using the old scheme
+  private val needsBackCompatible = fields == getDefaultSchema(sft)
+
+  // map the actual attribute type bindings into well-known equivalents
+  private val types = fields.toIndexedSeq // convert to indexed seq so we can look up by index later
       .map(f => if (f == ID_FIELD) classOf[String] else normalizeType(sft.getDescriptor(f).getType.getBinding))
 
-  val functions = types.map(t => getFunctions(t, needsBackCompatible))
-  val conversions = functions.map(_._1)
-  val sizings = functions.map(_._2)
-  val encodings = functions.map(_._3)
-  val decodings = functions.map(_._4)
+  // compute the functions we need to encode/decode
+  // we need to break it out into separate functions in order to determine the size of the byte array,
+  // and to avoid allocation of intermediate objects
 
-  val fieldsWithIndex = fields.zipWithIndex
+  // converts the value into something we can encode directly
+  private val conversions = types.map(getValueFunctions(_).asInstanceOf[GetValueFunction[Any]])
+  // determines the size each value requires to encode
+  private val sizings = types.map(getSizeFunctions(_).asInstanceOf[GetSizeFunction[Any]])
+  // does the actual encoding into the byte buffer
+  private val encodings = types.map(encodeFunctions(_).asInstanceOf[EncodeFunction[Any]])
+  // decodes back into the original value
+  private val decodings = {
+    val decodes = if (needsBackCompatible) backCompatibleDecodeFunctions else decodeFunctions
+    types.map(decodes(_).asInstanceOf[DecodeFunction[Any]])
+  }
 
+  private val fieldsWithIndex = fields.zipWithIndex
+
+  /**
+   * Encodes a simple feature into a byte array. Only the attributes marked for inclusion get encoded.
+   *
+   * @param sf
+   * @return
+   */
   def encode(sf: SimpleFeature): Array[Byte] = {
     val valuesWithIndex = fieldsWithIndex.map { case (f, i) =>
       if (f == ID_FIELD) (sf.getID, i) else (sf.getAttribute(f), i)
     }
     var totalSize = 0
+    // create partially applied functions we can run over the byte buffer once we know total size
+    // calculate total size at the same time
     val partialEncodings = valuesWithIndex.map { case (value, i) =>
       val converted = conversions(i)(value)
       totalSize += sizings(i)(converted)
       encodings(i)(converted, _: ByteBuffer)
     }
     val buf = ByteBuffer.allocate(totalSize)
-    partialEncodings.foreach(f => f(buf))
+    partialEncodings.foreach(e => e(buf))
     buf.array()
   }
 
+  /**
+   * Decodes a byte array into a map of attribute name -> attribute value pairs
+   *
+   * @param value
+   * @return
+   */
   def decode(value: Array[Byte]): Map[String, Any] = {
     val buf = ByteBuffer.wrap(value)
     fieldsWithIndex.map { case (f, i) => f -> decodings(i)(buf) }.toMap
@@ -65,6 +98,7 @@ case class IndexValueEncoder(sft: SimpleFeatureType, fields: Seq[String]) {
   val geomField = sft.getGeometryDescriptor.getLocalName
   val dtgField = core.index.getDtgFieldName(sft)
 
+  // helper methods to extract known fields from the decoded map
   def id(map: Map[String, Any]): String = map(ID_FIELD).asInstanceOf[String]
   def geometry(map: Map[String, Any]): Geometry = map(geomField).asInstanceOf[Geometry]
   def date(map: Map[String, Any]): Option[Date] =  dtgField.flatMap(f => Option(map(f).asInstanceOf[Date]))
@@ -74,16 +108,27 @@ object IndexValueEncoder {
 
   val ID_FIELD = "id"
 
+  // even though the encoders are thread safe, this way we don't have to synchronize when retrieving them
   private val cache = new ThreadLocal[scala.collection.mutable.Map[String, IndexValueEncoder]] {
     override def initialValue() = scala.collection.mutable.Map.empty
   }
 
+  // gets a cached instance to avoid the initialization overhead
+  // we use sft.toString, which includes the fields and type name, as a unique key
   def apply(sft: SimpleFeatureType) = cache.get.getOrElseUpdate(sft.toString, createNew(sft))
 
+  // gets the default schema, which includes ID, geom and date (if available)
+  // order is important here, as it needs to match the old IndexEntry encoding
   def getDefaultSchema(sft: SimpleFeatureType): Seq[String] =
-    // order is important here, as it needs to match the old IndexEntry encoding
-    Seq(ID_FIELD, sft.getGeometryDescriptor.getLocalName) ++ core.index.getDtgFieldName(sft).toSeq
+    Seq(ID_FIELD, sft.getGeometryDescriptor.getLocalName) ++ core.index.getDtgFieldName(sft)
 
+  /**
+   * Creates a new IndexValueEncoder based on the user data in the simple feature. The
+   * IndexValueEncoder does some initialization up-front, so the cached instances should be used.
+   *
+   * @param sft
+   * @return
+   */
   private def createNew(sft: SimpleFeatureType) = {
     import scala.collection.JavaConversions._
     val schema = {
@@ -100,9 +145,12 @@ object IndexValueEncoder {
     new IndexValueEncoder(sft, schema)
   }
 
-  def encodeSchema(schema: Seq[String]): String = schema.mkString(",")
-  def decodeSchema(schema: String): Seq[String] = schema.split(",").map(_.trim)
-
+  /**
+   * Gets a concrete class we can look up
+   *
+   * @param clas
+   * @return
+   */
   private def normalizeType(clas: Class[_]): Class[_] =
     clas match {
       case c if classOf[String].isAssignableFrom(c)              => classOf[String]
@@ -118,113 +166,156 @@ object IndexValueEncoder {
         throw new IllegalArgumentException(s"Invalid type for index encoding: $clas")
     }
 
-  type GetValueFunction = Any => Any
-  type GetSizeFunction =  Any => Int
-  type EncodeFunction = (Any, ByteBuffer) => ByteBuffer
-  type DecodeFunction = (ByteBuffer) => Any
+  // functions for encoding/decoding different classes
 
-  private def getFunctions(clas: Class[_], needsBackCompatible: Boolean):
-    (GetValueFunction, GetSizeFunction, EncodeFunction, DecodeFunction) =
-    clas match {
-      case c if c == classOf[String] => (
-          (value: Any) =>
-            Option(value.asInstanceOf[String]).map(_.getBytes("UTF-8")).getOrElse(Array.empty[Byte]),
-          (value: Any) => value.asInstanceOf[Array[Byte]].length + 4,
-          (value: Any, buf: ByteBuffer) => {
-            val array = value.asInstanceOf[Array[Byte]]
-            buf.putInt(array.length).put(array)
-          },
-          (buf: ByteBuffer) => {
-            val length = buf.getInt
-            if (length == 0) {
-              null
-            } else {
-              val array = Array.ofDim[Byte](length)
-              buf.get(array)
-              new String(array, "UTF-8")
-            }
-          }
-        )
+  private type GetValueFunction[T] = (T) => Any
+  private type GetSizeFunction[T]  = (T) => Int
+  private type EncodeFunction[T]   = (T, ByteBuffer) => Unit
+  private type DecodeFunction[T]   = (ByteBuffer) => T
 
-      case c if c == classOf[Int] => (
-          (value: Any) => Option(value).getOrElse(0),
-          (_: Any) => 4,
-          (value: Any, buf: ByteBuffer) => buf.putInt(value.asInstanceOf[Int]),
-          (buf: ByteBuffer) => buf.getInt
-        )
+  // encode/decode functions
 
-      case c if c == classOf[Long] => (
-          (value: Any) => Option(value).getOrElse(0L),
-          (_: Any) => 8,
-          (value: Any, buf: ByteBuffer) => buf.putLong(value.asInstanceOf[Long]),
-          (buf: ByteBuffer) => buf.getLong
-        )
-
-      case c if c == classOf[Double] => (
-          (value: Any) => Option(value).getOrElse(0d),
-          (_: Any) => 8,
-          (value: Any, buf: ByteBuffer) => buf.putDouble(value.asInstanceOf[Double]),
-          (buf: ByteBuffer) => buf.getDouble
-        )
-
-      case c if c == classOf[Float] => (
-          (value: Any) => Option(value).getOrElse(0f),
-          (_: Any) => 4,
-          (value: Any, buf: ByteBuffer) => buf.putFloat(value.asInstanceOf[Float]),
-          (buf: ByteBuffer) => buf.getFloat
-        )
-
-      case c if c == classOf[Boolean] => (
-          (value: Any) => if (Option(value.asInstanceOf[Boolean]).getOrElse(false)) 1.toByte else 0.toByte,
-          (_: Any) => 1,
-          (value: Any, buf: ByteBuffer) => buf.put(value.asInstanceOf[Byte]),
-          (buf: ByteBuffer) => buf.get == 1.toByte
-        )
-
-      case c if c == classOf[UUID] => (
-          (value: Any) => Option(value),
-          (value: Any) => if (value.asInstanceOf[Option[UUID]].isDefined) 17 else 1,
-          (value: Any, buf: ByteBuffer) =>
-            value.asInstanceOf[Option[UUID]] match {
-              case Some(uuid) =>
-                buf.put(1.toByte).putLong(uuid.getMostSignificantBits).putLong(uuid.getLeastSignificantBits)
-              case None => buf.put(0.toByte)
-            },
-          (buf: ByteBuffer) => if (buf.get == 0.toByte) null else new UUID(buf.getLong, buf.getLong)
-        )
-
-      case c if c == classOf[Date] => (
-          (value: Any) => Option(value.asInstanceOf[Date]).map(_.getTime),
-          (value: Any) => if (value.asInstanceOf[Option[Long]].isDefined) 9 else 1,
-          (value: Any, buf: ByteBuffer) =>
-            value.asInstanceOf[Option[Long]] match {
-              case Some(long) =>
-                buf.put(1.toByte).putLong(long)
-              case None => buf.put(0.toByte)
-            },
-          if (needsBackCompatible) {
-            (buf: ByteBuffer) =>
-              if (buf.remaining() == 8) {
-                new Date(buf.getLong) // back compatible test, doesn't include null byte check
-              } else if (buf.get == 0.toByte) null else new Date(buf.getLong)
-          } else {
-            (buf: ByteBuffer) => if (buf.get == 0.toByte) null else new Date(buf.getLong)
-          }
-        )
-
-      case c if c == classOf[Geometry] => (
-          (value: Any) => WKBUtils.write(value.asInstanceOf[Geometry]),
-          (value: Any) => value.asInstanceOf[Array[Byte]].length + 4,
-          (value: Any, buf: ByteBuffer) => {
-            val array = value.asInstanceOf[Array[Byte]]
-            buf.putInt(array.length).put(array)
-          },
-          (buf: ByteBuffer) => {
-            val length = buf.getInt
-            val array = Array.ofDim[Byte](length)
-            buf.get(array)
-            WKBUtils.read(array)
-          }
-        )
+  private val stringGetValue: GetValueFunction[String] =
+    (value: String) => Option(value).map(_.getBytes("UTF-8")).getOrElse(Array.empty[Byte])
+  private val stringGetSize: GetSizeFunction[Array[Byte]] =
+    (value: Array[Byte]) => value.length + 4
+  private val stringEncode: EncodeFunction[Array[Byte]] =
+    (value: Array[Byte], buf: ByteBuffer) => buf.putInt(value.length).put(value)
+  private val stringDecode: DecodeFunction[String] =
+    (buf: ByteBuffer) => {
+      val length = buf.getInt
+      if (length == 0) {
+        null
+      } else {
+        val array = Array.ofDim[Byte](length)
+        buf.get(array)
+        new String(array, "UTF-8")
+      }
     }
+
+  private val intGetValue: GetValueFunction[Int] = (value: Int) => Option(value).getOrElse(0)
+  private val intGetSize: GetSizeFunction[Int] = (_: Int) => 4
+  private val intEncode: EncodeFunction[Int] = (value: Int, buf: ByteBuffer) => buf.putInt(value)
+  private val intDecode: DecodeFunction[Int] = (buf: ByteBuffer) => buf.getInt
+
+  private val longGetValue: GetValueFunction[Long] = (value: Long) => Option(value).getOrElse(0L)
+  private val longGetSize: GetSizeFunction[Long] = (_: Long) => 8
+  private val longEncode: EncodeFunction[Long] = (value: Long, buf: ByteBuffer) => buf.putLong(value)
+  private val longDecode: DecodeFunction[Long] = (buf: ByteBuffer) => buf.getLong
+
+  private val doubleGetValue: GetValueFunction[Double] = (value: Double) => Option(value).getOrElse(0d)
+  private val doubleGetSize: GetSizeFunction[Double] = (value: Double) => 8
+  private val doubleEncode: EncodeFunction[Double] =
+    (value: Double, buf: ByteBuffer) => buf.putDouble(value)
+  private val doubleDecode: DecodeFunction[Double] = (buf: ByteBuffer) => buf.getDouble
+
+  private val floatGetValue: GetValueFunction[Float] = (value: Float) => Option(value).getOrElse(0f)
+  private val floatGetSize: GetSizeFunction[Float] = (_: Float) => 4
+  private val floatEncode: EncodeFunction[Float] = (value: Float, buf: ByteBuffer) => buf.putFloat(value)
+  private val floatDecode: DecodeFunction[Float] = (buf: ByteBuffer) => buf.getFloat
+
+  private val booleanGetValue: GetValueFunction[Boolean] =
+    (value: Boolean) => if (Option(value).getOrElse(false)) 1.toByte else 0.toByte
+  private val booleanGetSize: GetSizeFunction[Byte] = (_: Byte) => 1
+  private val booleanEncode: EncodeFunction[Byte] = (value: Byte, buf: ByteBuffer) => buf.put(value)
+  private val booleanDecode: DecodeFunction[Boolean] = (buf: ByteBuffer) => buf.get == 1.toByte
+
+  private val uuidGetValue: GetValueFunction[UUID] = (value: UUID) => Option(value)
+  private val uuidGetSize: GetSizeFunction[Option[UUID]] =
+    (value: Option[UUID]) => if (value.isDefined) 17 else 1
+  private val uuidEncode: EncodeFunction[Option[UUID]] =
+    (value: Option[UUID], buf: ByteBuffer) => value match {
+      case Some(uuid) =>
+        buf.put(1.toByte).putLong(uuid.getMostSignificantBits).putLong(uuid.getLeastSignificantBits)
+      case None => buf.put(0.toByte)
+    }
+  private val uuidDecode: DecodeFunction[UUID] =
+    (buf: ByteBuffer) => if (buf.get == 0.toByte) null else new UUID(buf.getLong, buf.getLong)
+
+  private val dateGetValue: GetValueFunction[Date] = (value: Date) => Option(value).map(_.getTime)
+  private val dateGetSize: GetSizeFunction[Option[Long]] =
+    (value: Option[Long]) => if (value.isDefined) 9 else 1
+  private val dateEncode: EncodeFunction[Option[Long]] =
+    (value: Option[Long], buf: ByteBuffer) => value match {
+      case Some(long) => buf.put(1.toByte).putLong(long)
+      case None => buf.put(0.toByte)
+    }
+  private val dateDecode: DecodeFunction[Date] =
+    (buf: ByteBuffer) => if (buf.get == 0.toByte) null else new Date(buf.getLong)
+  private val dateDecodeBackCompatible: DecodeFunction[Date] = (buf: ByteBuffer) =>
+    if (buf.remaining() == 8) {
+      new Date(buf.getLong) // back compatible test, doesn't include null byte check
+    } else if (buf.get == 0.toByte) null else new Date(buf.getLong)
+
+  private val geomGetValue: GetValueFunction[Geometry] = (value: Geometry) => WKBUtils.write(value)
+  private val geomGetSize: GetSizeFunction[Array[Byte]] = (value: Array[Byte]) => value.length + 4
+  private val geomEncode: EncodeFunction[Array[Byte]] =
+    (value: Array[Byte], buf: ByteBuffer) => buf.putInt(value.length).put(value)
+  private val geomDecode: DecodeFunction[Geometry] =
+    (buf: ByteBuffer) => {
+      val length = buf.getInt
+      val array = Array.ofDim[Byte](length)
+      buf.get(array)
+      WKBUtils.read(array)
+    }
+
+  private val getValueFunctions = Map[Class[_], GetValueFunction[_]](
+    classOf[String]   -> stringGetValue,
+    classOf[Int]      -> intGetValue,
+    classOf[Long]     -> longGetValue,
+    classOf[Double]   -> doubleGetValue,
+    classOf[Float]    -> floatGetValue,
+    classOf[Boolean]  -> booleanGetValue,
+    classOf[UUID]     -> uuidGetValue,
+    classOf[Date]     -> dateGetValue,
+    classOf[Geometry] -> geomGetValue
+  )
+
+  private val getSizeFunctions = Map[Class[_], GetSizeFunction[_]](
+    classOf[String]   -> stringGetSize,
+    classOf[Int]      -> intGetSize,
+    classOf[Long]     -> longGetSize,
+    classOf[Double]   -> doubleGetSize,
+    classOf[Float]    -> floatGetSize,
+    classOf[Boolean]  -> booleanGetSize,
+    classOf[UUID]     -> uuidGetSize,
+    classOf[Date]     -> dateGetSize,
+    classOf[Geometry] -> geomGetSize
+  )
+
+  private val encodeFunctions = Map[Class[_], EncodeFunction[_]](
+    classOf[String]   -> stringEncode,
+    classOf[Int]      -> intEncode,
+    classOf[Long]     -> longEncode,
+    classOf[Double]   -> doubleEncode,
+    classOf[Float]    -> floatEncode,
+    classOf[Boolean]  -> booleanEncode,
+    classOf[UUID]     -> uuidEncode,
+    classOf[Date]     -> dateEncode,
+    classOf[Geometry] -> geomEncode
+  )
+
+  private val decodeFunctions = Map[Class[_], DecodeFunction[_]](
+    classOf[String]   -> stringDecode,
+    classOf[Int]      -> intDecode,
+    classOf[Long]     -> longDecode,
+    classOf[Double]   -> doubleDecode,
+    classOf[Float]    -> floatDecode,
+    classOf[Boolean]  -> booleanDecode,
+    classOf[UUID]     -> uuidDecode,
+    classOf[Date]     -> dateDecode,
+    classOf[Geometry] -> geomDecode
+  )
+
+  private val backCompatibleDecodeFunctions = Map[Class[_], DecodeFunction[_]](
+    classOf[String]   -> stringDecode,
+    classOf[Int]      -> intDecode,
+    classOf[Long]     -> longDecode,
+    classOf[Double]   -> doubleDecode,
+    classOf[Float]    -> floatDecode,
+    classOf[Boolean]  -> booleanDecode,
+    classOf[UUID]     -> uuidDecode,
+    classOf[Date]     -> dateDecodeBackCompatible,
+    classOf[Geometry] -> geomDecode
+  )
 }
