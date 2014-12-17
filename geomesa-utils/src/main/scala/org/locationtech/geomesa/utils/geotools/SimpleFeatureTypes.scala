@@ -116,6 +116,12 @@ object SimpleFeatureTypes {
     def toAttribute: AttributeDescriptor
 
     def toSpec: String
+
+    protected def getIndexSpec = {
+      val idx = if (index) s":index=$index" else ""
+      val stidx = if (encodeInStIdx) s":stidx=$encodeInStIdx" else ""
+      idx + stidx
+    }
   }
 
   implicit class AttributeCopyable(val attrSpec: AttributeSpec) extends AnyVal {
@@ -136,7 +142,7 @@ object SimpleFeatureTypes {
       b.buildDescriptor(name)
     }
 
-    override def toSpec = s"$name:${typeEncode(clazz)}:index=$index:stidx=$encodeInStIdx"
+    override def toSpec = s"$name:${typeEncode(clazz)}$getIndexSpec"
   }
 
   case class ListAttributeSpec(name: String, subClass: Class[_], index: Boolean) extends NonGeomAttributeSpec {
@@ -149,7 +155,9 @@ object SimpleFeatureTypes {
       b.buildDescriptor(name)
     }
 
-    override def toSpec = s"$name:List[${subClass.getSimpleName}]:index=$index:stidx=$encodeInStIdx"
+    override def toSpec = {
+      s"$name:List[${subClass.getSimpleName}]$getIndexSpec"
+    }
   }
 
   case class MapAttributeSpec(name: String, keyClass: Class[_], valueClass: Class[_], index: Boolean)
@@ -165,7 +173,7 @@ object SimpleFeatureTypes {
     }
 
     override def toSpec =
-      s"$name:Map[${keyClass.getSimpleName},${valueClass.getSimpleName}]:index=$index:stidx=$encodeInStIdx"
+      s"$name:Map[${keyClass.getSimpleName},${valueClass.getSimpleName}]$getIndexSpec"
   }
 
   case class GeomAttributeSpec(name: String, clazz: Class[_], index: Boolean, srid: Int, default: Boolean)
@@ -186,7 +194,9 @@ object SimpleFeatureTypes {
 
     override def toSpec = {
       val star = if (default) "*" else ""
-      s"$star$name:${typeEncode(clazz)}:srid=$srid:index=$index:stidx=$encodeInStIdx"
+      val idx = if (index) s":index=$index" else ""
+      val stidx = if (encodeInStIdx) s":stidx=$encodeInStIdx" else ""
+      s"$star$name:${typeEncode(clazz)}:srid=$srid$getIndexSpec"
     }
   }
 

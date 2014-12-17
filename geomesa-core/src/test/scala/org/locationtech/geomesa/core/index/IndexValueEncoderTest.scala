@@ -16,14 +16,18 @@
 
 package org.locationtech.geomesa.core.index
 
+import java.nio.ByteBuffer
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicInteger
 
+import com.vividsolutions.jts.geom.Geometry
+import org.apache.accumulo.core.data.Value
 import org.joda.time.DateTime
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.feature.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
-import org.locationtech.geomesa.utils.text.WKTUtils
+import org.locationtech.geomesa.utils.text.{WKBUtils, WKTUtils}
+import org.opengis.feature.simple.SimpleFeature
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
@@ -84,9 +88,9 @@ class IndexValueEncoderTest extends Specification {
       // requirements
       decoded must not beNull;
       decoded must haveSize(3)
-      decoded(0) mustEqual(dt)
-      decoded(1) mustEqual(geom)
-      decoded(2) mustEqual(id)
+      decoded("dtg") mustEqual dt
+      decoded("geom") mustEqual geom
+      decoded("id") mustEqual id
     }
 
     "encode and decode id,geom,date when there is no date" in {
@@ -109,9 +113,9 @@ class IndexValueEncoderTest extends Specification {
       // requirements
       decoded must not beNull;
       decoded must haveSize(3)
-      decoded(0) must beNull
-      decoded(1) mustEqual(geom)
-      decoded(2) mustEqual(id)
+      decoded("dtg") must beNull
+      decoded("geom") mustEqual(geom)
+      decoded("id") mustEqual(id)
     }
 
     "encode and decode custom fields" in {
@@ -140,14 +144,14 @@ class IndexValueEncoderTest extends Specification {
       // requirements
       decoded must not beNull;
       decoded must haveSize(8)
-      decoded(0) mustEqual d
-      decoded(1) mustEqual dt
-      decoded(2) mustEqual f
-      decoded(3) mustEqual geom
-      decoded(4) mustEqual i
-      decoded(5) mustEqual id
-      decoded(6) mustEqual s
-      decoded(7) mustEqual u
+      decoded("geom") mustEqual geom
+      decoded("id") mustEqual id
+      decoded("dtg") mustEqual dt
+      decoded("d") mustEqual d
+      decoded("f") mustEqual f
+      decoded("i") mustEqual i
+      decoded("s") mustEqual s
+      decoded("u") mustEqual u
     }
 
     "encode and decode null values" in {
@@ -174,14 +178,28 @@ class IndexValueEncoderTest extends Specification {
       // requirements
       decoded must not beNull;
       decoded must haveSize(8)
-      decoded(0) mustEqual d
-      decoded(7) must beNull
-      decoded(2) mustEqual f
-      decoded(3) mustEqual geom
-      decoded(4) mustEqual i
-      decoded(5) mustEqual id
-      decoded(7) must beNull
-      decoded(7) must beNull
+      decoded("geom") mustEqual geom
+      decoded("id") mustEqual id
+      decoded("d") mustEqual d
+      decoded("f") mustEqual f
+      decoded("i") mustEqual i
+      decoded("s") must beNull
+      decoded("u") must beNull
+      decoded("dtg") must beNull
+    }
+
+    "maintain backwards compatibility" in {
+      val sft = getSft()
+      val entry = AvroSimpleFeatureFactory.buildAvroFeature(sft,
+        List(geom, dt, null, null, null, null, null, null), id)
+      val encoder = IndexValueEncoder(sft)
+      val encoded = _encodeIndexValue(entry)
+      val decoded = encoder.decode(encoded.get())
+      decoded must not beNull;
+      decoded must haveSize(3)
+      decoded("geom") mustEqual geom
+      decoded("dtg") mustEqual dt
+      decoded("id") mustEqual id
     }
 
     "be at least as fast as before" in {
@@ -201,7 +219,7 @@ class IndexValueEncoderTest extends Specification {
       var totalDecodeOld = 0L
 
       // run once to remove any initialization time...
-      IndexEntry.encodeIndexValue(entry)
+      _encodeIndexValue(entry)
       encoder.encode(entry)
 
       (0 to 1000000).foreach { _ =>
@@ -217,9 +235,9 @@ class IndexValueEncoderTest extends Specification {
 
       (0 to 1000000).foreach { _ =>
         val start = System.currentTimeMillis()
-        val value = IndexEntry.encodeIndexValue(entry)
+        val value = _encodeIndexValue(entry)
         val encode = System.currentTimeMillis()
-        IndexEntry.decodeIndexValue(value)
+        _decodeIndexValue(value)
         val decode = System.currentTimeMillis()
 
         totalEncodeOld += encode - start
@@ -232,4 +250,38 @@ class IndexValueEncoderTest extends Specification {
       success
     }
   }
+
+  // FOLLOWING METHODS ARE THE OLD ONES FROM IndexEntry
+
+  // the index value consists of the feature's:
+  // 1.  ID
+  // 2.  WKB-encoded geometry
+  // 3.  start-date/time
+  def _encodeIndexValue(entry: SimpleFeature): Value = {
+    import IndexEntry._
+    val encodedId = entry.sid.getBytes
+    val encodedGeom = WKBUtils.write(entry.geometry)
+    val encodedDtg = entry.dt.map(dtg => ByteBuffer.allocate(8).putLong(dtg.getMillis).array()).getOrElse(Array[Byte]())
+
+    new Value(
+      ByteBuffer.allocate(4).putInt(encodedId.length).array() ++ encodedId ++
+          ByteBuffer.allocate(4).putInt(encodedGeom.length).array() ++ encodedGeom ++
+          encodedDtg)
+  }
+
+  def _decodeIndexValue(v: Value): _DecodedIndexValue = {
+    val buf = v.get()
+    val idLength = ByteBuffer.wrap(buf, 0, 4).getInt
+    val (idPortion, geomDatePortion) = buf.drop(4).splitAt(idLength)
+    val id = new String(idPortion)
+    val geomLength = ByteBuffer.wrap(geomDatePortion, 0, 4).getInt
+    if(geomLength < (geomDatePortion.length - 4)) {
+      val (l,r) = geomDatePortion.drop(4).splitAt(geomLength)
+      _DecodedIndexValue(id, WKBUtils.read(l), Some(ByteBuffer.wrap(r).getLong))
+    } else {
+      _DecodedIndexValue(id, WKBUtils.read(geomDatePortion.drop(4)), None)
+    }
+  }
+
+  case class _DecodedIndexValue(id: String, geom: Geometry, dtgMillis: Option[Long])
 }

@@ -29,10 +29,12 @@ case class IndexValueEncoder(sft: SimpleFeatureType, fields: Seq[String]) {
   import org.locationtech.geomesa.core.index.IndexValueEncoder._
 
   fields.foreach(f => require(sft.getDescriptor(f) != null || f == ID_FIELD, s"Encoded field does not exist: $f"))
-  val types =
-    fields.map(f => if (f == ID_FIELD) classOf[String] else normalizeType(sft.getDescriptor(f).getType.getBinding))
+  val needsBackCompatible = fields == getDefaultSchema(sft) // this may need to decode data encoded the old way
 
-  val functions = types.map(t => getFunctions(t))
+  val types = fields.toIndexedSeq
+      .map(f => if (f == ID_FIELD) classOf[String] else normalizeType(sft.getDescriptor(f).getType.getBinding))
+
+  val functions = types.map(t => getFunctions(t, needsBackCompatible))
   val conversions = functions.map(_._1)
   val sizings = functions.map(_._2)
   val encodings = functions.map(_._3)
@@ -55,10 +57,17 @@ case class IndexValueEncoder(sft: SimpleFeatureType, fields: Seq[String]) {
     buf.array()
   }
 
-  def decode(value: Array[Byte]): Seq[Any] = {
+  def decode(value: Array[Byte]): Map[String, Any] = {
     val buf = ByteBuffer.wrap(value)
-    fieldsWithIndex.map { case (f, i) => decodings(i)(buf) }
+    fieldsWithIndex.map { case (f, i) => f -> decodings(i)(buf) }.toMap
   }
+
+  val geomField = sft.getGeometryDescriptor.getLocalName
+  val dtgField = core.index.getDtgFieldName(sft)
+
+  def id(map: Map[String, Any]): String = map(ID_FIELD).asInstanceOf[String]
+  def geometry(map: Map[String, Any]): Geometry = map(geomField).asInstanceOf[Geometry]
+  def date(map: Map[String, Any]): Option[Date] =  dtgField.flatMap(f => Option(map(f).asInstanceOf[Date]))
 }
 
 object IndexValueEncoder {
@@ -69,10 +78,11 @@ object IndexValueEncoder {
     override def initialValue() = scala.collection.mutable.Map.empty
   }
 
-  def apply(sft: SimpleFeatureType) = cache.get.getOrElseUpdate(sft.getTypeName, createNew(sft))
+  def apply(sft: SimpleFeatureType) = cache.get.getOrElseUpdate(sft.toString, createNew(sft))
 
   def getDefaultSchema(sft: SimpleFeatureType): Seq[String] =
-    (Seq(ID_FIELD, sft.getGeometryDescriptor.getLocalName) ++ core.index.getDtgFieldName(sft).toSeq).sorted
+    // order is important here, as it needs to match the old IndexEntry encoding
+    Seq(ID_FIELD, sft.getGeometryDescriptor.getLocalName) ++ core.index.getDtgFieldName(sft).toSeq
 
   private def createNew(sft: SimpleFeatureType) = {
     import scala.collection.JavaConversions._
@@ -84,7 +94,7 @@ object IndexValueEncoder {
       if (descriptors.isEmpty) {
         defaults
       } else {
-        (defaults.filterNot(descriptors.contains(_)) ++ descriptors).sorted
+        defaults ++ descriptors.filterNot(defaults.contains)
       }
     }
     new IndexValueEncoder(sft, schema)
@@ -101,9 +111,9 @@ object IndexValueEncoder {
       case c if classOf[java.lang.Double].isAssignableFrom(c)    => classOf[Double]
       case c if classOf[java.lang.Float].isAssignableFrom(c)     => classOf[Float]
       case c if classOf[java.lang.Boolean].isAssignableFrom(c)   => classOf[Boolean]
-      case c if classOf[UUID].isAssignableFrom(c)                => clas
-      case c if classOf[Date].isAssignableFrom(c)                => clas
-      case c if classOf[Geometry].isAssignableFrom(c)            => clas
+      case c if classOf[UUID].isAssignableFrom(c)                => classOf[UUID]
+      case c if classOf[Date].isAssignableFrom(c)                => classOf[Date]
+      case c if classOf[Geometry].isAssignableFrom(c)            => classOf[Geometry]
       case _                                                     =>
         throw new IllegalArgumentException(s"Invalid type for index encoding: $clas")
     }
@@ -113,7 +123,7 @@ object IndexValueEncoder {
   type EncodeFunction = (Any, ByteBuffer) => ByteBuffer
   type DecodeFunction = (ByteBuffer) => Any
 
-  private def getFunctions(clas: Class[_]):
+  private def getFunctions(clas: Class[_], needsBackCompatible: Boolean):
     (GetValueFunction, GetSizeFunction, EncodeFunction, DecodeFunction) =
     clas match {
       case c if c == classOf[String] => (
@@ -192,7 +202,14 @@ object IndexValueEncoder {
                 buf.put(1.toByte).putLong(long)
               case None => buf.put(0.toByte)
             },
-          (buf: ByteBuffer) => if (buf.get == 0.toByte) null else new Date(buf.getLong)
+          if (needsBackCompatible) {
+            (buf: ByteBuffer) =>
+              if (buf.remaining() == 8) {
+                new Date(buf.getLong) // back compatible test, doesn't include null byte check
+              } else if (buf.get == 0.toByte) null else new Date(buf.getLong)
+          } else {
+            (buf: ByteBuffer) => if (buf.get == 0.toByte) null else new Date(buf.getLong)
+          }
         )
 
       case c if c == classOf[Geometry] => (

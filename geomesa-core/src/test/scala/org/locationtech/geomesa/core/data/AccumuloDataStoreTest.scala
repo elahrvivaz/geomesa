@@ -288,7 +288,7 @@ class AccumuloDataStoreTest extends Specification {
         val f = features.next()
 
         "with matching schema" >> {
-          "name:String:index=false,*geom:Point:srid=4326:index=true,derived:String:index=false" mustEqual
+          "name:String,*geom:Point:srid=4326:index=true:stidx=true,derived:String" mustEqual
             SimpleFeatureTypes.encodeType(results.getSchema)
         }
 
@@ -386,7 +386,7 @@ class AccumuloDataStoreTest extends Specification {
         val f = features.next()
 
         "with matching schemas" >> {
-          "name:String:index=false,*geom:Point:srid=4326:index=true,derived:String:index=false" mustEqual SimpleFeatureTypes.encodeType(results.getSchema)
+          "name:String,*geom:Point:srid=4326:index=true:stidx=true,derived:String" mustEqual SimpleFeatureTypes.encodeType(results.getSchema)
         }
 
         "and correct results" >> {
@@ -423,7 +423,7 @@ class AccumuloDataStoreTest extends Specification {
         val f = features.next()
 
         "with matching schemas" >> {
-          "name:String:index=false,*geom:Point:srid=4326:index=true" mustEqual SimpleFeatureTypes.encodeType(results.getSchema)
+          "name:String,*geom:Point:srid=4326:index=true:stidx=true" mustEqual SimpleFeatureTypes.encodeType(results.getSchema)
         }
 
         "and correct results" >> {
@@ -767,7 +767,7 @@ class AccumuloDataStoreTest extends Specification {
       // accumulo supports only alphanum + underscore aka ^\\w+$
       // this should be OK
       val sftName = "somethingsafe3"
-      val sft = SimpleFeatureTypes.createType(sftName, s"name:String:index=true,numattr:Integer:index=false,dtg:Date,*geom:Point:srid=4326")
+      val sft = SimpleFeatureTypes.createType(sftName, s"name:String:index=true,numattr:Integer,dtg:Date,*geom:Point:srid=4326")
       ds.createSchema(sft)
 
       val mockInstance = new MockInstance("mycloud")
@@ -818,7 +818,7 @@ class AccumuloDataStoreTest extends Specification {
         "useMock"           -> "true")).asInstanceOf[AccumuloDataStore]
 
       val sftName = "testingCaching"
-      val sft = SimpleFeatureTypes.createType(sftName, s"name:String:index=true,numattr:Integer:index=false,dtg:Date,*geom:Point:srid=4326")
+      val sft = SimpleFeatureTypes.createType(sftName, s"name:String:index=true,numattr:Integer,dtg:Date,*geom:Point:srid=4326")
       ds.createSchema(sft)
 
       val mockInstance = new MockInstance("mycloud")
@@ -1003,8 +1003,8 @@ class AccumuloDataStoreTest extends Specification {
     }
 
     "update metadata for indexed attributes" in {
-      val originalSchema = "name:String:index=false,dtg:Date:index=false,*geom:Point:srid=4326:index=true"
-      val updatedSchema = "name:String:index=true,dtg:Date:index=false,*geom:Point:srid=4326:index=true"
+      val originalSchema = "name:String,dtg:Date,*geom:Point:srid=4326:index=true"
+      val updatedSchema = "name:String:index=true,dtg:Date,*geom:Point:srid=4326:index=true:stidx=true"
       val ds = createStore
       val sft = SimpleFeatureTypes.createType("test", originalSchema)
       ds.createSchema(sft)
@@ -1014,7 +1014,7 @@ class AccumuloDataStoreTest extends Specification {
     }
 
     "prevent changing schema types" in {
-      val originalSchema = "name:String:index=false,dtg:Date:index=false,*geom:Point:srid=4326:index=true"
+      val originalSchema = "name:String,dtg:Date,*geom:Point:srid=4326:index=true:stidx=true"
       val ds = createStore
       val sft = SimpleFeatureTypes.createType("test", originalSchema)
       ds.createSchema(sft)

@@ -158,7 +158,7 @@ class TimingsImpl extends Timings {
     val total = entries.map(_._2.time).sum
     val percentTimes = entries.map { case (id, timing) =>
       timing.synchronized(s"$id: ${(timing.time * 100 / total.toDouble).formatted("%.1f%%")}" +
-          s" ${timing.average.formatted("%.4f")} ms avg ")
+          s" ${timing.average.formatted("%.4f")} ms avg")
     }
     percentTimes.mkString(s"Total time: $total ms. Percent of time - ", ", ", "")
   }

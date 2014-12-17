@@ -59,6 +59,8 @@ class IndexIterator extends SpatioTemporalIntersectingIterator with SortedKeyVal
     val featureType = SimpleFeatureTypes.createType(this.getClass.getCanonicalName, simpleFeatureTypeSpec)
     featureType.decodeUserData(options, GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE)
 
+    indexEncoder = IndexValueEncoder(featureType)
+
     dateAttributeName = getDtgFieldName(featureType)
 
     // default to text if not found for backwards compatibility
@@ -89,12 +91,11 @@ class IndexIterator extends SpatioTemporalIntersectingIterator with SortedKeyVal
    * converted key value.  This is *IMPORTANT*, as otherwise we do not emit rows
    * that honor the SortedKeyValueIterator expectation, and Bad Things Happen.
    */
-  override def seekData(decodedValue: IndexEntry.DecodedIndexValue) {
+  override def seekData(nextId: String, geom: Geometry, date: Option[Long]) {
     // now increment the value of nextKey, copy because reusing it is UNSAFE
     nextKey = new Key(indexSource.getTopKey)
     // using the already decoded index value, generate a SimpleFeature and set as the Value
-    val nextSimpleFeature = IndexIterator.encodeIndexValueToSF(featureBuilder, decodedValue.id,
-      decodedValue.geom, decodedValue.dtgMillis)
+    val nextSimpleFeature = IndexIterator.encodeIndexValueToSF(featureBuilder, nextId, geom, date)
     nextValue = new Value(featureEncoder.encode(nextSimpleFeature))
   }
 
