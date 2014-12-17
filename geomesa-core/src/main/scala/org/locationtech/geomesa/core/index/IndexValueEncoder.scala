@@ -173,8 +173,6 @@ object IndexValueEncoder {
   private type EncodeFunction[T]   = (T, ByteBuffer) => Unit
   private type DecodeFunction[T]   = (ByteBuffer) => T
 
-  // encode/decode functions
-
   private val stringGetValue: GetValueFunction[String] =
     (value: String) => Option(value).map(_.getBytes("UTF-8")).getOrElse(Array.empty[Byte])
   private val stringGetSize: GetSizeFunction[Array[Byte]] =
