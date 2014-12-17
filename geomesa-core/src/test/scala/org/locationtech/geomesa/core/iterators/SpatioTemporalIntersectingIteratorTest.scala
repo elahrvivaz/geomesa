@@ -75,6 +75,39 @@ class SpatioTemporalIntersectingIteratorTest extends Specification with Logging 
     c
   }
 
+  "Consistency Iterator" should {
+    "verify consistency of table" in {
+      val c = setupMockAccumuloTable(TestData.shortListOfPoints)
+      val bs = c.createBatchScanner(TEST_TABLE, TEST_AUTHORIZATIONS, 8)
+      val cfg = new IteratorSetting(1000, "consistency-iter", classOf[ConsistencyCheckingIterator])
+
+      bs.setRanges(List(new org.apache.accumulo.core.data.Range()))
+      bs.addScanIterator(cfg)
+
+      // validate the total number of query-hits
+      bs.iterator().size mustEqual 0
+    }
+  }
+
+  "Consistency Iterator" should {
+    "verify inconsistency of table" in {
+      val c = setupMockAccumuloTable(TestData.shortListOfPoints)
+      val bd = c.createBatchDeleter(TEST_TABLE, TEST_AUTHORIZATIONS, 8, new BatchWriterConfig)
+      bd.setRanges(List(new org.apache.accumulo.core.data.Range()))
+      bd.fetchColumnFamily(new Text("|data|1".getBytes()))
+      bd.delete()
+      bd.flush()
+      val bs = c.createBatchScanner(TEST_TABLE, TEST_AUTHORIZATIONS, 8)
+      val cfg = new IteratorSetting(1000, "consistency-iter", classOf[ConsistencyCheckingIterator])
+
+      bs.setRanges(List(new org.apache.accumulo.core.data.Range()))
+      bs.addScanIterator(cfg)
+
+      // validate the total number of query-hits
+      bs.iterator().size mustEqual 1
+    }
+  }
+
   "Feature with a null ID" should {
     "not fail to insert" in {
       val c = Try(setupMockAccumuloTable(TestData.pointWithNoID))
