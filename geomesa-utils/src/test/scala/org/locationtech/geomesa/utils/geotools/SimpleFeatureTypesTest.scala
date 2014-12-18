@@ -187,8 +187,13 @@ class SimpleFeatureTypesTest extends Specification {
     "allow specification of ST index entry values" >> {
       val spec = "name:String:index=true:stidx=true,dtg:Date,*geom:Point:srid=4326"
       val sft = SimpleFeatureTypes.createType("test", spec)
-//      println(SimpleFeatureTypes.encodeType(sft))
       sft.getDescriptor("name").getUserData.get("stidx") mustEqual(true)
+    }
+
+    "automatically set default geom in ST index entry" >> {
+      val spec = "name:String:index=true:stidx=true,dtg:Date,*geom:Point:srid=4326"
+      val sft = SimpleFeatureTypes.createType("test", spec)
+      sft.getDescriptor("geom").getUserData.get("stidx") mustEqual(true)
     }
   }
 

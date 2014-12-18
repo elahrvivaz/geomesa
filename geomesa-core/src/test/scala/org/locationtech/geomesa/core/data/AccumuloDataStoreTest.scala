@@ -35,6 +35,7 @@ import org.geotools.factory.{CommonFactoryFinder, Hints}
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.feature.{DefaultFeatureCollection, NameImpl}
 import org.geotools.filter.text.cql2.CQL
+import org.geotools.filter.text.ecql.ECQL
 import org.geotools.geometry.jts.JTSFactoryFinder
 import org.geotools.process.vector.TransformProcess
 import org.geotools.referencing.CRS
@@ -42,7 +43,7 @@ import org.geotools.referencing.crs.DefaultGeographicCRS
 import org.joda.time.DateTime
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.core.index._
-import org.locationtech.geomesa.core.iterators.TestData
+import org.locationtech.geomesa.core.iterators.{IndexIterator, TestData}
 import org.locationtech.geomesa.core.security.{AuthorizationsProvider, DefaultAuthorizationsProvider, FilteringAuthorizationsProvider}
 import org.locationtech.geomesa.core.util.{CloseableIterator, SelfClosingIterator}
 import org.locationtech.geomesa.feature.AvroSimpleFeatureFactory
@@ -1079,6 +1080,51 @@ class AccumuloDataStoreTest extends Specification {
       writer.next.getID mustEqual "2"
       writer.hasNext must beFalse
     }
+
+    "Allow extra attributes in the STIDX entries" >> {
+      val sftName = "STIDXExtraAttributeTest"
+      val sft = SimpleFeatureTypes.createType(sftName,
+        "name:String:stidx=true,dtg:Date:stidx=true,*geom:Point:srid=4326,attr2:String")
+      val ds = createSchema(sft)
+
+      val builder = AvroSimpleFeatureFactory.featureBuilder(sft)
+      val features = (0 until 6).map { i =>
+        builder.set("geom", WKTUtils.read(s"POINT(45.0 4$i.0)"))
+        builder.set("dtg", s"2012-01-02T05:0$i:07.000Z")
+        builder.set("name", i.toString)
+        builder.set("attr2", "2-" + i.toString)
+        val sf = builder.buildFeature(i.toString)
+        sf.getUserData().update(Hints.USE_PROVIDED_FID, java.lang.Boolean.TRUE)
+        sf
+      }
+
+      val fs = ds.getFeatureSource(sftName).asInstanceOf[AccumuloFeatureStore]
+      fs.addFeatures(new ListFeatureCollection(sft, features))
+
+      val query = new Query(sftName, ECQL.toFilter("BBOX(geom, 40.0, 40.0, 50.0, 50.0)"),
+        Array("geom", "dtg", "name"))
+      val reader = ds.getFeatureReader(sftName, query)
+
+      // verify that the IndexIterator is getting used with the extra field
+      val explain = {
+        val out = new ExplainString
+        reader.explainQuery(o = out)
+        out.toString()
+      }
+      explain must contain(classOf[IndexIterator].getName)
+
+      val read = SelfClosingIterator(reader).toList
+
+      // verify that all the attributes came back
+      read must haveSize(6)
+      read.sortBy(_.getAttribute("name").asInstanceOf[String]).zipWithIndex.foreach { case (sf, i) =>
+        sf.getAttributeCount mustEqual 3
+        sf.getAttribute("name") mustEqual i.toString
+        sf.getAttribute("geom") mustEqual WKTUtils.read(s"POINT(45.0 4$i.0)")
+        sf.getAttribute("dtg").toString mustEqual s"Mon Jan 02 00:0$i:07 EST 2012"
+      }
+      success
+    }
   }
 
   "AccumuloFeatureStore" should {
@@ -1142,6 +1188,18 @@ class AccumuloDataStoreTest extends Specification {
   }
 
   def buildTestIndexSchemaFormat(featureName: String) = new IndexSchemaBuilder("~").randomNumber(3).constant(featureName).geoHash(0, 3).date("yyyyMMdd").nextPart().geoHash(3, 2).nextPart().id().build()
+
+  def createSchema(sft: SimpleFeatureType) = {
+    val ds = DataStoreFinder.getDataStore(Map(
+      "instanceId"        -> "mycloud",
+      "zookeepers"        -> "zoo1:2181,zoo2:2181,zoo3:2181",
+      "user"              -> "myuser",
+      "password"          -> "mypassword",
+      "tableName"         -> sft.getTypeName,
+      "useMock"           -> "true"))
+    ds.createSchema(sft)
+    ds.asInstanceOf[AccumuloDataStore]
+  }
 
   def createStore: AccumuloDataStore = {
     // need to add a unique ID, otherwise create schema will throw an exception

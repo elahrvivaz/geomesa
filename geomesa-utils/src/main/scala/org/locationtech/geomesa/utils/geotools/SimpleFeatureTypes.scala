@@ -47,7 +47,7 @@ object SimpleFeatureTypes {
     val geomAttributes = attributeSpecs.collect { case g: GeomAttributeSpec => g }
     val defaultGeom = geomAttributes.find(_.default).orElse(geomAttributes.headOption)
     val dateAttributes = attributeSpecs.collect { case s: SimpleAttributeSpec if s.clazz == classOf[Date] => s }
-    val defaultDate = dateAttributes.headOption // TODO allow for setting default date field
+    val defaultDate = dateAttributes.headOption // TODO GEOMESA-594 allow for setting default date field
     val b = new SimpleFeatureTypeBuilder()
     b.setNamespaceURI(namespace)
     b.setName(name)
@@ -138,8 +138,11 @@ object SimpleFeatureTypes {
   case class SimpleAttributeSpec(name: String, clazz: Class[_], index: Boolean, encodeInStIdx: Boolean)
       extends NonGeomAttributeSpec {
     override def toAttribute: AttributeDescriptor = {
-      val b = new AttributeTypeBuilder().binding(clazz).userData("index", index).userData("stidx", encodeInStIdx)
-      b.buildDescriptor(name)
+      new AttributeTypeBuilder()
+          .binding(clazz)
+          .userData("index", index)
+          .userData("stidx", encodeInStIdx)
+          .buildDescriptor(name)
     }
 
     override def toSpec = s"$name:${typeEncode(clazz)}$getIndexSpec"
@@ -150,9 +153,12 @@ object SimpleFeatureTypes {
     val encodeInStIdx = false // we only allow simple types in the ST IDX
 
     override def toAttribute: AttributeDescriptor = {
-      val b = new AttributeTypeBuilder().binding(clazz).userData("index", index).userData("stidx", encodeInStIdx)
-      b.userData("subtype", subClass)
-      b.buildDescriptor(name)
+      new AttributeTypeBuilder()
+          .binding(clazz)
+          .userData("index", index)
+          .userData("stidx", encodeInStIdx)
+          .userData("subtype", subClass)
+          .buildDescriptor(name)
     }
 
     override def toSpec = {
@@ -166,10 +172,13 @@ object SimpleFeatureTypes {
     val encodeInStIdx = false // we only allow simple types in the ST IDX
 
     override def toAttribute: AttributeDescriptor = {
-      val b = new AttributeTypeBuilder().binding(clazz).userData("index", index).userData("stidx", encodeInStIdx)
-      b.userData("keyclass", keyClass)
-      b.userData("valueclass", valueClass)
-      b.buildDescriptor(name)
+      new AttributeTypeBuilder()
+          .binding(clazz)
+          .userData("index", index)
+          .userData("stidx", encodeInStIdx)
+          .userData("keyclass", keyClass)
+          .userData("valueclass", valueClass)
+          .buildDescriptor(name)
     }
 
     override def toSpec =
