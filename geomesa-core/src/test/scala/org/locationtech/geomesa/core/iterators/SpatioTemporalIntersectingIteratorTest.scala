@@ -21,9 +21,11 @@ import org.apache.accumulo.core.client.mock.MockInstance
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.client.{BatchWriterConfig, Connector, IteratorSetting}
 import org.apache.accumulo.core.data.Mutation
+import org.apache.accumulo.core.iterators.user.RegExFilter
 import org.apache.hadoop.io.Text
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.core.data.METADATA_TAG
+import org.locationtech.geomesa.core.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.core.iterators.TestData._
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
@@ -61,50 +63,41 @@ class SpatioTemporalIntersectingIteratorTest extends Specification with Logging 
 
     logger.debug(s"Done adding mutations to table $tableName.")
 
-    // add the schema description
-    val mutSchema = new Mutation(s"${METADATA_TAG}_$featureName")
-    mutSchema.put("schema", "", schemaEncoding)
-    bw.addMutation(mutSchema)
-
-    // add the attributes description
-    val mutAttributes = new Mutation(s"${METADATA_TAG}_$featureName")
-    mutAttributes.put("attributes", "", TestData.getTypeSpec())
-    bw.addMutation(mutAttributes)
-
     bw.flush()
     c
   }
 
   "Consistency Iterator" should {
+
     "verify consistency of table" in {
       val c = setupMockAccumuloTable(TestData.shortListOfPoints)
-      val bs = c.createBatchScanner(TEST_TABLE, TEST_AUTHORIZATIONS, 8)
+      val s = c.createScanner(TEST_TABLE, TEST_AUTHORIZATIONS)
       val cfg = new IteratorSetting(1000, "consistency-iter", classOf[ConsistencyCheckingIterator])
+      s.addScanIterator(cfg)
 
-      bs.setRanges(List(new org.apache.accumulo.core.data.Range()))
-      bs.addScanIterator(cfg)
-
+      c.createScanner(TEST_TABLE, TEST_AUTHORIZATIONS).foreach(println(_))
       // validate the total number of query-hits
-      bs.iterator().size mustEqual 0
+      s.iterator().size mustEqual 0
     }
-  }
 
-  "Consistency Iterator" should {
     "verify inconsistency of table" in {
       val c = setupMockAccumuloTable(TestData.shortListOfPoints)
       val bd = c.createBatchDeleter(TEST_TABLE, TEST_AUTHORIZATIONS, 8, new BatchWriterConfig)
+      bd.addScanIterator({
+        val cfg = new IteratorSetting(100, "regex", classOf[RegExFilter])
+        RegExFilter.setRegexs(cfg, null, null, ".*\\|data\\|1___" + new String(SpatioTemporalTable.DATA_CQ_SUFFIX), null, false)
+        cfg
+      })
       bd.setRanges(List(new org.apache.accumulo.core.data.Range()))
-      bd.fetchColumnFamily(new Text("|data|1".getBytes()))
       bd.delete()
       bd.flush()
-      val bs = c.createBatchScanner(TEST_TABLE, TEST_AUTHORIZATIONS, 8)
+
+      val s = c.createScanner(TEST_TABLE, TEST_AUTHORIZATIONS)
       val cfg = new IteratorSetting(1000, "consistency-iter", classOf[ConsistencyCheckingIterator])
-
-      bs.setRanges(List(new org.apache.accumulo.core.data.Range()))
-      bs.addScanIterator(cfg)
-
+      s.addScanIterator(cfg)
+      c.createScanner(TEST_TABLE, TEST_AUTHORIZATIONS).foreach(println(_))
       // validate the total number of query-hits
-      bs.iterator().size mustEqual 1
+      s.iterator().size mustEqual 1
     }
   }
 

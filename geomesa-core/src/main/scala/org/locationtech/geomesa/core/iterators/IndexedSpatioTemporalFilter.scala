@@ -21,8 +21,6 @@ import java.util.{Map => JMap}
 import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.accumulo.core.data.{ByteSequence, Key, Range, Value}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
-import org.locationtech.geomesa.core.index.IndexEntry.DecodedIndexValue
-import org.locationtech.geomesa.core.index._
 
 class IndexedSpatioTemporalFilter
     extends HasIteratorExtensions
@@ -43,7 +41,6 @@ class IndexedSpatioTemporalFilter
     init(featureType, options)
     this.source = source.deepCopy(env)
   }
-
 
   override def hasTop = topKey.isDefined
 
@@ -71,8 +68,8 @@ class IndexedSpatioTemporalFilter
     while (topValue.isEmpty && source.hasTop) {
       val sourceValue = source.getTopValue
       val meetsFilter = stFilter.forall { fn =>
-        val DecodedIndexValue(_, geom, dtgOpt) = IndexEntry.decodeIndexValue(sourceValue)
-        fn(geom, dtgOpt)
+        val sf = indexEncoder.decode(sourceValue.get)
+        fn(sf.geom, sf.date.map(_.getTime))
       }
       if (meetsFilter) {
         topKey = Some(source.getTopKey)

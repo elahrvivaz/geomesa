@@ -1,8 +1,5 @@
 package org.locationtech.geomesa.core.index
 
-import java.nio.ByteBuffer
-import java.util.Date
-
 import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.data.{Key, Value}
@@ -13,7 +10,6 @@ import org.locationtech.geomesa.core._
 import org.locationtech.geomesa.core.data.SimpleFeatureEncoder
 import org.locationtech.geomesa.core.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.utils.geohash.{GeoHash, GeohashUtils}
-import org.locationtech.geomesa.utils.text.WKBUtils
 import org.opengis.feature.simple.SimpleFeature
 
 import scala.collection.JavaConversions._
@@ -46,55 +42,6 @@ object IndexEntry {
     def setStartTime(time: DateTime) = setTime(dtgStartField, time)
     def setEndTime(time: DateTime)   = setTime(dtgEndField, time)
   }
-
-  val dtAttributeCache = new ThreadLocal[scala.collection.mutable.Map[String, String]] {
-    override def initialValue() = scala.collection.mutable.Map.empty[String, String]
-  }
-
-  // the index value consists of the feature's:
-  // 1.  ID
-  // 2.  WKB-encoded geometry
-  // 3.  start-date/time
-  def encodeIndexValue(entry: SimpleFeature): Array[Byte] = {
-    val dtAttribute = dtAttributeCache.get()
-        .getOrElseUpdate(entry.getFeatureType.getTypeName, entry.dtgStartField)
-
-    val encodedId = entry.getID.getBytes("UTF-8")
-    val encodedGeom = WKBUtils.write(entry.getDefaultGeometry.asInstanceOf[Geometry])
-    val dtg = Option(entry.getAttribute(dtAttribute).asInstanceOf[Date]).map(_.getTime())
-    val dtgSize = if(dtg.isDefined) 8 else 0
-
-    val buf = ByteBuffer.allocate(8 + encodedId.size + encodedGeom.size + dtgSize)
-    buf.putInt(encodedId.size).put(encodedId)
-    buf.putInt(encodedGeom.size).put(encodedGeom)
-    dtg.foreach(buf.putLong)
-
-    buf.array()
-  }
-
-  def decodeIndexValue(v: Value): DecodedIndexValue = {
-    val buf = ByteBuffer.wrap(v.get())
-    val id = {
-      val size = buf.getInt
-      val bytes = new Array[Byte](size)
-      buf.get(bytes)
-      new String(bytes, "UTF-8")
-    }
-    val geom = {
-      val size = buf.getInt
-      val bytes = new Array[Byte](size)
-      buf.get(bytes)
-      WKBUtils.read(bytes)
-    }
-    val dtg = if (buf.hasRemaining) {
-      Some(buf.getLong)
-    } else {
-      None
-    }
-    DecodedIndexValue(id, geom, dtg)
-  }
-
-  case class DecodedIndexValue(id: String, geom: Geometry, dtgMillis: Option[Long])
 }
 
 case class IndexEntryEncoder(rowf: TextFormatter,
@@ -136,7 +83,7 @@ case class IndexEntryEncoder(rowf: TextFormatter,
     val baseKeys = geohashes.map(gh => formats.map(_.format(gh, dt, featureToEncode)))
 
     // the index value is the encoded date/time/fid
-    val indexValue = new Value(IndexEntry.encodeIndexValue(featureToEncode))
+    val indexValue = new Value(IndexValueEncoder(featureToEncode.getFeatureType).encode(featureToEncode))
     // the data value is the encoded SimpleFeature
     val dataValue = new Value(featureEncoder.encode(featureToEncode))
 

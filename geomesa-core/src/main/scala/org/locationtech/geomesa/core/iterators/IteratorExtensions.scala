@@ -58,6 +58,7 @@ class HasIteratorExtensions extends IteratorExtensions {
 trait HasFeatureType {
 
   var featureType: SimpleFeatureType = null
+  var indexEncoder: IndexValueEncoder = null
 
   // feature type config
   def initFeatureType(options: OptionMap) = {
@@ -65,6 +66,7 @@ trait HasFeatureType {
     featureType = SimpleFeatureTypes.createType(sftName,
       options.get(GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE))
     featureType.decodeUserData(options, GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE)
+    indexEncoder = IndexValueEncoder(featureType)
   }
 }
 
@@ -73,6 +75,7 @@ trait HasFeatureType {
  */
 trait HasFeatureBuilder extends HasFeatureType {
 
+  import org.locationtech.geomesa.core.index.IndexValueEncoder.ID_FIELD
   import org.locationtech.geomesa.core.iterators.IteratorTrigger._
 
   private var featureBuilder: SimpleFeatureBuilder = null
@@ -89,20 +92,22 @@ trait HasFeatureBuilder extends HasFeatureType {
     featureBuilder = AvroSimpleFeatureFactory.featureBuilder(featureType)
   }
 
+  def encodeIndexValueToSF(value: DecodedIndexValue): SimpleFeature = {
+    // Build and fill the Feature. This offers some performance gain over building and then setting the attributes.
+    featureBuilder.buildFeature(value.id, attributeArray(featureBuilder.getFeatureType, value))
+  }
+
   /**
-   * Converts values taken from the Index Value to a SimpleFeature
-   * Note that the ID, taken from the index, is preserved
-   * Also note that the SimpleFeature's other attributes may not be fully parsed and may be left as null;
-   * the SimpleFeatureFilteringIterator *may* remove the extraneous attributes later in the Iterator stack
-   *
-   * This method is not thread safe, but is generally called by the iterator which is single-threaded.
+   * Construct and fill an array of the SimpleFeature's attribute values
    */
-  def encodeIndexValueToSF(id: String, geom: Geometry, dtgMillis: Option[Long]): SimpleFeature = {
-    // Build and fill the Feature
-    // This offers some performance gain over building and then setting the attributes.
-    val dtgDate = dtgMillis.filter(_ => hasDtg).map(new Date(_))
-    fillAttributeArray(geom, dtgDate)
-    featureBuilder.buildFeature(id, attrArray)
+  def attributeArray(sft: SimpleFeatureType, indexValue: DecodedIndexValue): Array[AnyRef] = {
+    val attrArray = new Array[AnyRef](sft.getAttributeCount)
+    indexValue.attributes.foreach { case (name, value) =>
+      if (name != ID_FIELD) {
+        attrArray.update(sft.indexOf(name), value.asInstanceOf[AnyRef])
+      }
+    }
+    attrArray
   }
 
   /**

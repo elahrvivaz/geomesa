@@ -105,32 +105,31 @@ class AttributeIndexIterator
     while (topValue.isEmpty && indexSource.hasTop) {
 
       // the value contains the full-resolution geometry and time
-      lazy val decodedValue = IndexEntry.decodeIndexValue(indexSource.getTopValue)
+      lazy val decodedValue = indexEncoder.decode(indexSource.getTopValue.get)
 
       // evaluate the filter check
       val meetsIndexFilters =
-          stFilter.forall(fn => fn(decodedValue.geom, decodedValue.dtgMillis))
+          stFilter.forall(fn => fn(decodedValue.geom, decodedValue.date.map(_.getTime)))
 
       if (meetsIndexFilters) {
         // current entry matches our filter - update the key and value
         // copy the key because reusing it is UNSAFE
         topKey = Some(new Key(indexSource.getTopKey))
-        val transformedFeature =
-          encodeIndexValueToSF(decodedValue.id, decodedValue.geom, decodedValue.dtgMillis)
+        // using the already decoded index value, generate a SimpleFeature
+        val sf = encodeIndexValueToSF(decodedValue)
 
         // if they requested the attribute value, decode it from the row key
         if (attributeType.isDefined) {
           val row = topKey.get.getRow.toString
           val decoded = decodeAttributeIndexRow(attributeRowPrefix, attributeType.get, row)
           decoded match {
-            case Success(att) => transformedFeature.setAttribute(att.attributeName, att.attributeValue)
+            case Success(att) => sf.setAttribute(att.attributeName, att.attributeValue)
             case Failure(e) => logger.error(s"Error decoding attribute row: row: $row, error: ${e.toString}")
           }
         }
 
         // set the encoded simple feature as the value
-        topValue = transform.map(fn => new Value(fn(transformedFeature)))
-            .orElse(Some(new Value(featureEncoder.encode(transformedFeature))))
+        topValue = transform.map(fn => new Value(fn(sf))).orElse(Some(new Value(featureEncoder.encode(sf))))
       }
 
       // increment the underlying iterator

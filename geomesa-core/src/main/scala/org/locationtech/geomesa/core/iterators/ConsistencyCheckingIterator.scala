@@ -21,13 +21,14 @@ import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.accumulo.core.data._
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.apache.hadoop.io.Text
-import org.locationtech.geomesa.core.index.IndexEntry
+import org.locationtech.geomesa.core.data.tables.SpatioTemporalTable
+import org.locationtech.geomesa.core.index.IndexValueEncoder
+import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 
-class ConsistencyCheckingIterator
-  extends SortedKeyValueIterator[Key, Value]
-          with Logging {
+class ConsistencyCheckingIterator extends SortedKeyValueIterator[Key, Value] with Logging {
 
-  import scala.collection.JavaConverters._
+  import org.locationtech.geomesa.core.data.tables.SpatioTemporalTable._
+  import scala.collection.JavaConversions._
 
   private var indexSource: SortedKeyValueIterator[Key, Value] = null
   private var dataSource: SortedKeyValueIterator[Key, Value] = null
@@ -45,6 +46,11 @@ class ConsistencyCheckingIterator
     this.dataSource = source.deepCopy(env)
   }
 
+  val indexValueEncoder = {
+    val sft = SimpleFeatureTypes.createType("ConsistencyCheckingIterator", "*geom:Geometry:srid=4326")
+    IndexValueEncoder(sft)
+  }
+
   def hasTop = nextKey != null || topKey != null
 
   def getTopKey = topKey
@@ -52,33 +58,30 @@ class ConsistencyCheckingIterator
   def getTopValue = topValue
 
   def findTop() {
-    logger.trace("Finding top")
+    logger.debug("Finding top")
     // clear out the reference to the next entry
     nextKey = null
 
-    def isData = indexSource.getTopKey.getRow().toString.startsWith("~") ||
-      indexSource.getTopKey.getColumnFamily().toString.startsWith("|data|")
-
-    while (nextKey == null && indexSource.hasTop && !isData) {
-      logger.trace(s"Checking ${indexSource.getTopKey}")
+    while (nextKey == null && indexSource.hasTop) {
       nextKey = indexSource.getTopKey
-      curId = IndexEntry.decodeIndexValue(indexSource.getTopValue).id
-
-      val dataSeekKey = new Key(indexSource.getTopKey.getRow, new Text(curId))
-      val range = new Range(dataSeekKey, null)
-      val colFamilies = List[ByteSequence](new ArrayByteSequence(curId.getBytes)).asJavaCollection
-      dataSource.seek(range, colFamilies, true)
-
-      if(!dataSource.hasTop || dataSource.getTopKey.getColumnFamily.toString != curId) {
-        logger.debug(s"Found an inconsistent entry: ${indexSource.getTopKey}")
-        nextKey = indexSource.getTopKey
-        indexSource.next()
-      } else {
+      if (nextKey.getColumnQualifier.getBytes.endsWith(DATA_CQ_SUFFIX)) {
         nextKey = null
-        indexSource.next()
-        while (indexSource != null && indexSource.hasTop && isData)
-          indexSource.next()
+      } else {
+        logger.debug(s"Checking $nextKey")
+        curId = indexValueEncoder.decode(indexSource.getTopValue.get).id
+
+        val dataCq =
+          new Text(nextKey.getColumnQualifier.getBytes.dropRight(INDEX_CQ_SUFFIX.length) ++ DATA_CQ_SUFFIX)
+        val dataSeekKey = new Key(nextKey.getRow, nextKey.getColumnFamily, dataCq)
+        dataSource.seek(new Range(dataSeekKey, null), Seq.empty[ByteSequence], false)
+
+        if (!dataSource.hasTop || dataSource.getTopKey.getColumnQualifier.toString != dataCq.toString) {
+          logger.warn(s"Found an inconsistent entry: $nextKey")
+        } else {
+          nextKey = null
+        }
       }
+      indexSource.next()
     }
   }
 

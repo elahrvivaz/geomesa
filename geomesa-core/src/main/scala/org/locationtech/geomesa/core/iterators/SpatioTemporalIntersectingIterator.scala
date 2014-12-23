@@ -98,11 +98,11 @@ class SpatioTemporalIntersectingIterator
       if (SpatioTemporalTable.isIndexEntry(indexKey)) { // if this is a data entry, skip it
         // only decode it if we have a filter to evaluate
         // the value contains the full-resolution geometry and time plus feature ID
-        lazy val decodedValue = profile(IndexEntry.decodeIndexValue(source.getTopValue), "decodeIndexValue")
+        lazy val decodedValue = profile(indexEncoder.decode(source.getTopValue.get), "decodeIndexValue")
 
         // evaluate the filter checks, in least to most expensive order
         val meetsIndexFilters = profile(checkUniqueId.forall(fn => fn(decodedValue.id)), "checkUniqueId") &&
-            profile(stFilter.forall(fn => fn(decodedValue.geom, decodedValue.dtgMillis)), "stFilter")
+            profile(stFilter.forall(fn => fn(decodedValue.geom, decodedValue.date.map(_.getTime))), "stFilter")
 
         if (meetsIndexFilters) { // we hit a valid geometry, date and id
           // we increment the source iterator, which should point to a data entry

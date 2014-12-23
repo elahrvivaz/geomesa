@@ -103,16 +103,16 @@ class IndexIterator
       val indexKey = profile(source.getTopKey, "source.getTopKey")
 
       if (SpatioTemporalTable.isIndexEntry(indexKey)) { // if this is a data entry, skip it
-        // the value contains the full-resolution geometry and time plus feature ID
-        val decodedValue = profile(IndexEntry.decodeIndexValue(source.getTopValue), "decodeIndexValue")
+      // the value contains the full-resolution geometry and time plus feature ID
+      val decodedValue = profile(indexEncoder.decode(source.getTopValue.get), "decodeIndexValue")
 
         // evaluate the filter checks, in least to most expensive order
         val meetsIndexFilters = profile(checkUniqueId.forall(fn => fn(decodedValue.id)), "checkUniqueId") &&
-            profile(stFilter.forall(fn => fn(decodedValue.geom, decodedValue.dtgMillis)), "stFilter")
+            profile(stFilter.forall(fn => fn(decodedValue.geom, decodedValue.date.map(_.getTime))), "stFilter")
 
         if (meetsIndexFilters) { // we hit a valid geometry, date and id
-          val transformedFeature =
-            profile(encodeIndexValueToSF(decodedValue.id, decodedValue.geom, decodedValue.dtgMillis), "encodeIndexValueToSF")
+        val transformedFeature =
+          profile(encodeIndexValueToSF(decodedValue), "encodeIndexValueToSF")
           // update the key and value
           // copy the key because reusing it is UNSAFE
           topKey = Some(indexKey)
@@ -131,6 +131,7 @@ class IndexIterator
 }
 
 object IndexIterator {
+
   implicit val timings: Timings = new AutoLoggingTimings()
   implicit val noOpTimings: Timings = new NoOpTimings()
 }
