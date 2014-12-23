@@ -27,29 +27,21 @@ import org.opengis.feature.`type`.AttributeDescriptor
 import scala.util.{Failure, Success}
 
 /**
- * This is an Attribute Index Only Iterator. It should be used to avoid a join on the records table
- * in cases where only the geom, dtg and attribute in question are needed.
- *
- * This iterator returns as its nextKey the key for the index. nextValue is
- * the value for the INDEX, mapped into a SimpleFeature
+ * Iterator for the record table. Applies transforms and ECQL filters.
  */
-class AttributeIndexIterator
+class RecordTableIterator
     extends HasIteratorExtensions
     with SortedKeyValueIterator[Key, Value]
-    with HasFeatureBuilder
+    with HasFeatureType
     with HasFeatureDecoder
-    with HasSpatioTemporalFilter
+    with HasEcqlFilter
     with HasTransforms
     with Logging {
 
-  var indexSource: SortedKeyValueIterator[Key, Value] = null
+  var source: SortedKeyValueIterator[Key, Value] = null
 
   var topKey: Option[Key] = None
   var topValue: Option[Value] = None
-
-  // the following fields get filled in during init
-  var attributeRowPrefix: String = null
-  var attributeType: Option[AttributeDescriptor] = null
 
   override def init(source: SortedKeyValueIterator[Key, Value],
                     options: java.util.Map[String, String],
@@ -60,12 +52,7 @@ class AttributeIndexIterator
     initFeatureType(options)
     init(featureType, options)
 
-    attributeRowPrefix = index.getTableSharingPrefix(featureType)
-    // if we're retrieving the attribute, we need the class in order to decode it
-    attributeType = Option(options.get(GEOMESA_ITERATORS_ATTRIBUTE_NAME))
-        .flatMap(n => Option(featureType.getDescriptor(n)))
-
-    this.indexSource = source.deepCopy(env)
+    this.source = source.deepCopy(env)
   }
 
   override def hasTop = topKey.isDefined
@@ -83,7 +70,7 @@ class AttributeIndexIterator
    */
   override def seek(range: Range, columnFamilies: java.util.Collection[ByteSequence], inclusive: Boolean) {
     // move the source iterator to the right starting spot
-    indexSource.seek(range, columnFamilies, inclusive)
+    source.seek(range, columnFamilies, inclusive)
     findTop()
   }
 
@@ -102,44 +89,31 @@ class AttributeIndexIterator
     topValue = None
 
     // loop while there is more data and we haven't matched our filter
-    while (topValue.isEmpty && indexSource.hasTop) {
+    while (topValue.isEmpty && source.hasTop) {
 
+      val sourceValue = source.getTopValue
       // the value contains the full-resolution geometry and time
-      lazy val decodedValue = IndexEntry.decodeIndexValue(indexSource.getTopValue)
-
+      lazy val feature = featureDecoder.decode(sourceValue)
+      // TODO we could decode it already transformed if we check that the filters are covered
       // evaluate the filter check
-      val meetsIndexFilters =
-          stFilter.forall(fn => fn(decodedValue.geom, decodedValue.dtgMillis))
+      val meetsFilters = ecqlFilter.forall(fn => fn(feature))
 
-      if (meetsIndexFilters) {
+      if (meetsFilters) {
         // current entry matches our filter - update the key and value
         // copy the key because reusing it is UNSAFE
-        topKey = Some(new Key(indexSource.getTopKey))
-        val transformedFeature =
-          encodeIndexValueToSF(decodedValue.id, decodedValue.geom, decodedValue.dtgMillis)
-
-        // if they requested the attribute value, decode it from the row key
-        if (attributeType.isDefined) {
-          val row = topKey.get.getRow.toString
-          val decoded = decodeAttributeIndexRow(attributeRowPrefix, attributeType.get, row)
-          decoded match {
-            case Success(att) => transformedFeature.setAttribute(att.attributeName, att.attributeValue)
-            case Failure(e) => logger.error(s"Error decoding attribute row: row: $row, error: ${e.toString}")
-          }
-        }
-
-        // set the encoded simple feature as the value
-        topValue = transform.map(fn => new Value(fn(transformedFeature)))
-            .orElse(Some(new Value(featureEncoder.encode(transformedFeature))))
+        topKey = Some(new Key(source.getTopKey))
+        // return the value or transform it as required
+        topValue = transform.map(fn => new Value(fn(feature)))
+            .orElse(Some(new Value(sourceValue)))
       }
 
       // increment the underlying iterator
-      indexSource.next()
+      source.next()
     }
   }
 
   override def deepCopy(env: IteratorEnvironment) =
-    throw new UnsupportedOperationException("AttributeIndexIterator does not support deepCopy.")
+    throw new UnsupportedOperationException("RecordTableIterator does not support deepCopy.")
 }
 
 

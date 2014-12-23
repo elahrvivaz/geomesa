@@ -93,30 +93,6 @@ class AttributeIndexFilteringIteratorTest extends Specification {
 
   "AttributeIndexFilteringIterator" should {
 
-    "implement the Accumulo iterator stack properly" in {
-      val table = "AttributeIndexFilteringIteratorTest_2"
-      val instance = new MockInstance(table)
-      val conn = instance.getConnector("", new PasswordToken(""))
-      conn.tableOperations.create(table, true, TimeType.LOGICAL)
-
-      val bw = conn.createBatchWriter(table, new BatchWriterConfig)
-      featureCollection.foreach { feature =>
-        val muts = AttributeTable.getAttributeIndexMutations(feature,
-                                                             sft.getAttributeDescriptors,
-                                                             new ColumnVisibility(), "")
-        bw.addMutations(muts)
-      }
-      bw.close()
-
-      // Scan and retrive type = b manually with the iterator
-      val scanner = conn.createScanner(table, new Authorizations())
-      val is = new IteratorSetting(40, classOf[AttributeIndexFilteringIterator])
-      scanner.addScanIterator(is)
-      val range = AttributeTable.getAttributeIndexRows("", sft.getDescriptor("name"), Some("b")).head
-      scanner.setRange(new ARange(range))
-      scanner.iterator.size mustEqual 4
-    }
-
     "handle like queries and choose correct strategies" in {
       // Try out wildcard queries using the % wildcard syntax.
       // Test single wildcard, trailing, leading, and both trailing & leading wildcards

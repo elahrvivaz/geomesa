@@ -23,6 +23,7 @@ import org.geotools.filter.text.ecql.ECQL
 import org.joda.time.{DateTime, DateTimeZone}
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.core._
+import org.locationtech.geomesa.core.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.core.data.{FeatureEncoding, SimpleFeatureEncoder}
 import org.locationtech.geomesa.feature.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -81,6 +82,8 @@ class IndexSchemaTest extends Specification {
   val schemaEncoding = "%~#s%feature#cstr%99#r::%~#s%0,4#gh::%~#s%4,3#gh%#id"
   val index = IndexSchema(schemaEncoding, dummyType, dummyEncoder)
 
+  val indexSuffix = new String(SpatioTemporalTable.INDEX_CQ_SUFFIX, "UTF-8")
+
   "single-point (-78.4953560 38.0752150)" should {
     "encode to 1 index row" in {
       val point : Geometry = WKTUtils.read("POINT(-78.4953560 38.0752150)")
@@ -89,7 +92,7 @@ class IndexSchemaTest extends Specification {
       indexEntries.size must equalTo(2)
       val key : Key = indexEntries.head._1
       val keyStr : String = key.getColumnFamily + "::" + key.getColumnQualifier
-      keyStr must equalTo("dqb0::tg3~TEST_POINT")
+      keyStr must equalTo("dqb0::tg3~TEST_POINT" + indexSuffix)
     }
   }
 
@@ -101,7 +104,7 @@ class IndexSchemaTest extends Specification {
       indexEntries.size must equalTo(6)
       val key : Key = indexEntries.head._1
       val keyStr : String = key.getColumnFamily + "::" + key.getColumnQualifier
-      keyStr must equalTo("dqb0::mdw~TEST_LINE")
+      keyStr must equalTo("dqb0::mdw~TEST_LINE" + indexSuffix)
     }
   }
 
@@ -113,7 +116,7 @@ class IndexSchemaTest extends Specification {
       indexEntries.size must equalTo(6)
       val key : Key = indexEntries.head._1
       val keyStr : String = key.getColumnFamily + "::" + key.getColumnQualifier
-      keyStr must equalTo("dn..::...~TEST_POLYGON")
+      keyStr must equalTo("dn..::...~TEST_POLYGON" + indexSuffix)
     }
   }
 
