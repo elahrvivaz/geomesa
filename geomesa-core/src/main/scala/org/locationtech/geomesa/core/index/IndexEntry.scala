@@ -1,7 +1,5 @@
 package org.locationtech.geomesa.core.index
 
-import java.nio.ByteBuffer
-
 import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.data.{Key, Value}
@@ -9,9 +7,9 @@ import org.apache.hadoop.io.Text
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.joda.time.{DateTime, DateTimeZone}
 import org.locationtech.geomesa.core._
-import org.locationtech.geomesa.core.data.{DATA_CQ, SimpleFeatureEncoder}
+import org.locationtech.geomesa.core.data.SimpleFeatureEncoder
+import org.locationtech.geomesa.core.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.utils.geohash.{GeoHash, GeohashUtils}
-import org.locationtech.geomesa.utils.text.WKBUtils
 import org.opengis.feature.simple.SimpleFeature
 
 import scala.collection.JavaConversions._
@@ -44,37 +42,6 @@ object IndexEntry {
     def setStartTime(time: DateTime) = setTime(dtgStartField, time)
     def setEndTime(time: DateTime)   = setTime(dtgEndField, time)
   }
-
-  // the index value consists of the feature's:
-  // 1.  ID
-  // 2.  WKB-encoded geometry
-  // 3.  start-date/time
-  def encodeIndexValue(entry: SimpleFeature): Value = {
-    val encodedId = entry.sid.getBytes
-    val encodedGeom = WKBUtils.write(entry.geometry)
-    val encodedDtg = entry.dt.map(dtg => ByteBuffer.allocate(8).putLong(dtg.getMillis).array()).getOrElse(Array[Byte]())
-
-    new Value(
-               ByteBuffer.allocate(4).putInt(encodedId.length).array() ++ encodedId ++
-               ByteBuffer.allocate(4).putInt(encodedGeom.length).array() ++ encodedGeom ++
-               encodedDtg)
-  }
-
-  def decodeIndexValue(v: Value): DecodedIndexValue = {
-    val buf = v.get()
-    val idLength = ByteBuffer.wrap(buf, 0, 4).getInt
-    val (idPortion, geomDatePortion) = buf.drop(4).splitAt(idLength)
-    val id = new String(idPortion)
-    val geomLength = ByteBuffer.wrap(geomDatePortion, 0, 4).getInt
-    if(geomLength < (geomDatePortion.length - 4)) {
-      val (l,r) = geomDatePortion.drop(4).splitAt(geomLength)
-      DecodedIndexValue(id, WKBUtils.read(l), Some(ByteBuffer.wrap(r).getLong))
-    } else {
-      DecodedIndexValue(id, WKBUtils.read(geomDatePortion.drop(4)), None)
-    }
-  }
-
-  case class DecodedIndexValue(id: String, geom: Geometry, dtgMillis: Option[Long])
 }
 
 case class IndexEntryEncoder(rowf: TextFormatter,
@@ -109,28 +76,25 @@ case class IndexEntryEncoder(rowf: TextFormatter,
     val v = new Text(visibility)
     val dt = featureToEncode.dt.getOrElse(new DateTime()).withZone(timeZone)
 
-    // remember the resulting index-entries
-    val keys = geohashes.map { gh =>
-      val Array(r, cf, cq) = formats.map { _.format(gh, dt, featureToEncode) }
-      new Key(r, cf, cq, v)
-    }
-    val rowIDs = keys.map(_.getRow)
-    val id = new Text(featureToEncode.sid)
+    // data entries are stored separately (and independently) from the index entries
+    // data entries need to sort immediately after the corresponding index entry to facilitate scans
 
-    val indexValue = IndexEntry.encodeIndexValue(featureToEncode)
-    val iv = new Value(indexValue)
-    // the index entries are (key, FID) pairs
-    val indexEntries = keys.map { k => (k, iv) }
+    // base keys shared by the data and index values
+    val baseKeys = geohashes.map(gh => formats.map(_.format(gh, dt, featureToEncode)))
 
-    // the (single) data value is the encoded (serialized-to-string) SimpleFeature
+    // the index value is the encoded date/time/fid
+    val indexValue = new Value(IndexValueEncoder(featureToEncode.getFeatureType).encode(featureToEncode))
+    // the data value is the encoded SimpleFeature
     val dataValue = new Value(featureEncoder.encode(featureToEncode))
 
-    // data entries are stored separately (and independently) from the index entries;
-    // each attribute gets its own data row (though currently, we use only one attribute
-    // that represents the entire, encoded feature)
-    val dataEntries = rowIDs.map { rowID =>
-      val key = new Key(rowID, id, DATA_CQ, v)
-      (key, dataValue)
+    // the entries are (key, value) pairs
+    val indexEntries = baseKeys.map { case Array(row, cf, cqBase) =>
+      val cq = new Text(cqBase.copyBytes() ++ SpatioTemporalTable.INDEX_CQ_SUFFIX)
+      (new Key(row, cf, cq, v), indexValue)
+    }
+    val dataEntries = baseKeys.map { case Array(row, cf, cqBase) =>
+      val cq = new Text(cqBase.copyBytes() ++ SpatioTemporalTable.DATA_CQ_SUFFIX)
+      (new Key(row, cf, cq, v), dataValue)
     }
 
     (indexEntries ++ dataEntries).toList

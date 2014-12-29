@@ -21,12 +21,28 @@ import org.apache.accumulo.core.client.{BatchDeleter, BatchWriter, Connector}
 import org.apache.accumulo.core.data
 import org.apache.accumulo.core.data.{Key, Mutation, Value}
 import org.apache.hadoop.io.Text
+import org.locationtech.geomesa.core.index.IndexEntryDecoder._
 import org.locationtech.geomesa.core.index.{IndexEntryEncoder, IndexSchema, _}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.collection.JavaConverters._
 
 object SpatioTemporalTable extends Logging {
+
+  val NULLBYTE = "\u0000".getBytes("UTF-8")
+
+  // index suffix needs to sort before data suffix
+  val INDEX_CQ_SUFFIX: Array[Byte] = NULLBYTE ++ "0".getBytes("UTF-8")
+  val DATA_CQ_SUFFIX: Array[Byte] = NULLBYTE ++ "1".getBytes("UTF-8")
+
+  // if it's not a data entry, it's an index entry
+  // (though we still share some requirements -- non-nulls -- with data entries)
+  def isIndexEntry(key: Key): Boolean = key.getColumnQualifier.getBytes.endsWith(INDEX_CQ_SUFFIX)
+
+  // data rows are the only ones with "SimpleFeatureAttribute" in the ColQ
+  // (if we expand on the idea of separating out attributes more, we will need
+  // to revisit this function)
+  def isDataEntry(key: Key): Boolean = key.getColumnQualifier.getBytes.endsWith(DATA_CQ_SUFFIX)
 
   def spatioTemporalWriter(bw: BatchWriter, visibility: String, encoder: IndexEntryEncoder): SimpleFeature => Unit =
     (feature: SimpleFeature) => {
