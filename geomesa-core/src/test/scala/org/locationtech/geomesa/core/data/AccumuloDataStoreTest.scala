@@ -1091,6 +1091,42 @@ class AccumuloDataStoreTest extends Specification {
       updated.getID mustEqual("2")
       updated.getAttribute("name") mustEqual "2-updated"
     }
+
+    "create key plan correctly" in {
+      val sftName1 = "keyPlanTest1"
+      val sftName2 = "keyPlanTest2"
+
+      val ds = createStore
+      val sft1 = SimpleFeatureTypes
+          .createType(sftName1, "name:String,attr:String,dtg:Date,*geom:Point:srid=4326")
+      ds.createSchema(sft1)
+      val sft2 = SimpleFeatureTypes
+          .createType(sftName2, "name:String,attr:String,dtg:Date,*geom:Point:srid=4326")
+      ds.createSchema(sft2)
+
+      val geom = WKTUtils.read("POINT(50.0 49.0)")
+      val dtg = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSSZ").parse("2014-01-01T12:30:00.000+0000")
+      val feat1 = new SimpleFeatureBuilder(sft1).buildFeature("fid-1", Array("name1", "v1", dtg, geom))
+      val feat2 = new SimpleFeatureBuilder(sft2).buildFeature("fid-2", Array("name2", "v2", dtg, geom))
+      ds.getFeatureSource(sftName1).asInstanceOf[SimpleFeatureStore].addFeatures(new ListFeatureCollection(sft1, Seq(feat1)))
+      ds.getFeatureSource(sftName2).asInstanceOf[SimpleFeatureStore].addFeatures(new ListFeatureCollection(sft2, Seq(feat2)))
+
+      val filter = // CQL.toFilter("dtg BETWEEN '2013-01-01T00:00:00.000Z' AND '2015-01-02T00:00:00.000Z'")
+              CQL.toFilter("bbox(geom,-180,-90,180,90) AND dtg BETWEEN '2013-01-01T00:00:00.000Z' AND '2015-01-02T00:00:00.000Z'")
+      val query = new Query(sftName1, filter, Array("geom"))
+
+      // Let's read out what we wrote.
+      val features = SelfClosingIterator(ds.getFeatureSource(sftName1).getFeatures(query).features).toList
+      features.size mustEqual 1
+      features(0) mustEqual feat1
+
+      val explain = {
+        val o = new ExplainString
+        ds.getFeatureReader(sftName1, query).explainQuery(o = o)
+        o.toString()
+      }
+      explain must not contain("GeoHashKeyPlanner: KeyInvalid")
+    }
   }
 
   "AccumuloFeatureStore" should {

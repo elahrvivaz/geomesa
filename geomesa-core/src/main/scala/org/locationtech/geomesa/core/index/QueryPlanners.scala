@@ -321,7 +321,9 @@ case class GeoHashKeyPlanner(offset: Int, bits: Int) extends KeyPlanner with Geo
       output(s"GeoHashKeyPlanner: KeyAccept")
       KeyAccept
 
-    case _ => KeyInvalid
+    case _ =>
+      output(s"GeoHashKeyPlanner: KeyInvalid")
+      KeyInvalid
   }
 }
 
