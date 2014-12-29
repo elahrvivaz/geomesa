@@ -983,6 +983,45 @@ class AccumuloDataStoreTest extends Specification {
       updated.getAttribute("name") mustEqual "2-updated"
     }
 
+    "allow caching to be configured" in {
+      val sftName = "cachingTest"
+      DataStoreFinder.getDataStore(Map(
+        "instanceId"        -> "mycloud",
+        "zookeepers"        -> "zoo1:2181,zoo2:2181,zoo3:2181",
+        "user"              -> "myuser",
+        "password"          -> "mypassword",
+        "auths"             -> "A,B,C",
+        "tableName"         -> sftName,
+        "useMock"           -> "true",
+        "caching"           -> false,
+        "featureEncoding"   -> "avro")).asInstanceOf[AccumuloDataStore].cachingConfig must beFalse
+      DataStoreFinder.getDataStore(Map(
+        "instanceId"        -> "mycloud",
+        "zookeepers"        -> "zoo1:2181,zoo2:2181,zoo3:2181",
+        "user"              -> "myuser",
+        "password"          -> "mypassword",
+        "auths"             -> "A,B,C",
+        "tableName"         -> sftName,
+        "useMock"           -> "true",
+        "caching"           -> true,
+        "featureEncoding"   -> "avro")).asInstanceOf[AccumuloDataStore].cachingConfig must beTrue
+    }
+
+    "use caching by default" in {
+      val sftName = "cachingTest"
+      val instance = new MockInstance
+      val connector = instance.getConnector("user", new PasswordToken("pass".getBytes()))
+      val params = Map(
+        "connector" -> connector,
+        "tableName" -> sftName)
+      val ds = DataStoreFinder.getDataStore(params).asInstanceOf[AccumuloDataStore]
+      ds.cachingConfig must beTrue
+    }
+
+    "not use caching by default with mocks" in {
+      ds.cachingConfig must beFalse
+    }
+
     "Allow extra attributes in the STIDX entries" in {
       val sftName = "StidxExtraAttributeTest"
       val spec =
