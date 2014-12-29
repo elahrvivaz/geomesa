@@ -2,6 +2,7 @@ package org.locationtech.geomesa.core.iterators
 
 import java.util.{Collection => JCollection}
 
+import com.typesafe.scalalogging.slf4j.Logging
 import org.geotools.data.{DataUtilities, Query}
 import org.geotools.filter.text.ecql.ECQL
 import org.geotools.process.vector.TransformProcess
@@ -12,7 +13,7 @@ import org.locationtech.geomesa.core.index._
 import org.locationtech.geomesa.utils.geotools.Conversions.RichAttributeDescriptor
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
-import org.opengis.filter.expression.PropertyName
+import org.opengis.filter.expression.{Function, PropertyName}
 
 import scala.collection.JavaConverters._
 
@@ -27,7 +28,7 @@ case object RecordJoinIterator extends IteratorChoice
 
 case class IteratorConfig(iterator: IteratorChoice, hasTransformOrFilter: Boolean, transformCoversFilter: Boolean)
 
-object IteratorTrigger {
+object IteratorTrigger extends Logging {
 
   /**
    * Convenience class for inspecting simple feature types
@@ -80,7 +81,7 @@ object IteratorTrigger {
                            sourceSFT: SimpleFeatureType,
                            indexedAttribute: Option[String] = None): Boolean = {
     // get transforms if they exist
-    val transformDefs = Option(query.getHints.get(TRANSFORMS)).map (_.asInstanceOf[String])
+    val transformDefs = Option(query.getHints.get(TRANSFORMS)).map(_.asInstanceOf[String])
 
     // if the transforms exist, check if the transform is simple enough to be handled by the IndexIterator
     // if it does not exist, then set this variable to false
@@ -107,8 +108,20 @@ object IteratorTrigger {
   def doTransformsCoverFilters(query: Query): Boolean =
     Option(query.getHints.get(TRANSFORMS).asInstanceOf[String]).map { transformString =>
       val filterAttributes = getFilterAttributes(query.getFilter)
-      val transforms = TransformProcess.toDefinition(transformString).asScala
-          .map(_.expression.asInstanceOf[PropertyName].getPropertyName)
+      val transforms: Seq[String] =
+        TransformProcess.toDefinition(transformString).asScala
+          .flatMap { _.expression match {
+              case p if p.isInstanceOf[PropertyName] => Seq(p.asInstanceOf[PropertyName].getPropertyName)
+              case f if f.isInstanceOf[Function] =>
+                f.asInstanceOf[Function].getParameters.asScala
+                    .collect {
+                      case p if p.isInstanceOf[PropertyName] => p.asInstanceOf[PropertyName].getPropertyName
+                    }
+              case u =>
+                logger.warn(s"Unhandled transform: $u")
+                Seq.empty
+            }
+          }
       filterAttributes.forall(transforms.contains(_))
     }.getOrElse(true)
 
