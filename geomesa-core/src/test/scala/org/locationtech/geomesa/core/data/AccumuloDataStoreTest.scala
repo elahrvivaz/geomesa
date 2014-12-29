@@ -422,16 +422,16 @@ class AccumuloDataStoreTest extends Specification {
       addDefaultPoint(sft, List(defaultName, geom, dtg), "fid-2")
 
       val filter =
-        CQL.toFilter("bbox(geom,-180,-90,180,90) AND dtg BETWEEN '2013-01-01T00:00:00.000Z' AND '2015-01-02T00:00:00.000Z'")
+        CQL.toFilter("bbox(geom,40,40,60,60) AND dtg BETWEEN '2013-01-01T00:00:00.000Z' AND '2015-01-02T00:00:00.000Z'")
       val query = new Query(sftName, filter)
 
       // Let's read out what we wrote.
       val features = ds.getFeatureSource(sftName).getFeatures(query).features
       features.hasNext must beTrue
       val f = features.next()
-      DataUtilities.encodeFeature(f) mustEqual "fid-1xxx=POINT (50 49)"
+      DataUtilities.encodeFeature(f) mustEqual "fid-2=testType|POINT (50 49)|2014-01-01T12:30:00.000Z"
       features.hasNext must beFalse
-    }.pendingUntilFixed("broken")
+    }
 
     "handle requests with namespaces" in {
       // create the data store
