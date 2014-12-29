@@ -149,16 +149,15 @@ trait HasFeatureDecoder extends IteratorExtensions {
 trait HasSpatioTemporalFilter extends IteratorExtensions {
 
   private var filterOption: Option[Filter] = None
-  private var dateAttributeName: Option[String] = None
+  private var dateAttributeIndex: Option[Int] = None
   private var testSimpleFeature: Option[SimpleFeature] = None
 
   lazy val stFilter: Option[(Geometry, Option[Long]) => Boolean] =
     for (filter <- filterOption.filterNot(_ == Filter.INCLUDE); feat <- testSimpleFeature) yield {
       (geom: Geometry, olong: Option[Long]) => {
         feat.setDefaultGeometry(geom)
-        dateAttributeName.foreach { dateAttribute =>
-          val date = new Date(olong.getOrElse(System.currentTimeMillis()))
-          feat.setAttribute(dateAttribute, date)
+        dateAttributeIndex.foreach { i =>
+          olong.map(new Date(_)).foreach(feat.setAttribute(i, _))
         }
         filter.evaluate(feat)
       }
@@ -167,7 +166,7 @@ trait HasSpatioTemporalFilter extends IteratorExtensions {
   // spatio-temporal filter config
   abstract override def init(featureType: SimpleFeatureType, options: OptionMap) = {
     super.init(featureType, options)
-    dateAttributeName = getDtgFieldName(featureType)
+    dateAttributeIndex = getDtgFieldName(featureType).map(featureType.indexOf)
     if (options.containsKey(ST_FILTER_PROPERTY_NAME)) {
       val filterString = options.get(ST_FILTER_PROPERTY_NAME)
       filterOption = Some(ECQL.toFilter(filterString))
