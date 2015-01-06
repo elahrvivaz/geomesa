@@ -17,7 +17,8 @@
 package org.locationtech.geomesa.core.iterators
 
 import com.typesafe.scalalogging.slf4j.Logging
-import org.apache.accumulo.core.data.{ByteSequence, Key, Range, Value}
+import org.apache.accumulo.core.data._
+import org.apache.accumulo.core.iterators.user.VersioningIterator
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.locationtech.geomesa.core.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.utils.stats.{AutoLoggingTimings, MethodProfiling, NoOpTimings, Timings}
@@ -48,7 +49,8 @@ class SpatioTemporalIntersectingIterator
 
   var topKey: Option[Key] = None
   var topValue: Option[Value] = None
-  var source: SortedKeyValueIterator[Key, Value] = null
+  var indexSource: SortedKeyValueIterator[Key, Value] = null
+  var dataSource: SortedKeyValueIterator[Key, Value] = null
 
   override def init(
       source: SortedKeyValueIterator[Key, Value],
@@ -58,7 +60,8 @@ class SpatioTemporalIntersectingIterator
     TServerClassLoader.initClassLoader(logger)
     initFeatureType(options)
     init(featureType, options)
-    this.source = source.deepCopy(env)
+    this.indexSource = source.deepCopy(env)
+    this.dataSource = source.deepCopy(env)
   }
 
   override def hasTop = topKey.isDefined
@@ -68,8 +71,27 @@ class SpatioTemporalIntersectingIterator
   override def getTopValue = topValue.orNull
 
   override def seek(range: Range, columnFamilies: java.util.Collection[ByteSequence], inclusive: Boolean) {
+    import scala.collection.JavaConverters._
     // move the source iterator to the right starting spot
-    profile(source.seek(range, columnFamilies, inclusive), "source.seek")
+    profile(indexSource.seek(range, columnFamilies, inclusive), "source.seek")
+    val start = range.getStartKey
+    val end = range.getEndKey
+    val s = new Key(start.getRow.copyBytes(),
+      SpatioTemporalTable.INDEX_CF_PREFIX ++ start.getColumnFamily.copyBytes(),
+      start.getColumnQualifier.copyBytes(),
+      start.getColumnVisibility.copyBytes(),
+      start.getTimestamp,
+      start.isDeleted)
+    val e = new Key(end.getRow.copyBytes(),
+      SpatioTemporalTable.INDEX_CF_PREFIX ++ end.getColumnFamily.copyBytes(),
+      end.getColumnQualifier.copyBytes(),
+      end.getColumnVisibility.copyBytes(),
+      end.getTimestamp,
+      end.isDeleted)
+    val r = new Range(s, e)
+    val cfs: Seq[ByteSequence] =
+      columnFamilies.asScala.map(cf => new ArrayByteSequence(SpatioTemporalTable.INDEX_CF_PREFIX ++ cf.getBackingArray)).toSeq
+    profile(dataSource.seek(r, cfs.asJava, inclusive), "data-source.seek")
     findTop()
   }
 
@@ -85,14 +107,14 @@ class SpatioTemporalIntersectingIterator
     topValue = None
 
     // loop while there is more data and we haven't matched our filter
-    while (topValue.isEmpty && profile(source.hasTop, "source.hasTop")) {
+    while (topValue.isEmpty && profile(indexSource.hasTop && dataSource.hasTop, "source.hasTop")) {
 
-      val indexKey = profile(source.getTopKey, "source.getTopKey")
+      val indexKey = profile(indexSource.getTopKey, "source.getTopKey")
 
       if (SpatioTemporalTable.isIndexEntry(indexKey)) { // if this is a data entry, skip it
         // only decode it if we have a filter to evaluate
         // the value contains the full-resolution geometry and time plus feature ID
-        lazy val decodedValue = profile(indexEncoder.decode(source.getTopValue.get), "decodeIndexValue")
+        lazy val decodedValue = profile(indexEncoder.decode(indexSource.getTopValue.get), "decodeIndexValue")
 
         // evaluate the filter checks, in least to most expensive order
         val meetsIndexFilters = profile(checkUniqueId.forall(fn => fn(decodedValue.id)), "checkUniqueId") &&
@@ -100,34 +122,36 @@ class SpatioTemporalIntersectingIterator
 
         if (meetsIndexFilters) { // we hit a valid geometry, date and id
           // we increment the source iterator, which should point to a data entry
-          profile(source.next(), "source.next")
-          if (profile(source.hasTop, "source.hasTop")) {
-            val dataKey = profile(source.getTopKey, "source.getTopKey")
+//          if (profile(, "data-source.hasTop")) {
+            val dataKey = profile(dataSource.getTopKey, "data-source.getTopKey")
             if (SpatioTemporalTable.isDataEntry(dataKey)) {
-              val dataValue = profile(source.getTopValue, "source.getTopValue")
+              val dataValue = profile(dataSource.getTopValue, "source.getTopValue")
               lazy val decodedFeature = profile(featureDecoder.decode(dataValue), "decodeFeature")
               val meetsEcqlFilter = profile(ecqlFilter.forall(fn => fn(decodedFeature)), "ecqlFilter")
               if (meetsEcqlFilter) {
                 // update the key and value
-                topKey = Some(dataKey)
+                topKey = Some(indexKey)
                 // apply any transform here
                 topValue = profile(transform.map(fn => new Value(fn(decodedFeature))), "transform")
                     .orElse(Some(dataValue))
               }
             } else {
-              logger.error(s"Could not find the data key corresponding to index key '$indexKey' - " +
+              logger.error(s"Could not find the data key to index key '  $indexKey' - " +
                   "there is no data entry.")
             }
-          } else {
-            logger.error(s"Could not find the data key corresponding to index key '$indexKey' - " +
-                "there are no more entries")
-          }
+//          } else {
+//            logger.error(s"Could not find the data key corresponding to index key '$indexKey' - " +
+//                "there are no more entries")
+//          }
         }
         // TODO we have a lot of nested ifs here, try to clean it up
+      } else {
+        logger.error("Found unexpected data entry in index source " + indexKey)
       }
 
       // increment the underlying iterator
-      profile(source.next(), "source.next")
+      profile(indexSource.next(), "source.next")
+      profile(dataSource.next(), "data-source.next")
     }
   }
 

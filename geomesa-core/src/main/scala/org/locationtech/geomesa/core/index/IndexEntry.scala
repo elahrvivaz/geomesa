@@ -88,13 +88,12 @@ case class IndexEntryEncoder(rowf: TextFormatter,
     val dataValue = new Value(featureEncoder.encode(featureToEncode))
 
     // the entries are (key, value) pairs
-    val indexEntries = baseKeys.map { case Array(row, cf, cqBase) =>
-      val cq = new Text(cqBase.copyBytes() ++ SpatioTemporalTable.INDEX_CQ_SUFFIX)
+    val indexEntries = baseKeys.map { case Array(row, cf, cq) =>
       (new Key(row, cf, cq, v), indexValue)
     }
-    val dataEntries = baseKeys.map { case Array(row, cf, cqBase) =>
-      val cq = new Text(cqBase.copyBytes() ++ SpatioTemporalTable.DATA_CQ_SUFFIX)
-      (new Key(row, cf, cq, v), dataValue)
+    val dataEntries = baseKeys.map { case Array(row, cf, cq) =>
+      val dataCf = new Text(SpatioTemporalTable.INDEX_CF_PREFIX ++ cf.copyBytes())
+      (new Key(row, dataCf, cq, v), dataValue)
     }
 
     (indexEntries ++ dataEntries).toList

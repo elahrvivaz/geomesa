@@ -114,6 +114,8 @@ class IndexIterator
           topValue = profile(transform.map(fn => new Value(fn(transformedFeature))), "transform")
               .orElse(Some(new Value(profile(featureEncoder.encode(transformedFeature), "featureEncoder.encode"))))
         }
+      } else {
+        logger.error("Found unexpected data entry in index source " + indexKey)
       }
 
       // increment the underlying iterator
