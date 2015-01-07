@@ -70,6 +70,7 @@ class SpatioTemporalIntersectingIteratorTest extends Specification with Logging 
   "Consistency Iterator" should {
 
     "verify consistency of table" in {
+      skipped("integration")
       val c = setupMockAccumuloTable(TestData.shortListOfPoints)
       val s = c.createScanner(TEST_TABLE, TEST_AUTHORIZATIONS)
       val cfg = new IteratorSetting(1000, "consistency-iter", classOf[ConsistencyCheckingIterator])
@@ -81,6 +82,7 @@ class SpatioTemporalIntersectingIteratorTest extends Specification with Logging 
     }
 
     "verify inconsistency of table" in {
+      skipped("integration")
       val c = setupMockAccumuloTable(TestData.shortListOfPoints)
       val bd = c.createBatchDeleter(TEST_TABLE, TEST_AUTHORIZATIONS, 8, new BatchWriterConfig)
       bd.addScanIterator({

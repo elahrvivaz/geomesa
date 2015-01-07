@@ -203,6 +203,7 @@ trait FilterTester extends Specification with Logging {
       "return the same number of results from filtering and querying" in {
         val filterCount = mediumDataFeatures.count(filter.evaluate)
         val queryCount = fs.getFeatures(filter).size
+        if (filterCount != queryCount)
         logger.debug(s"\nFilter: ${ECQL.toCQL(filter)}\nFullData size: ${mediumDataFeatures.size}: " +
             s"filter hits: $filterCount query hits: $queryCount")
         queryCount mustEqual filterCount
