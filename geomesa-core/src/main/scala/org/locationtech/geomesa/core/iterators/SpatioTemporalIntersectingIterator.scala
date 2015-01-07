@@ -18,10 +18,13 @@ package org.locationtech.geomesa.core.iterators
 
 import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.accumulo.core.data._
+import org.apache.accumulo.core.iterators.system.ColumnFamilySkippingIterator
 import org.apache.accumulo.core.iterators.user.VersioningIterator
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.locationtech.geomesa.core.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.utils.stats.{AutoLoggingTimings, MethodProfiling, NoOpTimings, Timings}
+
+import scala.annotation.tailrec
 
 /**
  * This iterator returns as its nextKey and nextValue responses the key and value
@@ -71,27 +74,11 @@ class SpatioTemporalIntersectingIterator
   override def getTopValue = topValue.orNull
 
   override def seek(range: Range, columnFamilies: java.util.Collection[ByteSequence], inclusive: Boolean) {
-    import scala.collection.JavaConverters._
+    import scala.collection.JavaConversions._
     // move the source iterator to the right starting spot
     profile(indexSource.seek(range, columnFamilies, inclusive), "source.seek")
-    val start = range.getStartKey
-    val end = range.getEndKey
-    val s = new Key(start.getRow.copyBytes(),
-      SpatioTemporalTable.INDEX_CF_PREFIX ++ start.getColumnFamily.copyBytes(),
-      start.getColumnQualifier.copyBytes(),
-      start.getColumnVisibility.copyBytes(),
-      start.getTimestamp,
-      start.isDeleted)
-    val e = new Key(end.getRow.copyBytes(),
-      SpatioTemporalTable.INDEX_CF_PREFIX ++ end.getColumnFamily.copyBytes(),
-      end.getColumnQualifier.copyBytes(),
-      end.getColumnVisibility.copyBytes(),
-      end.getTimestamp,
-      end.isDeleted)
-    val r = new Range(s, e)
-    val cfs: Seq[ByteSequence] =
-      columnFamilies.asScala.map(cf => new ArrayByteSequence(SpatioTemporalTable.INDEX_CF_PREFIX ++ cf.getBackingArray)).toSeq
-    profile(dataSource.seek(r, cfs.asJava, inclusive), "data-source.seek")
+    val cfs = columnFamilies.map(cf => new ArrayByteSequence(SpatioTemporalTable.INDEX_CF_PREFIX ++ cf.getBackingArray))
+    profile(dataSource.seek(range, cfs, inclusive), "data-source.seek")
     findTop()
   }
 
@@ -109,9 +96,10 @@ class SpatioTemporalIntersectingIterator
     // loop while there is more data and we haven't matched our filter
     while (topValue.isEmpty && profile(indexSource.hasTop && dataSource.hasTop, "source.hasTop")) {
 
-      val indexKey = profile(indexSource.getTopKey, "source.getTopKey")
+      val indexKeyOption = profile(findNextIndexEntry(), "source.getTopKey")
 
-      if (SpatioTemporalTable.isIndexEntry(indexKey)) { // if this is a data entry, skip it
+      // if this is a data entry, skip it
+      indexKeyOption.foreach { indexKey =>
         // only decode it if we have a filter to evaluate
         // the value contains the full-resolution geometry and time plus feature ID
         lazy val decodedValue = profile(indexEncoder.decode(indexSource.getTopValue.get), "decodeIndexValue")
@@ -123,8 +111,8 @@ class SpatioTemporalIntersectingIterator
         if (meetsIndexFilters) { // we hit a valid geometry, date and id
           // we increment the source iterator, which should point to a data entry
 //          if (profile(, "data-source.hasTop")) {
-            val dataKey = profile(dataSource.getTopKey, "data-source.getTopKey")
-            if (SpatioTemporalTable.isDataEntry(dataKey)) {
+            val dataKeyOption = profile(findNextDataEntry(), "data-source.getTopKey")
+            dataKeyOption.foreach { dataKey =>
               val dataValue = profile(dataSource.getTopValue, "source.getTopValue")
               lazy val decodedFeature = profile(featureDecoder.decode(dataValue), "decodeFeature")
               val meetsEcqlFilter = profile(ecqlFilter.forall(fn => fn(decodedFeature)), "ecqlFilter")
@@ -135,23 +123,51 @@ class SpatioTemporalIntersectingIterator
                 topValue = profile(transform.map(fn => new Value(fn(decodedFeature))), "transform")
                     .orElse(Some(dataValue))
               }
-            } else {
-              logger.error(s"Could not find the data key to index key '  $indexKey' - " +
-                  "there is no data entry.")
-            }
+            } //else {
+//              logger.error(s"Could not find the data key to index key '  $indexKey' - " +
+//                  "there is no data entry.")
+//            }
 //          } else {
 //            logger.error(s"Could not find the data key corresponding to index key '$indexKey' - " +
 //                "there are no more entries")
 //          }
         }
         // TODO we have a lot of nested ifs here, try to clean it up
-      } else {
-        logger.error("Found unexpected data entry in index source " + indexKey)
       }
 
       // increment the underlying iterator
-      profile(indexSource.next(), "source.next")
-      profile(dataSource.next(), "data-source.next")
+      profile(if (indexSource.hasTop) indexSource.next(), "source.next")
+      profile(if (dataSource.hasTop) dataSource.next(), "data-source.next")
+    }
+  }
+
+  @tailrec
+  private def findNextIndexEntry(): Option[Key] = {
+    val key = indexSource.getTopKey
+    if (SpatioTemporalTable.isIndexEntry(key)) {
+      Some(key)
+    } else {
+      indexSource.next()
+      if (indexSource.hasTop) {
+        findNextIndexEntry()
+      } else {
+        None
+      }
+    }
+  }
+
+  @tailrec
+  private def findNextDataEntry(): Option[Key] = {
+    val key = dataSource.getTopKey
+    if (SpatioTemporalTable.isDataEntry(key)) {
+      Some(key)
+    } else {
+      dataSource.next()
+      if (dataSource.hasTop) {
+        findNextDataEntry()
+      } else {
+        None
+      }
     }
   }
 

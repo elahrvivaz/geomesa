@@ -489,7 +489,8 @@ class AccumuloDataStoreTest extends Specification {
 
         val query = new Query(sftName, binarySpatial)
         val results = fs.getFeatures(query)
-        results.size() mustEqual 226
+//        results.size() mustEqual 226
+        results.size() mustEqual 223
       }
     }
 
