@@ -21,11 +21,13 @@ import java.util.{Date, UUID}
 import com.vividsolutions.jts.geom._
 import org.geotools.feature.AttributeTypeBuilder
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder
+import org.geotools.referencing.CRS
 import org.geotools.referencing.crs.DefaultGeographicCRS
 import org.opengis.feature.`type`.{AttributeDescriptor, GeometryDescriptor}
 import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.collection.JavaConversions._
+import scala.util.Try
 import scala.util.parsing.combinator.JavaTokenParsers
 
 object SimpleFeatureTypes {
@@ -208,7 +210,7 @@ object SimpleFeatureTypes {
       b.binding(clazz)
           .userData(OPT_INDEX, index)
           .userData(OPT_INDEX_VALUE, indexValue)
-          .crs(DefaultGeographicCRS.WGS84)
+          .crs(Try(CRS.decode("EPSG:4326")).getOrElse(DefaultGeographicCRS.WGS84))
           .buildDescriptor(name)
     }
 
