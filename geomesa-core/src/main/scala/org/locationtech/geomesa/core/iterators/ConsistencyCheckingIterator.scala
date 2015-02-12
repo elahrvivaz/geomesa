@@ -68,7 +68,7 @@ class ConsistencyCheckingIterator extends SortedKeyValueIterator[Key, Value] wit
         nextKey = null
       } else {
         logger.debug(s"Checking $nextKey")
-        curId = indexValueEncoder.decode(indexSource.getTopValue.get).id
+        curId = indexValueEncoder.decode(indexSource.getTopValue.get).getID
 
         val dataSeekKey = new Key(new Text(nextKey.getRow.toString.replace(INDEX_CHECK, DATA_CHECK)),
           nextKey.getColumnFamily, nextKey.getColumnQualifier)

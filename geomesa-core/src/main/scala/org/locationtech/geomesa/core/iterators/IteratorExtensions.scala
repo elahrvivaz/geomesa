@@ -104,20 +104,21 @@ trait HasFeatureBuilder extends HasFeatureType {
     featureBuilder = ScalaSimpleFeatureFactory.featureBuilder(featureType)
   }
 
-  def encodeIndexValueToSF(value: DecodedIndexValue): SimpleFeature = {
+  def encodeIndexValueToSF(value: SimpleFeature): SimpleFeature = {
     // Build and fill the Feature. This offers some performance gain over building and then setting the attributes.
-    featureBuilder.buildFeature(value.id, attributeArray(featureBuilder.getFeatureType, value))
+    featureBuilder.buildFeature(value.getID, attributeArray(featureBuilder.getFeatureType, value))
   }
 
   /**
    * Construct and fill an array of the SimpleFeature's attribute values
    */
-  def attributeArray(sft: SimpleFeatureType, indexValue: DecodedIndexValue): Array[AnyRef] = {
+  def attributeArray(sft: SimpleFeatureType, indexValue: SimpleFeature): Array[AnyRef] = {
+    import scala.collection.JavaConversions._
     val attrArray = new Array[AnyRef](sft.getAttributeCount)
-    indexValue.attributes.foreach { case (name, value) =>
-      val index = sft.indexOf(name)
+    indexValue.getProperties.foreach { p =>
+      val index = sft.indexOf(p.getName.getLocalPart)
       if (index != -1) {
-        attrArray.update(index, value.asInstanceOf[AnyRef])
+        attrArray.update(index, p.getValue)
       }
     }
     attrArray

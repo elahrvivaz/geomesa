@@ -16,9 +16,13 @@
 
 package org.locationtech.geomesa.core.iterators
 
+import java.util.Date
+
 import com.typesafe.scalalogging.slf4j.Logging
+import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.data._
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
+import org.locationtech.geomesa.core
 import org.locationtech.geomesa.core._
 import org.locationtech.geomesa.core.data.tables.AttributeTable._
 import org.opengis.feature.`type`.AttributeDescriptor
@@ -65,7 +69,8 @@ class AttributeIndexIterator
 
     // evaluate the filter check
     val meetsIndexFilters =
-        stFilter.forall(fn => fn(decodedValue.geom, decodedValue.date.map(_.getTime)))
+      stFilter.forall(fn => fn(decodedValue.getDefaultGeometry.asInstanceOf[Geometry],
+        core.index.getDtgFieldName(decodedValue.getType).map(decodedValue.getAttribute(_).asInstanceOf[Date]).map(_.getTime)))
 
     if (meetsIndexFilters) {
       // current entry matches our filter - update the key and value

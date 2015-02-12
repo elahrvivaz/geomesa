@@ -16,11 +16,13 @@
 
 package org.locationtech.geomesa.core.iterators
 
-import java.util.{Map => JMap}
+import java.util.{Map => JMap, Date}
 
 import com.typesafe.scalalogging.slf4j.Logging
+import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
+import org.locationtech.geomesa.core
 
 class IndexedSpatioTemporalFilter
     extends GeomesaFilteringIterator
@@ -42,7 +44,8 @@ class IndexedSpatioTemporalFilter
     val sourceValue = source.getTopValue
     val meetsFilter = stFilter.forall { fn =>
       val sf = indexEncoder.decode(sourceValue.get)
-      fn(sf.geom, sf.date.map(_.getTime))
+      fn(sf.getDefaultGeometry.asInstanceOf[Geometry],
+        core.index.getDtgFieldName(sf.getType).map(sf.getAttribute(_).asInstanceOf[Date]).map(_.getTime))
     }
     if (meetsFilter) {
       topKey = Some(source.getTopKey)
