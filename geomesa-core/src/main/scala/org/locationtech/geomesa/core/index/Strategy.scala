@@ -30,7 +30,6 @@ import org.locationtech.geomesa.core.index.QueryHints._
 import org.locationtech.geomesa.core.index.QueryPlanner._
 import org.locationtech.geomesa.core.iterators.{FEATURE_ENCODING, _}
 import org.locationtech.geomesa.core.util.SelfClosingIterator
-import org.locationtech.geomesa.feature.FeatureEncoding
 import org.locationtech.geomesa.feature.FeatureEncoding.FeatureEncoding
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeatureType
@@ -73,9 +72,6 @@ trait Strategy {
     val encodedSimpleFeatureType = SimpleFeatureTypes.encodeType(featureType)
     cfg.addOption(GEOMESA_ITERATORS_SFT_INDEX_VALUE, encodedSimpleFeatureType)
   }
-
-  def configureAttributeName(cfg: IteratorSetting, attributeName: String) =
-    cfg.addOption(GEOMESA_ITERATORS_ATTRIBUTE_NAME, attributeName)
 
   def configureEcqlFilter(cfg: IteratorSetting, ecql: Option[String]) =
     ecql.foreach(filter => cfg.addOption(GEOMESA_ITERATORS_ECQL_FILTER, filter))
