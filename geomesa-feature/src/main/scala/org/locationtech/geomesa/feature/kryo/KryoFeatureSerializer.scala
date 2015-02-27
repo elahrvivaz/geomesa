@@ -20,8 +20,6 @@ import java.io.{InputStream, OutputStream}
 
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, Serializer}
-import org.geotools.feature.simple.SimpleFeatureImpl
-import org.locationtech.geomesa.feature.{AvroSimpleFeature, ScalaSimpleFeature}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 /**
@@ -35,14 +33,8 @@ case class KryoFeatureSerializer(serializer: Serializer[SimpleFeature]) {
 
   // TODO test spark
   kryo.setReferences(false)
-  val simpleFeatureClasses = Seq(
-    classOf[ScalaSimpleFeature],
-    classOf[AvroSimpleFeature],
-    classOf[SimpleFeatureImpl],
-    classOf[SimpleFeature]
-  )
-  simpleFeatureClasses.foreach(kryo.register(_, serializer, kryo.getNextRegistrationId))
-  kryo.register(classOf[KryoFeatureId], new FeatureIdSerializer(), kryo.getNextRegistrationId)
+
+  val idSerializer = new FeatureIdSerializer()
 
   val output = new Output(1024, -1)
   val input = new Input(Array.empty[Byte])
@@ -56,7 +48,7 @@ case class KryoFeatureSerializer(serializer: Serializer[SimpleFeature]) {
    */
   def write(sf: SimpleFeature): Array[Byte] = {
     output.clear()
-    kryo.writeObject(output, sf)
+    kryo.writeObject(output, sf, serializer)
     output.toBytes()
   }
 
@@ -69,7 +61,7 @@ case class KryoFeatureSerializer(serializer: Serializer[SimpleFeature]) {
   def write(sf: SimpleFeature, out: OutputStream): Unit = {
     output.clear()
     output.setOutputStream(out)
-    kryo.writeObject(output, sf)
+    kryo.writeObject(output, sf, serializer)
     output.flush()
     output.setOutputStream(null)
   }
@@ -83,7 +75,7 @@ case class KryoFeatureSerializer(serializer: Serializer[SimpleFeature]) {
    */
   def read(value: Array[Byte]): SimpleFeature = {
     input.setBuffer(value)
-    kryo.readObject(input, classOf[SimpleFeature])
+    kryo.readObject(input, classOf[SimpleFeature], serializer)
   }
 
   /**
@@ -95,7 +87,7 @@ case class KryoFeatureSerializer(serializer: Serializer[SimpleFeature]) {
   def read(in: InputStream): SimpleFeature = {
     input.setBuffer(streamBuffer)
     input.setInputStream(in)
-    val sf = kryo.readObject(input, classOf[SimpleFeature])
+    val sf = kryo.readObject(input, classOf[SimpleFeature], serializer)
     input.setInputStream(null)
     sf
   }
@@ -108,7 +100,7 @@ case class KryoFeatureSerializer(serializer: Serializer[SimpleFeature]) {
    */
   def readId(value: Array[Byte]): String = {
     input.setBuffer(value)
-    kryo.readObject(input, classOf[KryoFeatureId]).id
+    kryo.readObject(input, classOf[KryoFeatureId], idSerializer).id
   }
 }
 
