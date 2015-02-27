@@ -36,6 +36,8 @@ import org.locationtech.geomesa.core.util.{BatchMultiScanner, SelfClosingIterato
 import org.locationtech.geomesa.feature.FeatureEncoding.FeatureEncoding
 import org.locationtech.geomesa.feature.SimpleFeatureDecoder
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
+import org.locationtech.geomesa.utils.stats.IndexCoverage
+import org.locationtech.geomesa.utils.stats.IndexCoverage.IndexCoverage
 import org.locationtech.geomesa.utils.stats.IndexCoverage.IndexCoverage
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.expression.{Expression, Literal, PropertyName}
@@ -115,7 +117,6 @@ trait AttributeIdxStrategy extends Strategy with Logging {
 
         if (iteratorChoice.hasTransformOrFilter) {
           // apply an iterator for any remaining transforms/filters
-          // TODO apply optimization for when transforms cover filter
           val cfg = configureRecordTableIterator(featureType, encoding, ecqlFilter, query)
           recordScanner.addScanIterator(cfg)
           output(s"RecordTableIterator: ${cfg.toString }")
@@ -161,13 +162,20 @@ trait AttributeIdxStrategy extends Strategy with Logging {
       classOf[AttributeIndexIterator]
     )
 
+    val coverage = featureType.getDescriptor(attributeName).getIndexCoverage()
+
     configureFeatureTypeName(cfg, featureType.getTypeName)
     configureFeatureEncoding(cfg, encoding)
-    configureStFilter(cfg, stFilter)
-    configureEcqlFilter(cfg, ecqlFilter.map(ECQL.toCQL))
-    configureAttributeName(cfg, attributeName)
-    configureIndexCoverage(cfg, featureType.getDescriptor(attributeName).getIndexCoverage())
     configureIndexValues(cfg, featureType)
+    configureAttributeName(cfg, attributeName)
+    configureIndexCoverage(cfg, coverage)
+    if (coverage == IndexCoverage.FULL) {
+      // combine filters into one check
+      configureEcqlFilter(cfg, filterListAsAnd(Seq(stFilter ++ ecqlFilter).flatten).map(ECQL.toCQL))
+    } else {
+      configureStFilter(cfg, stFilter)
+      configureEcqlFilter(cfg, ecqlFilter.map(ECQL.toCQL))
+    }
     if (needsTransform) {
       // we have to evaluate the filter against full feature then apply the transform
       configureFeatureType(cfg, featureType)

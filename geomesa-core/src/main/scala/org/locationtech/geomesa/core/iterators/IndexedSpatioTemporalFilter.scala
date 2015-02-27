@@ -40,9 +40,9 @@ class IndexedSpatioTemporalFilter
 
   override def setTopConditionally() = {
     val sourceValue = source.getTopValue
-    val meetsFilter = stFilter.forall { fn =>
+    val meetsFilter = stFilter == null || {
       val sf = indexEncoder.decode(sourceValue.get)
-      fn(sf.geom, sf.date.map(_.getTime))
+      stFilter(sf.geom, sf.date)
     }
     if (meetsFilter) {
       topKey = Some(source.getTopKey)

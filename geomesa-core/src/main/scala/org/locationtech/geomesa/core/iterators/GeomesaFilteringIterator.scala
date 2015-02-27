@@ -16,20 +16,13 @@
 
 package org.locationtech.geomesa.core.iterators
 
-import java.util.Date
-
 import com.typesafe.scalalogging.slf4j.Logging
-import com.vividsolutions.jts.geom.Geometry
-import org.apache.accumulo.core.data.{ByteSequence, Range, Value, Key}
+import org.apache.accumulo.core.data.{ByteSequence, Key, Range, Value}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
-import org.locationtech.geomesa.core.data.tables.SpatioTemporalTable
-import org.locationtech.geomesa.core.index
 
 abstract class GeomesaFilteringIterator
-    extends HasIteratorExtensions with SortedKeyValueIterator[Key, Value] with Logging {
+    extends HasIteratorExtensions with SortedKeyValueIterator[Key, Value] with HasSourceIterator with Logging {
 
-  var topKey: Option[Key] = None
-  var topValue: Option[Value] = None
   var source: SortedKeyValueIterator[Key, Value] = null
 
   override def init(source: SortedKeyValueIterator[Key, Value],
@@ -84,4 +77,10 @@ abstract class GeomesaFilteringIterator
 
   override def deepCopy(env: IteratorEnvironment) =
     throw new UnsupportedOperationException("GeoMesa iterators do not support deepCopy")
+}
+
+trait HasSourceIterator {
+  def source: SortedKeyValueIterator[Key, Value]
+  var topKey: Option[Key] = None
+  var topValue: Option[Value] = None
 }

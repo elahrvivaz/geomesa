@@ -208,11 +208,12 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
     val cfg = new IteratorSetting(iteratorPriority_SpatioTemporalIterator,
       "within-" + randomPrintableString(5),
       classOf[SpatioTemporalIntersectingIterator])
-    configureStFilter(cfg, stFilter)
+    // TODO we can do better mapping back and forth to strings
+    val combinedFilter = filterListAsAnd(Seq(stFilter, ecqlFilter.map(ECQL.toFilter)).flatten)
     configureFeatureType(cfg, featureType)
     configureFeatureEncoding(cfg, featureEncoding)
     configureTransforms(cfg, query)
-    configureEcqlFilter(cfg, ecqlFilter)
+    configureEcqlFilter(cfg, combinedFilter.map(ECQL.toCQL))
     if (isDensity) cfg.addOption(GEOMESA_ITERATORS_IS_DENSITY_TYPE, "isDensity")
     cfg
   }
