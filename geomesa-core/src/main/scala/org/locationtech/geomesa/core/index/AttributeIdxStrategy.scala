@@ -38,7 +38,6 @@ import org.locationtech.geomesa.feature.SimpleFeatureDecoder
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.stats.IndexCoverage
 import org.locationtech.geomesa.utils.stats.IndexCoverage.IndexCoverage
-import org.locationtech.geomesa.utils.stats.IndexCoverage.IndexCoverage
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.expression.{Expression, Literal, PropertyName}
 import org.opengis.filter.temporal.{After, Before, During, TEquals}
@@ -282,14 +281,6 @@ object AttributeIndexStrategy {
         val canQuery = isValidAttributeFilter(sft, f.getExpression1, f.getExpression2)
         if (canQuery) Some(new AttributeIdxEqualsStrategy) else None
 
-      case f: PropertyIsNil =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression)
-        if (canQuery) Some(new AttributeIdxEqualsStrategy) else None
-
-      case f: PropertyIsNull =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression)
-        if (canQuery) Some(new AttributeIdxEqualsStrategy) else None
-
       // like strategy checks
       case f: PropertyIsLike =>
         val canQuery = isValidAttributeFilter(sft, f.getExpression) && QueryStrategyDecider.likeEligible(f)
@@ -405,7 +396,9 @@ object AttributeIndexStrategy {
     val rowIdPrefix = org.locationtech.geomesa.core.index.getTableSharingPrefix(sft)
     // grab the first encoded row - right now there will only ever be a single item in the seq
     // eventually we may support searching a whole collection at once
-    AttributeTable.getAttributeIndexRows(rowIdPrefix, descriptor, Some(typedValue)).head
+    val rowWithValue = AttributeTable.getAttributeIndexRows(rowIdPrefix, descriptor, typedValue).headOption
+    // if value is null there won't be any rows returned, instead just use the row prefix
+    rowWithValue.getOrElse(AttributeTable.getAttributeIndexRowPrefix(rowIdPrefix, descriptor))
   }
 
   def getPropertyAndRange(filter: Filter, sft: SimpleFeatureType): (String, AccRange) =
@@ -476,18 +469,6 @@ object AttributeIndexStrategy {
       case f: TEquals =>
         val (prop, lit, _) = checkOrder(f.getExpression1, f.getExpression2)
         (prop, AccRange.exact(getEncodedAttrIdxRow(sft, prop, lit)))
-
-      case f: PropertyIsNil =>
-        val prop = f.getExpression.asInstanceOf[PropertyName].getPropertyName
-        val rowIdPrefix = org.locationtech.geomesa.core.index.getTableSharingPrefix(sft)
-        val exact = AttributeTable.getAttributeIndexRows(rowIdPrefix, sft.getDescriptor(prop), None).head
-        (prop, AccRange.exact(exact))
-
-      case f: PropertyIsNull =>
-        val prop = f.getExpression.asInstanceOf[PropertyName].getPropertyName
-        val rowIdPrefix = org.locationtech.geomesa.core.index.getTableSharingPrefix(sft)
-        val exact = AttributeTable.getAttributeIndexRows(rowIdPrefix, sft.getDescriptor(prop), None).head
-        (prop, AccRange.exact(exact))
 
       case f: PropertyIsLike =>
         val prop = f.getExpression.asInstanceOf[PropertyName].getPropertyName

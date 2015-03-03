@@ -17,6 +17,7 @@
 package org.locationtech.geomesa.core.index
 
 import org.apache.accumulo.core.security.ColumnVisibility
+import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.core.data.{DEFAULT_ENCODING, INTERNAL_GEOMESA_VERSION}
@@ -54,8 +55,10 @@ class AttributeTableTest extends Specification {
         val indexValueEncoder = IndexValueEncoder(sft, INTERNAL_GEOMESA_VERSION)
         val featureEncoder = SimpleFeatureEncoder(sft, DEFAULT_ENCODING)
 
-        val mutations = AttributeTable.getAttributeIndexMutations(feature, indexValueEncoder, featureEncoder, descriptors, new ColumnVisibility(), "")
-        mutations.size mustEqual descriptors.length
+        val mutations = AttributeTable.getAttributeIndexMutations(feature,
+          indexValueEncoder, featureEncoder, descriptors, new ColumnVisibility(), "")
+        println(mutations.map(m => new Text(m.getRow)))
+        mutations.size mustEqual descriptors.length - 1 // for null date
         mutations.map(_.getUpdates.size()) must contain(beEqualTo(1)).foreach
         mutations.map(_.getUpdates.get(0).isDeleted) must contain(beEqualTo(false)).foreach
       }
@@ -71,13 +74,13 @@ class AttributeTableTest extends Specification {
         feature.getUserData()(Hints.USE_PROVIDED_FID) = java.lang.Boolean.TRUE
 
         val mutations = AttributeTable.getAttributeIndexMutations(feature, null, null, descriptors, new ColumnVisibility(), "", delete = true)
-        mutations.size mustEqual descriptors.length
+        mutations.size mustEqual descriptors.length - 1 // for null date
         mutations.map(_.getUpdates.size()) must contain(beEqualTo(1)).foreach
         mutations.map(_.getUpdates.get(0).isDeleted) must contain(beEqualTo(true)).foreach
       }
 
       "decode attribute index rows" in {
-        val row = AttributeTable.getAttributeIndexRows("prefix", sft.getDescriptor("age"), Some(23)).head
+        val row = AttributeTable.getAttributeIndexRows("prefix", sft.getDescriptor("age"), 23).head
         val decoded = AttributeTable.decodeAttributeIndexRow("prefix", sft.getDescriptor("age"), row)
         decoded mustEqual(Success(AttributeIndexRow("age", 23)))
       }

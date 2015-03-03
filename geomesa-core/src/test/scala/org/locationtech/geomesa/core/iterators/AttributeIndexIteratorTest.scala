@@ -100,7 +100,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       )
       val is = new IteratorSetting(40, classOf[AttributeIndexIterator], opts)
       scanner.addScanIterator(is)
-      val range = AttributeTable.getAttributeIndexRows("", sft.getDescriptor("name"), Some("b")).head
+      val range = AttributeTable.getAttributeIndexRows("", sft.getDescriptor("name"), "b").head
       scanner.setRange(new ARange(range))
       scanner.iterator.size mustEqual 4
     }
@@ -120,7 +120,6 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
         "name = 'b'",
         "name < 'b'",
         "name > 'b'",
-        "name is NULL",
         "dtg TEQUALS 2014-01-01T12:30:00.000Z",
         "dtg = '2014-01-01T12:30:00.000Z'",
         "dtg BETWEEN '2012-01-01T12:00:00.000Z' AND '2013-01-01T12:00:00.000Z'",
@@ -202,18 +201,6 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
         results.map(_.getAttribute("name").asInstanceOf[String]) must contain("b").exactly(4)
         results.map(_.getAttribute("name").asInstanceOf[String]) must contain("c").exactly(4)
         results.map(_.getAttribute("name").asInstanceOf[String]) must contain("d").exactly(4)
-        results.map(_.getAttribute("geom").toString) must contain("POINT (45 45)", "POINT (46 46)", "POINT (47 47)", "POINT (48 48)")
-        results.map(_.getAttribute("dtg").asInstanceOf[Date]) must contain(dateToIndex).foreach
-      }
-
-      "for string null" >> {
-        val filter = "name is NULL"
-        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "name"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
-
-        results must haveSize(4)
-        results.map(_.getAttributeCount) must contain(3).foreach
-        results.map(_.getAttribute("name").asInstanceOf[String]) must contain("").foreach
         results.map(_.getAttribute("geom").toString) must contain("POINT (45 45)", "POINT (46 46)", "POINT (47 47)", "POINT (48 48)")
         results.map(_.getAttribute("dtg").asInstanceOf[Date]) must contain(dateToIndex).foreach
       }

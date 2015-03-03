@@ -31,10 +31,10 @@ import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.text.cql2.CQLException
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.core.data.tables.AttributeTable
 import org.locationtech.geomesa.core.data.AccumuloDataStore
+import org.locationtech.geomesa.core.data.tables.AttributeTable
 import org.locationtech.geomesa.core.index
-import org.locationtech.geomesa.feature.{SimpleFeatureEncoder, AvroSimpleFeatureFactory}
+import org.locationtech.geomesa.feature.{AvroSimpleFeatureFactory, SimpleFeatureEncoder}
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
@@ -246,12 +246,6 @@ class AttributeIndexStrategyTest extends Specification {
 
     "correctly query on date strings in standard format" in {
       val features = execute(strategy, "dtg = '2014-01-01T12:30:00.000Z'")
-      features must have size(1)
-      features must contain("charles")
-    }
-
-    "correctly query on nulls" in {
-      val features = execute(strategy, "age is NULL")
       features must have size(1)
       features must contain("charles")
     }
