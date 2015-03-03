@@ -74,27 +74,39 @@ class FeatureIdSerializer extends Serializer[KryoFeatureId] {
 }
 
 /**
- * Kryo serialization implementation for simple features - provides transformation during read
+ * Kryo serialization implementation for simple features - provides transformation during read and write
  *
  * @param sft
- * @param decodeAs
+ * @param transform
  */
-class TransformingSimpleFeatureSerializer(sft: SimpleFeatureType, decodeAs: SimpleFeatureType)
+class TransformingSimpleFeatureSerializer(sft: SimpleFeatureType, transform: SimpleFeatureType)
     extends SimpleFeatureSerializer(sft) {
 
+  import org.locationtech.geomesa.feature.kryo.SimpleFeatureSerializer.VERSION
+
+  val transformEncodings = encodings.zipWithIndex.filter {
+    case (encode, i) => transform.indexOf(sft.getDescriptor(i).getLocalName) != -1
+  }.unzip._1
+
   val transformDecodings = decodings.map {
-    case (decode, i) => (decode, decodeAs.indexOf(sft.getDescriptor(i).getLocalName))
+    case (decode, i) => (decode, transform.indexOf(sft.getDescriptor(i).getLocalName))
+  }
+
+  override def write(kryo: Kryo, output: Output, sf: SimpleFeature): Unit = {
+    output.writeInt(VERSION, true)
+    output.writeString(sf.getID)
+    transformEncodings.foreach(encode => encode(output, sf))
   }
 
   override def read(kryo: Kryo, input: Input, typ: Class[SimpleFeature]): SimpleFeature = {
     val version = input.readInt(true)
     val id = input.readString()
-    val values = Array.ofDim[AnyRef](decodeAs.getAttributeCount)
+    val values = Array.ofDim[AnyRef](transform.getAttributeCount)
 
     transformDecodings.foreach { case (decode, i) =>
       if (i == -1) decode(input, version) else values(i) = decode(input, version)
     }
-    new ScalaSimpleFeature(id, decodeAs, values)
+    new ScalaSimpleFeature(id, transform, values)
   }
 }
 

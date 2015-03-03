@@ -51,7 +51,8 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
               output: ExplainerOutputType): SelfClosingIterator[Entry[Key, Value]] = {
     val tryScanner = Try {
       val bs = acc.createSTIdxScanner(featureType)
-      val qp = buildSTIdxQueryPlan(query, iqp, featureType, output)
+      val version = acc.geomesaVersion(featureType)
+      val qp = buildSTIdxQueryPlan(query, iqp, featureType, version, output)
       configureBatchScanner(bs, qp)
       // NB: Since we are (potentially) gluing multiple batch scanner iterators together,
       //  we wrap our calls in a SelfClosingBatchScanner.
@@ -70,6 +71,7 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
   def buildSTIdxQueryPlan(query: Query,
                           iqp: QueryPlanner,
                           featureType: SimpleFeatureType,
+                          version: Int,
                           output: ExplainerOutputType) = {
     val schema          = iqp.schema
     val featureEncoding = iqp.featureEncoding
@@ -87,7 +89,7 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
     val (geomFilters, otherFilters) = partitionGeom(query.getFilter)
     val (temporalFilters, ecqlFilters) = partitionTemporal(otherFilters, dtgField)
 
-    val ecql = filterListAsAnd(ecqlFilters).map(ECQL.toCQL)
+    val ecql = filterListAsAnd(ecqlFilters)
 
     output(s"Geometry filters: $geomFilters")
     output(s"Temporal filters: $temporalFilters")
@@ -130,7 +132,8 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
 
     val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, featureType)
 
-    val stiiIterCfg = getSTIIIterCfg(iteratorConfig, query, featureType, ofilter, ecql, featureEncoding)
+    val stiiIterCfg =
+      getSTIIIterCfg(iteratorConfig, query, featureType, ofilter, ecql, featureEncoding, version)
 
     val densityIterCfg = getDensityIterCfg(query, geometryToCover, schema, featureEncoding, featureType)
 
@@ -144,14 +147,17 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
                      query: Query,
                      featureType: SimpleFeatureType,
                      stFilter: Option[Filter],
-                     ecqlFilter: Option[String],
-                     featureEncoding: FeatureEncoding): IteratorSetting = {
+                     ecqlFilter: Option[Filter],
+                     featureEncoding: FeatureEncoding,
+                     version: Int): IteratorSetting = {
     iteratorConfig.iterator match {
       case IndexOnlyIterator =>
-        configureIndexIterator(featureType, query, featureEncoding, stFilter, iteratorConfig.transformCoversFilter)
+        configureIndexIterator(featureType, query, featureEncoding, stFilter,
+          iteratorConfig.transformCoversFilter, version)
       case SpatioTemporalIterator =>
         val isDensity = query.getHints.containsKey(DENSITY_KEY)
-        configureSpatioTemporalIntersectingIterator(featureType, query, featureEncoding, stFilter, ecqlFilter, isDensity)
+        configureSpatioTemporalIntersectingIterator(featureType, query, featureEncoding, stFilter,
+          ecqlFilter, isDensity)
     }
   }
 
@@ -174,12 +180,14 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
       query: Query,
       featureEncoding: FeatureEncoding,
       filter: Option[Filter],
-      transformsCoverFilter: Boolean): IteratorSetting = {
+      transformsCoverFilter: Boolean,
+      version: Int): IteratorSetting = {
 
     val cfg = new IteratorSetting(iteratorPriority_SpatioTemporalIterator,
       "within-" + randomPrintableString(5),classOf[IndexIterator])
 
     configureStFilter(cfg, filter)
+    configureVersion(cfg, version)
     if (transformsCoverFilter) {
       // apply the transform directly to the index iterator
       val testType = query.getHints.get(TRANSFORM_SCHEMA).asInstanceOf[SimpleFeatureType]
@@ -203,17 +211,24 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
       query: Query,
       featureEncoding: FeatureEncoding,
       stFilter: Option[Filter],
-      ecqlFilter: Option[String],
+      ecqlFilter: Option[Filter],
       isDensity: Boolean): IteratorSetting = {
     val cfg = new IteratorSetting(iteratorPriority_SpatioTemporalIterator,
       "within-" + randomPrintableString(5),
       classOf[SpatioTemporalIntersectingIterator])
-    configureStFilter(cfg, stFilter)
+    val combinedFilter = (stFilter, ecqlFilter) match {
+      case (Some(st), Some(ecql)) => filterListAsAnd(Seq(st, ecql))
+      case (Some(_), None)        => stFilter
+      case (None, Some(_))        => ecqlFilter
+      case (None, None)           => None
+    }
     configureFeatureType(cfg, featureType)
     configureFeatureEncoding(cfg, featureEncoding)
     configureTransforms(cfg, query)
-    configureEcqlFilter(cfg, ecqlFilter)
-    if (isDensity) cfg.addOption(GEOMESA_ITERATORS_IS_DENSITY_TYPE, "isDensity")
+    configureEcqlFilter(cfg, combinedFilter.map(ECQL.toCQL))
+    if (isDensity) {
+      cfg.addOption(GEOMESA_ITERATORS_IS_DENSITY_TYPE, "isDensity")
+    }
     cfg
   }
 

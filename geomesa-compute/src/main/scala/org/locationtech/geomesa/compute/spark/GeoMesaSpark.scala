@@ -32,8 +32,8 @@ import org.apache.spark.{SparkConf, SparkContext}
 import org.geotools.data.{DataStore, Query}
 import org.geotools.factory.CommonFactoryFinder
 import org.locationtech.geomesa.core.data._
-import org.locationtech.geomesa.core.index.{IndexSchema, STIdxStrategy}
-import org.locationtech.geomesa.feature.{AvroFeatureDecoder, AvroFeatureEncoder, SimpleFeatureEncoder, AvroSimpleFeature}
+import org.locationtech.geomesa.core.index.{ExplainPrintln, IndexSchema, IndexValueEncoder, STIdxStrategy}
+import org.locationtech.geomesa.feature.{AvroFeatureDecoder, AvroFeatureEncoder, AvroSimpleFeature, SimpleFeatureEncoder}
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
@@ -58,11 +58,13 @@ object GeoMesaSpark {
     val typeName = query.getTypeName
     val sft = ds.getSchema(typeName)
     val spec = SimpleFeatureTypes.encodeType(sft)
+    val version = ds.geomesaVersion(sft)
+    val indexValueEncoder = IndexValueEncoder(sft, version)
     val encoder = SimpleFeatureEncoder(sft, ds.getFeatureEncoding(sft))
-    val indexSchema = IndexSchema(ds.getIndexSchemaFmt(typeName), sft, encoder)
+    val indexSchema = IndexSchema(ds.getIndexSchemaFmt(typeName), sft, encoder, indexValueEncoder)
 
     val planner = new STIdxStrategy
-    val qp = planner.buildSTIdxQueryPlan(query, indexSchema.planner, sft, org.locationtech.geomesa.core.index.ExplainPrintln)
+    val qp = planner.buildSTIdxQueryPlan(query, indexSchema.planner, sft, version, ExplainPrintln)
 
     ConfiguratorBase.setConnectorInfo(classOf[AccumuloInputFormat], conf, ds.connector.whoami(), ds.authToken)
     ConfiguratorBase.setZooKeeperInstance(classOf[AccumuloInputFormat], conf, ds.connector.getInstance().getInstanceName, ds.connector.getInstance().getZooKeepers)

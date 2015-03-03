@@ -120,7 +120,7 @@ object RichAttributeDescriptors {
     def setIndexValue(indexValue: Boolean): Unit =
       ad.getUserData.put(OPT_INDEX_VALUE, new java.lang.Boolean(indexValue))
 
-    def getIndexValue(): Boolean =
+    def isIndexValue(): Boolean =
       Option(ad.getUserData.get(OPT_INDEX_VALUE).asInstanceOf[Boolean]).getOrElse(false)
 
     def setCardinality(cardinality: Cardinality): Unit =

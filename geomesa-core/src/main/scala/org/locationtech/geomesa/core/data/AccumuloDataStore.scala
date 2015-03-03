@@ -288,7 +288,8 @@ class AccumuloDataStore(val connector: Connector,
     val indexSchemaFmt = metadata.read(sft.getTypeName, SCHEMA_KEY)
       .getOrElse(throw new RuntimeException(s"Unable to find required metadata property for $SCHEMA_KEY"))
     val fe = SimpleFeatureEncoder(sft, getFeatureEncoding(sft))
-    val indexSchema = IndexSchema(indexSchemaFmt, sft, fe)
+    val ive = IndexValueEncoder(sft, geomesaVersion(sft))
+    val indexSchema = IndexSchema(indexSchemaFmt, sft, fe, ive)
     indexSchema.maxShard
   }
 
@@ -821,8 +822,9 @@ class AccumuloDataStore(val connector: Connector,
     val indexSchemaFmt = getIndexSchemaFmt(featureName)
     val sft = getSchema(featureName)
     val fe = SimpleFeatureEncoder(sft, getFeatureEncoding(sft))
+    val ive = IndexValueEncoder(sft, geomesaVersion(sft))
     setQueryTransforms(query, sft)
-    new AccumuloFeatureReader(this, query, indexSchemaFmt, sft, fe)
+    new AccumuloFeatureReader(this, query, indexSchemaFmt, sft, fe, ive)
   }
 
   /* create a general purpose writer that is capable of insert, deletes, and updates */
@@ -832,7 +834,8 @@ class AccumuloDataStore(val connector: Connector,
     val sft = getSchema(typeName)
     val indexSchemaFmt = getIndexSchemaFmt(typeName)
     val fe = SimpleFeatureEncoder(sft, getFeatureEncoding(sft))
-    val encoder = IndexSchema.buildKeyEncoder(indexSchemaFmt, fe)
+    val ive = IndexValueEncoder(sft, geomesaVersion(sft))
+    val encoder = IndexSchema.buildKeyEncoder(indexSchemaFmt, fe, ive)
     new ModifyAccumuloFeatureWriter(sft, encoder, connector, fe, writeVisibilities, filter, this)
   }
 
@@ -844,7 +847,8 @@ class AccumuloDataStore(val connector: Connector,
     val sft = getSchema(typeName)
     val indexSchemaFmt = getIndexSchemaFmt(typeName)
     val fe = SimpleFeatureEncoder(sft, getFeatureEncoding(sft))
-    val encoder = IndexSchema.buildKeyEncoder(indexSchemaFmt, fe)
+    val ive = IndexValueEncoder(sft, geomesaVersion(sft))
+    val encoder = IndexSchema.buildKeyEncoder(indexSchemaFmt, fe, ive)
     new AppendAccumuloFeatureWriter(sft, encoder, connector, fe, writeVisibilities, this)
   }
 

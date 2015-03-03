@@ -85,7 +85,7 @@ class RecordIdxStrategy extends Strategy with Logging {
     val (idFilters, oFilters) =  partitionID(query.getFilter)
 
     // recombine non-ID filters
-    val combinedOFilter = filterListAsAnd(oFilters)
+    val ecql = filterListAsAnd(oFilters)
 
     // Multiple sets of IDs in a ID Filter are ORs. ANDs of these call for the intersection to be taken.
     // intersect together all groups of ID Filters, producing Some[Id] if the intersection returns something
@@ -117,14 +117,11 @@ class RecordIdxStrategy extends Strategy with Logging {
 
     output(s"Setting ${ranges.size} ranges.")
 
-    // this should be done with care, ECQL -> Filter -> CQL is NOT a unitary transform
-    val ecql = combinedOFilter.map { ECQL.toCQL }
-
     val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, featureType)
 
     val cfg = if (iteratorConfig.hasTransformOrFilter) {
       // TODO apply optimization for when transforms cover filter
-      val cfg = configureRecordTableIterator(featureType, featureEncoding, combinedOFilter, query)
+      val cfg = configureRecordTableIterator(featureType, featureEncoding, ecql, query)
       output(s"RecordTableIterator: ${cfg.toString }")
       Some(cfg)
     } else {

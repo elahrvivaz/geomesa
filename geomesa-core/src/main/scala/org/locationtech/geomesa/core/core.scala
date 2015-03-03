@@ -45,5 +45,7 @@ package object core {
   val GEOMESA_ITERATORS_TRANSFORM           = "geomesa.iterators.transform"
   val GEOMESA_ITERATORS_TRANSFORM_SCHEMA    = "geomesa.iterators.transform.schema"
   val GEOMESA_ITERATORS_IS_DENSITY_TYPE     = "geomesa.iterators.is-density-type"
+  val GEOMESA_ITERATORS_INDEX_SCHEMA        = "geomesa.iterators.index.schema"
+  val GEOMESA_ITERATORS_VERSION             = "geomesa.iterators.version"
 
 }

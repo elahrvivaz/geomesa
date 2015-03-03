@@ -28,12 +28,13 @@ class AccumuloFeatureReader(dataStore: AccumuloDataStore,
                             query: Query,
                             indexSchemaFmt: String,
                             sft: SimpleFeatureType,
-                            featureEncoder: SimpleFeatureEncoder)
+                            featureEncoder: SimpleFeatureEncoder,
+                            indexValueEncoder: IndexValueEncoder)
     extends FeatureReader[SimpleFeatureType, SimpleFeature] with MethodProfiling {
 
   implicit val timings = new TimingsImpl
 
-  private val indexSchema = IndexSchema(indexSchemaFmt, sft, featureEncoder)
+  private val indexSchema = IndexSchema(indexSchemaFmt, sft, featureEncoder, indexValueEncoder)
   private val queryPlanner = indexSchema.planner
   private lazy val strategyHints = dataStore.strategyHints(sft)
 

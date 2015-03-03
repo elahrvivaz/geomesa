@@ -334,6 +334,21 @@ class AccumuloDataStoreTest extends Specification {
       results(0).getAttribute("name") must beNull
     }
 
+    "handle back compatible transformations" in {
+      val sftName = "transformtest7"
+      val sft = createSchema(sftName)
+      ds.setGeomesaVersion(sftName, 2)
+
+      addDefaultPoint(sft)
+
+      val query = new Query(sftName, Filter.INCLUDE, List("dtg", "geom").toArray)
+      val results = SelfClosingIterator(CloseableIterator(ds.getFeatureSource(sftName).getFeatures(query).features())).toList
+      results must haveSize(1)
+      results(0).getAttribute("dtg") mustEqual(defaultDtg)
+      results(0).getAttribute("geom") mustEqual(defaultGeom)
+      results(0).getAttribute("name") must beNull
+    }
+
     "handle setPropertyNames transformations" in {
       val sftName = "transformtest3"
       val sft = createSchema(sftName)

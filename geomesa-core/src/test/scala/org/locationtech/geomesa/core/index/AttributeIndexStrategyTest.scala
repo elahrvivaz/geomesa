@@ -104,7 +104,8 @@ class AttributeIndexStrategyTest extends Specification {
   fs.addFeatures(featureCollection)
 
   val featureEncoder = SimpleFeatureEncoder(sft, ds.getFeatureEncoding(sft))
-  val indexSchema = IndexSchema(ds.getIndexSchemaFmt(sftName), sft, featureEncoder)
+  val indexValueEncoder = IndexValueEncoder(sft, ds.geomesaVersion(sft))
+  val indexSchema = IndexSchema(ds.getIndexSchemaFmt(sftName), sft, featureEncoder, indexValueEncoder)
   val queryPlanner = indexSchema.planner
 
   def execute(strategy: AttributeIdxStrategy, filter: String): List[String] = {

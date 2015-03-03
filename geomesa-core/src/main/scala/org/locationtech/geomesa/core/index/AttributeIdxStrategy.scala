@@ -36,6 +36,8 @@ import org.locationtech.geomesa.core.util.{BatchMultiScanner, SelfClosingIterato
 import org.locationtech.geomesa.feature.FeatureEncoding.FeatureEncoding
 import org.locationtech.geomesa.feature.SimpleFeatureDecoder
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
+import org.locationtech.geomesa.utils.stats.IndexCoverage
+import org.locationtech.geomesa.utils.stats.IndexCoverage.IndexCoverage
 import org.locationtech.geomesa.utils.stats.IndexCoverage.IndexCoverage
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.expression.{Expression, Literal, PropertyName}
@@ -79,6 +81,7 @@ trait AttributeIdxStrategy extends Strategy with Logging {
     val ecqlFilter: Option[Filter] = nonSTFilters.map(_ => recomposeAnd(nonSTFilters)).headOption
 
     val encoding = iqp.featureEncoding
+    val version = acc.geomesaVersion(featureType)
 
     // choose which iterator we want to use - joining iterator or attribute only iterator
     val iteratorChoice: IteratorConfig =
@@ -88,7 +91,7 @@ trait AttributeIdxStrategy extends Strategy with Logging {
       case IndexOnlyIterator =>
         // the attribute index iterator also handles transforms and date/geom filters
         val cfg = configureAttributeIndexIterator(featureType, encoding, query, stFilter, ecqlFilter,
-          iteratorChoice.transformCoversFilter, attributeName)
+          iteratorChoice.transformCoversFilter, attributeName, version)
         attrScanner.addScanIterator(cfg)
         output(s"AttributeIndexIterator: ${cfg.toString }")
 
@@ -106,7 +109,7 @@ trait AttributeIdxStrategy extends Strategy with Logging {
         output("Using record join iterator")
         stFilter.foreach { filter =>
           // apply a filter for the indexed date and geometry
-          val cfg = configureSpatioTemporalFilter(featureType, encoding, stFilter)
+          val cfg = configureSpatioTemporalFilter(featureType, encoding, stFilter, version)
           attrScanner.addScanIterator(cfg)
           output(s"SpatioTemporalFilter: ${cfg.toString }")
         }
@@ -115,7 +118,6 @@ trait AttributeIdxStrategy extends Strategy with Logging {
 
         if (iteratorChoice.hasTransformOrFilter) {
           // apply an iterator for any remaining transforms/filters
-          // TODO apply optimization for when transforms cover filter
           val cfg = configureRecordTableIterator(featureType, encoding, ecqlFilter, query)
           recordScanner.addScanIterator(cfg)
           output(s"RecordTableIterator: ${cfg.toString }")
@@ -152,7 +154,8 @@ trait AttributeIdxStrategy extends Strategy with Logging {
       stFilter: Option[Filter],
       ecqlFilter: Option[Filter],
       needsTransform: Boolean,
-      attributeName: String) = {
+      attributeName: String,
+      version: Int) = {
 
     // the attribute index iterator also checks any ST filters
     val cfg = new IteratorSetting(
@@ -161,13 +164,21 @@ trait AttributeIdxStrategy extends Strategy with Logging {
       classOf[AttributeIndexIterator]
     )
 
+    val coverage = featureType.getDescriptor(attributeName).getIndexCoverage()
+
     configureFeatureTypeName(cfg, featureType.getTypeName)
     configureFeatureEncoding(cfg, encoding)
-    configureStFilter(cfg, stFilter)
-    configureEcqlFilter(cfg, ecqlFilter.map(ECQL.toCQL))
-    configureAttributeName(cfg, attributeName)
-    configureIndexCoverage(cfg, featureType.getDescriptor(attributeName).getIndexCoverage())
     configureIndexValues(cfg, featureType)
+    configureAttributeName(cfg, attributeName)
+    configureIndexCoverage(cfg, coverage)
+    configureVersion(cfg, version)
+    if (coverage == IndexCoverage.FULL) {
+      // combine filters into one check
+      configureEcqlFilter(cfg, filterListAsAnd(Seq(stFilter ++ ecqlFilter).flatten).map(ECQL.toCQL))
+    } else {
+      configureStFilter(cfg, stFilter)
+      configureEcqlFilter(cfg, ecqlFilter.map(ECQL.toCQL))
+    }
     if (needsTransform) {
       // we have to evaluate the filter against full feature then apply the transform
       configureFeatureType(cfg, featureType)
@@ -184,7 +195,8 @@ trait AttributeIdxStrategy extends Strategy with Logging {
   private def configureSpatioTemporalFilter(
       featureType: SimpleFeatureType,
       encoding: FeatureEncoding,
-      stFilter: Option[Filter]) = {
+      stFilter: Option[Filter],
+      version: Int) = {
 
     // a filter applied to the attribute table to check ST filters
     val cfg = new IteratorSetting(
@@ -198,6 +210,7 @@ trait AttributeIdxStrategy extends Strategy with Logging {
     configureIndexValues(cfg, featureType)
     configureFeatureEncoding(cfg, encoding)
     configureStFilter(cfg, stFilter)
+    configureVersion(cfg, version)
 
     cfg
   }

@@ -86,15 +86,16 @@ abstract class AccumuloFeatureWriter(featureType: SimpleFeatureType,
     val stTable = ds.getSpatioTemporalIdxTableName(featureType)
     val stWriter = List(SpatioTemporalTable.spatioTemporalWriter(multiBWWriter.getBatchWriter(stTable), indexEncoder))
 
+    val version = ds.geomesaVersion(featureType)
     val attrWriters =
-      if (ds.geomesaVersion(featureType) < 1) {
+      if (version < 1) {
         List.empty
       } else {
         val attrWriter = multiBWWriter.getBatchWriter(ds.getAttrIdxTableName(featureType))
         val recWriter = multiBWWriter.getBatchWriter(ds.getRecordTableForType(featureType))
         val rowIdPrefix = org.locationtech.geomesa.core.index.getTableSharingPrefix(featureType)
-        val encoding = encoder.encoding
-        List(AttributeTable.attrWriter(attrWriter, featureType, encoding, indexedAttributes, rowIdPrefix),
+        val indexValueEncoder = IndexValueEncoder(featureType, version)
+        List(AttributeTable.attrWriter(attrWriter, featureType, indexValueEncoder, encoder, indexedAttributes, rowIdPrefix),
              RecordTable.recordWriter(recWriter, encoder, rowIdPrefix))
       }
 
