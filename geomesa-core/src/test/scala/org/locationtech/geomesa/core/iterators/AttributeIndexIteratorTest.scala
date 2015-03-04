@@ -108,11 +108,10 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
     def checkExplainStrategy(filter: String) = {
       val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg"))
       val explain = new ExplainString()
-      ds.getFeatureReader(sftName, query).explainQuery(o = explain)
+      ds.explainQuery(sftName, query, explain)
       val output = explain.toString()
-      val iter = output.split("\n").filter(_.startsWith("addScanIterator")).headOption
-      iter.isDefined mustEqual true
-      iter.get must contain(classOf[AttributeIndexIterator].getName)
+      val iter = output.split("\n").filter(_.startsWith("AttributeIndexIterator:")).headOption
+      iter must beSome
     }
 
     "be selected for appropriate queries" in {
@@ -120,7 +119,6 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
         "name = 'b'",
         "name < 'b'",
         "name > 'b'",
-        "name is NULL",
         "dtg TEQUALS 2014-01-01T12:30:00.000Z",
         "dtg = '2014-01-01T12:30:00.000Z'",
         "dtg BETWEEN '2012-01-01T12:00:00.000Z' AND '2013-01-01T12:00:00.000Z'",
@@ -144,11 +142,9 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       filters.foreach { case (filter, prop) =>
         val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg") ++ prop)
         val explain = new ExplainString()
-        ds.getFeatureReader(sftName, query).explainQuery(o = explain)
-        val output = explain.toString()
-        val iter = output.split("\n").filter(_.startsWith("addScanIterator")).headOption
-        iter.isDefined mustEqual true
-        iter.get.contains(classOf[AttributeIndexIterator].getName) mustEqual false
+        ds.explainQuery(sftName, query, explain)
+        val output = explain.toString().split("\n")
+        output.forall(s => !s.startsWith("AttributeIndexIterator:")) must beTrue
       }
       success
     }
@@ -202,18 +198,6 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
         results.map(_.getAttribute("name").asInstanceOf[String]) must contain("b").exactly(4)
         results.map(_.getAttribute("name").asInstanceOf[String]) must contain("c").exactly(4)
         results.map(_.getAttribute("name").asInstanceOf[String]) must contain("d").exactly(4)
-        results.map(_.getAttribute("geom").toString) must contain("POINT (45 45)", "POINT (46 46)", "POINT (47 47)", "POINT (48 48)")
-        results.map(_.getAttribute("dtg").asInstanceOf[Date]) must contain(dateToIndex).foreach
-      }
-
-      "for string null" >> {
-        val filter = "name is NULL"
-        val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "name"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
-
-        results must haveSize(4)
-        results.map(_.getAttributeCount) must contain(3).foreach
-        results.map(_.getAttribute("name").asInstanceOf[String]) must contain("").foreach
         results.map(_.getAttribute("geom").toString) must contain("POINT (45 45)", "POINT (46 46)", "POINT (47 47)", "POINT (48 48)")
         results.map(_.getAttribute("dtg").asInstanceOf[Date]) must contain(dateToIndex).foreach
       }

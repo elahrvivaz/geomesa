@@ -175,7 +175,7 @@ object RichAttributeDescriptors {
 }
 
 class JodaConverterFactory extends ConverterFactory {
-  private val df = ISODateTimeFormat.dateTime()
+  private val df = ISODateTimeFormat.dateTime().withZoneUTC()
   def createConverter(source: Class[_], target: Class[_], hints: Hints) =
     if(classOf[java.util.Date].isAssignableFrom(source) && classOf[String].isAssignableFrom(target)) {
       // Date => String

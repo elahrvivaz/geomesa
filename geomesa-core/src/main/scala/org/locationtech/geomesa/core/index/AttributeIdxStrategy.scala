@@ -16,6 +16,7 @@
 
 package org.locationtech.geomesa.core.index
 
+import java.util.Date
 import java.util.Map.Entry
 
 import com.typesafe.scalalogging.slf4j.Logging
@@ -37,7 +38,6 @@ import org.locationtech.geomesa.feature.FeatureEncoding.FeatureEncoding
 import org.locationtech.geomesa.feature.SimpleFeatureDecoder
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.stats.IndexCoverage
-import org.locationtech.geomesa.utils.stats.IndexCoverage.IndexCoverage
 import org.locationtech.geomesa.utils.stats.IndexCoverage.IndexCoverage
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.expression.{Expression, Literal, PropertyName}
@@ -70,7 +70,7 @@ trait AttributeIdxStrategy extends Strategy with Logging {
     val attrScanner = acc.createAttrIdxScanner(featureType)
     attrScanner.setRange(range)
 
-    val (geomFilters, otherFilters) = partitionGeom(query.getFilter)
+    val (geomFilters, otherFilters) = partitionGeom(query.getFilter, featureType)
     val (temporalFilters, nonSTFilters) = partitionTemporal(otherFilters, getDtgFieldName(featureType))
 
     output(s"Geometry filters: $geomFilters")
@@ -269,68 +269,66 @@ class AttributeIdxLikeStrategy extends AttributeIdxStrategy {
   }
 }
 
-object AttributeIndexStrategy {
+object AttributeIndexStrategy extends StrategyProvider {
 
-  def getAttributeIndexStrategy(filter: Filter, sft: SimpleFeatureType): Option[Strategy] =
+  import org.locationtech.geomesa.core.index.Strategy._
+
+  override def getStrategy(filter: Filter, sft: SimpleFeatureType, hints: StrategyHints) = {
+    val indexed: (PropertyLiteral) => Boolean = (p: PropertyLiteral) => sft.getDescriptor(p.name).isIndexed
     filter match {
       // equals strategy checks
       case f: PropertyIsEqualTo =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression1, f.getExpression2)
-        if (canQuery) Some(new AttributeIdxEqualsStrategy) else None
-
+        checkOrder(f.getExpression1, f.getExpression2).filter(indexed)
+            .map(_ => StrategyDecision(new AttributeIdxEqualsStrategy, -1))
       case f: TEquals =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression1, f.getExpression2)
-        if (canQuery) Some(new AttributeIdxEqualsStrategy) else None
-
-      case f: PropertyIsNil =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression)
-        if (canQuery) Some(new AttributeIdxEqualsStrategy) else None
-
-      case f: PropertyIsNull =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression)
-        if (canQuery) Some(new AttributeIdxEqualsStrategy) else None
+        checkOrder(f.getExpression1, f.getExpression2).filter(indexed)
+            .map(_ => StrategyDecision(new AttributeIdxEqualsStrategy, -1))
 
       // like strategy checks
       case f: PropertyIsLike =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression) && QueryStrategyDecider.likeEligible(f)
-        if (canQuery) Some(new AttributeIdxLikeStrategy) else None
+        val prop = f.getExpression.asInstanceOf[PropertyName].getPropertyName
+        val descriptor = sft.getDescriptor(prop)
+        if (descriptor.isIndexed && QueryStrategyDecider.likeEligible(f)) {
+          Some(StrategyDecision(new AttributeIdxLikeStrategy, -1))
+        } else {
+          None
+        }
 
       // range strategy checks
       case f: PropertyIsBetween =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression)
-        if (canQuery) Some(new AttributeIdxRangeStrategy) else None
-
+        val prop = f.getExpression.asInstanceOf[PropertyName].getPropertyName
+        val descriptor = sft.getDescriptor(prop)
+        if (descriptor.isIndexed) {
+          Some(StrategyDecision(new AttributeIdxRangeStrategy, -1))
+        } else {
+          None
+        }
       case f: PropertyIsGreaterThan =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression1, f.getExpression2)
-        if (canQuery) Some(new AttributeIdxRangeStrategy) else None
-
+        checkOrder(f.getExpression1, f.getExpression2).filter(indexed)
+            .map(_ => StrategyDecision(new AttributeIdxRangeStrategy, -1))
       case f: PropertyIsGreaterThanOrEqualTo =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression1, f.getExpression2)
-        if (canQuery) Some(new AttributeIdxRangeStrategy) else None
-
+        checkOrder(f.getExpression1, f.getExpression2).filter(indexed)
+            .map(_ => StrategyDecision(new AttributeIdxRangeStrategy, -1))
       case f: PropertyIsLessThan =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression1, f.getExpression2)
-        if (canQuery) Some(new AttributeIdxRangeStrategy) else None
-
+        checkOrder(f.getExpression1, f.getExpression2).filter(indexed)
+            .map(_ => StrategyDecision(new AttributeIdxRangeStrategy, -1))
       case f: PropertyIsLessThanOrEqualTo =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression1, f.getExpression2)
-        if (canQuery) Some(new AttributeIdxRangeStrategy) else None
-
+        checkOrder(f.getExpression1, f.getExpression2).filter(indexed)
+            .map(_ => StrategyDecision(new AttributeIdxRangeStrategy, -1))
       case f: Before =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression1, f.getExpression2)
-        if (canQuery) Some(new AttributeIdxRangeStrategy) else None
-
+        checkOrder(f.getExpression1, f.getExpression2).filter(indexed)
+            .map(_ => StrategyDecision(new AttributeIdxRangeStrategy, -1))
       case f: After =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression1, f.getExpression2)
-        if (canQuery) Some(new AttributeIdxRangeStrategy) else None
-
+        checkOrder(f.getExpression1, f.getExpression2).filter(indexed)
+            .map(_ => StrategyDecision(new AttributeIdxRangeStrategy, -1))
       case f: During =>
-        val canQuery = isValidAttributeFilter(sft, f.getExpression1, f.getExpression2)
-        if (canQuery) Some(new AttributeIdxRangeStrategy) else None
+        checkOrder(f.getExpression1, f.getExpression2).filter(indexed)
+            .map(_ => StrategyDecision(new AttributeIdxRangeStrategy, -1))
 
-      // doesn't match any property strategy
+      // doesn't match any attribute strategy
       case _ => None
     }
+  }
 
   /**
    * Ensures the following conditions:
@@ -349,23 +347,6 @@ object AttributeIndexStrategy {
       props.map(_.asInstanceOf[PropertyName].getPropertyName).forall(sft.getDescriptor(_).isIndexed) &&
       lits.forall(_.isInstanceOf[Literal])
   }
-
-  /**
-   * Checks the order of properties and literals in the expression
-   *
-   * @param one
-   * @param two
-   * @return (prop, literal, whether the order was flipped)
-   */
-  def checkOrder(one: Expression, two: Expression): (String, AnyRef, Boolean) =
-    (one, two) match {
-      case (p: PropertyName, l: Literal) => (p.getPropertyName, l.getValue, false)
-      case (l: Literal, p: PropertyName) => (p.getPropertyName, l.getValue, true)
-      case _ =>
-        val msg = "Unhandled properties in attribute index strategy: " +
-            s"${one.getClass.getName}, ${two.getClass.getName}"
-        throw new RuntimeException(msg)
-    }
 
   /**
    * Gets a row key that can used as a range for an attribute query.
@@ -419,75 +400,65 @@ object AttributeIndexStrategy {
         (prop, new AccRange(lowerBound, true, upperBound, true))
 
       case f: PropertyIsGreaterThan =>
-        val (prop, lit, flipped) = checkOrder(f.getExpression1, f.getExpression2)
-        if (flipped) {
-          (prop, lessThanRange(sft, prop, lit))
+        val prop = checkOrder(f.getExpression1, f.getExpression2).get
+        if (prop.flipped) {
+          (prop.name, lessThanRange(sft, prop.name, prop.literal.getValue))
         } else {
-          (prop, greaterThanRange(sft, prop, lit))
+          (prop.name, greaterThanRange(sft, prop.name, prop.literal.getValue))
         }
       case f: PropertyIsGreaterThanOrEqualTo =>
-        val (prop, lit, flipped) = checkOrder(f.getExpression1, f.getExpression2)
-        if (flipped) {
-          (prop, lessThanOrEqualRange(sft, prop, lit))
+        val prop = checkOrder(f.getExpression1, f.getExpression2).get
+        if (prop.flipped) {
+          (prop.name, lessThanOrEqualRange(sft, prop.name, prop.literal.getValue))
         } else {
-          (prop, greaterThanOrEqualRange(sft, prop, lit))
+          (prop.name, greaterThanOrEqualRange(sft, prop.name, prop.literal.getValue))
         }
       case f: PropertyIsLessThan =>
-        val (prop, lit, flipped) = checkOrder(f.getExpression1, f.getExpression2)
-        if (flipped) {
-          (prop, greaterThanRange(sft, prop, lit))
+        val prop = checkOrder(f.getExpression1, f.getExpression2).get
+        if (prop.flipped) {
+          (prop.name, greaterThanRange(sft, prop.name, prop.literal.getValue))
         } else {
-          (prop, lessThanRange(sft, prop, lit))
+          (prop.name, lessThanRange(sft, prop.name, prop.literal.getValue))
         }
       case f: PropertyIsLessThanOrEqualTo =>
-        val (prop, lit, flipped) = checkOrder(f.getExpression1, f.getExpression2)
-        if (flipped) {
-          (prop, greaterThanOrEqualRange(sft, prop, lit))
+        val prop = checkOrder(f.getExpression1, f.getExpression2).get
+        if (prop.flipped) {
+          (prop.name, greaterThanOrEqualRange(sft, prop.name, prop.literal.getValue))
         } else {
-          (prop, lessThanOrEqualRange(sft, prop, lit))
+          (prop.name, lessThanOrEqualRange(sft, prop.name, prop.literal.getValue))
         }
       case f: Before =>
-        val (prop, lit, flipped) = checkOrder(f.getExpression1, f.getExpression2)
-        if (flipped) {
-          (prop, greaterThanRange(sft, prop, lit))
+        val prop = checkOrder(f.getExpression1, f.getExpression2).get
+        val lit = prop.literal.evaluate(null, classOf[Date])
+        if (prop.flipped) {
+          (prop.name, greaterThanRange(sft, prop.name, lit))
         } else {
-          (prop, lessThanRange(sft, prop, lit))
+          (prop.name, lessThanRange(sft, prop.name, lit))
         }
       case f: After =>
-        val (prop, lit, flipped) = checkOrder(f.getExpression1, f.getExpression2)
-        if (flipped) {
-          (prop, lessThanRange(sft, prop, lit))
+        val prop = checkOrder(f.getExpression1, f.getExpression2).get
+        val lit = prop.literal.evaluate(null, classOf[Date])
+        if (prop.flipped) {
+          (prop.name, lessThanRange(sft, prop.name, lit))
         } else {
-          (prop, greaterThanRange(sft, prop, lit))
+          (prop.name, greaterThanRange(sft, prop.name, lit))
         }
       case f: During =>
-        val (prop, lit, _) = checkOrder(f.getExpression1, f.getExpression2)
-        val during = lit.asInstanceOf[DefaultPeriod]
+        val prop = checkOrder(f.getExpression1, f.getExpression2).get
+        val during = prop.literal.getValue.asInstanceOf[DefaultPeriod]
         val lower = during.getBeginning.getPosition.getDate
         val upper = during.getEnding.getPosition.getDate
-        val lowerBound = getEncodedAttrIdxRow(sft, prop, lower)
-        val upperBound = getEncodedAttrIdxRow(sft, prop, upper)
-        (prop, new AccRange(lowerBound, true, upperBound, true))
+        val lowerBound = getEncodedAttrIdxRow(sft, prop.name, lower)
+        val upperBound = getEncodedAttrIdxRow(sft, prop.name, upper)
+        (prop.name, new AccRange(lowerBound, true, upperBound, true))
 
       case f: PropertyIsEqualTo =>
-        val (prop, lit, _) = checkOrder(f.getExpression1, f.getExpression2)
-        (prop, AccRange.exact(getEncodedAttrIdxRow(sft, prop, lit)))
+        val prop = checkOrder(f.getExpression1, f.getExpression2).get
+        (prop.name, AccRange.exact(getEncodedAttrIdxRow(sft, prop.name, prop.literal.getValue)))
 
       case f: TEquals =>
-        val (prop, lit, _) = checkOrder(f.getExpression1, f.getExpression2)
-        (prop, AccRange.exact(getEncodedAttrIdxRow(sft, prop, lit)))
-
-      case f: PropertyIsNil =>
-        val prop = f.getExpression.asInstanceOf[PropertyName].getPropertyName
-        val rowIdPrefix = org.locationtech.geomesa.core.index.getTableSharingPrefix(sft)
-        val exact = AttributeTable.getAttributeIndexRows(rowIdPrefix, sft.getDescriptor(prop), None).head
-        (prop, AccRange.exact(exact))
-
-      case f: PropertyIsNull =>
-        val prop = f.getExpression.asInstanceOf[PropertyName].getPropertyName
-        val rowIdPrefix = org.locationtech.geomesa.core.index.getTableSharingPrefix(sft)
-        val exact = AttributeTable.getAttributeIndexRows(rowIdPrefix, sft.getDescriptor(prop), None).head
-        (prop, AccRange.exact(exact))
+        val prop = checkOrder(f.getExpression1, f.getExpression2).get
+        (prop.name, AccRange.exact(getEncodedAttrIdxRow(sft, prop.name, prop.literal.getValue)))
 
       case f: PropertyIsLike =>
         val prop = f.getExpression.asInstanceOf[PropertyName].getPropertyName
@@ -543,7 +514,7 @@ object AttributeIndexStrategy {
 
     val (indexFilter: Option[Filter], cqlFilter) = filter match {
       case and: And =>
-        findFirst(AttributeIndexStrategy.getAttributeIndexStrategy(_, sft).isDefined)(and.getChildren)
+        findFirst(AttributeIndexStrategy.getStrategy(_, sft, NoOpHints).isDefined)(and.getChildren)
       case f: Filter =>
         (Some(f), Seq())
     }

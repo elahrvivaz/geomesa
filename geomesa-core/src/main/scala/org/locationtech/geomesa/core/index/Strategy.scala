@@ -34,6 +34,7 @@ import org.locationtech.geomesa.feature.FeatureEncoding.FeatureEncoding
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
+import org.opengis.filter.expression.{Literal, PropertyName, Expression}
 
 import scala.collection.JavaConversions._
 import scala.util.Random
@@ -173,3 +174,39 @@ trait Strategy {
     case _ => None
   }
 }
+
+object Strategy {
+
+  /**
+   * Checks the order of properties and literals in the expression
+   *
+   * @param one
+   * @param two
+   * @return (prop, literal, whether the order was flipped)
+   */
+  def checkOrder[T](one: Expression, two: Expression): Option[PropertyLiteral] =
+    (one, two) match {
+      case (p: PropertyName, l: Literal) => Some(PropertyLiteral(p.getPropertyName, l, None, false))
+      case (l: Literal, p: PropertyName) => Some(PropertyLiteral(p.getPropertyName, l, None, true))
+      case (_: PropertyName, _: PropertyName) | (_: Literal, _: Literal) => None
+      case _ =>
+        val msg = s"Unhandled expressions in strategy: ${one.getClass.getName}, ${two.getClass.getName}"
+        throw new RuntimeException(msg)
+    }
+}
+
+trait StrategyProvider {
+
+  /**
+   * Returns details on a potential strategy if the filter is valid for this strategy.
+   *
+   * @param filter
+   * @param sft
+   * @return
+   */
+  def getStrategy(filter: Filter, sft: SimpleFeatureType, hints: StrategyHints): Option[StrategyDecision]
+}
+
+case class StrategyDecision(strategy: Strategy, cost: Long)
+
+case class PropertyLiteral(name: String, literal: Literal, secondary: Option[Literal], flipped: Boolean = false)

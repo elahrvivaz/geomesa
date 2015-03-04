@@ -287,10 +287,7 @@ class AccumuloDataStore(val connector: Connector,
   def getSpatioTemporalMaxShard(sft: SimpleFeatureType): Int = {
     val indexSchemaFmt = metadata.read(sft.getTypeName, SCHEMA_KEY)
       .getOrElse(throw new RuntimeException(s"Unable to find required metadata property for $SCHEMA_KEY"))
-    val fe = SimpleFeatureEncoder(sft, getFeatureEncoding(sft))
-    val ive = IndexValueEncoder(sft, geomesaVersion(sft))
-    val indexSchema = IndexSchema(indexSchemaFmt, sft, fe, ive)
-    indexSchema.maxShard
+    IndexSchema.maxShard(indexSchemaFmt)
   }
 
   def createTablesForType(featureType: SimpleFeatureType, maxShard: Int) {
@@ -819,12 +816,22 @@ class AccumuloDataStore(val connector: Connector,
   // This override is important as it allows us to optimize and plan our search with the Query.
   override def getFeatureReader(featureName: String, query: Query) = {
     validateMetadata(featureName)
-    val indexSchemaFmt = getIndexSchemaFmt(featureName)
     val sft = getSchema(featureName)
-    val fe = SimpleFeatureEncoder(sft, getFeatureEncoding(sft))
-    val ive = IndexValueEncoder(sft, geomesaVersion(sft))
+    val indexSchemaFmt = getIndexSchemaFmt(featureName)
+    val featureEncoding = getFeatureEncoding(sft)
+    val version = geomesaVersion(sft)
     setQueryTransforms(query, sft)
-    new AccumuloFeatureReader(this, query, indexSchemaFmt, sft, fe, ive)
+    new AccumuloFeatureReader(this, query, sft, indexSchemaFmt, featureEncoding, version)
+  }
+
+  def explainQuery(featureName: String, query: Query, o: ExplainerOutputType = ExplainPrintln) = {
+    validateMetadata(featureName)
+    val sft = getSchema(featureName)
+    val indexSchemaFmt = getIndexSchemaFmt(featureName)
+    val featureEncoding = getFeatureEncoding(sft)
+    val version = geomesaVersion(sft)
+    setQueryTransforms(query, sft)
+    new AccumuloQueryExplainer(this, query, sft, indexSchemaFmt, featureEncoding, version).explainQuery(o)
   }
 
   /* create a general purpose writer that is capable of insert, deletes, and updates */

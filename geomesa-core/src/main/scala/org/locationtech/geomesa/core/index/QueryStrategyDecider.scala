@@ -19,17 +19,13 @@ package org.locationtech.geomesa.core.index
 import java.util
 
 import org.geotools.data.Query
-import org.locationtech.geomesa.core.index.AttributeIndexStrategy.getAttributeIndexStrategy
 import org.locationtech.geomesa.core.index.FilterHelper._
 import org.locationtech.geomesa.core.index.QueryHints._
-import org.locationtech.geomesa.core.index.RecordIdxStrategy.getRecordIdxStrategy
-import org.locationtech.geomesa.core.index.STIdxStrategy.getSTIdxStrategy
 import org.locationtech.geomesa.utils.stats.Cardinality
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.{And, Filter, Id, PropertyIsLike}
 
 import scala.collection.JavaConversions._
-import scala.collection.mutable
 
 object QueryStrategyDecider {
 
@@ -47,7 +43,7 @@ object QueryStrategyDecider {
 
     val filter = query.getFilter
     // check if we can use the attribute index first
-    val attributeStrategy = getAttributeIndexStrategy(filter, sft)
+    val attributeStrategy = AttributeIndexStrategy.getStrategy(filter, sft, hints).map(_.strategy)
     attributeStrategy.getOrElse {
       filter match {
         case idFilter: Id => new RecordIdxStrategy
@@ -83,14 +79,16 @@ object QueryStrategyDecider {
     // scan the query and identify the type of predicates present
 
     // record strategy takes priority
-    val recordStrategies =
-      filters.toStream.flatMap(f => getRecordIdxStrategy(f, sft).map(StrategyAndFilter(_, f)))
+    val recordStrategies = filters.toStream.flatMap {
+      f => RecordIdxStrategy.getStrategy(f, sft, hints).map(s => StrategyAndFilter(s.strategy, f))
+    }
     if (!recordStrategies.isEmpty) {
       return recordStrategies(0).strategy
     }
 
-    val attributeStrategies =
-      filters.flatMap(f => getAttributeIndexStrategy(f, sft).map(StrategyAndFilter(_, f)))
+    val attributeStrategies = filters.flatMap{
+      f => AttributeIndexStrategy.getStrategy(f, sft, hints).map(s => StrategyAndFilter(s.strategy, f))
+    }
     // if no attribute or record strategies, use ST
     if (attributeStrategies.isEmpty) {
       return new STIdxStrategy
@@ -106,7 +104,9 @@ object QueryStrategyDecider {
     }
 
     // finally, compare spatial and attribute filters based on order
-    val stStrategy = filters.flatMap(f => getSTIdxStrategy(f, sft).map(StrategyAndFilter(_, f))).headOption
+    val stStrategy = filters.flatMap {
+      f => STIdxStrategy.getStrategy(f, sft, hints).map(s => StrategyAndFilter(s.strategy, f))
+    }.headOption
     val attrStrategy = attributeStrategies.find { case StrategyAndFilter(strategy, filter) =>
       val (prop, _) = AttributeIndexStrategy.getPropertyAndRange(filter, sft)
       hints.cardinality(sft.getDescriptor(prop)) != Cardinality.LOW

@@ -150,6 +150,8 @@ class ScalaSimpleFeature(initialId: String, sft: SimpleFeatureType, initialValue
       i += 1
     }
   }
+
+  override def toString() = s"${getClass.getSimpleName}:${getID}"
 }
 
 object ScalaSimpleFeature {

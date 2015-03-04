@@ -42,9 +42,10 @@ class SortedIndexUpdateJob(args: Args) extends GeoMesaBaseJob(args) {
     val encoding = ds.getFeatureEncoding(sft)
     val fe = SimpleFeatureEncoder(sft, encoding)
     val ive = IndexValueEncoder(sft, ds.geomesaVersion(sft))
-    val indexSchema = IndexSchema(indexSchemaFmt, sft, fe, ive)
-    val prefixes = (0 to indexSchema.maxShard).map {i =>
-      indexSchema.encoder.rowf match { case CompositeTextFormatter(formatters, sep) =>
+    val maxShard = IndexSchema.maxShard(indexSchemaFmt)
+    val encoder = IndexSchema.buildKeyEncoder(indexSchemaFmt, fe, ive)
+    val prefixes = (0 to maxShard).map {i =>
+      encoder.rowf match { case CompositeTextFormatter(formatters, sep) =>
         formatters.take(2).map {
           case f: PartitionTextFormatter => f.fmt(i)
           case f: ConstantTextFormatter => f.constStr

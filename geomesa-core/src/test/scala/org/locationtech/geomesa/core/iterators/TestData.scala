@@ -109,7 +109,7 @@ object TestData extends Logging {
   lazy val featureEncoder = SimpleFeatureEncoder(getFeatureType(), "avro")
   lazy val indexValueEncoder = IndexValueEncoder(featureType, INTERNAL_GEOMESA_VERSION)
 
-  lazy val index = IndexSchema(schemaEncoding, featureType, featureEncoder, indexValueEncoder)
+  lazy val indexEncoder = IndexSchema.buildKeyEncoder(schemaEncoding, featureEncoder, indexValueEncoder)
 
   val defaultDateTime = new DateTime(2011, 6, 1, 0, 0, 0, DateTimeZone.forID("UTC")).toDate
 
@@ -125,8 +125,8 @@ object TestData extends Logging {
 
     //entry.setAttribute(geomType, id)
     entry.setAttribute("attr2", "2nd" + id)
-    index.synchronized {
-      index.encode(entry).toList
+    indexEncoder.synchronized {
+      indexEncoder.encode(entry, "").toList
     }
   }
 
