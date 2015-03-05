@@ -35,7 +35,7 @@ case class GeohashDecoder(orderedSeq: Seq[TextExtractor]) extends ExtractingDeco
 }
 
 case class DateDecoder(orderSeq: Seq[TextExtractor], fs: String) extends ExtractingDecoder[DateTime] {
-  DateTimeZone.setDefault(DateTimeZone.forID("UTC"))
+  DateTimeZone.setDefault(DateTimeZone.UTC)
   val parser = org.joda.time.format.DateTimeFormat.forPattern(fs)
   def decode(key: Key): DateTime = parser.parseDateTime(seqExtract(orderSeq, key))
 }

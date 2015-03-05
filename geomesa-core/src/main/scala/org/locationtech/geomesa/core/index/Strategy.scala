@@ -17,10 +17,12 @@
 package org.locationtech.geomesa.core.index
 
 import java.util.Map.Entry
+import java.util.{Calendar, Date}
 
 import com.vividsolutions.jts.geom.{Geometry, Polygon}
 import org.apache.accumulo.core.client.{BatchScanner, IteratorSetting}
 import org.apache.accumulo.core.data.{Key, Value}
+import org.apache.commons.lang.time.DateUtils
 import org.geotools.data.Query
 import org.geotools.filter.text.ecql.ECQL
 import org.joda.time.Interval
@@ -31,10 +33,11 @@ import org.locationtech.geomesa.core.index.QueryPlanner._
 import org.locationtech.geomesa.core.iterators.{FEATURE_ENCODING, _}
 import org.locationtech.geomesa.core.util.SelfClosingIterator
 import org.locationtech.geomesa.feature.FeatureEncoding.FeatureEncoding
+import org.locationtech.geomesa.utils.geohash.GeohashUtils
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
-import org.opengis.filter.expression.{Literal, PropertyName, Expression}
+import org.opengis.filter.expression.{Expression, Literal, PropertyName}
 
 import scala.collection.JavaConversions._
 import scala.util.Random
@@ -59,6 +62,45 @@ trait Strategy {
   def configureStFilter(cfg: IteratorSetting, filter: Option[Filter]) = {
     filter.foreach { f => cfg.addOption(ST_FILTER_PROPERTY_NAME, ECQL.toCQL(f)) }
   }
+
+  def configureCoveredRows(cfg: IteratorSetting,
+                           geometries: Option[Seq[Geometry]],
+                           dates: Option[(Date, Date)],
+                           schema: String) = {
+
+    val roundedDates =
+      // round the start/end dates so that we only get fully covered days
+      // TODO this assumes that the index schema is to the day, revisit...
+      dates.map { case (s, e) => (DateUtils.ceiling(s, Calendar.DATE), DateUtils.truncate(e, Calendar.DATE)) }
+        .filter { case (s, e) => s.before(e) } // ensure we have at least 1 day covered
+        .flatMap { case (s, e) => // turn the dates into strings
+          IndexSchema.buildDateDecoder(schema).map(d => (d.parser.print(s.getTime), d.parser.print(e.getTime)))
+        }
+
+    lazy val geohashes = geometries.flatMap { geoms =>
+      // TODO test 3 vs 2 chars of precision
+      val geohashLength = Math.min(3, IndexSchema.buildGeohashRowExtractor(schema).bits)
+      val coveringGeohashes = GeohashUtils.getCoveredGeohashes(geoms, geohashLength)
+      if (coveringGeohashes.isEmpty) None else Some(coveringGeohashes)
+    }
+
+    // if both the dates and geoms passed in result in skippable rows, then we can skip, otherwise we can't
+    val canSkip = roundedDates.isDefined == dates.isDefined && geohashes.isDefined == geometries.isDefined &&
+        (roundedDates.isDefined || geohashes.isDefined)
+
+    if (canSkip) {
+      // set the values in the config
+      configureKeySchema(cfg, schema)
+      geohashes.foreach(gh => cfg.addOption(GEOMESA_ITERATORS_COVERED_GEOS, gh.mkString(",")))
+      roundedDates.foreach { case (s, e) =>
+        cfg.addOption(GEOMESA_ITERATORS_COVERED_DATE_START, s)
+        cfg.addOption(GEOMESA_ITERATORS_COVERED_DATE_END, e)
+      }
+    }
+  }
+
+  def configureKeySchema(cfg: IteratorSetting, schema: String) =
+    cfg.addOption(GEOMESA_ITERATORS_KEY_SCHEMA, schema)
 
   def configureVersion(cfg: IteratorSetting, version: Int) =
     cfg.addOption(GEOMESA_ITERATORS_VERSION, version.toString)

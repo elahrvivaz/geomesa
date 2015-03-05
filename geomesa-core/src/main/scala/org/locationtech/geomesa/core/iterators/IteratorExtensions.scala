@@ -19,6 +19,9 @@ package org.locationtech.geomesa.core.iterators
 import java.util.Date
 
 import com.vividsolutions.jts.geom.Geometry
+import org.apache.accumulo.core.client.IteratorSetting
+import org.apache.accumulo.core.data.Key
+import org.apache.hadoop.io.Text
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.core._
@@ -27,11 +30,15 @@ import org.locationtech.geomesa.core.iterators.IteratorExtensions.OptionMap
 import org.locationtech.geomesa.core.transform.TransformCreator
 import org.locationtech.geomesa.feature.FeatureEncoding.FeatureEncoding
 import org.locationtech.geomesa.feature.ScalaSimpleFeatureFactory
+import org.locationtech.geomesa.feature.kryo.KryoGeometrySerializer
 import org.locationtech.geomesa.feature.{FeatureEncoding, SimpleFeatureDecoder, SimpleFeatureEncoder}
+import org.locationtech.geomesa.utils.geohash.GeohashUtils
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
+import org.locationtech.geomesa.utils.text.WKBUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
+import scala.collection.immutable.HashSet
 import scala.util.Try
 
 /**
@@ -121,6 +128,9 @@ trait HasFeatureDecoder extends IteratorExtensions {
 trait HasSpatioTemporalFilter extends IteratorExtensions {
 
   var stFilter: Filter = null
+  var keyCheck: (Key) => Boolean = (k) => false
+  private[this] var lastRow: Text = null
+  private[this] var lastRowPassed = false
 
   // spatio-temporal filter config
   abstract override def init(featureType: SimpleFeatureType, options: OptionMap) = {
@@ -131,6 +141,59 @@ trait HasSpatioTemporalFilter extends IteratorExtensions {
         stFilter = filter
       }
     }
+
+    if (options.containsKey(GEOMESA_ITERATORS_KEY_SCHEMA)) {
+      val schema = options.get(GEOMESA_ITERATORS_KEY_SCHEMA)
+      val geohashExtractor = IndexSchema.buildGeohashRowExtractor(schema)
+      val precision = Math.min(3, geohashExtractor.bits) // TODO make this a constant or pass in
+      val dateExtractor = IndexSchema.buildDateRowExtractor(schema).orNull
+      val geohashes = Option(options.get(GEOMESA_ITERATORS_COVERED_GEOS)).map(g => HashSet(g.split(","): _*))
+      val dates = if (dateExtractor == null || !options.containsKey(GEOMESA_ITERATORS_COVERED_DATE_START)
+          || !options.containsKey(GEOMESA_ITERATORS_COVERED_DATE_END)) { None } else {
+        Some((options.get(GEOMESA_ITERATORS_COVERED_DATE_START), options.get(GEOMESA_ITERATORS_COVERED_DATE_END)))
+      }
+
+      val stRowCheck = (geohashes, dates) match {
+        case (Some(gh), Some((s, e))) =>
+          (r: String) => spatialKeyCheck(r, gh, geohashExtractor, precision) && temporalKeyCheck(r, s, e, dateExtractor)
+        case (Some(gh), None) => spatialKeyCheck(_: String, gh, geohashExtractor, precision)
+        case (None, Some((s, e))) => temporalKeyCheck(_: String, s, e, dateExtractor)
+        case (None, None) => null
+      }
+
+      if (stRowCheck != null) {
+        keyCheck = (k) => lastRowCheck(k.getRow, stRowCheck)
+        lastRow = null
+      }
+    }
+  }
+
+  private def lastRowCheck(row: Text, wrapped: (String) => Boolean): Boolean = {
+    if (row != lastRow) {
+      lastRow = row
+      lastRowPassed = wrapped(row.toString)
+    }
+    lastRowPassed
+  }
+
+  private def spatialKeyCheck(row: String,
+                              geohashes: HashSet[String],
+                              extractor: RowExtractor,
+                              precision: Int): Boolean = {
+    val gh = extractor.extract(row)
+    var i = 1
+    while (i <= precision) {
+      if (geohashes.contains(gh.substring(0, i))) {
+        return true
+      }
+      i += 1
+    }
+    return false
+  }
+
+  private def temporalKeyCheck(row: String, start: String, end: String, extractor: RowExtractor): Boolean = {
+    val date = extractor.extract(row)
+    date >= start && date <= end
   }
 }
 

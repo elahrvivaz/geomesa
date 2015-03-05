@@ -49,6 +49,10 @@ package object core {
   val GEOMESA_ITERATORS_IS_DENSITY_TYPE     = "geomesa.iterators.is-density-type"
   val GEOMESA_ITERATORS_INDEX_SCHEMA        = "geomesa.iterators.index.schema"
   val GEOMESA_ITERATORS_VERSION             = "geomesa.iterators.version"
+  val GEOMESA_ITERATORS_COVERED_GEOS        = "geomesa.iterators.covered-geom"
+  val GEOMESA_ITERATORS_COVERED_DATE_START  = "geomesa.iterators.covered-date-start"
+  val GEOMESA_ITERATORS_COVERED_DATE_END    = "geomesa.iterators.covered-date-end"
+  val GEOMESA_ITERATORS_KEY_SCHEMA          = "geomesa.iterators.key-schema"
 
   /**
    * Sums the values by key and returns a map containing all of the keys in the maps, with values

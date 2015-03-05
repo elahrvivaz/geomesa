@@ -102,8 +102,34 @@ trait SetTopFilterUnique extends SetTopFilter with HasInMemoryDeduplication {
     if (checkUniqueId(key.getColumnQualifier.toString)) { setTopFilter(key) }
 }
 
-trait SetTopFilterTransform extends IteratorFunctions with HasFeatureDecoder with HasFilter with HasTransforms {
+trait SetTopStFilter extends IteratorFunctions with HasFeatureDecoder with HasSpatioTemporalFilter {
 
+  /**
+   * decode to eval filter
+   *
+   * @param key
+   */
+  def setTopStFilter(key: Key): Unit = {
+    val value = source.getTopValue
+    if (keyCheck(key) || stFilter.evaluate(featureDecoder.decode(value.get))) {
+      topKey = key
+      topValue = value
+    }
+  }
+}
+
+trait SetTopStFilterUnique extends SetTopStFilter with HasInMemoryDeduplication {
+
+  /**
+   * decode to eval filter
+   *
+   * @param key
+   */
+  def setTopStFilterUnique(key: Key): Unit =
+    if (checkUniqueId(key.getColumnQualifier.toString)) { setTopStFilter(key) }
+}
+
+trait SetTopFilterTransform extends IteratorFunctions with HasFeatureDecoder with HasFilter with HasTransforms {
 
   /**
    * decode to eval filter, encode to apply transform
@@ -128,6 +154,37 @@ trait SetTopFilterTransformUnique extends SetTopFilterTransform with HasInMemory
    */
   def setTopFilterTransformUnique(key: Key): Unit =
     if (checkUniqueId(key.getColumnQualifier.toString)) { setTopFilterTransform(key) }
+}
+
+trait SetTopStFilterTransform
+    extends IteratorFunctions
+    with HasFeatureDecoder
+    with HasSpatioTemporalFilter
+    with HasTransforms {
+
+  /**
+   * decode to eval filter, encode to apply transform
+   *
+   * @param key
+   */
+  def setTopStFilterTransform(key: Key): Unit = {
+    val sf = featureDecoder.decode(source.getTopValue.get)
+    if (keyCheck(key) || stFilter.evaluate(sf)) {
+      topKey = key
+      topValue = new Value(transform(sf))
+    }
+  }
+}
+
+trait SetTopStFilterTransformUnique extends SetTopStFilterTransform with HasInMemoryDeduplication {
+
+  /**
+   * decode to eval filter, encode to apply transform
+   *
+   * @param key
+   */
+  def setTopStFilterTransformUnique(key: Key): Unit =
+    if (checkUniqueId(key.getColumnQualifier.toString)) { setTopStFilterTransform(key) }
 }
 
 trait SetTopIndexInclude
@@ -172,7 +229,7 @@ trait SetTopIndexFilter
   def setTopIndexFilter(key: Key): Unit = {
     // the value contains the full-resolution geometry and time plus feature ID
     val sf = indexEncoder.decode(source.getTopValue.get)
-    if (stFilter.evaluate(sf)) {
+    if (keyCheck(key) || stFilter.evaluate(sf)) {
       topKey = key
       topValue = new Value(featureEncoder.encode(sf))
     }
@@ -233,7 +290,7 @@ trait SetTopIndexFilterTransform
   def setTopIndexFilterTransform(key: Key): Unit = {
     // the value contains the full-resolution geometry and time plus feature ID
     val sf = indexEncoder.decode(source.getTopValue.get)
-    if (stFilter.evaluate(sf)) {
+    if (keyCheck(key) || stFilter.evaluate(sf)) {
       topKey = key
       topValue = new Value(transform(sf))
     }
