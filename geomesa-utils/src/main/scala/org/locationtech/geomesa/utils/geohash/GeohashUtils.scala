@@ -1005,4 +1005,83 @@ object GeohashUtils
       } else Seq()
     } else unDotted
   }
+
+  /**
+   * Will perform an AND on the geoms in the sequence
+   *
+   * @param geoms
+   * @param maxPrecision
+   * @return
+   */
+  def getCoveredGeohashes(geoms: Seq[Geometry], maxPrecision: Int): Seq[String] = {
+    assert(maxPrecision < 6, "Method intended for large geohashes")
+
+    if (geoms.isEmpty) {
+      return Seq.empty
+    }
+
+    val minBits = 0
+    val maxBits = maxPrecision * 5
+
+    // compute the geometry's centroid and envelope up front
+    val envelope = new Envelope()
+    geoms.foreach(g => envelope.expandToInclude(g.getEnvelopeInternal))
+    val coveringGeom = defaultGeometryFactory.toGeometry(envelope)
+
+    val (x, y) = {
+      val centroid = coveringGeom.getCentroid
+      (centroid.getX, centroid.getY)
+    }
+
+    // get the min bounding geohash
+    val range = ResolutionRange(minBits, maxBits, 5)
+    val allResolutionGhs = range.iterator.map(GeoHash(x, y, _)).filter(_.prec < maxBits)
+    val minBoundingGhOption = {
+      var gh: GeoHash = null
+      var done = false
+      while (!done && allResolutionGhs.hasNext) {
+        val next = allResolutionGhs.next()
+        if (next.contains(coveringGeom)) gh = next else done = true
+      }
+      Option(gh)
+    }
+
+    val coveredGhs = minBoundingGhOption.map { minBoundingGeohash =>
+      val results = scala.collection.mutable.ArrayBuffer.empty[String]
+      // recursive function to check geohashes
+      def addChildren(geohash: GeoHash): Unit = {
+        val children = base32seq.map(char => GeoHash(geohash.hash + char))
+        val (contained, notContained) = children.partition(gh => containsGeohash(geoms, gh.geom))
+        results.append(contained.map(_.hash): _*)
+        if (geohash.prec < maxBits - 5) {
+          // recurse if we haven't reached our max precision
+          // we subtract 5 since we're really comparing the children
+          // do a quick intersects on the envelope to avoid spurious checks of all children
+          notContained.filter(_.geom.getEnvelopeInternal.intersects(envelope)).foreach(addChildren)
+        }
+      }
+
+      addChildren(minBoundingGeohash)
+      results
+    }
+
+    coveredGhs.getOrElse(Seq.empty)
+  }
+
+  /**
+   * Implement our own contains as geometry collection doesn't support the function directly
+   *
+   * @param geoms geometries that will be compared to see if they contain the geohash
+   * @param geohash geometry that is checked to be contained in the geoms
+   * @param and if true, all geoms must contain the geohash, else any of them must
+   * @return true the the geom sequence contains the geohash
+   */
+  private def containsGeohash(geoms: Seq[Geometry], geohash: Geometry, and: Boolean = true): Boolean = {
+    import org.locationtech.geomesa.utils.geotools.Conversions.RichGeometryCollection
+    val m: PartialFunction[Geometry, Boolean] = {
+      case gc: GeometryCollection => containsGeohash(gc.geometries.toSeq, geohash, false)
+      case g: Geometry => g.contains(geohash)
+    }
+    if (and) geoms.forall(m) else geoms.exists(m)
+  }
 }

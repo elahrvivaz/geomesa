@@ -20,20 +20,30 @@ import org.apache.accumulo.core.data.Key
 import org.apache.hadoop.io.Text
 
 sealed trait TextExtractor {
-  def extract(k: Key): String
-  def extract(t: Text, offset: Int, bits: Int): String = t.toString.drop(offset).take(bits)
+  def extract(key: Key): String
+  def extract(key: String): String
+  protected def extract(keyPart: String, offset: Int, bits: Int): String = keyPart.substring(offset, offset + bits)
 }
 
-abstract class AbstractExtractor(offset: Int, bits: Int, f: Key => Text) extends TextExtractor {
-  def extract(k: Key): String = extract(f(k), offset, bits)
+abstract class AbstractExtractor(offset: Int, bits: Int) extends TextExtractor {
+  def keyFunction(k: Key): String
+  def extract(k: Key): String = extract(keyFunction(k), offset, bits)
+  def extract(k: String): String = extract(k, offset, bits)
 }
 
-case class RowExtractor(offset: Int, bits: Int)
-    extends AbstractExtractor(offset, bits, (k: Key) => k.getRow)
+case class RowExtractor(offset: Int, bits: Int) extends AbstractExtractor(offset, bits) {
+  override def keyFunction(k: Key) = k.getRow.toString
+}
 
-case class ColumnFamilyExtractor(offset: Int, bits: Int)
-    extends AbstractExtractor(offset, bits, (k: Key) => k.getColumnFamily)
+case class ColumnFamilyExtractor(offset: Int, bits: Int) extends AbstractExtractor(offset, bits) {
+  override def keyFunction(k: Key) = k.getColumnFamily.toString
+}
 
-case class ColumnQualifierExtractor(offset: Int, bits: Int)
-    extends AbstractExtractor(offset, bits, (k: Key) => k.getColumnQualifier)
+case class ColumnQualifierExtractor(offset: Int, bits: Int) extends AbstractExtractor(offset, bits) {
+  override def keyFunction(k: Key) = k.getColumnQualifier.toString
+}
 
+case class KeyExtractor(keyParts: Seq[TextExtractor], bits: Int) extends TextExtractor {
+  override def extract(k: Key): String = keyParts.map(_.extract(k)).mkString("")
+  override def extract(k: String): String = keyParts.map(_.extract(k)).mkString("")
+}

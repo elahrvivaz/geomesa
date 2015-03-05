@@ -100,6 +100,17 @@ object Conversions {
     }
   }
 
+  implicit class RichGeometryCollection(val gc: GeometryCollection) extends AnyVal {
+    def geometries = new Iterator[Geometry] {
+      private[this] var i = 0
+      override def hasNext = i < gc.getNumGeometries
+      override def next() = {
+        val g = gc.getGeometryN(i)
+        i += 1
+        g
+      }
+    }
+  }
 }
 
 object RichIterator {

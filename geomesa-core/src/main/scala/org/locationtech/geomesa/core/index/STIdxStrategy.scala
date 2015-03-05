@@ -16,6 +16,7 @@
 
 package org.locationtech.geomesa.core.index
 
+import java.util.Date
 import java.util.Map.Entry
 
 import com.typesafe.scalalogging.slf4j.Logging
@@ -38,7 +39,7 @@ import org.locationtech.geomesa.feature.FeatureEncoding.FeatureEncoding
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 import org.opengis.filter.expression.Literal
-import org.opengis.filter.spatial.{BBOX, BinarySpatialOperator}
+import org.opengis.filter.spatial.{BBOX, BinarySpatialOperator, Intersects}
 
 import scala.util.Try
 
@@ -119,6 +120,17 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
     val geometryToCover = netGeom(collectionToCover)
     val filter = buildFilter(geometryToCover, interval)
 
+    val geomPredsSkippable = tweakedGeoms.forall(g => g.isInstanceOf[BBOX] || g.isInstanceOf[Intersects])
+    val (geomsToSkip, datesToSkip) = if (!geomPredsSkippable) (None, None) else filter match {
+      // we can only skip rows if both the date and geom are skippable
+      case SpatialFilter(geom) => (Some(geomsToCover), None)
+      case DateRangeFilter(start, end) => (None, Some(start.toDate, end.toDate))
+      case SpatialDateRangeFilter(geom, start, end) => (Some(geomsToCover), Some(start.toDate, end.toDate))
+      case AcceptEverythingFilter => (None, None)
+      case DateFilter(_) => (None, None) // not a date range, so won't cover a whole row
+      case SpatialDateFilter(_, _) => (None, None) // not a date range, so won't cover a whole row
+    }
+
     output(s"GeomsToCover: $geomsToCover")
 
     val ofilter = filterListAsAnd(tweakedGeoms ++ temporalFilters)
@@ -134,8 +146,8 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
 
     val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, featureType)
 
-    val stiiIterCfg =
-      getSTIIIterCfg(iteratorConfig, query, featureType, ofilter, ecql, featureEncoding, version)
+    val stiiIterCfg = getSTIIIterCfg(iteratorConfig, query, featureType, ofilter, ecql, featureEncoding,
+      geomsToSkip, datesToSkip, schema, version)
 
     val densityIterCfg = getDensityIterCfg(query, geometryToCover, schema, featureEncoding, featureType)
 
@@ -151,15 +163,18 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
                      stFilter: Option[Filter],
                      ecqlFilter: Option[Filter],
                      featureEncoding: FeatureEncoding,
+                     geomToSkip: Option[Seq[Geometry]],
+                     datesToSkip: Option[(Date, Date)],
+                     schema: String,
                      version: Int): IteratorSetting = {
     iteratorConfig.iterator match {
       case IndexOnlyIterator =>
         configureIndexIterator(featureType, query, featureEncoding, stFilter,
-          iteratorConfig.transformCoversFilter, version)
+          iteratorConfig.transformCoversFilter, geomToSkip, datesToSkip, schema, version)
       case SpatioTemporalIterator =>
         val isDensity = query.getHints.containsKey(DENSITY_KEY)
         configureSpatioTemporalIntersectingIterator(featureType, query, featureEncoding, stFilter,
-          ecqlFilter, isDensity)
+          ecqlFilter, geomToSkip, datesToSkip, schema, isDensity)
     }
   }
 
@@ -181,14 +196,17 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
       featureType: SimpleFeatureType,
       query: Query,
       featureEncoding: FeatureEncoding,
-      filter: Option[Filter],
+      stFilter: Option[Filter],
       transformsCoverFilter: Boolean,
+      geomsToSkip: Option[Seq[Geometry]],
+      datesToSkip: Option[(Date, Date)],
+      schema: String,
       version: Int): IteratorSetting = {
 
-    val cfg = new IteratorSetting(iteratorPriority_SpatioTemporalIterator,
-      "within-" + randomPrintableString(5),classOf[IndexIterator])
+    val cfg = new IteratorSetting(iteratorPriority_SpatioTemporalIterator, classOf[IndexIterator])
 
-    configureStFilter(cfg, filter)
+    configureStFilter(cfg, stFilter)
+    configureCoveredRows(cfg, geomsToSkip, datesToSkip, schema)
     configureVersion(cfg, version)
     if (transformsCoverFilter) {
       // apply the transform directly to the index iterator
@@ -214,20 +232,32 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
       featureEncoding: FeatureEncoding,
       stFilter: Option[Filter],
       ecqlFilter: Option[Filter],
+      geomsToSkip: Option[Seq[Geometry]],
+      datesToSkip: Option[(Date, Date)],
+      schema: String,
       isDensity: Boolean): IteratorSetting = {
+
     val cfg = new IteratorSetting(iteratorPriority_SpatioTemporalIterator,
-      "within-" + randomPrintableString(5),
       classOf[SpatioTemporalIntersectingIterator])
-    val combinedFilter = (stFilter, ecqlFilter) match {
-      case (Some(st), Some(ecql)) => filterListAsAnd(Seq(st, ecql))
-      case (Some(_), None)        => stFilter
-      case (None, Some(_))        => ecqlFilter
-      case (None, None)           => None
+
+    (stFilter, ecqlFilter) match {
+      case (None, None) => // nothing
+
+      case (None, Some(_)) =>
+        configureEcqlFilter(cfg, ecqlFilter.map(ECQL.toCQL))
+
+      case (Some(st), Some(ecql)) =>
+        // we might as well combine the filters so we only evaluate once
+        configureEcqlFilter(cfg, filterListAsAnd(Seq(st, ecql)).map(ECQL.toCQL))
+
+      case (Some(_), None) =>
+        // configure just the st filter, as we can skip it with the covering geoms/dates
+        configureStFilter(cfg, stFilter)
+        configureCoveredRows(cfg, geomsToSkip, datesToSkip, schema)
     }
     configureFeatureType(cfg, featureType)
     configureFeatureEncoding(cfg, featureEncoding)
     configureTransforms(cfg, query)
-    configureEcqlFilter(cfg, combinedFilter.map(ECQL.toCQL))
     if (isDensity) {
       cfg.addOption(GEOMESA_ITERATORS_IS_DENSITY_TYPE, "isDensity")
     }

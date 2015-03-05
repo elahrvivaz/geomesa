@@ -239,7 +239,26 @@ object IndexSchema extends RegexParsers with Logging {
     }
   }
 
+  // builds a geohash extractor to extract the geohash from the row part of the index key
+  def ghRowExtractorParser = keypart ~ PART_DELIMITER ~ keypart ~ PART_DELIMITER ~ cqpart ^^ {
+    case rowf ~ PART_DELIMITER ~ cff ~ PART_DELIMITER ~ cqf => {
+      val (roffset, (ghoffset, rbits)) = extractGeohashEncoder(rowf.lf, 0, rowf.sep.length)
+      RowExtractor(roffset, rbits)
+    }
+  }
+
+  // builds a date extractor to extract the date from the row part of the index key
+  def dateRowExtractorParser = keypart ~ PART_DELIMITER ~ keypart ~ PART_DELIMITER ~ cqpart ^^ {
+    case rowf ~ PART_DELIMITER ~ cff ~ PART_DELIMITER ~ cqf => {
+      extractDateEncoder(rowf.lf, 0, rowf.sep.length).collect { case (f: String, i: Int) => RowExtractor(i, f.length) }
+    }
+  }
+
   def buildGeohashDecoder(s: String): GeohashDecoder = parse(ghDecoderParser, s).get
+
+  def buildGeohashRowExtractor(s: String): RowExtractor = parse(ghRowExtractorParser, s).get
+
+  def buildDateRowExtractor(s: String): Option[RowExtractor] = parse(dateRowExtractorParser, s).get
 
   def extractIdEncoder(seq: Seq[TextFormatter], offset: Int, sepLength: Int): Int =
     seq match {
