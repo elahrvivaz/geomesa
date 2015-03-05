@@ -255,6 +255,23 @@ class GeohashUtilsTest extends Specification with Logging {
       }
     }
   }
+
+  "GeoHashUtils" should {
+    "compute contained geohashes" in {
+      val geom = wkt2geom("POLYGON((33 -14, 82 -14, 82 24, 33 24, 33 -14))")
+      val hashes = GeohashUtils.getCoveredGeohashes(Seq(geom), 3)
+      hashes must contain(exactly("ky", "kz", "kvb", "kvc", "kvf", "kvg", "kvu", "kvv", "kvy", "kvz", "mn",
+        "mp", "mq", "mr", "mw", "mx", "mjb", "mjc", "mjf", "mjg", "mju", "mjv", "mjy", "mjz", "mmb", "mmc",
+        "mmf", "mmg", "mmu", "mmv", "mmy", "mmz", "mtb", "mtc", "mtf", "mtg", "mtu", "mtv", "mty", "mtz",
+        "mvb", "mvc", "my0", "my1", "my2", "my3", "my8", "my9", "myb", "myc", "mz0", "mz1", "mz2", "mz3",
+        "mz8", "mz9", "mzb", "mzc", "sb", "sc", "sf", "sg", "su0", "su1", "su4", "su5", "suh", "suj", "sun",
+        "sup", "t0", "t1", "t2", "t3", "t4", "t5", "t6", "t7", "t8", "t9", "td", "te", "tb0", "tb1", "tb2",
+        "tb3", "tb8", "tb9", "tbb", "tbc", "tc0", "tc1", "tc2", "tc3", "tc8", "tc9", "tcb", "tcc", "tf0",
+        "tf1", "tf2", "tf3", "tf8", "tf9", "tfb", "tfc", "tg0", "tg1", "tg2", "tg3", "tg8", "tg9", "tgb",
+        "tgc", "th0", "th1", "th4", "th5", "thh", "thj", "thn", "thp", "tk0", "tk1", "tk4", "tk5", "tkh",
+        "tkj", "tkn", "tkp", "ts0", "ts1", "ts4", "ts5", "tsh", "tsj", "tsn", "tsp", "tu0", "tu1"))
+    }
+  }
 }
 
 @Ignore

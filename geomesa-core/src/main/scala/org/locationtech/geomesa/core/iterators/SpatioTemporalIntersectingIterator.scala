@@ -40,8 +40,10 @@ class SpatioTemporalIntersectingIterator
     with HasFeatureType
     with SetTopUnique
     with SetTopFilterUnique
+    with SetTopStFilterUnique
     with SetTopTransformUnique
-    with SetTopFilterTransformUnique {
+    with SetTopFilterTransformUnique
+    with SetTopStFilterTransformUnique {
 
   var setTopOptimized: (Key) => Unit = null
 
@@ -54,15 +56,20 @@ class SpatioTemporalIntersectingIterator
 
     // pick the execution path once based on the filters and transforms we need to apply
     // see org.locationtech.geomesa.core.iterators.IteratorFunctions
-    setTopOptimized = (filter, transform, checkUniqueId) match {
-      case (null, null, null) => setTopInclude
-      case (null, null, _)    => setTopUnique
-      case (_, null, null)    => setTopFilter
-      case (_, null, _)       => setTopFilterUnique
-      case (null, _, null)    => setTopTransform
-      case (null, _, _)       => setTopTransformUnique
-      case (_, _, null)       => setTopFilterTransform
-      case (_, _, _)          => setTopFilterTransformUnique
+    // stFilter and filter should be mutually exclusive
+    setTopOptimized = (stFilter, filter, transform, checkUniqueId) match {
+      case (null, null, null, null) => setTopInclude
+      case (null, null, null, _)    => setTopUnique
+      case (null, _, null, null)    => setTopFilter
+      case (null, _, null, _)       => setTopFilterUnique
+      case (_, null, null, null)    => setTopStFilter
+      case (_, null, null, _)       => setTopStFilterUnique
+      case (null, null, _, null)    => setTopTransform
+      case (null, null, _, _)       => setTopTransformUnique
+      case (null, _, _, null)       => setTopFilterTransform
+      case (null, _, _, _)          => setTopFilterTransformUnique
+      case (_, null, _, null)       => setTopStFilterTransform
+      case (_, null, _, _)          => setTopStFilterTransformUnique
     }
   }
 
