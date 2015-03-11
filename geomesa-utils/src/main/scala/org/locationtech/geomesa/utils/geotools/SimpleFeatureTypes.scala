@@ -150,12 +150,14 @@ object SimpleFeatureTypes {
         )
 
       case t if geometryTypeMap.contains(t.getBinding.getSimpleName) =>
+        val srid = Option(ad.asInstanceOf[GeometryDescriptor].getCoordinateReferenceSystem)
+            .flatMap(crs => Try(crs.getName.getCode.toInt).toOption)
+            .getOrElse(4326)
         GeomAttributeSpec(
           ad.getLocalName,
           ad.getType.getBinding,
           ad.getUserData.getOrElse(OPT_INDEX, false).asInstanceOf[Boolean],
-          if (ad.asInstanceOf[GeometryDescriptor].getCoordinateReferenceSystem != null
-              && ad.asInstanceOf[GeometryDescriptor].getCoordinateReferenceSystem.equals(DefaultGeographicCRS.WGS84)) 4326 else -1,
+          srid,
           sft.getGeometryDescriptor.equals(ad)
         )
 
