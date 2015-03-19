@@ -35,7 +35,7 @@ import java.util.Map;
 
 public class GeoMesaInputFormat extends InputFormat<Text, SimpleFeature> {
 
-    org.locationtech.geomesa.jobs.mapreduce.GeoMesaInputFormat delegate =
+    private org.locationtech.geomesa.jobs.mapreduce.GeoMesaInputFormat delegate =
             new org.locationtech.geomesa.jobs.mapreduce.GeoMesaInputFormat();
 
     @Override

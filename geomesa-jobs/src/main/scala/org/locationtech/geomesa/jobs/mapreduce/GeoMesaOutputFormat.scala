@@ -16,13 +16,20 @@
 
 package org.locationtech.geomesa.jobs.mapreduce
 
+import java.io.IOException
+
+import org.apache.accumulo.core.client.BatchWriterConfig
 import org.apache.accumulo.core.client.mapreduce.AccumuloOutputFormat
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.data.Mutation
 import org.apache.hadoop.io.Text
-import org.apache.hadoop.mapreduce.{JobContext, TaskAttemptContext}
+import org.apache.hadoop.mapreduce._
 import org.geotools.data.DataStoreFinder
+import org.locationtech.geomesa.core.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
+import org.locationtech.geomesa.core.data.tables.{AttributeTable, RecordTable, SpatioTemporalTable}
 import org.locationtech.geomesa.core.data.{AccumuloDataStore, AccumuloDataStoreFactory}
+import org.locationtech.geomesa.core.index.{IndexSchema, IndexValueEncoder}
+import org.locationtech.geomesa.feature.SimpleFeatureEncoder
 import org.locationtech.geomesa.jobs.GeoMesaConfigurator
 import org.opengis.feature.simple.SimpleFeature
 
@@ -30,8 +37,10 @@ import scala.collection.JavaConversions._
 
 object GeoMesaOutputFormat {
 
-  def configure(job: org.apache.hadoop.mapreduce.Job, dsParams: Map[String, String]): Unit = {
-    val conf = job.getConfiguration
+  /**
+   * Configure the data store you will be writing to.
+   */
+  def configureDataStore(job: Job, dsParams: Map[String, String]): Unit = {
 
     val ds = DataStoreFinder.getDataStore(dsParams).asInstanceOf[AccumuloDataStore]
 
@@ -48,21 +57,24 @@ object GeoMesaOutputFormat {
 
     AccumuloOutputFormat.setCreateTables(job, false)
 
+    // TODO this would collide with the input format, if they were different...
+    // also set the datastore parameters so we can access them later
     GeoMesaConfigurator.setDataStoreParameters(job.getConfiguration, dsParams)
-//    AccumuloOutputFormat.setDefaultTableName(conf, options.output.table)
-
-//    val batchWriterConfig = new BatchWriterConfig()
-//    options.output.threads.foreach(t => batchWriterConfig.setMaxWriteThreads(t))
-//    options.output.memory.foreach(m => batchWriterConfig.setMaxMemory(m))
-//    AccumuloOutputFormat.setBatchWriterOptions(conf, batchWriterConfig)
-
   }
+
+  /**
+   * Configure the batch writer options used by accumulo.
+   */
+  def configureBatchWriter(job: Job, writerConfig: BatchWriterConfig): Unit =
+    AccumuloOutputFormat.setBatchWriterOptions(job, writerConfig)
 }
 
-class GeoMesaOutputFormat extends org.apache.hadoop.mapreduce.OutputFormat[String, SimpleFeature] {
+/**
+ * Output format that turns simple features into mutations and delegates to AccumuloOutputFormat
+ */
+class GeoMesaOutputFormat extends OutputFormat[Text, SimpleFeature] {
 
-  val delegate: org.apache.accumulo.core.client.mapreduce.AccumuloOutputFormat =
-    new org.apache.accumulo.core.client.mapreduce.AccumuloOutputFormat
+  val delegate = new AccumuloOutputFormat
 
   override def getRecordWriter(context: TaskAttemptContext) = {
     val params = GeoMesaConfigurator.getDataStoreParameters(context.getConfiguration)
@@ -70,25 +82,65 @@ class GeoMesaOutputFormat extends org.apache.hadoop.mapreduce.OutputFormat[Strin
   }
 
   override def checkOutputSpecs(context: JobContext) = {
+    val params = GeoMesaConfigurator.getDataStoreParameters(context.getConfiguration)
+    if (!AccumuloDataStoreFactory.canProcess(params)) {
+      throw new IOException("Data store connection parameters are not set")
+    }
     delegate.checkOutputSpecs(context)
   }
 
-  override def getOutputCommitter(context: TaskAttemptContext) = {
-    delegate.getOutputCommitter(context)
-  }
+  override def getOutputCommitter(context: TaskAttemptContext) = delegate.getOutputCommitter(context)
 }
 
-class GeoMesaRecordWriter(params: Map[String, String],
-                          delegate: org.apache.hadoop.mapreduce.RecordWriter[Text, Mutation])
-    extends org.apache.hadoop.mapreduce.RecordWriter[String, SimpleFeature] {
+/**
+ * Record writer for GeoMesa SimpleFeatures.
+ *
+ * Key is ignored. If the feature type for the given feature does not exist yet, it will be created.
+ */
+class GeoMesaRecordWriter(params: Map[String, String], delegate: RecordWriter[Text, Mutation])
+    extends RecordWriter[Text, SimpleFeature] {
 
-  val ds = DataStoreFinder.getDataStore(params)
+  type TableAndMutations = (Text, FeatureToMutations)
 
-  override def write(key: String, value: SimpleFeature) = {
+  val ds = DataStoreFinder.getDataStore(params).asInstanceOf[AccumuloDataStore]
 
+  val sftCache          = scala.collection.mutable.HashSet.empty[String]
+  val writerCache       = scala.collection.mutable.Map.empty[String, Seq[TableAndMutations]]
+  val encoderCache      = scala.collection.mutable.Map.empty[String, SimpleFeatureEncoder]
+  val indexEncoderCache = scala.collection.mutable.Map.empty[String, IndexValueEncoder]
+
+  override def write(key: Text, value: SimpleFeature) = {
+    val sft = value.getFeatureType
+    val sftName = sft.getTypeName
+
+    // ensure that the type has been created if we haven't seen it before
+    if (!sftCache.add(sftName)) {
+      // this is a no-op if schema is already created, and should be thread-safe from different mappers
+      ds.createSchema(value.getFeatureType)
+    }
+
+    val writers = writerCache.getOrElseUpdate(sftName, {
+      val stEncoder = IndexSchema.buildKeyEncoder(sft, ds.getIndexSchemaFmt(sft.getTypeName))
+      val stWriter = SpatioTemporalTable.spatioTemporalWriter(stEncoder)
+      val stTable = new Text(ds.getSpatioTemporalIdxTableName(sft))
+      val recWriter = RecordTable.recordWriter(sft)
+      val recTable = new Text(ds.getRecordTableForType(sft))
+      AttributeTable.attributeWriter(sft) match {
+        case None => Seq((stTable, stWriter), (recTable, recWriter))
+        case Some(attrWriter) =>
+          val attrTable = new Text(ds.getAttrIdxTableName(sft))
+          Seq((stTable, stWriter), (recTable, recWriter), (attrTable, attrWriter))
+      }
+    })
+
+    val encoder = encoderCache.getOrElseUpdate(sftName, SimpleFeatureEncoder(sft, ds.getFeatureEncoding(sft)))
+    val ive = indexEncoderCache.getOrElseUpdate(sftName, IndexValueEncoder(sft, ds.getGeomesaVersion(sft)))
+    val featureToWrite = new FeatureToWrite(value, ds.writeVisibilities, encoder, ive)
+
+    writers.foreach { case (table, featureToMutations) =>
+      featureToMutations(featureToWrite).foreach(delegate.write(table, _))
+    }
   }
 
-  override def close(context: TaskAttemptContext) = {
-    delegate.close(context)
-  }
+  override def close(context: TaskAttemptContext) = delegate.close(context)
 }

@@ -34,7 +34,7 @@ import java.util.Map;
 
 public class GeoMesaInputFormat implements InputFormat<Text, SimpleFeature> {
 
-    org.locationtech.geomesa.jobs.mapred.GeoMesaInputFormat delegate =
+    private org.locationtech.geomesa.jobs.mapred.GeoMesaInputFormat delegate =
             new org.locationtech.geomesa.jobs.mapred.GeoMesaInputFormat();
 
     public static void configure(JobConf job,
