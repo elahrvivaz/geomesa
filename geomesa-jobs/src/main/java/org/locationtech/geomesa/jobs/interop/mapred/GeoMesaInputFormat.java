@@ -55,10 +55,13 @@ public class GeoMesaInputFormat implements InputFormat<Text, SimpleFeature> {
     public static void configure(JobConf job,
                                  Map<String, String> dataStoreParams,
                                  String featureTypeName,
-                                 String filter) {
+                                 String filter,
+                                 String[] transform) {
         scala.collection.immutable.Map<String, String> scalaParams =
                 JavaConverters.asScalaMapConverter(dataStoreParams).asScala()
                               .toMap(Predef.<Tuple2<String, String>>conforms());
-        GeoMesaInputFormat$.MODULE$.configure(job, scalaParams, featureTypeName, Option.apply(filter));
+        Option<String> f = Option.apply(filter);
+        Option<String[]> t = Option.apply(transform);
+        GeoMesaInputFormat$.MODULE$.configure(job, scalaParams, featureTypeName, f, t);
     }
 }

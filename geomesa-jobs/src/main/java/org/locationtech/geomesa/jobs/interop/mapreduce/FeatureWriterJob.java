@@ -84,7 +84,7 @@ public class FeatureWriterJob {
 
         String cql = "BBOX(geom, -165,5,-50,75) AND dtg DURING 2015-03-02T00:00:00.000Z/2015-03-02T23:59:59.999Z";
 
-        GeoMesaInputFormat.configure(job, params, "myfeature", cql);
+        GeoMesaInputFormat.configure(job, params, "myfeature", cql, null);
 
         Map<String, String> outParams = new HashMap<String, String>();
         outParams.put("instanceId", "myinstance");

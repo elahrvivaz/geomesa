@@ -34,7 +34,18 @@
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
             <artifactId>geomesa-core-accumulo1.5</artifactId>
-            <scope>compile</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.locationtech.geomesa</groupId>
+                    <artifactId>geomesa-feature-accumulo1.5</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <!-- swap out to the shaded feature jar to avoid kryo issues -->
+        <dependency>
+            <groupId>org.locationtech.geomesa</groupId>
+            <artifactId>geomesa-feature-accumulo1.5</artifactId>
+            <classifier>shaded</classifier>
         </dependency>
         <dependency>
             <groupId>org.apache.accumulo</groupId>
@@ -142,6 +153,15 @@
             </dependencies>
             <build>
                 <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <version>2.17</version>
+                        <configuration>
+                            <!-- the shaded feature jar causes test issues -->
+                            <skipTests>true</skipTests>
+                        </configuration>
+                    </plugin>
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-shade-plugin</artifactId>

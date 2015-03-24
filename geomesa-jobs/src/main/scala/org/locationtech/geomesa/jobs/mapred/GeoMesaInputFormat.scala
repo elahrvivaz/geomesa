@@ -54,7 +54,8 @@ object GeoMesaInputFormat extends Logging {
   def configure(job: JobConf,
                 dsParams: Map[String, String],
                 featureTypeName: String,
-                filter: Option[String]): Unit = {
+                filter: Option[String] = None,
+                transform: Option[Array[String]] = None): Unit = {
 
     val ds = DataStoreFinder.getDataStore(dsParams).asInstanceOf[AccumuloDataStore]
 
@@ -74,7 +75,7 @@ object GeoMesaInputFormat extends Logging {
 
     // run an explain query to set up the iterators, ranges, etc
     val ecql = filter.map(ECQL.toFilter).getOrElse(Filter.INCLUDE)
-    val query = new Query(featureTypeName, ecql)
+    val query = transform.map(new Query(featureTypeName, ecql, _)).getOrElse(new Query(featureTypeName, ecql))
     val queryPlans = ds.getQueryPlan(featureTypeName, query)
 
     // see if the plan is something we can execute from a single table

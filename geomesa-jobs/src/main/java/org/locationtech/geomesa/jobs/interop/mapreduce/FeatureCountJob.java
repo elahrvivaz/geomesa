@@ -75,7 +75,7 @@ public class FeatureCountJob {
 
         String cql = "BBOX(geom, -165,5,-50,75) AND dtg DURING 2015-03-02T00:00:00.000Z/2015-03-02T23:59:59.999Z";
 
-        GeoMesaInputFormat.configure(job, params, "myfeature", cql);
+        GeoMesaInputFormat.configure(job, params, "myfeature", cql, null);
 
         System.exit(job.waitForCompletion(true) ? 0 : 1);
     }

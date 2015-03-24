@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.locationtech.geomesa.jobs.index
+package org.locationtech.geomesa.jobs
 
 import java.util.{List => JList, Map => JMap}
 
@@ -23,7 +23,6 @@ import com.twitter.scalding._
 import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapred.JobConf
-import org.locationtech.geomesa.jobs.JobUtils
 
 abstract class GeoMesaBaseJob(args: Args) extends Job(args) with Logging {
 

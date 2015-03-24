@@ -27,6 +27,7 @@ import org.locationtech.geomesa.core.data._
 import org.locationtech.geomesa.core.data.tables.AttributeTable
 import org.locationtech.geomesa.core.index._
 import org.locationtech.geomesa.feature.SimpleFeatureEncoder
+import org.locationtech.geomesa.jobs.GeoMesaBaseJob
 import org.locationtech.geomesa.jobs.scalding.ConnectionParams._
 import org.locationtech.geomesa.jobs.scalding._
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor

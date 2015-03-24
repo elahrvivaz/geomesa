@@ -135,7 +135,7 @@ class GeoMesaScheme(val options: GeoMesaSourceOptions)
 
     // this method may be called more than once so check to see if we've already configured
     if (GeoMesaConfigurator.getDataStoreInParams(conf).isEmpty) {
-      GeoMesaInputFormat.configure(conf, input.dsParams, input.feature, input.filter)
+      GeoMesaInputFormat.configure(conf, input.dsParams, input.feature, input.filter, input.transform)
     }
     conf.setInputFormat(classOf[GeoMesaInputFormat])
   }
@@ -196,8 +196,10 @@ sealed trait GeoMesaSourceOptions {
 /**
  * Options for configuring GeoMesa as a source
  */
-case class GeoMesaInputOptions(dsParams: Map[String, String], feature: String, filter: Option[String] = None)
-    extends GeoMesaSourceOptions {
+case class GeoMesaInputOptions(dsParams: Map[String, String],
+                               feature: String,
+                               filter: Option[String] = None,
+                               transform: Option[Array[String]] = None) extends GeoMesaSourceOptions {
   override val toString = s"GeoMesaInputOptions[${dsParams.get("instanceId").getOrElse("None")}," +
       s"sft:$feature,filter:${filter.getOrElse("INCLUDE")}]"
 }
