@@ -55,6 +55,7 @@ class SchemaCopyJob(args: Args) extends GeoMesaBaseJob(args) {
   }
 
   // scalding job
+  // TODO preserve ids?
   GeoMesaSource(input).write(GeoMesaSource(output))
 }
 
