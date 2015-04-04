@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.locationtech.geomesa.jobs.scalding
+package org.locationtech.geomesa.jobs.scalding.taps
 
 import java.util.Properties
 
@@ -27,6 +27,7 @@ import org.geotools.data.DataStoreFinder
 import org.geotools.data.collection.ListFeatureCollection
 import org.locationtech.geomesa.core.data.{AccumuloDataStore, AccumuloFeatureStore}
 import org.locationtech.geomesa.jobs.GeoMesaConfigurator
+import org.locationtech.geomesa.jobs.scalding._
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.collection.JavaConversions._

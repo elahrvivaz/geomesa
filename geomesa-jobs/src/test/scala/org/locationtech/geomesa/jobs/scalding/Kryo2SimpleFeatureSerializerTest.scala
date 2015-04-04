@@ -28,6 +28,7 @@ import org.apache.hadoop.mapred.JobConf
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.feature.{ScalaSimpleFeature, ScalaSimpleFeatureFactory}
 import org.locationtech.geomesa.jobs.mapreduce.SimpleFeatureSerialization
+import org.locationtech.geomesa.jobs.scalding.serialization.SimpleFeatureKryoHadoop
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeature
 import org.specs2.mutable.Specification

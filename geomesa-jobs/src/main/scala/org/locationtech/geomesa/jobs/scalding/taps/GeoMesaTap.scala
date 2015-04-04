@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-package org.locationtech.geomesa.jobs.scalding
+package org.locationtech.geomesa.jobs.scalding.taps
 
 import cascading.flow.FlowProcess
 import cascading.flow.hadoop.HadoopFlowProcess
@@ -27,6 +27,7 @@ import org.apache.hadoop.mapred._
 import org.locationtech.geomesa.feature.ScalaSimpleFeature
 import org.locationtech.geomesa.jobs.GeoMesaConfigurator
 import org.locationtech.geomesa.jobs.mapred.{GeoMesaInputFormat, GeoMesaOutputFormat}
+import org.locationtech.geomesa.jobs.scalding._
 import org.opengis.feature.simple.SimpleFeature
 
 /**

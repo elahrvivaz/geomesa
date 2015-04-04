@@ -14,23 +14,24 @@
  * limitations under the License.
  */
 
-package org.locationtech.geomesa.jobs.scalding
+package org.locationtech.geomesa.jobs.scalding.taps
 
 import cascading.flow.FlowProcess
 import cascading.flow.hadoop.HadoopFlowProcess
 import cascading.scheme.{SinkCall, SourceCall}
 import cascading.tap.hadoop.io.HadoopTupleEntrySchemeIterator
-import cascading.tuple.{Tuple, TupleEntrySchemeCollector, TupleEntryCollector, TupleEntryIterator}
+import cascading.tuple.{Tuple, TupleEntryCollector, TupleEntryIterator, TupleEntrySchemeCollector}
 import com.twitter.scalding.AccessMode
 import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.accumulo.core.client.ZooKeeperInstance
-import org.apache.accumulo.core.client.mapred.{InputFormatBase, AccumuloInputFormat, AccumuloOutputFormat}
+import org.apache.accumulo.core.client.mapred.{AccumuloInputFormat, AccumuloOutputFormat, InputFormatBase}
 import org.apache.accumulo.core.client.mapreduce.lib.util.ConfiguratorBase
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
-import org.apache.accumulo.core.data.{Value, Key, Mutation}
+import org.apache.accumulo.core.data.{Key, Mutation, Value}
 import org.apache.hadoop.io.Text
-import org.apache.hadoop.mapred.{Reporter, JobConf}
+import org.apache.hadoop.mapred.{JobConf, Reporter}
 import org.locationtech.geomesa.core.util.GeoMesaBatchWriterConfig
+import org.locationtech.geomesa.jobs.scalding._
 
 import scala.util.{Failure, Success, Try}
 

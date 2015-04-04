@@ -14,25 +14,21 @@
  * limitations under the License.
  */
 
-package org.locationtech.geomesa.jobs.scalding
+package org.locationtech.geomesa.jobs.scalding.taps
 
 import java.util.Properties
 
 import cascading.flow.FlowProcess
-import cascading.flow.hadoop.HadoopFlowProcess
 import cascading.scheme.{SinkCall, SourceCall}
-import cascading.tap.hadoop.io.HadoopTupleEntrySchemeIterator
 import cascading.tuple._
 import com.twitter.scalding.AccessMode
 import com.typesafe.scalalogging.slf4j.Logging
-import org.apache.accumulo.core.client.{BatchWriter, MultiTableBatchWriter, ZooKeeperInstance}
-import org.apache.accumulo.core.client.mapred.{InputFormatBase, AccumuloInputFormat, AccumuloOutputFormat}
-import org.apache.accumulo.core.client.mapreduce.lib.util.ConfiguratorBase
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
-import org.apache.accumulo.core.data.{Value, Key, Mutation}
+import org.apache.accumulo.core.client.{BatchWriter, MultiTableBatchWriter, ZooKeeperInstance}
+import org.apache.accumulo.core.data.{Key, Mutation, Value}
 import org.apache.hadoop.io.Text
-import org.apache.hadoop.mapred.{Reporter, JobConf}
 import org.locationtech.geomesa.core.util.GeoMesaBatchWriterConfig
+import org.locationtech.geomesa.jobs.scalding._
 
 import scala.util.{Failure, Success, Try}
 
@@ -91,15 +87,14 @@ class AccumuloLocalCollector(flowProcess: FlowProcess[Properties], tap: Accumulo
 
   setOutput(this)
 
-  private val conf = flowProcess.getConfigCopy
-
   private var writer: MultiTableBatchWriter = null
   private val writerCache = scala.collection.mutable.Map.empty[Text, BatchWriter]
   private val defaultTable = new Text(tap.options.table)
 
   override def prepare(): Unit = {
-    val ds = 
-    writer = outputFormat.getRecordWriter(null, conf, tap.getIdentifier, Reporter.NULL)
+    val instance = new ZooKeeperInstance(tap.options.instance, tap.options.zooKeepers)
+    val connector = instance.getConnector(tap.options.user, new PasswordToken(tap.options.password))
+    writer = connector.createMultiTableBatchWriter(GeoMesaBatchWriterConfig())
     sinkCall.setOutput(this)
     super.prepare()
   }
@@ -118,8 +113,6 @@ class AccumuloLocalCollector(flowProcess: FlowProcess[Properties], tap: Accumulo
 
 /**
  * Scheme to map between key value pairs and mutations
- *
- * @param options
  */
 case class AccumuloLocalScheme(options: AccumuloSourceOptions)
     extends AccLocalScheme(AccumuloSource.sourceFields, AccumuloSource.sinkFields) {
