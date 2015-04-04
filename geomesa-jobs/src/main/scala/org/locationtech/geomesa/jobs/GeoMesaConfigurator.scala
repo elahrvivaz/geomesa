@@ -16,6 +16,8 @@
 
 package org.locationtech.geomesa.jobs
 
+import java.util.Properties
+
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.io.serializer.WritableSerialization
 import org.apache.hadoop.mapreduce.Job
@@ -55,6 +57,8 @@ object GeoMesaConfigurator {
     getDataStoreInParams(job.getConfiguration)
   def getDataStoreInParams(conf: Configuration): Map[String, String] =
     conf.getValByRegex(dsInRegex).map { case (key, value) => (key.substring(dsInSubstring), value) }.toMap
+  def getDataStoreInParams(conf: Properties): Map[String, String] =
+    conf.filterKeys(_.startsWith(dsInParams)).map { case (key, value) => (key.substring(dsInSubstring), value) }.toMap
 
   // set/get the connection parameters for an output format
   def setDataStoreOutParams(conf: Configuration, params: Map[String, String]): Unit =
@@ -63,6 +67,8 @@ object GeoMesaConfigurator {
     getDataStoreOutParams(job.getConfiguration)
   def getDataStoreOutParams(conf: Configuration): Map[String, String] =
     conf.getValByRegex(dsOutRegex).map { case (key, value) => (key.substring(dsOutSubstring), value) }.toMap
+  def getDataStoreOutParams(conf: Properties): Map[String, String] =
+    conf.filterKeys(_.startsWith(dsOutParams)).map { case (key, value) => (key.substring(dsOutSubstring), value) }.toMap
 
   // set/get the feature type name
   def setFeatureType(conf: Configuration, featureType: String): Unit =
