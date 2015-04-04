@@ -16,6 +16,8 @@
 
 package org.locationtech.geomesa.jobs
 
+import java.util.Properties
+
 import cascading.scheme.Scheme
 import cascading.tap.Tap
 import com.twitter.scalding.Args
@@ -44,6 +46,8 @@ package object scalding {
   type GMOutputCollector = OutputCollector[Text, SimpleFeature]
   type GMTap = Tap[JobConf, GMRecordReader, GMOutputCollector]
   type GMScheme = Scheme[JobConf, GMRecordReader, GMOutputCollector, Array[Any], Array[Any]]
+  type GMLocalTap = Tap[Properties, GMRecordReader, GMOutputCollector]
+  type GMLocalScheme = Scheme[Properties, GMRecordReader, GMOutputCollector, Array[Any], Array[Any]]
 
   object ConnectionParams {
 
