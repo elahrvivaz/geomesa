@@ -1,5 +1,5 @@
 /*
- * Copyright 2014 Commonwealth Computer Research, Inc.
+ * Copyright 2015 Commonwealth Computer Research, Inc.
  *
  * Licensed under the Apache License, Version 2.0 (the License);
  * you may not use this file except in compliance with the License.
@@ -20,54 +20,19 @@ import cascading.flow.FlowProcess
 import cascading.flow.hadoop.HadoopFlowProcess
 import cascading.scheme.{SinkCall, SourceCall}
 import cascading.tap.hadoop.io.HadoopTupleEntrySchemeIterator
-import cascading.tuple._
-import com.twitter.scalding._
+import cascading.tuple.{Tuple, TupleEntrySchemeCollector, TupleEntryCollector, TupleEntryIterator}
+import com.twitter.scalding.AccessMode
 import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.accumulo.core.client.ZooKeeperInstance
-import org.apache.accumulo.core.client.mapred.{AccumuloInputFormat, AccumuloOutputFormat, InputFormatBase}
+import org.apache.accumulo.core.client.mapred.{InputFormatBase, AccumuloInputFormat, AccumuloOutputFormat}
 import org.apache.accumulo.core.client.mapreduce.lib.util.ConfiguratorBase
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
-import org.apache.accumulo.core.data.{Key, Mutation, Range => AcRange, Value}
-import org.apache.accumulo.core.util.{Pair => AcPair}
+import org.apache.accumulo.core.data.{Value, Key, Mutation}
 import org.apache.hadoop.io.Text
-import org.apache.hadoop.mapred._
+import org.apache.hadoop.mapred.{Reporter, JobConf}
 import org.locationtech.geomesa.core.util.GeoMesaBatchWriterConfig
 
 import scala.util.{Failure, Success, Try}
-
-case class AccumuloSource(options: AccumuloSourceOptions)
-    extends Source with TypedSource[(Key,Value)] with TypedSink[(Text, Mutation)] {
-
-  def scheme = AccumuloScheme(options)
-
-  override def createTap(readOrWrite: AccessMode)(implicit mode: Mode): GenericTap =
-    mode match {
-      case _: Hdfs  => AccumuloTap(readOrWrite, scheme)
-      case _: Local => AccumuloLocalTap(readOrWrite, scheme)
-      case _: Test  => TestTapFactory(this, scheme.asInstanceOf[GenericScheme]).createTap(readOrWrite)
-      case _        => throw new NotImplementedError()
-    }
-
-  override def sourceFields: Fields = AccumuloSource.sourceFields
-
-  override def converter[U >: (Key, Value)]: TupleConverter[U] = new TupleConverter[U] {
-    override def arity: Int = 2
-    override def apply(te: TupleEntry): (Key, Value) =
-      (te.getObject(0).asInstanceOf[Key], te.getObject(1).asInstanceOf[Value])
-  }
-
-  override def sinkFields: Fields = AccumuloSource.sinkFields
-
-  override def setter[U <: (Text, Mutation)]:  TupleSetter[U] = new TupleSetter[U] {
-    override def arity: Int = 2
-    override def apply(arg: U): Tuple = new Tuple(arg._1, arg._2)
-  }
-}
-
-object AccumuloSource {
-  def sourceFields: Fields = new Fields("k", "v")
-  def sinkFields: Fields = new Fields("t", "m")
-}
 
 /**
  * Cascading Tap to read and write from accumulo
@@ -82,8 +47,8 @@ case class AccumuloTap(readOrWrite: AccessMode, scheme: AccumuloScheme) extends 
   val getIdentifier: String = toString
 
   lazy val tableOps = new ZooKeeperInstance(options.instance, options.zooKeepers)
-                        .getConnector(options.user, new PasswordToken(options.password))
-                        .tableOperations()
+      .getConnector(options.user, new PasswordToken(options.password))
+      .tableOperations()
 
   override def openForRead(fp: FlowProcess[JobConf], rr: KVRecordReader): TupleEntryIterator =
     new HadoopTupleEntrySchemeIterator(fp, this, rr)
@@ -125,7 +90,7 @@ case class AccumuloTap(readOrWrite: AccessMode, scheme: AccumuloScheme) extends 
  */
 class AccumuloCollector(flowProcess: FlowProcess[JobConf], tap: AccumuloTap)
     extends TupleEntrySchemeCollector[JobConf, MutOutputCollector](flowProcess, tap.getScheme)
-    with MutOutputCollector {
+            with MutOutputCollector {
 
   val progress = flowProcess match {
     case process: HadoopFlowProcess => () => process.getReporter.progress()
@@ -245,3 +210,4 @@ case class AccumuloScheme(options: AccumuloSourceOptions)
   override def sourceCleanup(fp: FlowProcess[JobConf], sc: SourceCall[Array[Any], KVRecordReader]) =
     sc.setContext(null)
 }
+
