@@ -16,6 +16,7 @@
 
 package org.locationtech.geomesa.jobs.scalding.taps
 
+import java.io.Closeable
 import java.util.Properties
 
 import cascading.flow.FlowProcess
@@ -30,6 +31,7 @@ import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.core.util.GeoMesaBatchWriterConfig
 import org.locationtech.geomesa.jobs.scalding._
 
+import scala.collection.JavaConversions._
 import scala.util.{Failure, Success, Try}
 
 /**
@@ -42,12 +44,46 @@ case class AccumuloLocalTap(readOrWrite: AccessMode, scheme: AccumuloLocalScheme
 
   val getIdentifier: String = toString
 
-  lazy val tableOps = new ZooKeeperInstance(options.instance, options.zooKeepers)
+  lazy val connector = new ZooKeeperInstance(options.instance, options.zooKeepers)
       .getConnector(options.user, new PasswordToken(options.password))
-      .tableOperations()
+  lazy val tableOps = connector.tableOperations()
 
-  override def openForRead(fp: FlowProcess[Properties], rr: KVRecordReader): TupleEntryIterator =
-    new TupleEntrySchemeIterator[Properties, KVRecordReader](fp, scheme, rr)
+  override def openForRead(fp: FlowProcess[Properties], rr: KVRecordReader): TupleEntryIterator = {
+    val input = options.asInstanceOf[AccumuloInputOptions]
+    val scanner = if (input.ranges.isEmpty) {
+      connector.createScanner(input.table, input.authorizations)
+    } else {
+      val bs = connector.createBatchScanner(input.table, input.authorizations, 5)
+      bs.setRanges(input.ranges.flatMap(SerializedRangeSeq.unapply))
+      bs
+    }
+    input.iterators.foreach(scanner.addScanIterator)
+    input.columns.flatMap(SerializedColumnSeq.unapply).foreach(p => scanner.fetchColumn(p.getFirst, p.getSecond))
+    val entries = scanner.iterator()
+
+    val iterator = new KVRecordReader() with Closeable {
+
+      var pos: Int = 0
+
+      override def next(key: Key, value: Value) = if (entries.hasNext) {
+        val next = entries.next()
+        key.set(next.getKey)
+        value.set(next.getValue.get)
+        pos += 1
+        true
+      } else {
+        false
+      }
+
+      override def getProgress = 0f
+      override def getPos = pos
+      override def createKey() = new Key()
+      override def createValue() = new Value()
+      override def close() = scanner.close()
+    }
+    new TupleEntrySchemeIterator(fp, scheme, iterator)
+  }
+
 
   override def openForWrite(fp: FlowProcess[Properties], out: MutOutputCollector): TupleEntryCollector = {
     val collector = new AccumuloLocalCollector(fp, this)

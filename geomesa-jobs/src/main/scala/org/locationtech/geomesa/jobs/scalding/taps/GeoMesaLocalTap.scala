@@ -16,6 +16,7 @@
 
 package org.locationtech.geomesa.jobs.scalding.taps
 
+import java.io.Closeable
 import java.util.Properties
 
 import cascading.flow.FlowProcess
@@ -23,12 +24,16 @@ import cascading.scheme.{SinkCall, SourceCall}
 import cascading.tuple._
 import com.twitter.scalding._
 import org.apache.hadoop.io.Text
-import org.geotools.data.DataStoreFinder
 import org.geotools.data.collection.ListFeatureCollection
+import org.geotools.data.{DataStoreFinder, Query}
+import org.geotools.filter.identity.FeatureIdImpl
+import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.core.data.{AccumuloDataStore, AccumuloFeatureStore}
+import org.locationtech.geomesa.feature.ScalaSimpleFeature
 import org.locationtech.geomesa.jobs.GeoMesaConfigurator
 import org.locationtech.geomesa.jobs.scalding._
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
+import org.opengis.filter.Filter
 
 import scala.collection.JavaConversions._
 import scala.collection.mutable.ArrayBuffer
@@ -40,8 +45,40 @@ case class GeoMesaLocalTap(readOrWrite: AccessMode, scheme: GeoMesaLocalScheme) 
 
   val getIdentifier: String = toString
 
-  override def openForRead(fp: FlowProcess[Properties], rr: GMRecordReader): TupleEntryIterator =
-    new TupleEntrySchemeIterator(fp, scheme, rr)
+  override def openForRead(fp: FlowProcess[Properties], rr: GMRecordReader): TupleEntryIterator = {
+    val options = scheme.options.asInstanceOf[GeoMesaInputOptions]
+    val ds = DataStoreFinder.getDataStore(options.dsParams).asInstanceOf[AccumuloDataStore]
+    val cql = options.filter.map(ECQL.toFilter).getOrElse(Filter.INCLUDE)
+    val transform = options.transform.getOrElse(Query.ALL_NAMES)
+    val query = new Query(options.feature, cql, transform)
+    val reader = ds.getFeatureReader(options.feature, query)
+    val sft = org.locationtech.geomesa.core.index.getTransformSchema(query).getOrElse(ds.getSchema(options.feature))
+
+    val iterator = new GMRecordReader() with Closeable {
+
+      var pos: Int = 0
+
+      override def next(key: Text, value: SimpleFeature) = if (reader.hasNext) {
+        val next = reader.next()
+        key.set(next.getID)
+        value.getIdentifier.asInstanceOf[FeatureIdImpl].setID(next.getID)
+        value.setAttributes(next.getAttributes)
+        value.getUserData.clear()
+        value.getUserData.putAll(next.getUserData)
+        pos += 1
+        true
+      } else {
+        false
+      }
+
+      override def getProgress = 0f
+      override def getPos = pos
+      override def createKey() = new Text()
+      override def createValue() = new ScalaSimpleFeature("", sft)
+      override def close() = reader.close()
+    }
+    new TupleEntrySchemeIterator(fp, scheme, iterator)
+  }
 
   override def openForWrite(fp: FlowProcess[Properties], out: GMOutputCollector): TupleEntryCollector = {
     val collector = new GeoMesaLocalCollector(fp, this)
@@ -69,15 +106,14 @@ class GeoMesaLocalCollector(flowProcess: FlowProcess[Properties], tap: GeoMesaLo
 
   setOutput(this)
 
-  private val conf = flowProcess.getConfigCopy
-
   private var ds: AccumuloDataStore = null
   private val writers = scala.collection.mutable.Map.empty[SimpleFeatureType, AccumuloFeatureStore]
   private val buffers = scala.collection.mutable.Map.empty[SimpleFeatureType, ArrayBuffer[SimpleFeature]]
   private val bufferSize = 100 // we keep the buffer size fairly small since this is for local mode - mainly testing
 
   override def prepare(): Unit = {
-    ds = DataStoreFinder.getDataStore(GeoMesaConfigurator.getDataStoreOutParams(conf)).asInstanceOf[AccumuloDataStore]
+    val options = tap.scheme.options.asInstanceOf[GeoMesaOutputOptions]
+    ds = DataStoreFinder.getDataStore(options.dsParams).asInstanceOf[AccumuloDataStore]
     sinkCall.setOutput(this)
     super.prepare()
   }
@@ -133,16 +169,16 @@ case class GeoMesaLocalScheme(options: GeoMesaSourceOptions)
     hasNext
   }
 
-  override def sink(fp: FlowProcess[Properties], sc: SinkCall[Array[Any], GMOutputCollector]) {
+  override def sink(fp: FlowProcess[Properties], sc: SinkCall[Array[Any], GMOutputCollector]): Unit = {
     val entry = sc.getOutgoingEntry
     val id = entry.getObject(0).asInstanceOf[Text]
     val sf = entry.getObject(1).asInstanceOf[SimpleFeature]
     sc.getOutput.collect(id, sf)
   }
 
-  override def sourcePrepare(fp: FlowProcess[Properties], sc: SourceCall[Array[Any], GMRecordReader]) =
+  override def sourcePrepare(fp: FlowProcess[Properties], sc: SourceCall[Array[Any], GMRecordReader]): Unit =
     sc.setContext(Array(sc.getInput.createKey(), sc.getInput.createValue()))
 
-  override def sourceCleanup(fp: FlowProcess[Properties], sc: SourceCall[Array[Any], GMRecordReader]) =
+  override def sourceCleanup(fp: FlowProcess[Properties], sc: SourceCall[Array[Any], GMRecordReader]): Unit =
     sc.setContext(null)
 }
