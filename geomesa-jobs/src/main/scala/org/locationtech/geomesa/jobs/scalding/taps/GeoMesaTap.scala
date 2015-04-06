@@ -100,7 +100,7 @@ class GeoMesaCollector(flowProcess: FlowProcess[JobConf], tap: GeoMesaTap)
 case class GeoMesaScheme(options: GeoMesaSourceOptions)
   extends GMScheme(GeoMesaSource.fields, GeoMesaSource.fields) {
 
-  override def sourceConfInit(fp: FlowProcess[JobConf], tap: GMTap, conf: JobConf) {
+  override def sourceConfInit(fp: FlowProcess[JobConf], tap: GMTap, conf: JobConf): Unit = {
     val input = Some(options).collect { case i: GeoMesaInputOptions => i }.getOrElse(
       throw new IllegalArgumentException("In order to use this as a source you must use GeoMesaInputOptions")
     )
@@ -112,7 +112,7 @@ case class GeoMesaScheme(options: GeoMesaSourceOptions)
     conf.setInputFormat(classOf[GeoMesaInputFormat])
   }
 
-  override def sinkConfInit(fp: FlowProcess[JobConf], tap: GMTap, conf: JobConf) {
+  override def sinkConfInit(fp: FlowProcess[JobConf], tap: GMTap, conf: JobConf): Unit = {
     val output = Some(options).collect { case o: GeoMesaOutputOptions => o }.getOrElse(
       throw new IllegalArgumentException("In order to use this as a sink you must use GeoMesaOutputOptions")
     )
@@ -140,16 +140,16 @@ case class GeoMesaScheme(options: GeoMesaSourceOptions)
     hasNext
   }
 
-  override def sink(fp: FlowProcess[JobConf], sc: SinkCall[Array[Any], GMOutputCollector]) {
+  override def sink(fp: FlowProcess[JobConf], sc: SinkCall[Array[Any], GMOutputCollector]): Unit = {
     val entry = sc.getOutgoingEntry
     val id = entry.getObject(0).asInstanceOf[Text]
     val sf = entry.getObject(1).asInstanceOf[SimpleFeature]
     sc.getOutput.collect(id, sf)
   }
 
-  override def sourcePrepare(fp: FlowProcess[JobConf], sc: SourceCall[Array[Any], GMRecordReader]) =
+  override def sourcePrepare(fp: FlowProcess[JobConf], sc: SourceCall[Array[Any], GMRecordReader]): Unit =
     sc.setContext(Array(sc.getInput.createKey(), sc.getInput.createValue()))
 
-  override def sourceCleanup(fp: FlowProcess[JobConf], sc: SourceCall[Array[Any], GMRecordReader]) =
+  override def sourceCleanup(fp: FlowProcess[JobConf], sc: SourceCall[Array[Any], GMRecordReader]): Unit =
     sc.setContext(null)
 }

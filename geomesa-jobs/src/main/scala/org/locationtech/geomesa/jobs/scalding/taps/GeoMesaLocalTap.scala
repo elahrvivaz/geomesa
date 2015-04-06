@@ -109,7 +109,8 @@ class GeoMesaLocalCollector(flowProcess: FlowProcess[Properties], tap: GeoMesaLo
   private var ds: AccumuloDataStore = null
   private val writers = scala.collection.mutable.Map.empty[SimpleFeatureType, AccumuloFeatureStore]
   private val buffers = scala.collection.mutable.Map.empty[SimpleFeatureType, ArrayBuffer[SimpleFeature]]
-  private val bufferSize = 100 // we keep the buffer size fairly small since this is for local mode - mainly testing
+  // we keep the buffer size fairly small since this is for local mode - mainly testing
+  private val bufferSize = 100
 
   override def prepare(): Unit = {
     val options = tap.scheme.options.asInstanceOf[GeoMesaOutputOptions]
@@ -139,7 +140,7 @@ class GeoMesaLocalCollector(flowProcess: FlowProcess[Properties], tap: GeoMesaLo
         // this is a no-op if schema is already created, and should be thread-safe from different mappers
         ds.createSchema(sft)
         // short sleep to ensure that feature type is fully written if it is happening in some other thread
-        Thread.sleep(1000)
+        Thread.sleep(5000)
       }
       ds.getFeatureSource(sft.getName).asInstanceOf[AccumuloFeatureStore]
     })

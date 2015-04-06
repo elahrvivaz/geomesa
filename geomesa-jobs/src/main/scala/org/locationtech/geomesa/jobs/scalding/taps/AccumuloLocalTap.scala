@@ -58,7 +58,8 @@ case class AccumuloLocalTap(readOrWrite: AccessMode, scheme: AccumuloLocalScheme
       bs
     }
     input.iterators.foreach(scanner.addScanIterator)
-    input.columns.flatMap(SerializedColumnSeq.unapply).foreach(p => scanner.fetchColumn(p.getFirst, p.getSecond))
+    input.columns.flatMap(SerializedColumnSeq.unapply)
+        .foreach(p => scanner.fetchColumn(p.getFirst, p.getSecond))
     val entries = scanner.iterator()
 
     val iterator = new KVRecordReader() with Closeable {
@@ -169,17 +170,17 @@ case class AccumuloLocalScheme(options: AccumuloSourceOptions)
     hasNext
   }
 
-  override def sink(fp: FlowProcess[Properties], sc: SinkCall[Array[Any], MutOutputCollector]) {
+  override def sink(fp: FlowProcess[Properties], sc: SinkCall[Array[Any], MutOutputCollector]): Unit = {
     val entry = sc.getOutgoingEntry
     val table = entry.getObject(0).asInstanceOf[Text]
     val mutation = entry.getObject(1).asInstanceOf[Mutation]
     sc.getOutput.collect(table, mutation)
   }
 
-  override def sourcePrepare(fp: FlowProcess[Properties], sc: SourceCall[Array[Any], KVRecordReader]) =
+  override def sourcePrepare(fp: FlowProcess[Properties], sc: SourceCall[Array[Any], KVRecordReader]): Unit =
     sc.setContext(Array(sc.getInput.createKey(), sc.getInput.createValue()))
 
-  override def sourceCleanup(fp: FlowProcess[Properties], sc: SourceCall[Array[Any], KVRecordReader]) =
+  override def sourceCleanup(fp: FlowProcess[Properties], sc: SourceCall[Array[Any], KVRecordReader]): Unit =
     sc.setContext(null)
 }
 

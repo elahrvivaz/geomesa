@@ -37,9 +37,6 @@ import scala.util.{Failure, Success, Try}
 
 /**
  * Cascading Tap to read and write from accumulo
- *
- * @param readOrWrite
- * @param scheme
  */
 case class AccumuloTap(readOrWrite: AccessMode, scheme: AccumuloScheme) extends AccTap(scheme) with Logging {
 
@@ -85,9 +82,6 @@ case class AccumuloTap(readOrWrite: AccessMode, scheme: AccumuloScheme) extends 
 
 /**
  * Collector that writes to an AccumuloOutputFormat
- *
- * @param flowProcess
- * @param tap
  */
 class AccumuloCollector(flowProcess: FlowProcess[JobConf], tap: AccumuloTap)
     extends TupleEntrySchemeCollector[JobConf, MutOutputCollector](flowProcess, tap.getScheme)
@@ -125,15 +119,13 @@ class AccumuloCollector(flowProcess: FlowProcess[JobConf], tap: AccumuloTap)
 
 /**
  * Scheme to map between key value pairs and mutations
- *
- * @param options
  */
 case class AccumuloScheme(options: AccumuloSourceOptions)
     extends AccScheme(AccumuloSource.sourceFields, AccumuloSource.sinkFields) {
 
   import scala.collection.JavaConversions._
 
-  override def sourceConfInit(fp: FlowProcess[JobConf], tap: AccTap, conf: JobConf) {
+  override def sourceConfInit(fp: FlowProcess[JobConf], tap: AccTap, conf: JobConf): Unit = {
     val input = Some(options).collect { case i: AccumuloInputOptions => i }.getOrElse(
       throw new IllegalArgumentException("In order to use this as a source you must use AccumuloInputOptions")
     )
@@ -163,7 +155,7 @@ case class AccumuloScheme(options: AccumuloSourceOptions)
     conf.setInputFormat(classOf[AccumuloInputFormat])
   }
 
-  override def sinkConfInit(fp: FlowProcess[JobConf], tap: AccTap, conf: JobConf) {
+  override def sinkConfInit(fp: FlowProcess[JobConf], tap: AccTap, conf: JobConf): Unit = {
     val output = Some(options).collect { case o: AccumuloOutputOptions => o }.getOrElse(
       throw new IllegalArgumentException("In order to use this as a sink you must use AccumuloOutputOptions")
     )
@@ -198,17 +190,17 @@ case class AccumuloScheme(options: AccumuloSourceOptions)
     hasNext
   }
 
-  override def sink(fp: FlowProcess[JobConf], sc: SinkCall[Array[Any], MutOutputCollector]) {
+  override def sink(fp: FlowProcess[JobConf], sc: SinkCall[Array[Any], MutOutputCollector]): Unit = {
     val entry = sc.getOutgoingEntry
     val table = entry.getObject(0).asInstanceOf[Text]
     val mutation = entry.getObject(1).asInstanceOf[Mutation]
     sc.getOutput.collect(table, mutation)
   }
 
-  override def sourcePrepare(fp: FlowProcess[JobConf], sc: SourceCall[Array[Any], KVRecordReader]) =
+  override def sourcePrepare(fp: FlowProcess[JobConf], sc: SourceCall[Array[Any], KVRecordReader]): Unit =
     sc.setContext(Array(sc.getInput.createKey(), sc.getInput.createValue()))
 
-  override def sourceCleanup(fp: FlowProcess[JobConf], sc: SourceCall[Array[Any], KVRecordReader]) =
+  override def sourceCleanup(fp: FlowProcess[JobConf], sc: SourceCall[Array[Any], KVRecordReader]): Unit =
     sc.setContext(null)
 }
 

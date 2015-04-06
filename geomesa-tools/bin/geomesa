@@ -221,7 +221,8 @@ elif [[ $1 = repl ]]; then
     elif [ "$2" = "local" ]; then
         java ${GEOMESA_OPTS} -cp ${CLASSPATH} com.twitter.scalding.ScaldingShell --local --repl
     else
-        echo "Please indicate REPL mode, either 'local' or 'hdfs'"
+        echo "Please re-run with REPL mode specified. Valid options are 'local' or 'hdfs'"
+        echo "e.g. geomesa repl local"
     fi
 else
     if [[ $1 = debug ]]; then
