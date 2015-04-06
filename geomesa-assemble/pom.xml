@@ -77,6 +77,16 @@
             <classifier>shaded</classifier>
         </dependency>
         <dependency>
+            <groupId>com.twitter</groupId>
+            <artifactId>scalding-repl_2.10</artifactId>
+            <version>${scalding.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.scala-lang</groupId>
+            <artifactId>jline</artifactId>
+            <version>${scala.version}</version>
+        </dependency>
+        <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-log4j12</artifactId>
             <scope>compile</scope>
