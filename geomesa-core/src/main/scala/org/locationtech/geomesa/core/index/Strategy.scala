@@ -17,7 +17,7 @@
 package org.locationtech.geomesa.core.index
 
 import java.util.Map.Entry
-import java.util.{Calendar, Date}
+import java.util.{TimeZone, Calendar, Date}
 
 import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom.{Geometry, Polygon}
@@ -27,6 +27,7 @@ import org.apache.commons.lang.time.DateUtils
 import org.geotools.data.Query
 import org.geotools.filter.text.ecql.ECQL
 import org.joda.time.Interval
+import org.joda.time.format.DateTimeFormatter
 import org.locationtech.geomesa.core._
 import org.locationtech.geomesa.core.data._
 import org.locationtech.geomesa.core.index.QueryHints._
@@ -131,14 +132,19 @@ object Strategy {
                            dates: Option[(Date, Date)],
                            schema: String) = {
 
-    val roundedDates =
-      // round the start/end dates so that we only get fully covered days
-      // TODO this assumes that the index schema is to the day, revisit...
-      dates.map { case (s, e) => (DateUtils.ceiling(s, Calendar.DATE), DateUtils.truncate(e, Calendar.DATE)) }
-        .filter { case (s, e) => s.before(e) } // ensure we have at least 1 day covered
-        .flatMap { case (s, e) => // turn the dates into strings
-          IndexSchema.buildDateDecoder(schema).map(d => (d.parser.print(s.getTime), d.parser.print(e.getTime)))
-        }
+    val roundedDates = for {
+      (start, end)  <- dates
+      // calculate the precision of the date in the row - needed to round them
+      formatter     <- IndexSchema.buildDateDecoder(schema).map(_.parser)
+      precision     <- getPrecision(formatter)
+      // round the start/end dates so that we only get fully covered rows
+      (ceil, floor) = (DateUtils.ceiling(start, precision), DateUtils.truncate(end, precision))
+      // ensure we have at least 1 row covered
+      (s, e)        <- if (ceil.before(floor)) Some((ceil, floor)) else None
+    } yield {
+        // turn the dates into strings
+        (formatter.print(s.getTime), formatter.print(e.getTime))
+    }
 
     lazy val geohashes = geometries.flatMap { geoms =>
       // TODO test 3 vs 2 chars of precision
@@ -159,6 +165,33 @@ object Strategy {
         cfg.addOption(GEOMESA_ITERATORS_COVERED_DATE_START, s)
         cfg.addOption(GEOMESA_ITERATORS_COVERED_DATE_END, e)
       }
+    }
+  }
+
+  /**
+   * Gets the most precise Calendar field written by this date format. Assumes date format is set to UTC
+   * time zone and prints in descending order, e.g. doesn't have hours before days.
+   */
+  def getPrecision(formatter: DateTimeFormatter): Option[Int] = {
+    val calCheck = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+    // create a unique value for each field we want to check
+    calCheck.set(3333, 10 /* 0 based month - corresponds to 11 */, 22, 0, 44, 55)
+    calCheck.set(Calendar.MILLISECOND, 999)
+    val precision = formatter.print(calCheck.getTimeInMillis)
+    if (precision.endsWith("33")) {
+      Some(Calendar.YEAR)
+    } else if (precision.endsWith("11")) {
+      Some(Calendar.MONTH)
+    } else if (precision.endsWith("22")) {
+      Some(Calendar.DATE)
+    } else if (precision.endsWith("00")) {
+      Some(Calendar.HOUR_OF_DAY)
+    } else if (precision.endsWith("44")) {
+      Some(Calendar.MINUTE)
+    } else if (precision.endsWith("55")) {
+      Some(Calendar.SECOND)
+    } else {
+      None
     }
   }
 
