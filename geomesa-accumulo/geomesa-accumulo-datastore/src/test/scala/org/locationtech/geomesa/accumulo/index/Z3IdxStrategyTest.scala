@@ -17,7 +17,9 @@ import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithDataStore
 import org.locationtech.geomesa.accumulo.data.INTERNAL_GEOMESA_VERSION
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
+import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, SerializationType}
+import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.SimpleFeature
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
@@ -168,6 +170,62 @@ class Z3IdxStrategyTest extends Specification with TestWithDataStore {
       forall(features)((f: SimpleFeature) => f.getAttribute("geom") must not(beNull))
       forall(features)((f: SimpleFeature) => f.getAttribute("dtg") must not(beNull))
     }.pendingUntilFixed("not implemented")
+
+    "optimize for bin format" >> {
+      import org.locationtech.geomesa.accumulo.index.QueryHints._
+      val filter = "bbox(geom, 35, 55, 45, 75)" +
+          " AND dtg during 2010-05-07T06:00:00.000Z/2010-05-08T00:00:00.000Z"
+      val query = getQuery(filter, None)
+
+      "with just a track" >> {
+        query.getHints.put(BIN_TRACK_KEY, "name")
+        val qps = getQueryPlans(query)
+        qps must haveSize(1)
+        qps.head.plan.iterators.map(_.getIteratorClass) must contain(classOf[BinAggregatingIterator].getCanonicalName)
+        val features = queryPlanner.executePlans(query, qps, deduplicate = false).toSeq
+        // the same simple feature gets reused - so make sure you access in serial order
+        val attributes = features.map(f => f.getAttributes)
+        forall(attributes)(_ must haveSize(2))
+        forall(attributes)(_(1).toString mustEqual "POINT (0 0)")
+        attributes.size must beLessThan(4)
+        val bytes = attributes.map(_(0).asInstanceOf[Array[Byte]]).reduceLeft { (l, r) => l ++ r }
+        bytes must haveSize(16 * 4)
+      }
+
+//      "with a track and label" >> {
+//        query.getHints.put(BIN_TRACK_KEY, "name")
+//        query.getHints.put(BIN_LABEL_KEY, "")
+//        //      query.getHints.put(BIN_DATE_KEY, "")
+//        val qps = getQueryPlans(query)
+//        qps must haveSize(1)
+//        qps.head.plan.iterators.map(_.getIteratorClass) must contain(classOf[BinAggregatingIterator].getCanonicalName)
+//        val features = queryPlanner.executePlans(query, qps, deduplicate = false).toSeq
+//        // the same simple feature gets reused - so make sure you access in serial order
+//        val attributes = features.map(f => f.getAttributes)
+//        forall(attributes)(_ must haveSize(2))
+//        forall(attributes)(_(1).toString mustEqual "POINT (0 0)")
+//        attributes.size must beLessThan(4)
+//        val bytes = attributes.map(_(0).asInstanceOf[Array[Byte]]).reduceLeft { (l, r) => l ++ r }
+//        bytes must haveSize(16 * 4)
+//      }
+
+//      "with a custom date field" >> {
+//        query.getHints.put(BIN_TRACK_KEY, "name")
+//        query.getHints.put(BIN_LABEL_KEY, "")
+//        //      query.getHints.put(BIN_DATE_KEY, "")
+//        val qps = getQueryPlans(query)
+//        qps must haveSize(1)
+//        qps.head.plan.iterators.map(_.getIteratorClass) must contain(classOf[BinAggregatingIterator].getCanonicalName)
+//        val features = queryPlanner.executePlans(query, qps, deduplicate = false).toSeq
+//        // the same simple feature gets reused - so make sure you access in serial order
+//        val attributes = features.map(f => f.getAttributes)
+//        forall(attributes)(_ must haveSize(2))
+//        forall(attributes)(_(1).toString mustEqual "POINT (0 0)")
+//        attributes.size must beLessThan(4)
+//        val bytes = attributes.map(_(0).asInstanceOf[Array[Byte]]).reduceLeft { (l, r) => l ++ r }
+//        bytes must haveSize(16 * 4)
+//      }
+    }
   }
 
   def execute(ecql: String, transforms: Option[Array[String]] = None) = {
@@ -176,14 +234,22 @@ class Z3IdxStrategyTest extends Specification with TestWithDataStore {
   }
 
   def getQueryPlans(ecql: String, transforms: Option[Array[String]] = None): (Query, Seq[StrategyPlan]) = {
+    val query = getQuery(ecql, transforms)
+    (query, strategy.getQueryPlans(query, queryPlanner, output).map(qp => StrategyPlan(strategy, qp)))
+  }
+
+  def getQuery(ecql: String, transforms: Option[Array[String]] = None): Query = {
     val filter = org.locationtech.geomesa.accumulo.filter.rewriteFilterInDNF(ECQL.toFilter(ecql))
-    val query = transforms match {
+    transforms match {
       case None    => new Query(sftName, filter)
       case Some(t) =>
         val q = new Query(sftName, filter, t)
         setQueryTransforms(q, sft)
         q
     }
-    (query, strategy.getQueryPlans(query, queryPlanner, output).map(qp => StrategyPlan(strategy, qp)))
+  }
+
+  def getQueryPlans(query: Query): Seq[StrategyPlan] = {
+    strategy.getQueryPlans(query, queryPlanner, output).map(qp => StrategyPlan(strategy, qp))
   }
 }

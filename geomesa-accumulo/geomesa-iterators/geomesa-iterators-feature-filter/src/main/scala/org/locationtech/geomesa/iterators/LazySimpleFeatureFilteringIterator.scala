@@ -25,17 +25,19 @@ trait LazyFilterTransformIterator extends SortedKeyValueIterator[Key, Value] wit
   import LazyFilterTransformIterator._
 
   var sft: SimpleFeatureType = null
-  var src: SortedKeyValueIterator[Key, Value] = null
+  var source: SortedKeyValueIterator[Key, Value] = null
   var filter: Filter = null
   var transform: String = null
   var transformSchema: SimpleFeatureType = null
   var topValue: Value = new Value()
+  var options: jMap[String, String] = null
 
   override def init(source: SortedKeyValueIterator[Key, Value],
                     options: jMap[String, String],
                     env: IteratorEnvironment): Unit = {
     LazyFilterTransformIterator.initClassLoader(logger)
-    src = source
+    this.source = source.deepCopy(env)
+    this.options = options
     sft = SimpleFeatureTypes.createType("test", options.get(SFT_OPT))
     filter = Option(options.get(CQL_OPT)).map(FastFilterFactory.toFilter).orNull
     transform = Option(options.get(TRANSFORM_DEFINITIONS_OPT)).orNull
@@ -47,38 +49,36 @@ trait LazyFilterTransformIterator extends SortedKeyValueIterator[Key, Value] wit
   def setTransform(): Unit
 
   override def next(): Unit = {
-    src.next()
+    source.next()
     findTop()
   }
 
   def findTop(): Unit = {
     var found = false
-    while (!found && src.hasTop) {
-      initReusableFeature(src.getTopValue.get())
+    while (!found && source.hasTop) {
+      initReusableFeature(source.getTopValue.get())
       if (filter == null || filter.evaluate(sf)) {
         found = true
       } else {
-        src.next()
+        source.next()
       }
     }
   }
 
-  override def getTopKey: Key = src.getTopKey
+  override def hasTop: Boolean = source.hasTop
+  override def getTopKey: Key = source.getTopKey
   override def getTopValue: Value =
     if (transform == null) {
-      src.getTopValue
+      source.getTopValue
     } else {
       setTransform()
       topValue
     }
-  override def hasTop: Boolean = src.hasTop
 
   override def seek(range: Range, columnFamilies: jCollection[ByteSequence], inclusive: Boolean): Unit = {
-    src.seek(range, columnFamilies, inclusive)
+    source.seek(range, columnFamilies, inclusive)
     findTop()
   }
-
-  override def deepCopy(env: IteratorEnvironment): SortedKeyValueIterator[Key, Value] = ???
 }
 
 class KryoLazyFilterTransformIterator extends LazyFilterTransformIterator {
@@ -102,6 +102,12 @@ class KryoLazyFilterTransformIterator extends LazyFilterTransformIterator {
   override def initReusableFeature(buf: Array[Byte]): Unit = reusablesf.setBuffer(buf)
 
   override def setTransform(): Unit = topValue.set(reusablesf.transform())
+
+  override def deepCopy(env: IteratorEnvironment): SortedKeyValueIterator[Key, Value] = {
+    val iter = new KryoLazyFilterTransformIterator
+    iter.init(source, options, env)
+    iter
+  }
 }
 
 class NIOLazyFilterTransformIterator extends LazyFilterTransformIterator {
@@ -121,7 +127,10 @@ class NIOLazyFilterTransformIterator extends LazyFilterTransformIterator {
 
   override def initReusableFeature(buf: Array[Byte]): Unit = reusablesf.setBuf(ByteBuffer.wrap(buf))
 
-  override def setTransform(): Unit = topValue.set(src.getTopValue.get()) // TODO
+  override def setTransform(): Unit = topValue.set(source.getTopValue.get()) // TODO
+
+
+  override def deepCopy(env: IteratorEnvironment): SortedKeyValueIterator[Key, Value] = ???
 }
 
 object LazyFilterTransformIterator {

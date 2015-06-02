@@ -104,6 +104,7 @@ class AccumuloFeatureSource(val dataStore: AccumuloDataStore, val featureName: N
 class AccumuloFeatureCollection(source: SimpleFeatureSource, query: Query)
   extends DefaultFeatureResults(source, query) {
 
+  def getQuery = query
   val ds  = source.getDataStore.asInstanceOf[AccumuloDataStore]
 
   override def getSchema: SimpleFeatureType =

@@ -196,6 +196,11 @@ package object index {
     val MAP_AGGREGATION_KEY  = new ClassKey(classOf[java.lang.String])
 
     val EXACT_COUNT          = new ClassKey(classOf[java.lang.Boolean])
+
+    val BIN_TRACK_KEY        = new ClassKey(classOf[java.lang.String])
+    val BIN_LABEL_KEY        = new ClassKey(classOf[java.lang.String])
+    val BIN_DATE_KEY         = new ClassKey(classOf[java.lang.String])
+
   }
 
   type ExplainerOutputType = ( => String) => Unit

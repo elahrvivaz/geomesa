@@ -31,7 +31,8 @@ import org.geoserver.wfs.request.{FeatureCollectionResponse, GetFeatureRequest}
 import org.geotools.data.DataStore
 import org.geotools.data.simple.SimpleFeatureCollection
 import org.geotools.util.Version
-import org.locationtech.geomesa.filter.function.BinaryOutputEncoder
+import org.locationtech.geomesa.accumulo.data.AccumuloFeatureCollection
+import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
 
 import scala.collection.JavaConversions._
 
@@ -52,7 +53,7 @@ import scala.collection.JavaConversions._
  * @param gs
  */
 class BinaryViewerOutputFormat(gs: GeoServer)
-    extends WFSGetFeatureOutputFormat(gs, Set("bin", BinaryViewerOutputFormat.MIME_TYPE)) {
+    extends WFSGetFeatureOutputFormat(gs, Set("bin", BinaryViewerOutputFormat.MIME_TYPE)) with Logging {
 
   import org.locationtech.geomesa.accumulo.index.getDtgFieldName
   import org.locationtech.geomesa.plugin.wfs.output.BinaryViewerOutputFormat._
@@ -66,7 +67,7 @@ class BinaryViewerOutputFormat(gs: GeoServer)
     val name = Option(gfr.getHandle).getOrElse(gfr.getQueries.get(0).getTypeNames.get(0).getLocalPart)
     // if they have requested a label, then it will be 24 byte encoding (assuming the field exists...)
     val size = if (gfr.getFormatOptions.containsKey(LABEL_FIELD)) "24" else "16"
-    s"${name}.${FILE_EXTENSION}$size"
+    s"$name.$FILE_EXTENSION$size"
   }
 
   override def write(featureCollections: FeatureCollectionResponse,
@@ -76,20 +77,29 @@ class BinaryViewerOutputFormat(gs: GeoServer)
     // format_options flags for customizing the request
     val request = GetFeatureRequest.adapt(getFeature.getParameters()(0))
     val trackId = Option(request.getFormatOptions.get(TRACK_ID_FIELD).asInstanceOf[String])
-    val label = Option(request.getFormatOptions.get(LABEL_FIELD).asInstanceOf[String])
-    // check for explicit dtg field in request, or use schema default dtg
-    val dtg = Option(request.getFormatOptions.get(DATE_FIELD).asInstanceOf[String])
-        .orElse(getDateField(getFeature)).getOrElse("dtg")
-    // depending on srs requested and wfs versions, axis order can be flipped
-    val axisOrder = checkAxisOrder(getFeature)
+    val label   = Option(request.getFormatOptions.get(LABEL_FIELD).asInstanceOf[String])
+    val dtg     = Option(request.getFormatOptions.get(DATE_FIELD).asInstanceOf[String])
 
     val bos = new BufferedOutputStream(output)
 
     featureCollections.getFeatures.zip(request.getQueries).foreach { case (fc, query) =>
-      // line strings can't be sorted by point as part of the query, so we have to re-sort them
-      val sort = fc.getSchema.getGeometryDescriptor.getType.getBinding == classOf[LineString]
-      val sfc = fc.asInstanceOf[SimpleFeatureCollection]
-      BinaryOutputEncoder.encodeFeatureCollection(sfc, bos, dtg, trackId, label, None, axisOrder, sort)
+      fc match {
+        case a: AccumuloFeatureCollection =>
+          // set query hints for optimizations in the accumulo iterators
+          import org.locationtech.geomesa.accumulo.index.QueryHints._
+          trackId.foreach(a.getQuery.getHints.put(BIN_TRACK_KEY, _))
+          label.foreach(a.getQuery.getHints.put(BIN_LABEL_KEY, _))
+          dtg.foreach(a.getQuery.getHints.put(BIN_DATE_KEY, _))
+
+        case _ => // no optimization
+          logger.warn("Non Accumulo feature collection found - bin request not optimized")
+      }
+      val iter = fc.asInstanceOf[SimpleFeatureCollection].features()
+      while (iter.hasNext) {
+        val bytes = iter.next().getAttribute(BinAggregatingIterator.BIN_ATTRIBUTE_INDEX)
+        bos.write(bytes.asInstanceOf[Array[Byte]])
+      }
+      iter.close()
       bos.flush()
     }
     // none of the implementations in geoserver call 'close' on the output stream

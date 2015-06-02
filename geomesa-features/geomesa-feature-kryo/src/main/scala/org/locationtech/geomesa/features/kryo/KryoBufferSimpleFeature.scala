@@ -16,6 +16,7 @@ import org.geotools.filter.identity.FeatureIdImpl
 import org.geotools.geometry.jts.ReferencedEnvelope
 import org.geotools.process.vector.TransformProcess
 import org.locationtech.geomesa.features.ScalaSimpleFeature
+import org.locationtech.geomesa.features.serialization.ObjectType
 import org.opengis.feature.`type`.Name
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.feature.{GeometryAttribute, Property}
@@ -37,6 +38,7 @@ class KryoBufferSimpleFeature(sft: SimpleFeatureType, readers: Array[(Input) => 
   private var userData: jHashMap[AnyRef, AnyRef] = null
 
   private var binaryTransform: () => Array[Byte] = input.getBuffer
+  private lazy val longReader = KryoFeatureSerializer.matchReader(ObjectType.LONG)
 
   def transform(): Array[Byte] = binaryTransform()
 
@@ -91,6 +93,11 @@ class KryoBufferSimpleFeature(sft: SimpleFeatureType, readers: Array[(Input) => 
         serializer.serialize(sf)
       }
     }
+  }
+
+  def getDateAsLong(index: Int): Long = {
+    input.setPosition(offsets(index))
+    longReader(input).asInstanceOf[Long]
   }
 
   override def getAttribute(index: Int) = {
