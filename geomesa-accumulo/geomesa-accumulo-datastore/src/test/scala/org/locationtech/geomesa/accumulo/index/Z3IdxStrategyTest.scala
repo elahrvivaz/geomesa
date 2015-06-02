@@ -8,6 +8,9 @@
 
 package org.locationtech.geomesa.accumulo.index
 
+import java.io.FileInputStream
+import java.util.Date
+
 import org.apache.accumulo.core.data.{Range => AccRange}
 import org.apache.accumulo.core.security.Authorizations
 import org.geotools.data.Query
@@ -19,7 +22,7 @@ import org.locationtech.geomesa.accumulo.data.INTERNAL_GEOMESA_VERSION
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, SerializationType}
-import org.locationtech.geomesa.utils.text.WKTUtils
+import org.locationtech.geomesa.filter.function.Convert2ViewerFunction
 import org.opengis.feature.simple.SimpleFeature
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
@@ -182,14 +185,52 @@ class Z3IdxStrategyTest extends Specification with TestWithDataStore {
         val qps = getQueryPlans(query)
         qps must haveSize(1)
         qps.head.plan.iterators.map(_.getIteratorClass) must contain(classOf[BinAggregatingIterator].getCanonicalName)
-        val features = queryPlanner.executePlans(query, qps, deduplicate = false).toSeq
+        val returnedFeatures = queryPlanner.executePlans(query, qps, deduplicate = false).toSeq
         // the same simple feature gets reused - so make sure you access in serial order
-        val attributes = features.map(f => f.getAttributes)
-        forall(attributes)(_ must haveSize(2))
-        forall(attributes)(_(1).toString mustEqual "POINT (0 0)")
+        val attributes = returnedFeatures.map(f => f.getAttribute(BinAggregatingIterator.BIN_ATTRIBUTE_INDEX))
         attributes.size must beLessThan(4)
-        val bytes = attributes.map(_(0).asInstanceOf[Array[Byte]]).reduceLeft { (l, r) => l ++ r }
+        val bytes = scala.collection.mutable.ArrayBuffer.empty[Byte]
+        val ordering = new Ordering[(Array[Byte], Int)]() {
+          override def compare(x: (Array[Byte], Int), y: (Array[Byte], Int)) =
+            BinAggregatingIterator.compare(y._1, y._2, x._1, x._2)
+        }
+        val queue = new scala.collection.mutable.PriorityQueue[(Array[Byte], Int)]()(ordering)
+        attributes.foreach { a => queue.enqueue((a.asInstanceOf[Array[Byte]], 0)) }
+        while (queue.nonEmpty) {
+          val (aggregate, offset) = queue.dequeue()
+          val bin = BinAggregatingIterator.getChunk(aggregate, offset, 16)
+          println("got " + Convert2ViewerFunction.decode(bin).dtg)
+          bytes.append(bin: _*)
+          if (offset < aggregate.length - 16) {
+            queue.enqueue((aggregate, offset + 16))
+          }
+        }
+
         bytes must haveSize(16 * 4)
+        val decoded = (0 until 4).map(i => Convert2ViewerFunction.decode(bytes.slice(i * 16, (i + 1) * 16).toArray))
+        decoded.foreach(d => println("DTG:: " + d.dtg))
+        forall(decoded)(_.lon mustEqual 40.0)
+        decoded.head.lat mustEqual 66.0
+        decoded(1).lat   mustEqual 67.0
+        decoded(2).lat   mustEqual 68.0
+        decoded(3).lat   mustEqual 69.0
+        decoded.head.dtg mustEqual features(6).getAttribute("dtg").asInstanceOf[Date].getTime // decode function multiplies by 1000 to match encode
+        decoded(1).dtg   mustEqual features(7).getAttribute("dtg").asInstanceOf[Date].getTime
+        decoded(2).dtg   mustEqual features(8).getAttribute("dtg").asInstanceOf[Date].getTime
+        decoded(3).dtg   mustEqual features(9).getAttribute("dtg").asInstanceOf[Date].getTime
+        decoded.head.trackId must beSome(features(6).getAttribute("name").hashCode().toString)
+        decoded(1).trackId   must beSome(features(7).getAttribute("name").hashCode().toString)
+        decoded(2).trackId   must beSome(features(8).getAttribute("name").hashCode().toString)
+        decoded(3).trackId   must beSome(features(9).getAttribute("name").hashCode().toString)
+
+        val file = new FileInputStream("/home/elahrvivaz/devel/src/geomesa/bin0")
+        val buf = Array.ofDim[Byte](16)
+        (0 until 10).foreach { _ =>
+          file.read(buf)
+          val decoded = Convert2ViewerFunction.decode(buf)
+          println(decoded.dtg)
+        }
+        success
       }
 
 //      "with a track and label" >> {

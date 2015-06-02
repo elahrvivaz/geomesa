@@ -73,7 +73,7 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
         val trackId = query.getHints.get(QueryHints.BIN_TRACK_KEY).asInstanceOf[String]
         val label = Option(query.getHints.get(QueryHints.BIN_LABEL_KEY).asInstanceOf[String])
         val dtg = Option(query.getHints.get(QueryHints.BIN_DATE_KEY).asInstanceOf[String])
-        val batchSize = Option(System.getProperty("org.locationtech.geomesa.bin.batch.size")).map(_.toInt).getOrElse(1000)
+        val batchSize = Option(System.getProperty("org.locationtech.geomesa.bin.batch.size")).map(_.toInt).getOrElse(99999)
         Some(BinAggregatingIterator.configure(sft, ecql, trackId, label, dtg, batchSize, FILTERING_ITER_PRIORITY))
       } else {
         val transforms = for {

@@ -33,8 +33,9 @@ import org.geotools.data.simple.SimpleFeatureCollection
 import org.geotools.util.Version
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureCollection
 import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
-
+import org.locationtech.geomesa.utils.geotools.Conversions._
 import scala.collection.JavaConversions._
+import scala.collection.mutable
 
 /**
  * Output format for wfs requests that encodes features into a binary format.
@@ -80,6 +81,8 @@ class BinaryViewerOutputFormat(gs: GeoServer)
     val label   = Option(request.getFormatOptions.get(LABEL_FIELD).asInstanceOf[String])
     val dtg     = Option(request.getFormatOptions.get(DATE_FIELD).asInstanceOf[String])
 
+    val binSize = if (label.isEmpty) 16 else 24
+
     val bos = new BufferedOutputStream(output)
 
     featureCollections.getFeatures.zip(request.getQueries).foreach { case (fc, query) =>
@@ -95,9 +98,11 @@ class BinaryViewerOutputFormat(gs: GeoServer)
           logger.warn("Non Accumulo feature collection found - bin request not optimized")
       }
       val iter = fc.asInstanceOf[SimpleFeatureCollection].features()
-      while (iter.hasNext) {
-        val bytes = iter.next().getAttribute(BinAggregatingIterator.BIN_ATTRIBUTE_INDEX)
-        bos.write(bytes.asInstanceOf[Array[Byte]])
+      val aggregates = iter.map(_.getAttribute(BinAggregatingIterator.BIN_ATTRIBUTE_INDEX).asInstanceOf[Array[Byte]])
+      val bins = BinAggregatingIterator.mergeSort(aggregates, binSize)
+      while (bins.hasNext) {
+        val (aggregate, offset) = bins.next()
+        bos.write(aggregate, offset, binSize)
       }
       iter.close()
       bos.flush()
