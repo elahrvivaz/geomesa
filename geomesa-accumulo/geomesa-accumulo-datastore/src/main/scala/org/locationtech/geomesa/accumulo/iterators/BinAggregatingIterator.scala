@@ -25,6 +25,7 @@ import org.locationtech.geomesa.accumulo.index.QueryPlanners._
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.features.kryo.{KryoBufferSimpleFeature, KryoFeatureSerializer}
 import org.locationtech.geomesa.filter.factory.FastFilterFactory
+import org.locationtech.geomesa.filter.function.Convert2ViewerFunction
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
@@ -122,20 +123,18 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
       topKey = null
       topValue = null
     } else {
-      // sort TODO improve this
-      val ordering = new Ordering[Array[Byte]]() {
-        override def compare(x: Array[Byte], y: Array[Byte]) = BinAggregatingIterator.compare(x, 0, y, 0)
+      if (topValue == null) {
+        topValue = new Value()
       }
-      val sorted = bytes.grouped(binSize).take(byteBuffer.position / binSize).toArray.sorted(ordering)
-      var i = 0
-      while (i < sorted.length) {
-        System.arraycopy(sorted(i), 0, bytes, i * binSize, binSize)
-        i += 1
-      }
+      sortByChunks(bytes, byteBuffer.position, binSize)
       if (byteBuffer.position == maxBytes) {
-        topValue = new Value(bytes, false)
+        // use the existing buffer if possible
+        topValue.set(bytes)
       } else {
-        topValue = new Value(bytes, 0, byteBuffer.position)
+        // if not, we have to copy it
+        val copy = Array.ofDim[Byte](byteBuffer.position)
+        System.arraycopy(bytes, 0, copy, 0, byteBuffer.position)
+        topValue.set(copy)
       }
     }
   }
@@ -244,15 +243,54 @@ object BinAggregatingIterator extends Logging {
     }
   }
 
-  private val priorityOrdering = new Ordering[(Array[Byte], Int)]() {
-    override def compare(x: (Array[Byte], Int), y: (Array[Byte], Int)) =
-      BinAggregatingIterator.compare(y._1, y._2, x._1, x._2) // reverse for priority queue
+  private val chunkOrdering = new Ordering[Array[Byte]]() {
+    override def compare(x: Array[Byte], y: Array[Byte]) = BinAggregatingIterator.compare(x, 0, y, 0)
   }
 
+  private val priorityOrdering = new Ordering[(Array[Byte], Int)]() {
+    override def compare(x: (Array[Byte], Int), y: (Array[Byte], Int)) = {
+//      val ret=BinAggregatingIterator.compare(y._1, y._2, x._1, x._2)
+//      val l = ByteBuffer.wrap(y._1).order(ByteOrder.LITTLE_ENDIAN).getInt(x._2 + 4)
+//      val r = ByteBuffer.wrap(x._1).order(ByteOrder.LITTLE_ENDIAN).getInt(x._2 + 4)
+//      val e = l.compareTo(r)
+//      println(s"comparing $l to $r got $ret expected $e")
+      BinAggregatingIterator.compare(y._1, y._2, x._1, x._2) // reverse for priority queue
+    }
+  }
+
+  /**
+   * Sorts an aggregate in place
+   *
+   * @param aggregate
+   * @param length
+   * @param chunkSize
+   */
+  def sortByChunks(aggregate: Array[Byte], length: Int, chunkSize: Int): Unit = {
+    // TODO improve this
+    val sorted = aggregate.grouped(chunkSize).take(length / chunkSize).toArray.sorted(chunkOrdering)
+    var i = 0
+    while (i < sorted.length) {
+      System.arraycopy(sorted(i), 0, aggregate, i * chunkSize, chunkSize)
+      i += 1
+    }
+  }
+
+  /**
+   * Takes a series of minor (already sorted) aggregates and combines them in a final sort
+   *
+   * @param aggregates
+   * @param chunkSize
+   * @return
+   */
   def mergeSort(aggregates: Iterator[Array[Byte]], chunkSize: Int): Iterator[(Array[Byte], Int)] = {
     val queue = new scala.collection.mutable.PriorityQueue[(Array[Byte], Int)]()(priorityOrdering)
     while (aggregates.hasNext) {
-      queue.enqueue((aggregates.next(), 0))
+      val next = aggregates.next()
+      val dtgs = next.grouped(chunkSize).map(Convert2ViewerFunction.decode(_).dtg)
+      if (dtgs.reduceLeft((l, r) => if (l < r) r else Long.MaxValue) == Long.MaxValue) {
+        println("found invalid chunk")
+      }
+      queue.enqueue((next, 0))
     }
     logger.debug(s"Got back ${queue.length} aggregates")
     println("NUM AGGREGATES: " + queue.length) // TODO
@@ -267,6 +305,7 @@ object BinAggregatingIterator extends Logging {
       }
     }
   }
+
   /**
    * Compares two logical chunks by date
    *
@@ -277,7 +316,7 @@ object BinAggregatingIterator extends Logging {
    * @return
    */
   def compare(left: Array[Byte], leftOffset: Int, right: Array[Byte], rightOffset: Int): Int = {
-    compareLittleEndian(left, leftOffset + 7, right, rightOffset + 7, 4)
+    compareIntLittleEndian(left, leftOffset + 4, right, rightOffset + 4)
 //    val ret=compareLittleEndian(left, leftOffset + 7, right, rightOffset + 7, 4)
 //    val l = ByteBuffer.wrap(left).order(ByteOrder.LITTLE_ENDIAN).getInt(leftOffset + 4)
 //    val r = ByteBuffer.wrap(right).order(ByteOrder.LITTLE_ENDIAN).getInt(rightOffset + 4)
@@ -286,15 +325,46 @@ object BinAggregatingIterator extends Logging {
 //    ret
   }
 
-  @tailrec
-  def compareLittleEndian(left: Array[Byte], leftOffset: Int, right: Array[Byte], rightOffset: Int, chunkSize: Int): Int = {
-    val i = left(leftOffset).compareTo(right(rightOffset))
-    if (i != 0) {
-      i
-    } else if (chunkSize == 1) {
+  /**
+   * Comparison based on the integer encoding used by ByteBuffer
+   * original code is in private/proected java.nio packages
+   */
+  def compareIntLittleEndian(left: Array[Byte], leftOffset: Int, right: Array[Byte], rightOffset: Int): Int = {
+//    if (false) {
+//      return ByteBuffer.wrap(left).order(ByteOrder.LITTLE_ENDIAN).getInt(leftOffset).compareTo(
+//        ByteBuffer.wrap(right).order(ByteOrder.LITTLE_ENDIAN).getInt(rightOffset)
+//      )
+//    }
+
+    val l3 = left(leftOffset + 3)
+    val r3 = right(rightOffset + 3)
+    if (l3 < r3) {
+      return -1
+    } else if (l3 > r3) {
+      return 1
+    }
+    val l2 = left(leftOffset + 2) & 0xff
+    val r2 = right(rightOffset + 2) & 0xff
+    if (l2 < r2) {
+      return -1
+    } else if (l2 > r2) {
+      return 1
+    }
+    val l1 = left(leftOffset + 1) & 0xff
+    val r1 = right(rightOffset + 1) & 0xff
+    if (l1 < r1) {
+      return -1
+    } else if (l1 > r1) {
+      return 1
+    }
+    val l0 = left(leftOffset) & 0xff
+    val r0 = right(rightOffset) & 0xff
+    if (l0 == r0) {
       0
+    } else if (l0 < r0) {
+      -1
     } else {
-      compareLittleEndian(left, leftOffset - 1, right, rightOffset - 1, chunkSize - 1)
+      1
     }
   }
 
