@@ -9,12 +9,11 @@
 package org.locationtech.geomesa.accumulo.iterators
 
 import java.nio.{ByteBuffer, ByteOrder}
-import java.util
 import java.util.Map.Entry
-import java.util.{Collection => jCollection, Map => jMap}
+import java.util.{Collection => jCollection, Date, Map => jMap}
 
 import com.typesafe.scalalogging.slf4j.{Logger, Logging}
-import com.vividsolutions.jts.geom.{Geometry, LineString, Point}
+import com.vividsolutions.jts.geom._
 import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{Range => aRange, _}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
@@ -27,10 +26,9 @@ import org.locationtech.geomesa.features.kryo.{KryoBufferSimpleFeature, KryoFeat
 import org.locationtech.geomesa.filter.factory.FastFilterFactory
 import org.locationtech.geomesa.filter.function.Convert2ViewerFunction
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
+import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
-
-import scala.annotation.tailrec
 
 class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Logging {
 
@@ -42,54 +40,92 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
   var geomIndex: Int = -1
   var dtgIndex: Int = -1
   var trackIndex: Int = -1
-  var labelIndex: Int = -1
   var batchSize: Int = -1
+  var binSize: Int = 16
 
   var topKey: Key = null
   var topValue: Value = new Value()
-  var reusablesf: KryoBufferSimpleFeature = null
-  var kryo: KryoFeatureSerializer = null
   var bytes: Array[Byte] = null
   var byteBuffer: ByteBuffer = null
-  var binSize: Int = -1
   var currentRange: aRange = null
+
+  var reusablesf: KryoBufferSimpleFeature = null
+
+  var handleValue: () => Unit = null
   var writeBin: () => Unit = null
   var getTrackId: () => Int = null
 
   override def init(source: SortedKeyValueIterator[Key, Value],
                     options: jMap[String, String],
                     env: IteratorEnvironment): Unit = {
-    BinAggregatingIterator.initClassLoader(logger)
-    import org.locationtech.geomesa.accumulo.index.getDtgFieldName
     this.source = source.deepCopy(env)
+    BinAggregatingIterator.initClassLoader(logger)
+
     sft = SimpleFeatureTypes.createType("test", options.get(SFT_OPT))
     filter = Option(options.get(CQL_OPT)).map(FastFilterFactory.toFilter).orNull
+    batchSize = options.get(BATCH_SIZE_OPT).toInt
+
     geomIndex = sft.indexOf(sft.getGeometryDescriptor.getLocalName)
-    dtgIndex = Option(options.get(DATE_OPT)).map(_.toInt).orElse(getDtgFieldName(sft).map(sft.indexOf))
-        .getOrElse(throw new RuntimeException("No dtg"))
+    dtgIndex = options.get(DATE_OPT).toInt
     trackIndex = options.get(TRACK_OPT).toInt
-    labelIndex = Option(options.get(LABEL_OPT)).map(_.toInt).getOrElse(-1)
-    batchSize = options.get(BATCH_OPT).toInt
-    kryo = new KryoFeatureSerializer(sft)
-    reusablesf = kryo.getReusableFeature
-    binSize = if (labelIndex == -1) 16 else 24
+
+    if (Option(options.get(BIN_CF_OPT)).exists(_.toBoolean)) {
+      handleValue = if (filter == null) {
+        () => {
+          topKey = source.getTopKey
+          val bin = source.getTopValue.get()
+          System.arraycopy(bin, 0, bytes, byteBuffer.position, bin.length)
+          byteBuffer.position(byteBuffer.position + bin.length)
+        }
+      } else {
+        val sf = new ScalaSimpleFeature("", sft)
+        val gf = new GeometryFactory
+        () => {
+          parseBinValue(sf, gf)
+          if (filter.evaluate(sf)) {
+            topKey = source.getTopKey
+            System.arraycopy(source.getTopValue.get, 0, bytes, byteBuffer.position, binSize)
+            byteBuffer.position(byteBuffer.position + binSize)
+          }
+        }
+      }
+    } else {
+      reusablesf = new KryoFeatureSerializer(sft).getReusableFeature
+      getTrackId = if (trackIndex == -1) {
+        () => reusablesf.getID.hashCode()
+      } else {
+        () => reusablesf.getAttribute(trackIndex).hashCode()
+      }
+      writeBin = if (sft.getGeometryDescriptor.getType.getBinding == classOf[Point] ||
+          sft.getGeometryDescriptor.getType.getBinding == classOf[LineString]) {
+        writePoint
+      } else {
+        writeGeometry
+      }
+      handleValue = if (filter == null) {
+        () => {
+          reusablesf.setBuffer(source.getTopValue.get())
+          topKey = source.getTopKey
+          writeBin()
+        }
+      } else {
+        () => {
+          reusablesf.setBuffer(source.getTopValue.get())
+          if (filter.evaluate(reusablesf)) {
+            topKey = source.getTopKey
+            writeBin()
+          }
+        }
+      }
+    }
+
     bytes = Array.ofDim(binSize * batchSize)
     byteBuffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
-
-    getTrackId = if (trackIndex == -1) {
-      () => reusablesf.getID.hashCode()
-    } else {
-      () => reusablesf.getAttribute(trackIndex).hashCode()
-    }
-
-    writeBin = if (sft.getGeometryDescriptor.getType.getBinding == classOf[Point]) {
-      if (labelIndex == -1) writePoint else writePointWithLabel
-    } else if (sft.getGeometryDescriptor.getType.getBinding == classOf[LineString]) {
-      if (labelIndex == -1) writePoint else writePointWithLabel
-    } else {
-      if (labelIndex == -1) writeGeometry else writeGeometryWithLabel
-    }
   }
+
+  override def hasTop: Boolean = topKey != null
+  override def getTopKey: Key = topKey
+  override def getTopValue: Value = topValue
 
   override def seek(range: aRange, columnFamilies: jCollection[ByteSequence], inclusive: Boolean): Unit = {
     currentRange = range
@@ -110,11 +146,7 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
     byteBuffer.clear()
     val maxBytes = batchSize * binSize
     while (source.hasTop && !currentRange.afterEndKey(source.getTopKey) && byteBuffer.position < maxBytes) {
-      reusablesf.setBuffer(source.getTopValue.get())
-      if (filter == null || filter.evaluate(reusablesf)) {
-        topKey = source.getTopKey
-        writeBin()
-      }
+      handleValue()
       // Advance the source iterator
       source.next()
     }
@@ -146,16 +178,7 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
     byteBuffer.putFloat(pt.getX.toFloat) // x is lon
   }
 
-  private def writeLabel(): Unit = {
-    byteBuffer.putLong(reusablesf.getAttribute(labelIndex).asInstanceOf[Long])
-  }
-
   def writePoint(): Unit = writePoint(reusablesf.getAttribute(geomIndex).asInstanceOf[Point])
-
-  def writePointWithLabel(): Unit = {
-    writePoint(reusablesf.getAttribute(geomIndex).asInstanceOf[Point])
-    writeLabel()
-  }
 
   def writeLineString(): Unit = {
     val geom = reusablesf.getAttribute(geomIndex).asInstanceOf[LineString]
@@ -166,27 +189,15 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
     }
   }
 
-  def writeLineStringWithLabel(): Unit = {
-    val geom = reusablesf.getAttribute(geomIndex).asInstanceOf[LineString]
-    var i = 0
-    while (i < geom.getNumPoints) {
-      writePoint(geom.getPointN(i))
-      writeLabel()
-      i += 1
-    }
-  }
-
   def writeGeometry(): Unit =
     writePoint(reusablesf.getAttribute(geomIndex).asInstanceOf[Geometry].getInteriorPoint)
 
-  def writeGeometryWithLabel(): Unit = {
-    writePoint(reusablesf.getAttribute(geomIndex).asInstanceOf[Geometry].getInteriorPoint)
-    writeLabel()
+  def parseBinValue(sf: ScalaSimpleFeature, gf: GeometryFactory): Unit = {
+    val values = Convert2ViewerFunction.decode(source.getTopValue.get)
+    sf.setAttribute(geomIndex, gf.createPoint(new Coordinate(values.lat, values.lon)))
+    sf.setAttribute(trackIndex, values.trackId.orNull)
+    sf.setAttribute(dtgIndex, new Date(values.dtg))
   }
-
-  override def hasTop: Boolean = topKey != null
-  override def getTopKey: Key = topKey
-  override def getTopValue: Value = topValue
 
   override def deepCopy(env: IteratorEnvironment): SortedKeyValueIterator[Key, Value] = ???
 }
@@ -196,35 +207,48 @@ object BinAggregatingIterator extends Logging {
   // need to be lazy to avoid class loading issues before init is called
   lazy val BIN_SFT = SimpleFeatureTypes.createType("bin", "bin:String,*geom:Point:srid=4326")
   lazy val BIN_ATTRIBUTE_INDEX = BIN_SFT.indexOf("bin")
-
-  val SFT_OPT   = "sft"
-  val CQL_OPT   = "cql"
-  val TRACK_OPT = "track"
-  val LABEL_OPT = "label"
-  val DATE_OPT  = "date"
-  val BATCH_OPT = "batch"
-
+  private lazy val zeroPoint = WKTUtils.read("POINT(0 0)")
   private var initialized = false
 
-  def configure(sft: SimpleFeatureType,
-                filter: Option[Filter],
-                trackId: String,
-                label: Option[String],
-                date: Option[String],
-                batchSize: Int,
-                priority: Int) = {
+  val BATCH_SIZE_SYS_PROP = "org.locationtech.geomesa.bin.batch.size"
+
+  val SFT_OPT        = "sft"
+  val CQL_OPT        = "cql"
+  val BATCH_SIZE_OPT = "batch"
+
+  val BIN_CF_OPT     = "bincf"
+  val TRACK_OPT      = "track"
+  val DATE_OPT       = "date"
+
+  def configurePrecomputed(sft: SimpleFeatureType,
+                           filter: Option[Filter],
+                           priority: Int): IteratorSetting = {
+    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+
+    val trackId = sft.getBinTrackId.getOrElse("id")
+    val dtg = org.locationtech.geomesa.accumulo.index.getDtgFieldName(sft).getOrElse {
+      throw new RuntimeException(s"No default dtg field found in SFT $sft")
+    }
+    val is = configureDynamic(sft, filter, trackId, dtg, priority)
+    is.addOption(BIN_CF_OPT, "true")
+    is
+  }
+
+  def configureDynamic(sft: SimpleFeatureType,
+                       filter: Option[Filter],
+                       trackId: String,
+                       dtg: String,
+                       priority: Int): IteratorSetting = {
     val is = new IteratorSetting(priority, "bin-iter", classOf[BinAggregatingIterator])
     is.addOption(SFT_OPT, SimpleFeatureTypes.encodeType(sft))
+    is.addOption(BATCH_SIZE_OPT, getBatchSize.toString)
     filter.foreach(f => is.addOption(CQL_OPT, ECQL.toCQL(f)))
     if (trackId == "id") {
       is.addOption(TRACK_OPT, "-1")
     } else {
       is.addOption(TRACK_OPT, sft.indexOf(trackId).toString)
     }
-
-    label.foreach(l => is.addOption(LABEL_OPT, sft.indexOf(l).toString))
-    date.foreach(d => is.addOption(DATE_OPT, sft.indexOf(d).toString))
-    is.addOption(BATCH_OPT, batchSize.toString)
+    is.addOption(DATE_OPT, sft.indexOf(dtg).toString)
     is
   }
 
@@ -236,26 +260,25 @@ object BinAggregatingIterator extends Logging {
    */
   def adaptIterator(): FeatureFunction = {
     val sf = new ScalaSimpleFeature("", BIN_SFT)
-    sf.setAttribute(1, "POINT(0 0)")
+    sf.setAttribute(1, zeroPoint)
     (e: Entry[Key, Value]) => {
-      sf.values(BIN_ATTRIBUTE_INDEX) = e.getValue.get() // TODO support byte arrays natively
+      // set the value directly in the array, as we don't support byte arrays as properties
+      // TODO support byte arrays natively
+      sf.values(BIN_ATTRIBUTE_INDEX) = e.getValue.get()
       sf
     }
   }
+
+  def getBatchSize: Int =
+    Option(System.getProperty(BATCH_SIZE_SYS_PROP)).map(_.toInt).getOrElse(65536)// 1MB for 16 byte bins
 
   private val chunkOrdering = new Ordering[Array[Byte]]() {
     override def compare(x: Array[Byte], y: Array[Byte]) = BinAggregatingIterator.compare(x, 0, y, 0)
   }
 
   private val priorityOrdering = new Ordering[(Array[Byte], Int)]() {
-    override def compare(x: (Array[Byte], Int), y: (Array[Byte], Int)) = {
-//      val ret=BinAggregatingIterator.compare(y._1, y._2, x._1, x._2)
-//      val l = ByteBuffer.wrap(y._1).order(ByteOrder.LITTLE_ENDIAN).getInt(x._2 + 4)
-//      val r = ByteBuffer.wrap(x._1).order(ByteOrder.LITTLE_ENDIAN).getInt(x._2 + 4)
-//      val e = l.compareTo(r)
-//      println(s"comparing $l to $r got $ret expected $e")
+    override def compare(x: (Array[Byte], Int), y: (Array[Byte], Int)) =
       BinAggregatingIterator.compare(y._1, y._2, x._1, x._2) // reverse for priority queue
-    }
   }
 
   /**
@@ -266,7 +289,7 @@ object BinAggregatingIterator extends Logging {
    * @param chunkSize
    */
   def sortByChunks(aggregate: Array[Byte], length: Int, chunkSize: Int): Unit = {
-    // TODO improve this
+    // TODO ideally we could do an in-place quicksort
     val sorted = aggregate.grouped(chunkSize).take(length / chunkSize).toArray.sorted(chunkOrdering)
     var i = 0
     while (i < sorted.length) {
@@ -284,16 +307,21 @@ object BinAggregatingIterator extends Logging {
    */
   def mergeSort(aggregates: Iterator[Array[Byte]], chunkSize: Int): Iterator[(Array[Byte], Int)] = {
     val queue = new scala.collection.mutable.PriorityQueue[(Array[Byte], Int)]()(priorityOrdering)
+    val sizes = scala.collection.mutable.ArrayBuffer.empty[Int]
     while (aggregates.hasNext) {
       val next = aggregates.next()
+      // TODO remove this check
       val dtgs = next.grouped(chunkSize).map(Convert2ViewerFunction.decode(_).dtg)
-      if (dtgs.reduceLeft((l, r) => if (l < r) r else Long.MaxValue) == Long.MaxValue) {
+      if (dtgs.reduceLeft((l, r) => if (l <= r) r else Long.MaxValue) == Long.MaxValue) {
         println("found invalid chunk")
       }
+      sizes.append(next.length / chunkSize)
       queue.enqueue((next, 0))
     }
-    logger.debug(s"Got back ${queue.length} aggregates")
-    println("NUM AGGREGATES: " + queue.length) // TODO
+    logger.debug(s"Got back ${queue.length} aggregates with an average size of ${sizes.sum / sizes.length}" +
+        s" chunks and a median size of ${sizes.sorted.apply(sizes.length / 2)} chunks")
+    println(s"Got back ${queue.length} aggregates with an average size of ${sizes.sum / sizes.length}" +
+        s" chunks and a median size of ${sizes.sorted.apply(sizes.length / 2)} chunks") // TODO remove this
     new Iterator[(Array[Byte], Int)] {
       override def hasNext = queue.nonEmpty
       override def next() = {
@@ -315,27 +343,14 @@ object BinAggregatingIterator extends Logging {
    * @param rightOffset index of the chunk (not index into the array)
    * @return
    */
-  def compare(left: Array[Byte], leftOffset: Int, right: Array[Byte], rightOffset: Int): Int = {
+  def compare(left: Array[Byte], leftOffset: Int, right: Array[Byte], rightOffset: Int): Int =
     compareIntLittleEndian(left, leftOffset + 4, right, rightOffset + 4)
-//    val ret=compareLittleEndian(left, leftOffset + 7, right, rightOffset + 7, 4)
-//    val l = ByteBuffer.wrap(left).order(ByteOrder.LITTLE_ENDIAN).getInt(leftOffset + 4)
-//    val r = ByteBuffer.wrap(right).order(ByteOrder.LITTLE_ENDIAN).getInt(rightOffset + 4)
-//    val e = l.compareTo(r)
-//    println(s"comparing $l to $r got $ret expected $e")
-//    ret
-  }
 
   /**
    * Comparison based on the integer encoding used by ByteBuffer
    * original code is in private/proected java.nio packages
    */
   def compareIntLittleEndian(left: Array[Byte], leftOffset: Int, right: Array[Byte], rightOffset: Int): Int = {
-//    if (false) {
-//      return ByteBuffer.wrap(left).order(ByteOrder.LITTLE_ENDIAN).getInt(leftOffset).compareTo(
-//        ByteBuffer.wrap(right).order(ByteOrder.LITTLE_ENDIAN).getInt(rightOffset)
-//      )
-//    }
-
     val l3 = left(leftOffset + 3)
     val r3 = right(rightOffset + 3)
     if (l3 < r3) {

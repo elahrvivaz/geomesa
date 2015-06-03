@@ -17,7 +17,7 @@ import org.locationtech.geomesa.iterators.{KryoLazyFilterTransformIterator, Lazy
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 import org.opengis.filter.spatial.BinarySpatialOperator
-
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import scala.collection.JavaConversions._
 
 class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
@@ -25,6 +25,7 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
   import FilterHelper._
   import Z3IdxStrategy._
   import filter._
+
   val Z3_CURVE = new Z3SFC
 
   /**
@@ -71,10 +72,13 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
       }
       if (isBinQuery) {
         val trackId = query.getHints.get(QueryHints.BIN_TRACK_KEY).asInstanceOf[String]
-        val label = Option(query.getHints.get(QueryHints.BIN_LABEL_KEY).asInstanceOf[String])
-        val dtg = Option(query.getHints.get(QueryHints.BIN_DATE_KEY).asInstanceOf[String])
-        val batchSize = Option(System.getProperty("org.locationtech.geomesa.bin.batch.size")).map(_.toInt).getOrElse(65536)// 1MB for 16 byte bins
-        Some(BinAggregatingIterator.configure(sft, ecql, trackId, label, dtg, batchSize, FILTERING_ITER_PRIORITY))
+        val dtg = Option(query.getHints.get(QueryHints.BIN_DATE_KEY).asInstanceOf[String]).orElse(dtgField).orNull
+        val is = if (sft.getBinTrackId.isDefined && ecql.isEmpty) { // can't apply non st filters
+          BinAggregatingIterator.configurePrecomputed(sft, ecql, FILTERING_ITER_PRIORITY)
+        } else {
+          BinAggregatingIterator.configureDynamic(sft, ecql, trackId, dtg, FILTERING_ITER_PRIORITY)
+        }
+        Some(is)
       } else {
         val transforms = for {
           tdef <- index.getTransformDefinition(query)
