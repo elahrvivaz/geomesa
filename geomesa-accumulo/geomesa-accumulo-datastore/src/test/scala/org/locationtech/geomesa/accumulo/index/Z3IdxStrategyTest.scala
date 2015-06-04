@@ -196,6 +196,7 @@ class Z3IdxStrategyTest extends Specification with TestWithDataStore {
             println("got " + Convert2ViewerFunction.decode(bin).dtg)
           }
         }
+
         val sorted = BinAggregatingIterator.mergeSort(aggregates.iterator, 16)
 
         val binFile = Array.ofDim[Byte](16 * 10)
@@ -227,32 +228,6 @@ class Z3IdxStrategyTest extends Specification with TestWithDataStore {
 //        decoded(1).trackId   must beSome(features(7).getAttribute("name").hashCode().toString)
 //        decoded(2).trackId   must beSome(features(8).getAttribute("name").hashCode().toString)
 //        decoded(3).trackId   must beSome(features(9).getAttribute("name").hashCode().toString)
-
-        val fromFile = scala.collection.mutable.ArrayBuffer.empty[Long]
-//        val sorted = scala.collection.mutable.ArrayBuffer.empty[Long]
-        val file = new FileInputStream("/home/elahrvivaz/devel/src/geomesa/bin0")
-        val buf = Array.ofDim[Byte](16)
-        while (file.available() > 15) {
-          file.read(buf)
-          val decoded = Convert2ViewerFunction.decode(buf)
-          fromFile.append(decoded.dtg)
-//          sorted.append(decoded.dtg)
-        }
-//        val a = sorted.toArray
-//        java.util.Arrays.sort(a)
-        println("min: " + new Date(fromFile.min))
-        println("max: " + new Date(fromFile.max))
-        i = 0
-        var run = true
-        while (i < fromFile.length && run) {
-          if (fromFile(i) > fromFile(i + 1)) {
-            println("Found error at " + i)
-            run = false
-          }
-          i += 1
-        }
-//        sorted mustEqual fromFile
-        println("done sorting")
         success
       }
 

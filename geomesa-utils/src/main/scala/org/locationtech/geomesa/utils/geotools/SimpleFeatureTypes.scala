@@ -45,9 +45,8 @@ object SimpleFeatureTypes {
   val OPT_INDEX                = "index"
   val OPT_CARDINALITY          = "cardinality"
   val OPT_BIN_TRACK_ID         = "bin-track-id"
-  val OPT_BIN_LABEL            = "bin-label"
 
-  val OPTS = Seq(OPT_DEFAULT, OPT_SRID, OPT_INDEX, OPT_INDEX_VALUE, OPT_CARDINALITY, OPT_BIN_TRACK_ID, OPT_BIN_LABEL)
+  val OPTS = Seq(OPT_DEFAULT, OPT_SRID, OPT_INDEX, OPT_INDEX_VALUE, OPT_CARDINALITY, OPT_BIN_TRACK_ID)
 
   val USER_DATA_LIST_TYPE      = "subtype"
   val USER_DATA_MAP_KEY_TYPE   = "keyclass"
@@ -148,9 +147,6 @@ object SimpleFeatureTypes {
       if (ad.isBinTrackId) {
         options.put(OPT_BIN_TRACK_ID, "true")
       }
-      if (ad.isBinLabel) {
-        options.put(OPT_BIN_LABEL, "true")
-      }
       ad.getType match {
         case t if simpleTypeMap.contains(t.getBinding.getSimpleName) =>
           SimpleAttributeSpec(ad.getLocalName, ad.getType.getBinding, options.toMap)
@@ -217,8 +213,7 @@ object SimpleFeatureTypes {
       OPT_CARDINALITY  -> Cardinality.UNKNOWN.toString,
       OPT_SRID         -> Integer.valueOf(4326),
       OPT_DEFAULT      -> java.lang.Boolean.FALSE,
-      OPT_BIN_TRACK_ID -> java.lang.Boolean.FALSE,
-      OPT_BIN_LABEL    -> java.lang.Boolean.FALSE
+      OPT_BIN_TRACK_ID -> java.lang.Boolean.FALSE
     )
     val fallback = ConfigFactory.parseMap(defaults)
 

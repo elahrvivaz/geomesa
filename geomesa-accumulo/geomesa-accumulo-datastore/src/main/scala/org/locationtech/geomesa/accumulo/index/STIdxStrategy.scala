@@ -97,22 +97,41 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
     output(s"Interval:  ${oint.getOrElse("No interval")}")
     output(s"Filter: ${Option(filter).getOrElse("No Filter")}")
 
-    val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, sft)
+    val isBinQuery = query.getHints.containsKey(QueryHints.BIN_TRACK_KEY)
 
-    val stiiIterCfg =
-      getSTIIIterCfg(iteratorConfig, query, sft, ofilter, ecql, featureEncoding, version)
+    // TODO implement this for attribute strategy and record strategy?
+    // TODO this only works with kryo...
+    val (iterators, useIndexEntries) = if (isBinQuery) {
+      val trackId = query.getHints.get(QueryHints.BIN_TRACK_KEY).asInstanceOf[String]
+      val dtg = Option(query.getHints.get(QueryHints.BIN_DATE_KEY).asInstanceOf[String]).orElse(dtgField).orNull
+      val priority = Z3IdxStrategy.FILTERING_ITER_PRIORITY
+      val is = BinAggregatingIterator.configureDynamic(sft, ecql, trackId, dtg, true, priority)
+      (Seq(is), false)
+    } else {
+      val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, sft)
+      val stiiIterCfg = getSTIIIterCfg(iteratorConfig, query, sft, ofilter, ecql, featureEncoding, version)
+      val densityIterCfg = getDensityIterCfg(query, geometryToCover, schema, featureEncoding, sft)
 
-    val densityIterCfg = getDensityIterCfg(query, geometryToCover, schema, featureEncoding, sft)
+      val indexOnly = iteratorConfig.iterator match {
+        case IndexOnlyIterator      => true
+        case SpatioTemporalIterator => false
+      }
+      (Seq(stiiIterCfg) ++ densityIterCfg, indexOnly)
+    }
+
+    val adaptIter = if (isBinQuery) {
+      BinAggregatingIterator.adaptIterator()
+    } else {
+      queryPlanner.defaultKVsToFeatures(query)
+    }
 
     // set up row ranges and regular expression filter
-    val qp = planQuery(filter, iteratorConfig.iterator, output, keyPlanner, cfPlanner)
+    val qp = planQuery(filter, useIndexEntries, output, keyPlanner, cfPlanner)
 
     val table = acc.getSpatioTemporalTable(sft)
-    val iterators = qp.iterators ++ List(Some(stiiIterCfg), densityIterCfg).flatten
     val numThreads = acc.getSuggestedSpatioTemporalThreads(sft)
     val hasDupes = IndexSchema.mayContainDuplicates(sft)
-    val kvsToFeatures = queryPlanner.defaultKVsToFeatures(query)
-    val res = qp.copy(table = table, iterators = iterators, kvsToFeatures = kvsToFeatures, numThreads = numThreads, hasDuplicates = hasDupes)
+    val res = qp.copy(table = table, iterators = iterators, kvsToFeatures = adaptIter, numThreads = numThreads, hasDuplicates = hasDupes)
     Seq(res)
   }
 
@@ -207,18 +226,13 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
   }
 
   def planQuery(filter: KeyPlanningFilter,
-                iter: IteratorChoice,
+                useIndexEntries: Boolean,
                 output: ExplainerOutputType,
                 keyPlanner: KeyPlanner,
                 cfPlanner: ColumnFamilyPlanner): BatchScanPlan = {
     output(s"Planning query")
 
-    val indexOnly = iter match {
-      case IndexOnlyIterator      => true
-      case SpatioTemporalIterator => false
-    }
-
-    val keyPlan = keyPlanner.getKeyPlan(filter, indexOnly, output)
+    val keyPlan = keyPlanner.getKeyPlan(filter, useIndexEntries, output)
 
     val columnFamilies = cfPlanner.getColumnFamiliesToFetch(filter)
 
@@ -230,11 +244,11 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
 
     // always try to set a RowID regular expression
     //@TODO this is broken/disabled as a result of the KeyTier
-    val iters =
-      keyPlan.toRegex match {
-        case KeyRegex(regex) => Seq(configureRowRegexIterator(regex))
-        case _               => Seq()
-      }
+//    val iters =
+//      keyPlan.toRegex match {
+//        case KeyRegex(regex) => Seq(configureRowRegexIterator(regex))
+//        case _               => Seq()
+//      }
 
     // if you have a list of distinct column-family entries, fetch them
     val cf = columnFamilies match {
@@ -243,7 +257,7 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
     }
 
     // partially fill in, rest will be filled in later
-    BatchScanPlan(null, accRanges, iters, cf, null, -1, false)
+    BatchScanPlan(null, accRanges, null, cf, null, -1, hasDuplicates = false)
   }
 }
 

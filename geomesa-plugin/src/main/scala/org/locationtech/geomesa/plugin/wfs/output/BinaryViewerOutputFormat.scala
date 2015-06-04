@@ -17,6 +17,8 @@
 package org.locationtech.geomesa.plugin.wfs.output
 
 import java.io.{BufferedOutputStream, OutputStream}
+import java.util.concurrent.{CountDownLatch, Executors, LinkedBlockingQueue}
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.xml.namespace.QName
 
 import com.typesafe.scalalogging.slf4j.Logging
@@ -36,6 +38,7 @@ import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
 import org.locationtech.geomesa.utils.geotools.Conversions._
 import scala.collection.JavaConversions._
 import scala.collection.mutable
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * Output format for wfs requests that encodes features into a binary format.
@@ -98,11 +101,66 @@ class BinaryViewerOutputFormat(gs: GeoServer)
           logger.warn("Non Accumulo feature collection found - bin request not optimized")
       }
       val iter = fc.asInstanceOf[SimpleFeatureCollection].features()
-      val aggregates = iter.map(_.getAttribute(BinAggregatingIterator.BIN_ATTRIBUTE_INDEX).asInstanceOf[Array[Byte]])
-      val bins = BinAggregatingIterator.mergeSort(aggregates, binSize)
-      while (bins.hasNext) {
-        val (aggregate, offset) = bins.next()
-        bos.write(aggregate, offset, binSize)
+      val aggregates = iter.flatMap(f => Option(f.getAttribute(BinAggregatingIterator.BIN_ATTRIBUTE_INDEX).asInstanceOf[Array[Byte]]))
+      val sort = Option(System.getProperty("bin.sort.geo")).map(_.toBoolean).getOrElse(true)
+      if (sort) {
+        val numThreads = sys.props.getOrElse("bin.sort.threads", "2").toInt
+        val executor = Executors.newFixedThreadPool(numThreads)
+        val mergeQueue = collection.mutable.PriorityQueue.empty[Array[Byte]](new Ordering[Array[Byte]] {
+          override def compare(x: Array[Byte], y: Array[Byte]) = y.length.compareTo(x.length) // shorter first
+        })
+        val doneMergeQueue = collection.mutable.ArrayBuffer.empty[Array[Byte]]
+        val MAX_PREMERGE = sys.props.getOrElse("bin.sort.heap", "2097152").toInt // 2MB
+        val latch = new CountDownLatch(numThreads)
+        val keepMerging = new AtomicBoolean(true)
+        var i = 0
+        while (i < numThreads) {
+          val id = i
+          executor.submit(new Runnable() {
+            override def run() = {
+              while (keepMerging.get()) {
+                val (left, right) = mergeQueue.synchronized {
+                  if (mergeQueue.length > 1) (mergeQueue.dequeue(), mergeQueue.dequeue()) else (null, null)
+                }
+                if (left != null) {
+                  if (right.length > MAX_PREMERGE) {
+                    if (left.length > MAX_PREMERGE) {
+                      doneMergeQueue.synchronized(doneMergeQueue.append(left, right))
+                    } else {
+                      doneMergeQueue.synchronized(doneMergeQueue.append(right))
+                      mergeQueue.synchronized(mergeQueue.enqueue(left))
+                    }
+                    Thread.sleep(10)
+                  } else {
+                    val result = BinAggregatingIterator.mergeSort(left, right, binSize)
+                    mergeQueue.synchronized(mergeQueue.enqueue(result))
+                  }
+                } else {
+                  // short sleep
+                  Thread.sleep(10)
+                }
+              }
+              latch.countDown()
+            }
+          })
+          i += 1
+        }
+        aggregates.foreach(a => mergeQueue.synchronized(mergeQueue.enqueue(a)))
+        keepMerging.set(false)
+        executor.shutdown() // this won't take effect until all threads have stopped
+        latch.await()
+        val bins = BinAggregatingIterator.mergeSort((doneMergeQueue ++ mergeQueue).iterator, binSize)
+        while (bins.hasNext) {
+          val (aggregate, offset) = bins.next()
+          bos.write(aggregate, offset, binSize)
+        }
+//        val bins = BinAggregatingIterator.mergeSort(aggregates, binSize)
+//        while (bins.hasNext) {
+//          val (aggregate, offset) = bins.next()
+//          bos.write(aggregate, offset, binSize)
+//        }
+      } else {
+        aggregates.foreach(bos.write)
       }
       iter.close()
       bos.flush()
