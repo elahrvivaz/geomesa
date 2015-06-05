@@ -25,13 +25,13 @@ import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.features.kryo.{KryoBufferSimpleFeature, KryoFeatureSerializer}
 import org.locationtech.geomesa.filter.factory.FastFilterFactory
 import org.locationtech.geomesa.filter.function.Convert2ViewerFunction
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
-import scala.collection.JavaConverters._
 
-import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+import scala.collection.JavaConverters._
 
 class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Logging {
 
@@ -160,9 +160,8 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
         topValue = new Value()
       }
       if (sort) {
-        val start = System.currentTimeMillis()
-        sortByChunks(bytes, bytesWritten, binSize)
-        println(s"Sorting $bytesWritten bytes took ${System.currentTimeMillis() - start}ms")
+//        sortByChunks(bytes, bytesWritten, binSize)
+        BinSorter.dualPivotQuickSort(bytes, 0, bytesWritten - 16)
       }
       if (bytesWritten == batchSize) {
         // use the existing buffer if possible
@@ -219,14 +218,14 @@ object BinAggregatingIterator extends Logging {
 
   val BATCH_SIZE_SYS_PROP = "org.locationtech.geomesa.bin.batch.size"
 
-  val SFT_OPT        = "sft"
-  val CQL_OPT        = "cql"
+  val SFT_OPT = "sft"
+  val CQL_OPT = "cql"
   val BATCH_SIZE_OPT = "batch"
 
-  val BIN_CF_OPT     = "bincf"
-  val TRACK_OPT      = "track"
-  val DATE_OPT       = "date"
-  val SORT_OPT       = "sort"
+  val BIN_CF_OPT = "bincf"
+  val TRACK_OPT = "track"
+  val DATE_OPT = "date"
+  val SORT_OPT = "sort"
 
   def configurePrecomputed(sft: SimpleFeatureType,
                            filter: Option[Filter],
@@ -280,8 +279,7 @@ object BinAggregatingIterator extends Logging {
   }
 
   def getBatchSize: Int =
-    Option(System.getProperty(BATCH_SIZE_SYS_PROP)).map(_.toInt).getOrElse(65536)// 1MB for 16 byte bins
-
+    Option(System.getProperty(BATCH_SIZE_SYS_PROP)).map(_.toInt).getOrElse(65536) // 1MB for 16 byte bins
   private val chunkOrdering = new Ordering[Array[Byte]]() {
     override def compare(x: Array[Byte], y: Array[Byte]) = BinAggregatingIterator.compare(x, 0, y, 0)
   }
@@ -289,23 +287,6 @@ object BinAggregatingIterator extends Logging {
   private val priorityOrdering = new Ordering[(Array[Byte], Int)]() {
     override def compare(x: (Array[Byte], Int), y: (Array[Byte], Int)) =
       BinAggregatingIterator.compare(y._1, y._2, x._1, x._2) // reverse for priority queue
-  }
-
-  /**
-   * Sorts an aggregate in place
-   *
-   * @param aggregate
-   * @param length
-   * @param chunkSize
-   */
-  def sortByChunks(aggregate: Array[Byte], length: Int, chunkSize: Int): Unit = {
-    // TODO ideally we could do an in-place quicksort
-    val sorted = aggregate.grouped(chunkSize).take(length / chunkSize).toArray.sorted(chunkOrdering)
-    var i = 0
-    while (i < sorted.length) {
-      System.arraycopy(sorted(i), 0, aggregate, i * chunkSize, chunkSize)
-      i += 1
-    }
   }
 
   /**
@@ -332,6 +313,7 @@ object BinAggregatingIterator extends Logging {
         s" chunks and a median size of ${sizes.sorted.apply(sizes.length / 2)} chunks") // TODO remove this
     new Iterator[(Array[Byte], Int)] {
       override def hasNext = queue.nonEmpty
+
       override def next() = {
         val (aggregate, offset) = queue.dequeue()
         if (offset < aggregate.length - chunkSize) {
@@ -384,7 +366,7 @@ object BinAggregatingIterator extends Logging {
    * @return
    */
   def compare(left: Array[Byte], leftOffset: Int, right: Array[Byte], rightOffset: Int): Int =
-    compareIntLittleEndian(left, leftOffset + 4, right, rightOffset + 4)
+    compareIntLittleEndian(left, leftOffset + 4, right, rightOffset + 4) // offset + 4 is dtg
 
   /**
    * Comparison based on the integer encoding used by ByteBuffer
@@ -423,12 +405,6 @@ object BinAggregatingIterator extends Logging {
     }
   }
 
-  def getChunk(bytes: Array[Byte], offset: Int, chunkSize: Int): Array[Byte] = {
-    val chunk = Array.ofDim[Byte](chunkSize)
-    System.arraycopy(bytes, offset, chunk, 0, chunkSize)
-    chunk
-  }
-
   def initClassLoader(log: Logger) = synchronized {
     if (!initialized) {
       try {
@@ -450,404 +426,353 @@ object BinAggregatingIterator extends Logging {
             if (log != null) log.debug(s"Found geomesa-feature at $url")
             u = java.net.URLClassLoader.newInstance(Array(url), vfsCl)
             GeoTools.addClassLoader(u)
-
           case _ =>
         }
       } catch {
         case t: Throwable =>
-          if(log != null) log.error("Failed to initialize GeoTools' ClassLoader ", t)
+          if (log != null) log.error("Failed to initialize GeoTools' ClassLoader ", t)
       } finally {
         initialized = true
       }
     }
   }
+}
 
-  //  /**
-  //   * If the length of an array to be sorted is less than this
-  //   * constant, insertion sort is used in preference to Quicksort.
-  //   */
-  //  private val INSERTION_SORT_THRESHOLD: Int = 47
-  //
-  //  /**
-  //   * Sorts the specified range of the array by Dual-Pivot Quicksort.
-  //   * Modified version of java's DualPivotQuicksort
-  //   *
-  //   * @param bytes the array to be sorted
-  //   * @param oleft the index of the first element, inclusive, to be sorted
-  //   * @param oright the index of the last element, inclusive, to be sorted
-  //   * @param leftmost indicates if this part is the leftmost in the range
-  //   * @param chunkSize size of each bin record in the array
-  //   */
-  //  def sort(bytes: Array[Byte], oleft: Int, oright: Int, leftmost: Boolean, chunkSize: Int): Unit = {
-  //
-  //    var left = oleft
-  //    var right = oright
-  //    val length = right - left + 1
-  //
-  //    // Use insertion sort on tiny arrays
-  //    if (length < INSERTION_SORT_THRESHOLD) {
-  //      if (leftmost) {
-  //        /*
-  //         * Traditional (without sentinel) insertion sort,
-  //         * optimized for server VM, is used in case of
-  //         * the leftmost part.
-  //         */
-  //        var i = left
-  //        var j = i
-  //        while (i < right) {
-  //          val chunki = getChunk(bytes, i + 1, chunkSize)
-  //          while (j >= left && compare(chunki, 0, bytes, j, chunkSize) < 0) {
-  //            // TODO fix other compares, extract copy method?
-  //            System.arraycopy(bytes, j * chunkSize, bytes, (j + 1) * chunkSize, chunkSize)
-  //            j -= 1
-  //          }
-  //          System.arraycopy(chunki, 0, bytes, (j + 1) * chunkSize, chunkSize)
-  //          i += 1
-  //          j = i
-  //        }
-  //        //  for (int i = left, j = i; i < right; j = ++i) {
-  //        //    int ai = a[i + 1];
-  //        //    while (ai < a[j]) {
-  //        //      a[j + 1] = a[j];
-  //        //      if (j-- == left) {
-  //        //        break;
-  //        //      }
-  //        //    }
-  //        //    a[j + 1] = ai;
-  //        //  }
-  //      } else {
-  //        /*
-  //         * Skip the longest ascending sequence.
-  //         */
-  //        do {
-  //          if (left >= right) {
-  //            return
-  //          }
-  //        } while ({ left += 1; compare(bytes, left * chunkSize, bytes, (left - 1) * chunkSize, chunkSize) >= 0 })
-  //        //  do {
-  //        //    if (left >= right) {
-  //        //      return;
-  //        //    }
-  //        //  } while (a[++left] >= a[left - 1]);
-  //
-  //        /*
-  //         * Every element from adjoining part plays the role
-  //         * of sentinel, therefore this allows us to avoid the
-  //         * left range check on each iteration. Moreover, we use
-  //         * the more optimized algorithm, so called pair insertion
-  //         * sort, which is faster (in the context of Quicksort)
-  //         * than traditional implementation of insertion sort.
-  //         */
-  //
-  //        var k: Int = left
-  //        while ({ left += 1; left } <= right) {
-  //          var a1 = getChunk(bytes, k * chunkSize, chunkSize)
-  //          var a2: Int = a(left)
-  //          if (a1 < a2) {
-  //            a2 = a1
-  //            a1 = a(left)
-  //          }
-  //          while (a1 < a({k -= 1; k})) {
-  //            a(k + 2) = a(k)
-  //          }
-  //          a({k += 1; k} + 1) = a1
-  //          while (a2 < a({k -= 1; k})) {
-  //            a(k + 1) = a(k)
-  //          }
-  //          a(k + 1) = a2
-  //
-  //          left += 1
-  //          k = left
-  //        }
-  //
-  //        for (int k = left; ++left <= right; k = ++left) {
-  //            int a1 = a[k], a2 = a[left];
-  //
-  //            if (a1 < a2) {
-  //                a2 = a1; a1 = a[left];
-  //            }
-  //            while (a1 < a[--k]) {
-  //                a[k + 2] = a[k];
-  //            }
-  //            a[++k + 1] = a1;
-  //
-  //            while (a2 < a[--k]) {
-  //                a[k + 1] = a[k];
-  //            }
-  //            a[k + 1] = a2;
-  //          }
-  //          int last = a[right];
-  //
-  //          while (last < a[--right]) {
-  //              a[right + 1] = a[right];
-  //          }
-  //          a[right + 1] = last;
-  //      }
-  //      return
-  //    }
-  //
-  //        // Inexpensive approximation of length / 7
-  //        int seventh = (length >> 3) + (length >> 6) + 1;
-  //
-  //        /*
-  //         * Sort five evenly spaced elements around (and including) the
-  //         * center element in the range. These elements will be used for
-  //         * pivot selection as described below. The choice for spacing
-  //         * these elements was empirically determined to work well on
-  //         * a wide variety of inputs.
-  //         */
-  //        int e3 = (left + right) >>> 1; // The midpoint
-  //        int e2 = e3 - seventh;
-  //        int e1 = e2 - seventh;
-  //        int e4 = e3 + seventh;
-  //        int e5 = e4 + seventh;
-  //
-  //        // Sort these elements using insertion sort
-  //        if (a[e2] < a[e1]) { int t = a[e2]; a[e2] = a[e1]; a[e1] = t; }
-  //
-  //        if (a[e3] < a[e2]) { int t = a[e3]; a[e3] = a[e2]; a[e2] = t;
-  //            if (t < a[e1]) { a[e2] = a[e1]; a[e1] = t; }
-  //        }
-  //        if (a[e4] < a[e3]) { int t = a[e4]; a[e4] = a[e3]; a[e3] = t;
-  //            if (t < a[e2]) { a[e3] = a[e2]; a[e2] = t;
-  //                if (t < a[e1]) { a[e2] = a[e1]; a[e1] = t; }
-  //            }
-  //        }
-  //        if (a[e5] < a[e4]) { int t = a[e5]; a[e5] = a[e4]; a[e4] = t;
-  //            if (t < a[e3]) { a[e4] = a[e3]; a[e3] = t;
-  //                if (t < a[e2]) { a[e3] = a[e2]; a[e2] = t;
-  //                    if (t < a[e1]) { a[e2] = a[e1]; a[e1] = t; }
-  //                }
-  //            }
-  //        }
-  //
-  //        // Pointers
-  //        int less  = left;  // The index of the first element of center part
-  //        int great = right; // The index before the first element of right part
-  //
-  //        if (a[e1] != a[e2] && a[e2] != a[e3] && a[e3] != a[e4] && a[e4] != a[e5]) {
-  //            /*
-  //             * Use the second and fourth of the five sorted elements as pivots.
-  //             * These values are inexpensive approximations of the first and
-  //             * second terciles of the array. Note that pivot1 <= pivot2.
-  //             */
-  //            int pivot1 = a[e2];
-  //            int pivot2 = a[e4];
-  //
-  //            /*
-  //             * The first and the last elements to be sorted are moved to the
-  //             * locations formerly occupied by the pivots. When partitioning
-  //             * is complete, the pivots are swapped back into their final
-  //             * positions, and excluded from subsequent sorting.
-  //             */
-  //            a[e2] = a[left];
-  //            a[e4] = a[right];
-  //
-  //            /*
-  //             * Skip elements, which are less or greater than pivot values.
-  //             */
-  //            while (a[++less] < pivot1);
-  //            while (a[--great] > pivot2);
-  //
-  //            /*
-  //             * Partitioning:
-  //             *
-  //             *   left part           center part                   right part
-  //             * +--------------------------------------------------------------+
-  //             * |  < pivot1  |  pivot1 <= && <= pivot2  |    ?    |  > pivot2  |
-  //             * +--------------------------------------------------------------+
-  //             *               ^                          ^       ^
-  //             *               |                          |       |
-  //             *              less                        k     great
-  //             *
-  //             * Invariants:
-  //             *
-  //             *              all in (left, less)   < pivot1
-  //             *    pivot1 <= all in [less, k)     <= pivot2
-  //             *              all in (great, right) > pivot2
-  //             *
-  //             * Pointer k is the first index of ?-part.
-  //             */
-  //            outer:
-  //            for (int k = less - 1; ++k <= great; ) {
-  //                int ak = a[k];
-  //                if (ak < pivot1) { // Move a[k] to left part
-  //                    a[k] = a[less];
-  //                    /*
-  //                     * Here and below we use "a[i] = b; i++;" instead
-  //                     * of "a[i++] = b;" due to performance issue.
-  //                     */
-  //                    a[less] = ak;
-  //                    ++less;
-  //                } else if (ak > pivot2) { // Move a[k] to right part
-  //                    while (a[great] > pivot2) {
-  //                        if (great-- == k) {
-  //                            break outer;
-  //                        }
-  //                    }
-  //                    if (a[great] < pivot1) { // a[great] <= pivot2
-  //                        a[k] = a[less];
-  //                        a[less] = a[great];
-  //                        ++less;
-  //                    } else { // pivot1 <= a[great] <= pivot2
-  //                        a[k] = a[great];
-  //                    }
-  //                    /*
-  //                     * Here and below we use "a[i] = b; i--;" instead
-  //                     * of "a[i--] = b;" due to performance issue.
-  //                     */
-  //                    a[great] = ak;
-  //                    --great;
-  //                }
-  //            }
-  //
-  //            // Swap pivots into their final positions
-  //            a[left]  = a[less  - 1]; a[less  - 1] = pivot1;
-  //            a[right] = a[great + 1]; a[great + 1] = pivot2;
-  //
-  //            // Sort left and right parts recursively, excluding known pivots
-  //            sort(a, left, less - 2, leftmost);
-  //            sort(a, great + 2, right, false);
-  //
-  //            /*
-  //             * If center part is too large (comprises > 4/7 of the array),
-  //             * swap internal pivot values to ends.
-  //             */
-  //            if (less < e1 && e5 < great) {
-  //                /*
-  //                 * Skip elements, which are equal to pivot values.
-  //                 */
-  //                while (a[less] == pivot1) {
-  //                    ++less;
-  //                }
-  //
-  //                while (a[great] == pivot2) {
-  //                    --great;
-  //                }
-  //
-  //                /*
-  //                 * Partitioning:
-  //                 *
-  //                 *   left part         center part                  right part
-  //                 * +----------------------------------------------------------+
-  //                 * | == pivot1 |  pivot1 < && < pivot2  |    ?    | == pivot2 |
-  //                 * +----------------------------------------------------------+
-  //                 *              ^                        ^       ^
-  //                 *              |                        |       |
-  //                 *             less                      k     great
-  //                 *
-  //                 * Invariants:
-  //                 *
-  //                 *              all in (*,  less) == pivot1
-  //                 *     pivot1 < all in [less,  k)  < pivot2
-  //                 *              all in (great, *) == pivot2
-  //                 *
-  //                 * Pointer k is the first index of ?-part.
-  //                 */
-  //                outer:
-  //                for (int k = less - 1; ++k <= great; ) {
-  //                    int ak = a[k];
-  //                    if (ak == pivot1) { // Move a[k] to left part
-  //                        a[k] = a[less];
-  //                        a[less] = ak;
-  //                        ++less;
-  //                    } else if (ak == pivot2) { // Move a[k] to right part
-  //                        while (a[great] == pivot2) {
-  //                            if (great-- == k) {
-  //                                break outer;
-  //                            }
-  //                        }
-  //                        if (a[great] == pivot1) { // a[great] < pivot2
-  //                            a[k] = a[less];
-  //                            /*
-  //                             * Even though a[great] equals to pivot1, the
-  //                             * assignment a[less] = pivot1 may be incorrect,
-  //                             * if a[great] and pivot1 are floating-point zeros
-  //                             * of different signs. Therefore in float and
-  //                             * double sorting methods we have to use more
-  //                             * accurate assignment a[less] = a[great].
-  //                             */
-  //                            a[less] = pivot1;
-  //                            ++less;
-  //                        } else { // pivot1 < a[great] < pivot2
-  //                            a[k] = a[great];
-  //                        }
-  //                        a[great] = ak;
-  //                        --great;
-  //                    }
-  //                }
-  //            }
-  //
-  //            // Sort center part recursively
-  //            sort(a, less, great, false);
-  //
-  //        } else { // Partitioning with one pivot
-  //            /*
-  //             * Use the third of the five sorted elements as pivot.
-  //             * This value is inexpensive approximation of the median.
-  //             */
-  //            int pivot = a[e3];
-  //
-  //            /*
-  //             * Partitioning degenerates to the traditional 3-way
-  //             * (or "Dutch National Flag") schema:
-  //             *
-  //             *   left part    center part              right part
-  //             * +-------------------------------------------------+
-  //             * |  < pivot  |   == pivot   |     ?    |  > pivot  |
-  //             * +-------------------------------------------------+
-  //             *              ^              ^        ^
-  //             *              |              |        |
-  //             *             less            k      great
-  //             *
-  //             * Invariants:
-  //             *
-  //             *   all in (left, less)   < pivot
-  //             *   all in [less, k)     == pivot
-  //             *   all in (great, right) > pivot
-  //             *
-  //             * Pointer k is the first index of ?-part.
-  //             */
-  //            for (int k = less; k <= great; ++k) {
-  //                if (a[k] == pivot) {
-  //                    continue;
-  //                }
-  //                int ak = a[k];
-  //                if (ak < pivot) { // Move a[k] to left part
-  //                    a[k] = a[less];
-  //                    a[less] = ak;
-  //                    ++less;
-  //                } else { // a[k] > pivot - Move a[k] to right part
-  //                    while (a[great] > pivot) {
-  //                        --great;
-  //                    }
-  //                    if (a[great] < pivot) { // a[great] <= pivot
-  //                        a[k] = a[less];
-  //                        a[less] = a[great];
-  //                        ++less;
-  //                    } else { // a[great] == pivot
-  //                        /*
-  //                         * Even though a[great] equals to pivot, the
-  //                         * assignment a[k] = pivot may be incorrect,
-  //                         * if a[great] and pivot are floating-point
-  //                         * zeros of different signs. Therefore in float
-  //                         * and double sorting methods we have to use
-  //                         * more accurate assignment a[k] = a[great].
-  //                         */
-  //                        a[k] = pivot;
-  //                    }
-  //                    a[great] = ak;
-  //                    --great;
-  //                }
-  //            }
-  //
-  //            /*
-  //             * Sort left and right parts recursively.
-  //             * All elements from center part are equal
-  //             * and, therefore, already sorted.
-  //             */
-  //            sort(a, left, less - 1, leftmost);
-  //            sort(a, great + 1, right, false);
-  //        }
-  //    }
+object BinSorter {
+
+  private val CHUNK_SIZE = 16
+
+  /**
+   * If the length of an array to be sorted is less than this
+   * constant, insertion sort is used in preference to Quicksort.
+   *
+   * This needs to be more than 7 * chunk size, otherwise pivot logic fails
+   */
+  private val INSERTION_SORT_THRESHOLD = 47
+
+  private val swapBuffers = new ThreadLocal[Array[Byte]]() {
+    override def initialValue() = Array.ofDim[Byte](CHUNK_SIZE)
+  }
+
+  // take care - uses thread-local state
+  def getChunk(bytes: Array[Byte], offset: Int): Array[Byte] = {
+    val chunk = swapBuffers.get()
+    System.arraycopy(bytes, offset, chunk, 0, CHUNK_SIZE)
+    chunk
+  }
+
+  // take care - uses same thread-local state as getChunk
+  def swap(bytes: Array[Byte], left: Int, right: Int): Unit = {
+    val chunk = getChunk(bytes, left)
+    System.arraycopy(bytes, right, bytes, left, CHUNK_SIZE)
+    System.arraycopy(chunk, 0, bytes, right, CHUNK_SIZE)
+  }
+
+  /**
+   * Sorts the specified range of the array by Dual-Pivot Quicksort.
+   * Modified version of java's DualPivotQuicksort
+   *
+   * @param bytes the array to be sorted
+   * @param left the index of the first element, inclusive, to be sorted
+   * @param right the index of the last element, inclusive, to be sorted
+//   * @param leftmost indicates if this part is the leftmost in the range (always true for initial call) TODO leftmost
+   */
+  def dualPivotQuickSort(bytes: Array[Byte], left: Int, right: Int/*, leftmost: Boolean = true*/): Unit = {
+    import BinAggregatingIterator.compare
+
+    val length = (right + CHUNK_SIZE - left) / CHUNK_SIZE
+
+    if (length < 3) {
+      // Use insertion sort on tiny arrays
+      var i = left + CHUNK_SIZE
+      while (i <= right) {
+        var j = i
+        val ai = getChunk(bytes, i)
+        while (j > left && compare(bytes, j - CHUNK_SIZE, ai, 0) > 0) {
+          System.arraycopy(bytes, j - CHUNK_SIZE, bytes, j, CHUNK_SIZE)
+          j -= CHUNK_SIZE
+        }
+        if (j != i) { // we don't need to copy if nothing moved
+          System.arraycopy(ai, 0, bytes, j, CHUNK_SIZE)
+        }
+        i += CHUNK_SIZE
+      }
+      return
+    }
+
+    /*
+     * Sort five evenly spaced elements around (and including) the
+     * center element in the range. These elements will be used for
+     * pivot selection as described below. The choice for spacing
+     * these elements was empirically determined to work well on
+     * a wide variety of inputs.
+     */
+    val seventh = (length / 7) * CHUNK_SIZE
+
+    val e3 = (((left + right) / CHUNK_SIZE) / 2) * CHUNK_SIZE // The midpoint
+    val e2 = e3 - seventh
+    val e1 = e2 - seventh
+    val e4 = e3 + seventh
+    val e5 = e4 + seventh
+
+    // Sort these elements using insertion sort
+    if (compare(bytes, e2, bytes, e1) < 0) { swap(bytes, e2, e1) }
+
+    if (compare(bytes, e3, bytes, e2) < 0) { swap(bytes, e3, e2)
+      if (compare(bytes, e2, bytes, e1) < 0) { swap(bytes, e2, e1) }
+    }
+    if (compare(bytes, e4, bytes, e3) < 0) { swap(bytes, e4, e3)
+      if (compare(bytes, e3, bytes, e2) < 0) { swap(bytes, e3, e2)
+        if (compare(bytes, e2, bytes, e1) < 0) {swap(bytes, e2, e1) }
+      }
+    }
+    if (compare(bytes, e5, bytes, e4) < 0) { swap(bytes, e5, e4)
+      if (compare(bytes, e4, bytes, e3) < 0) { swap(bytes, e4, e3)
+        if (compare(bytes, e3, bytes, e2) < 0) { swap(bytes, e3, e2)
+          if (compare(bytes, e2, bytes, e1) < 0) { swap(bytes, e2, e1) }
+        }
+      }
+    }
+
+    // Pointers
+    var less  = left  // The index of the first element of center part
+    var great = right // The index before the first element of right part
+
+    if (compare(bytes, e1, bytes, e2) != 0 && compare(bytes, e2, bytes, e3) != 0 &&
+        compare(bytes, e3, bytes, e4) != 0 && compare(bytes, e4, bytes, e5) != 0 ) {
+      /*
+       * Use the second and fourth of the five sorted elements as pivots.
+       * These values are inexpensive approximations of the first and
+       * second terciles of the array. Note that pivot1 <= pivot2.
+       */
+      val pivot1 = Array.ofDim[Byte](CHUNK_SIZE)
+      System.arraycopy(bytes, e2, pivot1, 0, CHUNK_SIZE)
+      val pivot2 = Array.ofDim[Byte](CHUNK_SIZE)
+      System.arraycopy(bytes, e4, pivot2, 0, CHUNK_SIZE)
+
+      /*
+       * The first and the last elements to be sorted are moved to the
+       * locations formerly occupied by the pivots. When partitioning
+       * is complete, the pivots are swapped back into their final
+       * positions, and excluded from subsequent sorting.
+       */
+      System.arraycopy(bytes, left, bytes, e2, CHUNK_SIZE)
+      System.arraycopy(bytes, right, bytes, e4, CHUNK_SIZE)
+
+      // Skip elements, which are less or greater than pivot values.
+      while ({ less += CHUNK_SIZE; compare(bytes, less, pivot1, 0) < 0 }) {}
+      while ({ great -= CHUNK_SIZE; compare(bytes, great, pivot2, 0) > 0 }) {}
+
+      /*
+       * Partitioning:
+       *
+       *   left part           center part                   right part
+       * +--------------------------------------------------------------+
+       * |  < pivot1  |  pivot1 <= && <= pivot2  |    ?    |  > pivot2  |
+       * +--------------------------------------------------------------+
+       *               ^                          ^       ^
+       *               |                          |       |
+       *              less                        k     great
+       *
+       * Invariants:
+       *
+       *              all in (left, less)   < pivot1
+       *    pivot1 <= all in [less, k)     <= pivot2
+       *              all in (great, right) > pivot2
+       *
+       * Pointer k is the first index of ?-part.
+       */
+
+      var k = less
+      var loop = true
+      while (k <= great && loop) {
+        val ak = getChunk(bytes, k)
+        if (compare(ak, 0, pivot1, 0) < 0) { // Move a[k] to left part
+          System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
+          System.arraycopy(ak, 0, bytes, less, CHUNK_SIZE)
+          less += CHUNK_SIZE
+        } else if (compare(ak, 0, pivot2, 0) > 0) { // Move a[k] to right part
+          while (compare(bytes, great, pivot2, 0) > 0) {
+            if (great == k) {
+              loop = false
+            }
+            great -= CHUNK_SIZE
+          }
+          if (loop) {
+            if (compare(bytes, great, pivot1, 0) < 0) { // a[great] <= pivot2
+              System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
+              System.arraycopy(bytes, great, bytes, less, CHUNK_SIZE)
+              less += CHUNK_SIZE
+            } else { // pivot1 <= a[great] <= pivot2
+              System.arraycopy(bytes, great, bytes, k, CHUNK_SIZE)
+            }
+            System.arraycopy(ak, 0, bytes, great, CHUNK_SIZE)
+            great -= CHUNK_SIZE
+          }
+        }
+        k += CHUNK_SIZE
+      }
+
+      k = less
+      loop = true
+      while (k <= great && loop) {
+        val ak = getChunk(bytes, k)
+        if (compare(ak, 0, pivot1, 0) < 0) { // Move a[k] to left part
+          System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
+          System.arraycopy(ak, 0, bytes, less, CHUNK_SIZE)
+          less += CHUNK_SIZE
+        } else if (compare(ak, 0, pivot2, 0) > 0) { // Move a[k] to right part
+          while (compare(bytes, great, pivot2, 0) > 0) {
+            if (great == k) {
+              loop = false
+            }
+            great -= CHUNK_SIZE
+          }
+          if (compare(bytes, great, pivot1, 0) < 0) { // a[great] <= pivot2
+            System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
+            System.arraycopy(bytes, great, bytes, less, CHUNK_SIZE)
+            less += CHUNK_SIZE
+          } else { // pivot1 <= a[great] <= pivot2
+            System.arraycopy(bytes, great, bytes, k, CHUNK_SIZE)
+          }
+          System.arraycopy(ak, 0, bytes, great, CHUNK_SIZE)
+          great -= CHUNK_SIZE
+        }
+        k += CHUNK_SIZE
+      }
+
+      // Swap pivots into their final positions
+      System.arraycopy(bytes, less - CHUNK_SIZE, bytes, left, CHUNK_SIZE)
+      System.arraycopy(pivot1, 0, bytes, less - CHUNK_SIZE, CHUNK_SIZE)
+      System.arraycopy(bytes, great + CHUNK_SIZE, bytes, right, CHUNK_SIZE)
+      System.arraycopy(pivot2, 0, bytes, great + CHUNK_SIZE, CHUNK_SIZE)
+
+      // Sort left and right parts recursively, excluding known pivots
+      dualPivotQuickSort(bytes, left, less - 2 * CHUNK_SIZE)
+      dualPivotQuickSort(bytes, great + 2 * CHUNK_SIZE, right)
+
+      /*
+       * If center part is too large (comprises > 4/7 of the array),
+       * swap internal pivot values to ends.
+       */
+      if (less < e1 && e5 < great) {
+        // Skip elements, which are equal to pivot values.
+        while (compare(bytes, less, pivot1, 0) == 0) { less += CHUNK_SIZE }
+        while (compare(bytes, great, pivot2, 0) == 0) { great -= CHUNK_SIZE }
+
+        /*
+         * Partitioning:
+         *
+         *   left part         center part                  right part
+         * +----------------------------------------------------------+
+         * | == pivot1 |  pivot1 < && < pivot2  |    ?    | == pivot2 |
+         * +----------------------------------------------------------+
+         *              ^                        ^       ^
+         *              |                        |       |
+         *             less                      k     great
+         *
+         * Invariants:
+         *
+         *              all in (*,  less) == pivot1
+         *     pivot1 < all in [less,  k)  < pivot2
+         *              all in (great, *) == pivot2
+         *
+         * Pointer k is the first index of ?-part.
+         */
+        var k = less
+        loop = true
+        while (k <= great && loop) {
+          val ak = getChunk(bytes, k)
+          if (compare(ak, 0, pivot1, 0) == 0) { // Move a[k] to left part
+            System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
+            System.arraycopy(ak, 0, bytes, less, CHUNK_SIZE)
+            less += CHUNK_SIZE
+          } else if (compare(ak, 0, pivot2, 0) == 0) { // Move a[k] to right part
+            while (compare(bytes, great, pivot2, 0) == 0) {
+              if (great == k) {
+                loop = false
+              }
+              great -= CHUNK_SIZE
+            }
+            if (compare(bytes, great, pivot1, 0) == 0) { // a[great] < pivot2
+              System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
+              System.arraycopy(pivot1, 0, bytes, less, CHUNK_SIZE)
+              less += CHUNK_SIZE
+            } else { // pivot1 < a[great] < pivot2
+              System.arraycopy(bytes, great, bytes, k, CHUNK_SIZE)
+            }
+            System.arraycopy(ak, 0, bytes, great, CHUNK_SIZE)
+            great -= CHUNK_SIZE
+          }
+          k += CHUNK_SIZE
+        }
+      }
+
+      // Sort center part recursively
+      dualPivotQuickSort(bytes, less, great)
+
+    } else { // Partitioning with one pivot
+
+      /*
+       * Use the third of the five sorted elements as pivot.
+       * This value is inexpensive approximation of the median.
+       */
+      val pivot = Array.ofDim[Byte](CHUNK_SIZE)
+      System.arraycopy(bytes, e3, pivot, 0, CHUNK_SIZE)
+
+      /*
+       * Partitioning degenerates to the traditional 3-way
+       * (or "Dutch National Flag") schema:
+       *
+       *   left part    center part              right part
+       * +-------------------------------------------------+
+       * |  < pivot  |   == pivot   |     ?    |  > pivot  |
+       * +-------------------------------------------------+
+       *              ^              ^        ^
+       *              |              |        |
+       *             less            k      great
+       *
+       * Invariants:
+       *
+       *   all in (left, less)   < pivot
+       *   all in [less, k)     == pivot
+       *   all in (great, right) > pivot
+       *
+       * Pointer k is the first index of ?-part.
+       */
+      var k = less
+      while (k <= great) {
+        if (compare(bytes, k, pivot, 0) != 0) {
+          val ak = getChunk(bytes, k)
+          if (compare(ak, 0, pivot, 0) < 1) { // Move a[k] to left part
+            System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
+            System.arraycopy(ak, 0, bytes, less, CHUNK_SIZE)
+            less += CHUNK_SIZE
+          } else { // a[k] > pivot - Move a[k] to right part
+            while (compare(bytes, great, pivot, 0) > 0) {
+              great -= CHUNK_SIZE
+            }
+            if (compare(bytes, great, pivot, 0) < 0) { // a[great] <= pivot
+              System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
+              System.arraycopy(bytes, great, bytes, less, CHUNK_SIZE)
+              less += CHUNK_SIZE
+            } else { // a[great] == pivot
+              System.arraycopy(pivot, 0, bytes, k, CHUNK_SIZE)
+            }
+            System.arraycopy(ak, 0, bytes, great, CHUNK_SIZE)
+            great -= CHUNK_SIZE
+          }
+        }
+        k += CHUNK_SIZE
+      }
+
+      /*
+       * Sort left and right parts recursively.
+       * All elements from center part are equal
+       * and, therefore, already sorted.
+       */
+      dualPivotQuickSort(bytes, left, less - CHUNK_SIZE)
+      dualPivotQuickSort(bytes, great + CHUNK_SIZE, right)
+    }
+  }
 }

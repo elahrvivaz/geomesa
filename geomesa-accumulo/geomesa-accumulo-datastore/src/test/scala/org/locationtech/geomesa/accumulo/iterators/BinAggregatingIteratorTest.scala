@@ -37,7 +37,7 @@ class BinAggregatingIteratorTest extends Specification {
   val sft = SimpleFeatureTypes.createType(getClass.getSimpleName, spec)
   val r = new Random(10)
 
-  val features = (0 until 10).map { i =>
+  val features = (0 until 110).map { i =>
     val dtg = new Date(Math.abs(r.nextInt(999999)))
     val name = s"name$i"
 //    val dtg = s"2010-05-07T0${9 - i}:00:00.000Z"
@@ -48,7 +48,25 @@ class BinAggregatingIteratorTest extends Specification {
   }
 
   "BinAggregatingIterator" should {
-    "sort aggregated records" in {
+//    "sort aggregated records" in {
+//      val out = new ByteArrayOutputStream(16 * features.length)
+//      features.foreach { f =>
+//        val values =
+//          BasicValues(f.getDefaultGeometry.asInstanceOf[Point].getY.toFloat,
+//            f.getDefaultGeometry.asInstanceOf[Point].getX.toFloat,
+//            f.getAttribute("dtg").asInstanceOf[Date].getTime,
+//            Some(f.getAttribute("name").asInstanceOf[String]))
+//        Convert2ViewerFunction.encode(values, out)
+//      }
+//      val bytes = out.toByteArray
+//      BinAggregatingIterator.sortByChunks(bytes, bytes.length, 16)
+//      val recovered = bytes.grouped(16).map(Convert2ViewerFunction.decode).map(_.dtg).toSeq
+//      recovered.foreach(println)
+//      val expected = recovered.sorted
+//      recovered mustEqual expected
+//      success
+//    }
+    "quicksort" in {
       val out = new ByteArrayOutputStream(16 * features.length)
       features.foreach { f =>
         val values =
@@ -59,12 +77,16 @@ class BinAggregatingIteratorTest extends Specification {
         Convert2ViewerFunction.encode(values, out)
       }
       val bytes = out.toByteArray
-      BinAggregatingIterator.sortByChunks(bytes, bytes.length, 16)
-      val recovered = bytes.grouped(16).map(Convert2ViewerFunction.decode).map(_.dtg).toSeq
-      recovered.foreach(println)
-      val expected = recovered.sorted
-      recovered mustEqual expected
-      success
+      println(bytes.length + " total")
+      val expected = bytes.grouped(16).map(Convert2ViewerFunction.decode).map(_.dtg).toSeq.sorted
+      println(expected.mkString(" "))
+      BinSorter.dualPivotQuickSort(bytes, 0, bytes.length - 16)
+
+      val actual = bytes.grouped(16).map(Convert2ViewerFunction.decode).map(_.dtg).toSeq
+
+      println(actual.mkString(" "))
+
+      actual mustEqual expected
     }
   }
 }
