@@ -14,10 +14,11 @@ import org.locationtech.geomesa.accumulo.iterators.{BinAggregatingIterator, Z3It
 import org.locationtech.geomesa.accumulo.{filter, index}
 import org.locationtech.geomesa.curve.Z3SFC
 import org.locationtech.geomesa.iterators.{KryoLazyFilterTransformIterator, LazyFilterTransformIterator}
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 import org.opengis.filter.spatial.BinarySpatialOperator
-import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+
 import scala.collection.JavaConversions._
 
 class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
@@ -64,7 +65,7 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
 
     def isBinQuery = query.getHints.containsKey(QueryHints.BIN_TRACK_KEY)
 
-    val iterators = {
+    val (iterators, colFamily) = {
       val ecql = ecqlFilters.length match {
         case 0 => None
         case 1 => Some(ecqlFilters.head)
@@ -74,12 +75,12 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
         val trackId = query.getHints.get(QueryHints.BIN_TRACK_KEY).asInstanceOf[String]
         val dtg = Option(query.getHints.get(QueryHints.BIN_DATE_KEY).asInstanceOf[String]).orElse(dtgField).orNull
         val sort = Option(System.getProperty("bin.sort.iter")).map(_.toBoolean).getOrElse(true)
-        val is = if (sft.getBinTrackId.isDefined && ecql.isEmpty) { // can't apply non st filters
+        val is = if (sft.getBinTrackId.exists(_ == trackId) && ecql.isEmpty) { // can't apply non st filters
           BinAggregatingIterator.configurePrecomputed(sft, ecql, sort, FILTERING_ITER_PRIORITY)
         } else {
           BinAggregatingIterator.configureDynamic(sft, ecql, trackId, dtg, sort, FILTERING_ITER_PRIORITY)
         }
-        Some(is)
+        (Some(is), Z3Table.BIN_CF)
       } else {
         val transforms = for {
           tdef <- index.getTransformDefinition(query)
@@ -88,10 +89,11 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
         output(s"Transforms: $transforms")
 
         (ecql, transforms) match {
-          case (None, None) => None
+          case (None, None) => (None, Z3Table.FULL_CF)
           case _ =>
-            Some(LazyFilterTransformIterator.configure[KryoLazyFilterTransformIterator](sft,
-              ecql, transforms, FILTERING_ITER_PRIORITY))
+            val is = LazyFilterTransformIterator
+              .configure[KryoLazyFilterTransformIterator](sft, ecql, transforms, FILTERING_ITER_PRIORITY)
+            (Some(is), Z3Table.FULL_CF)
         }
       }
     }
@@ -115,22 +117,29 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
     val lt = Z3Table.secondsInCurrentWeek(interval.getStart, epochWeekStart)
     val ut = Z3Table.secondsInCurrentWeek(interval.getEnd, epochWeekStart)
     if (weeks.length == 1) {
-      Seq(queryPlanForPrefix(weeks.head, lt ,ut, lx, ly, ux, uy, z3table, adaptIter, iterators, numThreads, contained = false))
+      Seq(queryPlanForPrefix(weeks.head, lt ,ut, lx, ly, ux, uy,
+        z3table, adaptIter, iterators, colFamily, numThreads, contained = false))
     } else {
       val oneWeekInSeconds = Weeks.ONE.toStandardSeconds.getSeconds
       val head +: xs :+ last = weeks.toList
       val middleQPs = xs.map { w =>
-        queryPlanForPrefix(w, 0, oneWeekInSeconds, lx, ly, ux, uy, z3table, adaptIter, iterators, numThreads, contained = true)
+        queryPlanForPrefix(w, 0, oneWeekInSeconds, lx, ly, ux, uy,
+          z3table, adaptIter, iterators, colFamily, numThreads, contained = true)
       }
-      val startQP = queryPlanForPrefix(head, lt, oneWeekInSeconds, lx, ly, ux, uy, z3table, adaptIter, iterators, numThreads, contained = false)
-      val endQP   = queryPlanForPrefix(last, 0, ut, lx, ly, ux, uy, z3table, adaptIter, iterators, numThreads, contained = false)
+      val startQP = queryPlanForPrefix(head, lt, oneWeekInSeconds, lx, ly, ux, uy,
+        z3table, adaptIter, iterators, colFamily, numThreads, contained = false)
+      val endQP = queryPlanForPrefix(last, 0, ut, lx, ly, ux, uy,
+        z3table, adaptIter, iterators, colFamily, numThreads, contained = false)
       Seq(startQP, endQP) ++ middleQPs
     }
   }
 
   def queryPlanForPrefix(week: Int, lt: Long, ut: Long,
                          lx: Double, ly: Double, ux: Double, uy: Double,
-                         table: String, adaptIter: FeatureFunction, is: Option[IteratorSetting],
+                         table: String,
+                         adaptIter: FeatureFunction,
+                         is: Option[IteratorSetting],
+                         colFamily: Text,
                          numThreads: Int,
                          contained: Boolean = true) = {
     val epochWeekStart = Weeks.weeks(week)
@@ -149,7 +158,7 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
     val iter = Z3Iterator.configure(Z3_CURVE.index(lx, ly, lt), Z3_CURVE.index(ux, uy, ut), Z3_ITER_PRIORITY)
 
     val iters = Seq(Some(iter), is).flatten
-    BatchScanPlan(table, accRanges, iters, Seq(Z3Table.FULL_CF), adaptIter, numThreads, hasDuplicates = false)
+    BatchScanPlan(table, accRanges, iters, Seq(colFamily), adaptIter, numThreads, hasDuplicates = false)
   }
 }
 
