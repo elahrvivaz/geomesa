@@ -20,6 +20,7 @@ import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.data.{Key, Range => AccRange, Value}
 import org.geotools.data.Query
+import org.geotools.factory.Hints
 import org.geotools.factory.Hints.{ClassKey, IntegerKey}
 import org.geotools.feature.AttributeTypeBuilder
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder
@@ -200,6 +201,11 @@ package object index {
     val BIN_TRACK_KEY        = new ClassKey(classOf[java.lang.String])
     val BIN_SORT_KEY         = new ClassKey(classOf[java.lang.Boolean])
 
+    implicit class RichHints(val hints: Hints) extends AnyRef {
+      def isBinQuery: Boolean = hints.containsKey(BIN_TRACK_KEY)
+      def getBinTrackId = hints.get(BIN_TRACK_KEY).asInstanceOf[String]
+      def isBinSorting = hints.get(BIN_SORT_KEY).asInstanceOf[Boolean]
+    }
   }
 
   type ExplainerOutputType = ( => String) => Unit

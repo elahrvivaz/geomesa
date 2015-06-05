@@ -18,7 +18,7 @@ import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleF
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 import org.opengis.filter.spatial.BinarySpatialOperator
-
+import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import scala.collection.JavaConversions._
 
 class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
@@ -63,7 +63,7 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
     output(s"GeomsToCover: $geometryToCover")
     output(s"Interval:  $interval")
 
-    def isBinQuery = query.getHints.containsKey(QueryHints.BIN_TRACK_KEY)
+    def isBinQuery = query.getHints.isBinQuery
 
     val (iterators, colFamily) = {
       val ecql = ecqlFilters.length match {
@@ -72,8 +72,8 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
         case _ => Some(ff.and(ecqlFilters))
       }
       if (isBinQuery) {
-        val trackId = query.getHints.get(QueryHints.BIN_TRACK_KEY).asInstanceOf[String]
-        val sort = query.getHints.get(QueryHints.BIN_SORT_KEY).asInstanceOf[Boolean]
+        val trackId = query.getHints.getBinTrackId
+        val sort = query.getHints.isBinSorting
         val p = FILTERING_ITER_PRIORITY
         if (sft.getBinTrackId.exists(_ == trackId) && ecql.isEmpty) { // can't apply non st filters
           val iter = BinAggregatingIterator.configurePrecomputed(sft, ecql, sort, p)

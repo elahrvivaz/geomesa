@@ -34,8 +34,11 @@ import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.data.tables.AttributeTable
 import org.locationtech.geomesa.accumulo.index
+import org.locationtech.geomesa.accumulo.index.QueryHints._
+import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
 import org.locationtech.geomesa.features.{SimpleFeatureSerializers, SimpleFeatureSerializer}
 import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
+import org.locationtech.geomesa.filter.function.Convert2ViewerFunction
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
@@ -238,6 +241,19 @@ class AttributeIndexStrategyTest extends Specification {
       val (extractedFilter, strippedFilters) = FilterHelper.findFirst(AttributeIndexStrategy.getStrategy(_, sft, NoOpHints).isDefined)(filter.asInstanceOf[org.opengis.filter.And].getChildren)
       extractedFilter must beEmpty
       strippedFilters must have size(2)
+    }
+
+    "support bin queries" in {
+      import BinAggregatingIterator.BIN_ATTRIBUTE_INDEX
+      val query = new Query(sftName, ECQL.toFilter("count>=2"))
+      query.getHints.put(BIN_TRACK_KEY, "name")
+      val strategy = new AttributeIdxRangeStrategy()
+      val plans = strategy.getQueryPlans(query, queryPlanner, ExplainNull).map(StrategyPlan(strategy, _))
+      val results = queryPlanner.executePlans(query, plans, deduplicate = false).map(_.getAttribute(BIN_ATTRIBUTE_INDEX)).toSeq
+      forall(results)(_ must beAnInstanceOf[Array[Byte]])
+      val bins = results.flatMap(_.asInstanceOf[Array[Byte]].grouped(16).map(Convert2ViewerFunction.decode))
+      bins must haveSize(3)
+      bins.map(_.trackId.get) must containAllOf(Seq("bill", "bob", "charles").map(_.hashCode.toString))
     }
   }
 

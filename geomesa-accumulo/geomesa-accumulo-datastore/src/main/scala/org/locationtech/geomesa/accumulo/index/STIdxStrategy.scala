@@ -34,6 +34,7 @@ import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 import org.opengis.filter.spatial.BinarySpatialOperator
+import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 
 class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
 
@@ -97,30 +98,19 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
     output(s"Interval:  ${oint.getOrElse("No interval")}")
     output(s"Filter: ${Option(filter).getOrElse("No Filter")}")
 
-    val isBinQuery = query.getHints.containsKey(QueryHints.BIN_TRACK_KEY)
+    val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, sft)
+    val stiiIterCfg = getSTIIIterCfg(iteratorConfig, query, sft, ofilter, ecql, featureEncoding, version)
+    val densityIterCfg = getDensityIterCfg(query, geometryToCover, schema, featureEncoding, sft)
 
-    // TODO implement this for attribute strategy and record strategy?
-    // TODO this only works with kryo...
-    val (iterators, useIndexEntries) = if (isBinQuery) {
-      val trackId = query.getHints.get(QueryHints.BIN_TRACK_KEY).asInstanceOf[String]
-      val sort = query.getHints.get(QueryHints.BIN_SORT_KEY).asInstanceOf[Boolean]
-      val priority = Z3IdxStrategy.FILTERING_ITER_PRIORITY
-      val is = BinAggregatingIterator.configureDynamic(sft, ecql, trackId, dtgField.get, sort, priority)
-      (Seq(is), false)
-    } else {
-      val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, sft)
-      val stiiIterCfg = getSTIIIterCfg(iteratorConfig, query, sft, ofilter, ecql, featureEncoding, version)
-      val densityIterCfg = getDensityIterCfg(query, geometryToCover, schema, featureEncoding, sft)
-
-      val indexOnly = iteratorConfig.iterator match {
-        case IndexOnlyIterator      => true
-        case SpatioTemporalIterator => false
-      }
-      (Seq(stiiIterCfg) ++ densityIterCfg, indexOnly)
+    val indexOnly = iteratorConfig.iterator match {
+      case IndexOnlyIterator      => true
+      case SpatioTemporalIterator => false
     }
+    val iterators = Seq(stiiIterCfg) ++ densityIterCfg
+    val useIndexEntries = indexOnly
 
-    val adaptIter = if (isBinQuery) {
-      BinAggregatingIterator.adaptIterator()
+    val adaptIter = if (query.getHints.isBinQuery) {
+      BinAggregatingIterator.adaptNonAggregatedIterator(query, sft, featureEncoding)
     } else {
       queryPlanner.defaultKVsToFeatures(query)
     }

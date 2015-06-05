@@ -18,13 +18,16 @@ import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{Range => aRange, _}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.apache.commons.vfs2.impl.VFSClassLoader
+import org.geotools.data.Query
 import org.geotools.factory.GeoTools
 import org.geotools.filter.text.ecql.ECQL
+import org.locationtech.geomesa.accumulo.index
 import org.locationtech.geomesa.accumulo.index.QueryPlanners._
-import org.locationtech.geomesa.features.ScalaSimpleFeature
+import org.locationtech.geomesa.features.SerializationType.SerializationType
+import org.locationtech.geomesa.features.{SimpleFeatureDeserializers, SimpleFeatureDeserializer, ScalaSimpleFeature}
 import org.locationtech.geomesa.features.kryo.{KryoBufferSimpleFeature, KryoFeatureSerializer}
 import org.locationtech.geomesa.filter.factory.FastFilterFactory
-import org.locationtech.geomesa.filter.function.Convert2ViewerFunction
+import org.locationtech.geomesa.filter.function.{BasicValues, Convert2ViewerFunction}
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.text.WKTUtils
@@ -276,6 +279,40 @@ object BinAggregatingIterator extends Logging {
       // set the value directly in the array, as we don't support byte arrays as properties
       // TODO support byte arrays natively
       sf.values(BIN_ATTRIBUTE_INDEX) = e.getValue.get()
+      sf
+    }
+  }
+
+  /**
+   * Fallback for when we can't use the aggregating iterator
+   * (for example, if the features are avro encode)
+   * instead do bin conversion in client.
+   *
+   * Only supports 1 bin per geom.
+   */
+  def adaptNonAggregatedIterator(query: Query,
+                                 sft: SimpleFeatureType,
+                                 serializationType: SerializationType): FeatureFunction = {
+    import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
+    val sf = new ScalaSimpleFeature("", BIN_SFT)
+    sf.setAttribute(1, zeroPoint)
+    val returnSft = index.getTransformSchema(query).getOrElse(sft)
+    val deserializer = SimpleFeatureDeserializers(returnSft, serializationType)
+    val trackIdIndex = returnSft.indexOf(query.getHints.getBinTrackId)
+    val dtgIndex = sft.getDtgIndex.get
+
+    (e: Entry[Key, Value]) => {
+      val deserialized = deserializer.deserialize(e.getValue.get())
+      val dtg = deserialized.getAttribute(dtgIndex).asInstanceOf[Date].getTime
+      val trackId = Option(deserialized.getAttribute(trackIdIndex)).map(_.toString)
+      val (lat, lon) = {
+        val geom = deserialized.getDefaultGeometry.asInstanceOf[Geometry].getInteriorPoint
+        (geom.getY.toFloat, geom.getX.toFloat) // TODO ensure order doesn't ever get flipped
+      }
+      val values = BasicValues(lat, lon, dtg, trackId)
+      // set the value directly in the array, as we don't support byte arrays as properties
+      // TODO support byte arrays natively
+      sf.values(BIN_ATTRIBUTE_INDEX) = Convert2ViewerFunction.encodeToByteArray(values)
       sf
     }
   }
