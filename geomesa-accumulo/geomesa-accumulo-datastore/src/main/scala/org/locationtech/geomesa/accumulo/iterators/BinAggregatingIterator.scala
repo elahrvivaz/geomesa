@@ -44,7 +44,6 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
   var dtgIndex: Int = -1
   var trackIndex: Int = -1
   var sort: Boolean = false
-  val binSize: Int = 16
 
   var topKey: Key = null
   var topValue: Value = new Value()
@@ -68,7 +67,7 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
     sft = SimpleFeatureTypes.createType("test", options(SFT_OPT))
     filter = options.get(CQL_OPT).map(FastFilterFactory.toFilter).orNull
 
-    batchSize = options(BATCH_SIZE_OPT).toInt * binSize
+    batchSize = options(BATCH_SIZE_OPT).toInt * BIN_SIZE
     bytes = Array.ofDim(batchSize)
     byteBuffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
 
@@ -78,11 +77,12 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
     sort = options(SORT_OPT).toBoolean
 
     if (options.get(BIN_CF_OPT).exists(_.toBoolean)) {
+      // we are using the pre-computed bin values
       handleValue = if (filter == null) {
         () => {
           topKey = source.getTopKey
-          System.arraycopy(source.getTopValue.get, 0, bytes, bytesWritten, binSize)
-          bytesWritten += binSize
+          System.arraycopy(source.getTopValue.get, 0, bytes, bytesWritten, BIN_SIZE)
+          bytesWritten += BIN_SIZE
         }
       } else {
         val sf = new ScalaSimpleFeature("", sft)
@@ -91,12 +91,13 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
           setValuesFromBin(sf, gf)
           if (filter.evaluate(sf)) {
             topKey = source.getTopKey
-            System.arraycopy(source.getTopValue.get, 0, bytes, bytesWritten, binSize)
-            bytesWritten += binSize
+            System.arraycopy(source.getTopValue.get, 0, bytes, bytesWritten, BIN_SIZE)
+            bytesWritten += BIN_SIZE
           }
         }
       }
     } else {
+      // we need to derive the bin values from the features
       val reusablesf = new KryoFeatureSerializer(sft).getReusableFeature
       val writeBin = if (sft.getGeometryDescriptor.getType.getBinding == classOf[Point]) {
         () => writePoint(reusablesf)
@@ -160,8 +161,7 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
         topValue = new Value()
       }
       if (sort) {
-//        sortByChunks(bytes, bytesWritten, binSize)
-        BinSorter.dualPivotQuickSort(bytes, 0, bytesWritten - 16)
+        BinSorter.quickSort(bytes, 0, bytesWritten - BIN_SIZE)
       }
       if (bytesWritten == batchSize) {
         // use the existing buffer if possible
@@ -180,7 +180,7 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
     byteBuffer.putInt((sf.getDateAsLong(dtgIndex) / 1000).toInt)
     byteBuffer.putFloat(pt.getY.toFloat) // y is lat
     byteBuffer.putFloat(pt.getX.toFloat) // x is lon
-    bytesWritten += 16
+    bytesWritten += BIN_SIZE
   }
 
   def writePoint(sf: KryoBufferSimpleFeature): Unit =
@@ -210,13 +210,15 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
 
 object BinAggregatingIterator extends Logging {
 
-  // need to be lazy to avoid class loading issues before init is called
-  lazy val BIN_SFT = SimpleFeatureTypes.createType("bin", "bin:String,*geom:Point:srid=4326")
-  lazy val BIN_ATTRIBUTE_INDEX = BIN_SFT.indexOf("bin")
-  private lazy val zeroPoint = WKTUtils.read("POINT(0 0)")
   private var initialized = false
 
-  val BATCH_SIZE_SYS_PROP = "org.locationtech.geomesa.bin.batch.size"
+  // need to be lazy to avoid class loading issues before init is called
+  lazy val BIN_SFT = SimpleFeatureTypes.createType("bin", "bin:String,*geom:Point:srid=4326")
+  val BIN_ATTRIBUTE_INDEX = 0 // index of 'bin' attribute in BIN_SFT
+  private lazy val zeroPoint = WKTUtils.read("POINT(0 0)")
+
+  val BIN_SIZE = 16
+  val BATCH_SIZE_SYS_PROP = "geomesa.output.bin.batch.size"
 
   val SFT_OPT = "sft"
   val CQL_OPT = "cql"
@@ -278,125 +280,9 @@ object BinAggregatingIterator extends Logging {
     }
   }
 
+  // normally this should be called from the client machine, as this is where the sys prop would be set
   def getBatchSize: Int =
     Option(System.getProperty(BATCH_SIZE_SYS_PROP)).map(_.toInt).getOrElse(65536) // 1MB for 16 byte bins
-  private val chunkOrdering = new Ordering[Array[Byte]]() {
-    override def compare(x: Array[Byte], y: Array[Byte]) = BinAggregatingIterator.compare(x, 0, y, 0)
-  }
-
-  private val priorityOrdering = new Ordering[(Array[Byte], Int)]() {
-    override def compare(x: (Array[Byte], Int), y: (Array[Byte], Int)) =
-      BinAggregatingIterator.compare(y._1, y._2, x._1, x._2) // reverse for priority queue
-  }
-
-  /**
-   * Takes a series of minor (already sorted) aggregates and combines them in a final sort
-   *
-   * @param aggregates
-   * @param chunkSize
-   * @return
-   */
-  def mergeSort(aggregates: Iterator[Array[Byte]], chunkSize: Int): Iterator[(Array[Byte], Int)] = {
-    if (aggregates.isEmpty) {
-      return Iterator.empty
-    }
-    val queue = new scala.collection.mutable.PriorityQueue[(Array[Byte], Int)]()(priorityOrdering)
-    val sizes = scala.collection.mutable.ArrayBuffer.empty[Int]
-    while (aggregates.hasNext) {
-      val next = aggregates.next()
-      sizes.append(next.length / chunkSize)
-      queue.enqueue((next, 0))
-    }
-
-    logger.debug(s"Got back ${queue.length} aggregates with an average size of ${sizes.sum / sizes.length}" +
-        s" chunks and a median size of ${sizes.sorted.apply(sizes.length / 2)} chunks")
-
-    new Iterator[(Array[Byte], Int)] {
-      override def hasNext = queue.nonEmpty
-      override def next() = {
-        val (aggregate, offset) = queue.dequeue()
-        if (offset < aggregate.length - chunkSize) {
-          queue.enqueue((aggregate, offset + chunkSize))
-        }
-        (aggregate, offset)
-      }
-    }
-  }
-
-  def mergeSort(left: Array[Byte], right: Array[Byte], chunkSize: Int): Array[Byte] = {
-    if (left.length == 0) {
-      return right
-    } else if (right.length == 0) {
-      return left
-    }
-    val result = Array.ofDim[Byte](left.length + right.length)
-    var (leftIndex, rightIndex, resultIndex) = (0, 0, 0)
-
-    while (leftIndex < left.length && rightIndex < right.length) {
-      if (compare(left, leftIndex, right, rightIndex) > 0) {
-        System.arraycopy(right, rightIndex, result, resultIndex, chunkSize)
-        rightIndex += chunkSize
-      } else {
-        System.arraycopy(left, leftIndex, result, resultIndex, chunkSize)
-        leftIndex += chunkSize
-      }
-      resultIndex += chunkSize
-    }
-    while (leftIndex < left.length) {
-      System.arraycopy(left, leftIndex, result, resultIndex, chunkSize)
-      leftIndex += chunkSize
-      resultIndex += chunkSize
-    }
-    while (rightIndex < right.length) {
-      System.arraycopy(right, rightIndex, result, resultIndex, chunkSize)
-      rightIndex += chunkSize
-      resultIndex += chunkSize
-    }
-    result
-  }
-
-  /**
-   * Compares two logical chunks by date
-   */
-  def compare(left: Array[Byte], leftOffset: Int, right: Array[Byte], rightOffset: Int): Int =
-    compareIntLittleEndian(left, leftOffset + 4, right, rightOffset + 4) // offset + 4 is dtg
-
-  /**
-   * Comparison based on the integer encoding used by ByteBuffer
-   * original code is in private/protected java.nio packages
-   */
-  def compareIntLittleEndian(left: Array[Byte], leftOffset: Int, right: Array[Byte], rightOffset: Int): Int = {
-    val l3 = left(leftOffset + 3)
-    val r3 = right(rightOffset + 3)
-    if (l3 < r3) {
-      return -1
-    } else if (l3 > r3) {
-      return 1
-    }
-    val l2 = left(leftOffset + 2) & 0xff
-    val r2 = right(rightOffset + 2) & 0xff
-    if (l2 < r2) {
-      return -1
-    } else if (l2 > r2) {
-      return 1
-    }
-    val l1 = left(leftOffset + 1) & 0xff
-    val r1 = right(rightOffset + 1) & 0xff
-    if (l1 < r1) {
-      return -1
-    } else if (l1 > r1) {
-      return 1
-    }
-    val l0 = left(leftOffset) & 0xff
-    val r0 = right(rightOffset) & 0xff
-    if (l0 == r0) {
-      0
-    } else if (l0 < r0) {
-      -1
-    } else {
-      1
-    }
-  }
 
   def initClassLoader(log: Logger) = synchronized {
     if (!initialized) {
@@ -431,34 +317,137 @@ object BinAggregatingIterator extends Logging {
   }
 }
 
-object BinSorter {
+object BinSorter extends Logging {
 
-  private val CHUNK_SIZE = 16
+  import BinAggregatingIterator.BIN_SIZE
 
   /**
    * If the length of an array to be sorted is less than this
    * constant, insertion sort is used in preference to Quicksort.
    *
-   * This needs to be more than 7 * chunk size, otherwise pivot logic fails
+   * This length is 'logical' length, so the array is really BIN_SIZE * length
    */
-  private val INSERTION_SORT_THRESHOLD = 47
+  private val INSERTION_SORT_THRESHOLD = 3
 
   private val swapBuffers = new ThreadLocal[Array[Byte]]() {
-    override def initialValue() = Array.ofDim[Byte](CHUNK_SIZE)
+    override def initialValue() = Array.ofDim[Byte](BIN_SIZE)
   }
 
-  // take care - uses thread-local state
-  def getChunk(bytes: Array[Byte], offset: Int): Array[Byte] = {
-    val chunk = swapBuffers.get()
-    System.arraycopy(bytes, offset, chunk, 0, CHUNK_SIZE)
-    chunk
+  private val priorityOrdering = new Ordering[(Array[Byte], Int)]() {
+    override def compare(x: (Array[Byte], Int), y: (Array[Byte], Int)) =
+      BinSorter.compare(y._1, y._2, x._1, x._2) // reverse for priority queue
   }
 
-  // take care - uses same thread-local state as getChunk
-  def swap(bytes: Array[Byte], left: Int, right: Int): Unit = {
-    val chunk = getChunk(bytes, left)
-    System.arraycopy(bytes, right, bytes, left, CHUNK_SIZE)
-    System.arraycopy(chunk, 0, bytes, right, CHUNK_SIZE)
+  /**
+   * Compares two bin chunks by date
+   */
+  def compare(left: Array[Byte], leftOffset: Int, right: Array[Byte], rightOffset: Int): Int =
+    compareIntLittleEndian(left, leftOffset + 4, right, rightOffset + 4) // offset + 4 is dtg
+
+  /**
+   * Comparison based on the integer encoding used by ByteBuffer
+   * original code is in private/protected java.nio packages
+   */
+  private def compareIntLittleEndian(left: Array[Byte],
+                                     leftOffset: Int,
+                                     right: Array[Byte],
+                                     rightOffset: Int): Int = {
+    val l3 = left(leftOffset + 3)
+    val r3 = right(rightOffset + 3)
+    if (l3 < r3) {
+      return -1
+    } else if (l3 > r3) {
+      return 1
+    }
+    val l2 = left(leftOffset + 2) & 0xff
+    val r2 = right(rightOffset + 2) & 0xff
+    if (l2 < r2) {
+      return -1
+    } else if (l2 > r2) {
+      return 1
+    }
+    val l1 = left(leftOffset + 1) & 0xff
+    val r1 = right(rightOffset + 1) & 0xff
+    if (l1 < r1) {
+      return -1
+    } else if (l1 > r1) {
+      return 1
+    }
+    val l0 = left(leftOffset) & 0xff
+    val r0 = right(rightOffset) & 0xff
+    if (l0 == r0) {
+      0
+    } else if (l0 < r0) {
+      -1
+    } else {
+      1
+    }
+  }
+
+  /**
+   * Takes a sequence of (already sorted) aggregates and combines them in a final sort. Uses
+   * a priority queue to compare the head element across each aggregate.
+   */
+  def mergeSort(aggregates: Iterator[Array[Byte]], chunkSize: Int): Iterator[(Array[Byte], Int)] = {
+    if (aggregates.isEmpty) {
+      return Iterator.empty
+    }
+    val queue = new scala.collection.mutable.PriorityQueue[(Array[Byte], Int)]()(priorityOrdering)
+    val sizes = scala.collection.mutable.ArrayBuffer.empty[Int]
+    while (aggregates.hasNext) {
+      val next = aggregates.next()
+      sizes.append(next.length / chunkSize)
+      queue.enqueue((next, 0))
+    }
+
+    logger.debug(s"Got back ${queue.length} aggregates with an average size of ${sizes.sum / sizes.length}" +
+        s" chunks and a median size of ${sizes.sorted.apply(sizes.length / 2)} chunks")
+
+    new Iterator[(Array[Byte], Int)] {
+      override def hasNext = queue.nonEmpty
+      override def next() = {
+        val (aggregate, offset) = queue.dequeue()
+        if (offset < aggregate.length - chunkSize) {
+          queue.enqueue((aggregate, offset + chunkSize))
+        }
+        (aggregate, offset)
+      }
+    }
+  }
+
+  /**
+   * Performs a merge sort into a new byte array
+   */
+  def mergeSort(left: Array[Byte], right: Array[Byte], chunkSize: Int): Array[Byte] = {
+    if (left.length == 0) {
+      return right
+    } else if (right.length == 0) {
+      return left
+    }
+    val result = Array.ofDim[Byte](left.length + right.length)
+    var (leftIndex, rightIndex, resultIndex) = (0, 0, 0)
+
+    while (leftIndex < left.length && rightIndex < right.length) {
+      if (compare(left, leftIndex, right, rightIndex) > 0) {
+        System.arraycopy(right, rightIndex, result, resultIndex, chunkSize)
+        rightIndex += chunkSize
+      } else {
+        System.arraycopy(left, leftIndex, result, resultIndex, chunkSize)
+        leftIndex += chunkSize
+      }
+      resultIndex += chunkSize
+    }
+    while (leftIndex < left.length) {
+      System.arraycopy(left, leftIndex, result, resultIndex, chunkSize)
+      leftIndex += chunkSize
+      resultIndex += chunkSize
+    }
+    while (rightIndex < right.length) {
+      System.arraycopy(right, rightIndex, result, resultIndex, chunkSize)
+      rightIndex += chunkSize
+      resultIndex += chunkSize
+    }
+    result
   }
 
   /**
@@ -468,27 +457,84 @@ object BinSorter {
    * @param bytes the array to be sorted
    * @param left the index of the first element, inclusive, to be sorted
    * @param right the index of the last element, inclusive, to be sorted
-//   * @param leftmost indicates if this part is the leftmost in the range (always true for initial call) TODO leftmost
    */
-  def dualPivotQuickSort(bytes: Array[Byte], left: Int, right: Int/*, leftmost: Boolean = true*/): Unit = {
-    import BinAggregatingIterator.compare
+  def quickSort(bytes: Array[Byte], left: Int, right: Int): Unit =
+    quickSort(bytes, left, right, leftmost = true)
 
-    val length = (right + CHUNK_SIZE - left) / CHUNK_SIZE
+  /**
+   * Optimized for non-leftmost insertion sort
+   */
+  private def quickSort(bytes: Array[Byte], left: Int, right: Int, leftmost: Boolean): Unit = {
 
-    if (length < 3) {
+    val length = (right + BIN_SIZE - left) / BIN_SIZE
+
+    if (length < INSERTION_SORT_THRESHOLD) {
       // Use insertion sort on tiny arrays
-      var i = left + CHUNK_SIZE
-      while (i <= right) {
-        var j = i
-        val ai = getChunk(bytes, i)
-        while (j > left && compare(bytes, j - CHUNK_SIZE, ai, 0) > 0) {
-          System.arraycopy(bytes, j - CHUNK_SIZE, bytes, j, CHUNK_SIZE)
-          j -= CHUNK_SIZE
+      if (leftmost) {
+        // Traditional (without sentinel) insertion sort is used in case of the leftmost part
+        var i = left + BIN_SIZE
+        while (i <= right) {
+          var j = i
+          val ai = getThreadLocalChunk(bytes, i)
+          while (j > left && compare(bytes, j - BIN_SIZE, ai, 0) > 0) {
+            System.arraycopy(bytes, j - BIN_SIZE, bytes, j, BIN_SIZE)
+            j -= BIN_SIZE
+          }
+          if (j != i) {
+            // we don't need to copy if nothing moved
+            System.arraycopy(ai, 0, bytes, j, BIN_SIZE)
+          }
+          i += BIN_SIZE
         }
-        if (j != i) { // we don't need to copy if nothing moved
-          System.arraycopy(ai, 0, bytes, j, CHUNK_SIZE)
+      } else {
+        // optimized insertions sort when we know we have 'sentinel' elements to the left
+        /*
+         * Every element from adjoining part plays the role
+         * of sentinel, therefore this allows us to avoid the
+         * left range check on each iteration. Moreover, we use
+         * the more optimized algorithm, so called pair insertion
+         * sort, which is faster (in the context of Quicksort)
+         * than traditional implementation of insertion sort.
+         */
+        // Skip the longest ascending sequence
+        var i = left
+        do {
+          if (i >= right) {
+            return
+          }
+        } while ({ i += BIN_SIZE; compare(bytes, i , bytes, i - BIN_SIZE) >= 0 })
+
+        var k = i
+        val a1 = Array.ofDim[Byte](BIN_SIZE)
+        val a2 = Array.ofDim[Byte](BIN_SIZE)
+        while ({ i += BIN_SIZE; i } <= right) {
+          if (compare(bytes, k, bytes, i) < 0) {
+            System.arraycopy(bytes, k, a2, 0, BIN_SIZE)
+            System.arraycopy(bytes, i, a1, 0, BIN_SIZE)
+          } else {
+            System.arraycopy(bytes, k, a1, 0, BIN_SIZE)
+            System.arraycopy(bytes, i, a2, 0, BIN_SIZE)
+          }
+          while ({ k -= BIN_SIZE; compare(a1, 0, bytes, k) < 0 }) {
+            System.arraycopy(bytes, k, bytes, k + 2 * BIN_SIZE, BIN_SIZE)
+          }
+          k += BIN_SIZE
+          System.arraycopy(a1, 0, bytes, k + BIN_SIZE, BIN_SIZE)
+          while ({ k -= BIN_SIZE; compare(a2, 0, bytes, k) < 0 }) {
+            System.arraycopy(bytes, k, bytes, k + BIN_SIZE, BIN_SIZE)
+          }
+          System.arraycopy(a2, 0, bytes, k + BIN_SIZE, BIN_SIZE)
+
+          i += BIN_SIZE
+          k = i
         }
-        i += CHUNK_SIZE
+
+        var j = right
+        val last = getThreadLocalChunk(bytes, j)
+        while ({ j -= BIN_SIZE; compare(last, 0, bytes, j) < 0 }) {
+          System.arraycopy(bytes, j, bytes, j + BIN_SIZE, BIN_SIZE)
+        }
+        System.arraycopy(last, 0, bytes, j + BIN_SIZE, BIN_SIZE)
       }
       return
     }
@@ -500,29 +546,35 @@ object BinSorter {
      * these elements was empirically determined to work well on
      * a wide variety of inputs.
      */
-    val seventh = (length / 7) * CHUNK_SIZE
+    val seventh = (length / 7) * BIN_SIZE
 
-    val e3 = (((left + right) / CHUNK_SIZE) / 2) * CHUNK_SIZE // The midpoint
+    val e3 = (((left + right) / BIN_SIZE) / 2) * BIN_SIZE // The midpoint
     val e2 = e3 - seventh
     val e1 = e2 - seventh
     val e4 = e3 + seventh
     val e5 = e4 + seventh
 
-    // Sort these elements using insertion sort
-    if (compare(bytes, e2, bytes, e1) < 0) { swap(bytes, e2, e1) }
-
-    if (compare(bytes, e3, bytes, e2) < 0) { swap(bytes, e3, e2)
-      if (compare(bytes, e2, bytes, e1) < 0) { swap(bytes, e2, e1) }
+    def swap(left: Int, right: Int) = {
+      val chunk = getThreadLocalChunk(bytes, left)
+      System.arraycopy(bytes, right, bytes, left, BIN_SIZE)
+      System.arraycopy(chunk, 0, bytes, right, BIN_SIZE)
     }
-    if (compare(bytes, e4, bytes, e3) < 0) { swap(bytes, e4, e3)
-      if (compare(bytes, e3, bytes, e2) < 0) { swap(bytes, e3, e2)
-        if (compare(bytes, e2, bytes, e1) < 0) {swap(bytes, e2, e1) }
+
+    // Sort these elements using insertion sort
+    if (compare(bytes, e2, bytes, e1) < 0) { swap(e2, e1) }
+
+    if (compare(bytes, e3, bytes, e2) < 0) { swap(e3, e2)
+      if (compare(bytes, e2, bytes, e1) < 0) { swap(e2, e1) }
+    }
+    if (compare(bytes, e4, bytes, e3) < 0) { swap(e4, e3)
+      if (compare(bytes, e3, bytes, e2) < 0) { swap(e3, e2)
+        if (compare(bytes, e2, bytes, e1) < 0) {swap(e2, e1) }
       }
     }
-    if (compare(bytes, e5, bytes, e4) < 0) { swap(bytes, e5, e4)
-      if (compare(bytes, e4, bytes, e3) < 0) { swap(bytes, e4, e3)
-        if (compare(bytes, e3, bytes, e2) < 0) { swap(bytes, e3, e2)
-          if (compare(bytes, e2, bytes, e1) < 0) { swap(bytes, e2, e1) }
+    if (compare(bytes, e5, bytes, e4) < 0) { swap(e5, e4)
+      if (compare(bytes, e4, bytes, e3) < 0) { swap(e4, e3)
+        if (compare(bytes, e3, bytes, e2) < 0) { swap(e3, e2)
+          if (compare(bytes, e2, bytes, e1) < 0) { swap(e2, e1) }
         }
       }
     }
@@ -538,10 +590,10 @@ object BinSorter {
        * These values are inexpensive approximations of the first and
        * second terciles of the array. Note that pivot1 <= pivot2.
        */
-      val pivot1 = Array.ofDim[Byte](CHUNK_SIZE)
-      System.arraycopy(bytes, e2, pivot1, 0, CHUNK_SIZE)
-      val pivot2 = Array.ofDim[Byte](CHUNK_SIZE)
-      System.arraycopy(bytes, e4, pivot2, 0, CHUNK_SIZE)
+      val pivot1 = Array.ofDim[Byte](BIN_SIZE)
+      System.arraycopy(bytes, e2, pivot1, 0, BIN_SIZE)
+      val pivot2 = Array.ofDim[Byte](BIN_SIZE)
+      System.arraycopy(bytes, e4, pivot2, 0, BIN_SIZE)
 
       /*
        * The first and the last elements to be sorted are moved to the
@@ -549,12 +601,12 @@ object BinSorter {
        * is complete, the pivots are swapped back into their final
        * positions, and excluded from subsequent sorting.
        */
-      System.arraycopy(bytes, left, bytes, e2, CHUNK_SIZE)
-      System.arraycopy(bytes, right, bytes, e4, CHUNK_SIZE)
+      System.arraycopy(bytes, left, bytes, e2, BIN_SIZE)
+      System.arraycopy(bytes, right, bytes, e4, BIN_SIZE)
 
       // Skip elements, which are less or greater than pivot values.
-      while ({ less += CHUNK_SIZE; compare(bytes, less, pivot1, 0) < 0 }) {}
-      while ({ great -= CHUNK_SIZE; compare(bytes, great, pivot2, 0) > 0 }) {}
+      while ({ less += BIN_SIZE; compare(bytes, less, pivot1, 0) < 0 }) {}
+      while ({ great -= BIN_SIZE; compare(bytes, great, pivot2, 0) > 0 }) {}
 
       /*
        * Partitioning:
@@ -579,70 +631,70 @@ object BinSorter {
       var k = less
       var loop = true
       while (k <= great && loop) {
-        val ak = getChunk(bytes, k)
+        val ak = getThreadLocalChunk(bytes, k)
         if (compare(ak, 0, pivot1, 0) < 0) { // Move a[k] to left part
-          System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
-          System.arraycopy(ak, 0, bytes, less, CHUNK_SIZE)
-          less += CHUNK_SIZE
+          System.arraycopy(bytes, less, bytes, k, BIN_SIZE)
+          System.arraycopy(ak, 0, bytes, less, BIN_SIZE)
+          less += BIN_SIZE
         } else if (compare(ak, 0, pivot2, 0) > 0) { // Move a[k] to right part
           while (compare(bytes, great, pivot2, 0) > 0) {
             if (great == k) {
               loop = false
             }
-            great -= CHUNK_SIZE
+            great -= BIN_SIZE
           }
           if (loop) {
             if (compare(bytes, great, pivot1, 0) < 0) { // a[great] <= pivot2
-              System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
-              System.arraycopy(bytes, great, bytes, less, CHUNK_SIZE)
-              less += CHUNK_SIZE
+              System.arraycopy(bytes, less, bytes, k, BIN_SIZE)
+              System.arraycopy(bytes, great, bytes, less, BIN_SIZE)
+              less += BIN_SIZE
             } else { // pivot1 <= a[great] <= pivot2
-              System.arraycopy(bytes, great, bytes, k, CHUNK_SIZE)
+              System.arraycopy(bytes, great, bytes, k, BIN_SIZE)
             }
-            System.arraycopy(ak, 0, bytes, great, CHUNK_SIZE)
-            great -= CHUNK_SIZE
+            System.arraycopy(ak, 0, bytes, great, BIN_SIZE)
+            great -= BIN_SIZE
           }
         }
-        k += CHUNK_SIZE
+        k += BIN_SIZE
       }
 
       k = less
       loop = true
       while (k <= great && loop) {
-        val ak = getChunk(bytes, k)
+        val ak = getThreadLocalChunk(bytes, k)
         if (compare(ak, 0, pivot1, 0) < 0) { // Move a[k] to left part
-          System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
-          System.arraycopy(ak, 0, bytes, less, CHUNK_SIZE)
-          less += CHUNK_SIZE
+          System.arraycopy(bytes, less, bytes, k, BIN_SIZE)
+          System.arraycopy(ak, 0, bytes, less, BIN_SIZE)
+          less += BIN_SIZE
         } else if (compare(ak, 0, pivot2, 0) > 0) { // Move a[k] to right part
           while (compare(bytes, great, pivot2, 0) > 0) {
             if (great == k) {
               loop = false
             }
-            great -= CHUNK_SIZE
+            great -= BIN_SIZE
           }
           if (compare(bytes, great, pivot1, 0) < 0) { // a[great] <= pivot2
-            System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
-            System.arraycopy(bytes, great, bytes, less, CHUNK_SIZE)
-            less += CHUNK_SIZE
+            System.arraycopy(bytes, less, bytes, k, BIN_SIZE)
+            System.arraycopy(bytes, great, bytes, less, BIN_SIZE)
+            less += BIN_SIZE
           } else { // pivot1 <= a[great] <= pivot2
-            System.arraycopy(bytes, great, bytes, k, CHUNK_SIZE)
+            System.arraycopy(bytes, great, bytes, k, BIN_SIZE)
           }
-          System.arraycopy(ak, 0, bytes, great, CHUNK_SIZE)
-          great -= CHUNK_SIZE
+          System.arraycopy(ak, 0, bytes, great, BIN_SIZE)
+          great -= BIN_SIZE
         }
-        k += CHUNK_SIZE
+        k += BIN_SIZE
       }
 
       // Swap pivots into their final positions
-      System.arraycopy(bytes, less - CHUNK_SIZE, bytes, left, CHUNK_SIZE)
-      System.arraycopy(pivot1, 0, bytes, less - CHUNK_SIZE, CHUNK_SIZE)
-      System.arraycopy(bytes, great + CHUNK_SIZE, bytes, right, CHUNK_SIZE)
-      System.arraycopy(pivot2, 0, bytes, great + CHUNK_SIZE, CHUNK_SIZE)
+      System.arraycopy(bytes, less - BIN_SIZE, bytes, left, BIN_SIZE)
+      System.arraycopy(pivot1, 0, bytes, less - BIN_SIZE, BIN_SIZE)
+      System.arraycopy(bytes, great + BIN_SIZE, bytes, right, BIN_SIZE)
+      System.arraycopy(pivot2, 0, bytes, great + BIN_SIZE, BIN_SIZE)
 
       // Sort left and right parts recursively, excluding known pivots
-      dualPivotQuickSort(bytes, left, less - 2 * CHUNK_SIZE)
-      dualPivotQuickSort(bytes, great + 2 * CHUNK_SIZE, right)
+      quickSort(bytes, left, less - 2 * BIN_SIZE, leftmost)
+      quickSort(bytes, great + 2 * BIN_SIZE, right, leftmost = false)
 
       /*
        * If center part is too large (comprises > 4/7 of the array),
@@ -650,8 +702,8 @@ object BinSorter {
        */
       if (less < e1 && e5 < great) {
         // Skip elements, which are equal to pivot values.
-        while (compare(bytes, less, pivot1, 0) == 0) { less += CHUNK_SIZE }
-        while (compare(bytes, great, pivot2, 0) == 0) { great -= CHUNK_SIZE }
+        while (compare(bytes, less, pivot1, 0) == 0) { less += BIN_SIZE }
+        while (compare(bytes, great, pivot2, 0) == 0) { great -= BIN_SIZE }
 
         /*
          * Partitioning:
@@ -675,34 +727,34 @@ object BinSorter {
         var k = less
         loop = true
         while (k <= great && loop) {
-          val ak = getChunk(bytes, k)
+          val ak = getThreadLocalChunk(bytes, k)
           if (compare(ak, 0, pivot1, 0) == 0) { // Move a[k] to left part
-            System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
-            System.arraycopy(ak, 0, bytes, less, CHUNK_SIZE)
-            less += CHUNK_SIZE
+            System.arraycopy(bytes, less, bytes, k, BIN_SIZE)
+            System.arraycopy(ak, 0, bytes, less, BIN_SIZE)
+            less += BIN_SIZE
           } else if (compare(ak, 0, pivot2, 0) == 0) { // Move a[k] to right part
             while (compare(bytes, great, pivot2, 0) == 0) {
               if (great == k) {
                 loop = false
               }
-              great -= CHUNK_SIZE
+              great -= BIN_SIZE
             }
             if (compare(bytes, great, pivot1, 0) == 0) { // a[great] < pivot2
-              System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
-              System.arraycopy(pivot1, 0, bytes, less, CHUNK_SIZE)
-              less += CHUNK_SIZE
+              System.arraycopy(bytes, less, bytes, k, BIN_SIZE)
+              System.arraycopy(pivot1, 0, bytes, less, BIN_SIZE)
+              less += BIN_SIZE
             } else { // pivot1 < a[great] < pivot2
-              System.arraycopy(bytes, great, bytes, k, CHUNK_SIZE)
+              System.arraycopy(bytes, great, bytes, k, BIN_SIZE)
             }
-            System.arraycopy(ak, 0, bytes, great, CHUNK_SIZE)
-            great -= CHUNK_SIZE
+            System.arraycopy(ak, 0, bytes, great, BIN_SIZE)
+            great -= BIN_SIZE
           }
-          k += CHUNK_SIZE
+          k += BIN_SIZE
         }
       }
 
       // Sort center part recursively
-      dualPivotQuickSort(bytes, less, great)
+      quickSort(bytes, less, great, leftmost = false)
 
     } else { // Partitioning with one pivot
 
@@ -710,8 +762,8 @@ object BinSorter {
        * Use the third of the five sorted elements as pivot.
        * This value is inexpensive approximation of the median.
        */
-      val pivot = Array.ofDim[Byte](CHUNK_SIZE)
-      System.arraycopy(bytes, e3, pivot, 0, CHUNK_SIZE)
+      val pivot = Array.ofDim[Byte](BIN_SIZE)
+      System.arraycopy(bytes, e3, pivot, 0, BIN_SIZE)
 
       /*
        * Partitioning degenerates to the traditional 3-way
@@ -736,27 +788,27 @@ object BinSorter {
       var k = less
       while (k <= great) {
         if (compare(bytes, k, pivot, 0) != 0) {
-          val ak = getChunk(bytes, k)
+          val ak = getThreadLocalChunk(bytes, k)
           if (compare(ak, 0, pivot, 0) < 1) { // Move a[k] to left part
-            System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
-            System.arraycopy(ak, 0, bytes, less, CHUNK_SIZE)
-            less += CHUNK_SIZE
+            System.arraycopy(bytes, less, bytes, k, BIN_SIZE)
+            System.arraycopy(ak, 0, bytes, less, BIN_SIZE)
+            less += BIN_SIZE
           } else { // a[k] > pivot - Move a[k] to right part
             while (compare(bytes, great, pivot, 0) > 0) {
-              great -= CHUNK_SIZE
+              great -= BIN_SIZE
             }
             if (compare(bytes, great, pivot, 0) < 0) { // a[great] <= pivot
-              System.arraycopy(bytes, less, bytes, k, CHUNK_SIZE)
-              System.arraycopy(bytes, great, bytes, less, CHUNK_SIZE)
-              less += CHUNK_SIZE
+              System.arraycopy(bytes, less, bytes, k, BIN_SIZE)
+              System.arraycopy(bytes, great, bytes, less, BIN_SIZE)
+              less += BIN_SIZE
             } else { // a[great] == pivot
-              System.arraycopy(pivot, 0, bytes, k, CHUNK_SIZE)
+              System.arraycopy(pivot, 0, bytes, k, BIN_SIZE)
             }
-            System.arraycopy(ak, 0, bytes, great, CHUNK_SIZE)
-            great -= CHUNK_SIZE
+            System.arraycopy(ak, 0, bytes, great, BIN_SIZE)
+            great -= BIN_SIZE
           }
         }
-        k += CHUNK_SIZE
+        k += BIN_SIZE
       }
 
       /*
@@ -764,8 +816,15 @@ object BinSorter {
        * All elements from center part are equal
        * and, therefore, already sorted.
        */
-      dualPivotQuickSort(bytes, left, less - CHUNK_SIZE)
-      dualPivotQuickSort(bytes, great + CHUNK_SIZE, right)
+      quickSort(bytes, left, less - BIN_SIZE, leftmost)
+      quickSort(bytes, great + BIN_SIZE, right, leftmost = false)
     }
+  }
+
+  // take care - uses thread-local state
+  private def getThreadLocalChunk(bytes: Array[Byte], offset: Int): Array[Byte] = {
+    val chunk = swapBuffers.get()
+    System.arraycopy(bytes, offset, chunk, 0, BIN_SIZE)
+    chunk
   }
 }

@@ -103,9 +103,9 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
     // TODO this only works with kryo...
     val (iterators, useIndexEntries) = if (isBinQuery) {
       val trackId = query.getHints.get(QueryHints.BIN_TRACK_KEY).asInstanceOf[String]
-      val dtg = Option(query.getHints.get(QueryHints.BIN_DATE_KEY).asInstanceOf[String]).orElse(dtgField).orNull
+      val sort = query.getHints.get(QueryHints.BIN_SORT_KEY).asInstanceOf[Boolean]
       val priority = Z3IdxStrategy.FILTERING_ITER_PRIORITY
-      val is = BinAggregatingIterator.configureDynamic(sft, ecql, trackId, dtg, true, priority)
+      val is = BinAggregatingIterator.configureDynamic(sft, ecql, trackId, dtgField.get, sort, priority)
       (Seq(is), false)
     } else {
       val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, sft)

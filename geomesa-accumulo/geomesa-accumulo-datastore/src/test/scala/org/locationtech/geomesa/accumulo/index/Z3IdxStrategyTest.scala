@@ -20,7 +20,7 @@ import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithDataStore
 import org.locationtech.geomesa.accumulo.data.INTERNAL_GEOMESA_VERSION
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
-import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
+import org.locationtech.geomesa.accumulo.iterators.{BinSorter, BinAggregatingIterator}
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, SerializationType}
 import org.locationtech.geomesa.filter.function.Convert2ViewerFunction
 import org.opengis.feature.simple.SimpleFeature
@@ -197,7 +197,7 @@ class Z3IdxStrategyTest extends Specification with TestWithDataStore {
           }
         }
 
-        val sorted = BinAggregatingIterator.mergeSort(aggregates.iterator, 16)
+        val sorted = BinSorter.mergeSort(aggregates.iterator, 16)
 
         val binFile = Array.ofDim[Byte](16 * 10)
         var i = 0

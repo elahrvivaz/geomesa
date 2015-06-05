@@ -80,7 +80,7 @@ class BinAggregatingIteratorTest extends Specification {
       println(bytes.length + " total")
       val expected = bytes.grouped(16).map(Convert2ViewerFunction.decode).map(_.dtg).toSeq.sorted
       println(expected.mkString(" "))
-      BinSorter.dualPivotQuickSort(bytes, 0, bytes.length - 16)
+      BinSorter.quickSort(bytes, 0, bytes.length - 16)
 
       val actual = bytes.grouped(16).map(Convert2ViewerFunction.decode).map(_.dtg).toSeq
 

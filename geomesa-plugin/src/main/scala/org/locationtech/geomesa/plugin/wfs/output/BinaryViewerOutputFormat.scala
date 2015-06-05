@@ -21,8 +21,6 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.{CountDownLatch, Executors}
 
 import com.typesafe.scalalogging.slf4j.Logging
-import net.opengis.wfs.{GetFeatureType => GetFeatureTypeV1, QueryType => QueryTypeV1}
-import net.opengis.wfs20.{GetFeatureType => GetFeatureTypeV2, QueryType => QueryTypeV2}
 import org.geoserver.config.GeoServer
 import org.geoserver.ows.Response
 import org.geoserver.platform.Operation
@@ -30,7 +28,7 @@ import org.geoserver.wfs.WFSGetFeatureOutputFormat
 import org.geoserver.wfs.request.{FeatureCollectionResponse, GetFeatureRequest}
 import org.geotools.data.simple.SimpleFeatureCollection
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureCollection
-import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
+import org.locationtech.geomesa.accumulo.iterators.{BinSorter, BinAggregatingIterator}
 import org.locationtech.geomesa.utils.geotools.Conversions._
 
 import scala.collection.JavaConversions._
@@ -47,6 +45,7 @@ import scala.collection.JavaConversions._
 class BinaryViewerOutputFormat(gs: GeoServer)
     extends WFSGetFeatureOutputFormat(gs, Set("bin", BinaryViewerOutputFormat.MIME_TYPE)) with Logging {
 
+  import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator.BIN_SIZE
   import org.locationtech.geomesa.plugin.wfs.output.BinaryViewerOutputFormat._
 
   override def getMimeType(value: AnyRef, operation: Operation) = MIME_TYPE
@@ -56,7 +55,7 @@ class BinaryViewerOutputFormat(gs: GeoServer)
   override def getAttachmentFileName(value: AnyRef, operation: Operation) = {
     val gfr = GetFeatureRequest.adapt(operation.getParameters()(0))
     val name = Option(gfr.getHandle).getOrElse(gfr.getQueries.get(0).getTypeNames.get(0).getLocalPart)
-    s"$name.$FILE_EXTENSION$binSize"
+    s"$name.$FILE_EXTENSION$BIN_SIZE"
   }
 
   override def write(featureCollections: FeatureCollectionResponse,
@@ -68,10 +67,12 @@ class BinaryViewerOutputFormat(gs: GeoServer)
     val trackId = Option(request.getFormatOptions.get(TRACK_ID_FIELD).asInstanceOf[String]).getOrElse {
       throw new IllegalArgumentException(s"$TRACK_ID_FIELD is a required format option")
     }
+    val sortFromRequest =
+      Option(request.getFormatOptions.get(SORT_FIELD).asInstanceOf[String]).exists(_.toBoolean)
 
     val bos = new BufferedOutputStream(output)
 
-    val sort = sys.props.getOrElse(SORT_SYS_PROP, DEFAULT_SORT).toBoolean
+    val sort = sortFromRequest || sys.props.getOrElse(SORT_SYS_PROP, DEFAULT_SORT).toBoolean
     val tserverSort = sort || sys.props.getOrElse(PARTIAL_SORT_SYS_PROP, DEFAULT_SORT).toBoolean
 
     featureCollections.getFeatures.zip(request.getQueries).foreach { case (fc, query) =>
@@ -79,8 +80,9 @@ class BinaryViewerOutputFormat(gs: GeoServer)
         case a: AccumuloFeatureCollection =>
           // set query hints for optimizations in the accumulo iterators
           import org.locationtech.geomesa.accumulo.index.QueryHints._
-          trackId.foreach(a.getQuery.getHints.put(BIN_TRACK_KEY, _))
+          a.getQuery.getHints.put(BIN_TRACK_KEY, trackId)
           a.getQuery.getHints.put(BIN_SORT_KEY, tserverSort)
+          // noinspection EmptyCheck
           if (a.getQuery.getSortBy != null && a.getQuery.getSortBy.length > 0) {
             // we don't want to sort - because we manipulate the sft coming back it would blow up
             logger.warn("Ignoring sort in bin request")
@@ -129,7 +131,7 @@ class BinaryViewerOutputFormat(gs: GeoServer)
                     }
                     Thread.sleep(10) // if we didn't find anything to merge, wait a bit before re-checking
                   } else {
-                    val result = BinAggregatingIterator.mergeSort(left, right, binSize)
+                    val result = BinSorter.mergeSort(left, right, BIN_SIZE)
                     mergeQueue.synchronized(mergeQueue.enqueue(result))
                   }
                 } else {
@@ -149,10 +151,10 @@ class BinaryViewerOutputFormat(gs: GeoServer)
         executor.shutdown() // this won't stop the threads, but will cleanup once they're done
         latch.await() // wait for the merge threads to finish
         // get an iterator that returns in sorted order
-        val bins = BinAggregatingIterator.mergeSort((doneMergeQueue ++ mergeQueue).iterator, binSize)
+        val bins = BinSorter.mergeSort((doneMergeQueue ++ mergeQueue).iterator, BIN_SIZE)
         while (bins.hasNext) {
           val (aggregate, offset) = bins.next()
-          bos.write(aggregate, offset, binSize)
+          bos.write(aggregate, offset, BIN_SIZE)
         }
       } else {
         // no sort, just write directly to the output
@@ -170,8 +172,7 @@ object BinaryViewerOutputFormat extends Logging {
   val MIME_TYPE = "application/vnd.binary-viewer"
   val FILE_EXTENSION = "bin"
   val TRACK_ID_FIELD = "TRACKID"
-
-  val binSize = 16
+  val SORT_FIELD     = "SORT"
 
   val SORT_SYS_PROP         = "geomesa.output.bin.sort"
   val PARTIAL_SORT_SYS_PROP = "geomesa.output.bin.sort.partial"

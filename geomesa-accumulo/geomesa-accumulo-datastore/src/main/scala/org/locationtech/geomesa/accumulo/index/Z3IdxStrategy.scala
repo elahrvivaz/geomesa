@@ -74,12 +74,14 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
       if (isBinQuery) {
         val trackId = query.getHints.get(QueryHints.BIN_TRACK_KEY).asInstanceOf[String]
         val sort = query.getHints.get(QueryHints.BIN_SORT_KEY).asInstanceOf[Boolean]
-        val is = if (sft.getBinTrackId.exists(_ == trackId) && ecql.isEmpty) { // can't apply non st filters
-          BinAggregatingIterator.configurePrecomputed(sft, ecql, sort, FILTERING_ITER_PRIORITY)
+        val p = FILTERING_ITER_PRIORITY
+        if (sft.getBinTrackId.exists(_ == trackId) && ecql.isEmpty) { // can't apply non st filters
+          val iter = BinAggregatingIterator.configurePrecomputed(sft, ecql, sort, p)
+          (Seq(iter), Z3Table.BIN_CF)
         } else {
-          BinAggregatingIterator.configureDynamic(sft, ecql, trackId, dtgField.get, sort, FILTERING_ITER_PRIORITY)
+          val iter = BinAggregatingIterator.configureDynamic(sft, ecql, trackId, dtgField.get, sort, p)
+          (Seq(iter), Z3Table.FULL_CF)
         }
-        (Some(is), Z3Table.BIN_CF)
       } else {
         val transforms = for {
           tdef <- index.getTransformDefinition(query)
@@ -88,11 +90,11 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
         output(s"Transforms: $transforms")
 
         (ecql, transforms) match {
-          case (None, None) => (None, Z3Table.FULL_CF)
+          case (None, None) => (Seq.empty, Z3Table.FULL_CF)
           case _ =>
             val is = LazyFilterTransformIterator
               .configure[KryoLazyFilterTransformIterator](sft, ecql, transforms, FILTERING_ITER_PRIORITY)
-            (Some(is), Z3Table.FULL_CF)
+            (Seq(is), Z3Table.FULL_CF)
         }
       }
     }
@@ -137,7 +139,7 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
                          lx: Double, ly: Double, ux: Double, uy: Double,
                          table: String,
                          adaptIter: FeatureFunction,
-                         is: Option[IteratorSetting],
+                         is: Seq[IteratorSetting],
                          colFamily: Text,
                          numThreads: Int,
                          contained: Boolean = true) = {
@@ -156,7 +158,7 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
 
     val iter = Z3Iterator.configure(Z3_CURVE.index(lx, ly, lt), Z3_CURVE.index(ux, uy, ut), Z3_ITER_PRIORITY)
 
-    val iters = Seq(Some(iter), is).flatten
+    val iters = Seq(iter) ++ is
     BatchScanPlan(table, accRanges, iters, Seq(colFamily), adaptIter, numThreads, hasDuplicates = false)
   }
 }
