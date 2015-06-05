@@ -131,7 +131,7 @@ class BinaryViewerOutputFormat(gs: GeoServer)
                     }
                     Thread.sleep(10) // if we didn't find anything to merge, wait a bit before re-checking
                   } else {
-                    val result = BinSorter.mergeSort(left, right, BIN_SIZE)
+                    val result = BinSorter.mergeSort(left, right)
                     mergeQueue.synchronized(mergeQueue.enqueue(result))
                   }
                 } else {
@@ -151,7 +151,7 @@ class BinaryViewerOutputFormat(gs: GeoServer)
         executor.shutdown() // this won't stop the threads, but will cleanup once they're done
         latch.await() // wait for the merge threads to finish
         // get an iterator that returns in sorted order
-        val bins = BinSorter.mergeSort((doneMergeQueue ++ mergeQueue).iterator, BIN_SIZE)
+        val bins = BinSorter.mergeSort((doneMergeQueue ++ mergeQueue).iterator)
         while (bins.hasNext) {
           val (aggregate, offset) = bins.next()
           bos.write(aggregate, offset, BIN_SIZE)

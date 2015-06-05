@@ -388,7 +388,7 @@ object BinSorter extends Logging {
    * Takes a sequence of (already sorted) aggregates and combines them in a final sort. Uses
    * a priority queue to compare the head element across each aggregate.
    */
-  def mergeSort(aggregates: Iterator[Array[Byte]], chunkSize: Int): Iterator[(Array[Byte], Int)] = {
+  def mergeSort(aggregates: Iterator[Array[Byte]]): Iterator[(Array[Byte], Int)] = {
     if (aggregates.isEmpty) {
       return Iterator.empty
     }
@@ -396,7 +396,7 @@ object BinSorter extends Logging {
     val sizes = scala.collection.mutable.ArrayBuffer.empty[Int]
     while (aggregates.hasNext) {
       val next = aggregates.next()
-      sizes.append(next.length / chunkSize)
+      sizes.append(next.length / BIN_SIZE)
       queue.enqueue((next, 0))
     }
 
@@ -407,8 +407,8 @@ object BinSorter extends Logging {
       override def hasNext = queue.nonEmpty
       override def next() = {
         val (aggregate, offset) = queue.dequeue()
-        if (offset < aggregate.length - chunkSize) {
-          queue.enqueue((aggregate, offset + chunkSize))
+        if (offset < aggregate.length - BIN_SIZE) {
+          queue.enqueue((aggregate, offset + BIN_SIZE))
         }
         (aggregate, offset)
       }
@@ -418,7 +418,7 @@ object BinSorter extends Logging {
   /**
    * Performs a merge sort into a new byte array
    */
-  def mergeSort(left: Array[Byte], right: Array[Byte], chunkSize: Int): Array[Byte] = {
+  def mergeSort(left: Array[Byte], right: Array[Byte]): Array[Byte] = {
     if (left.length == 0) {
       return right
     } else if (right.length == 0) {
@@ -429,23 +429,23 @@ object BinSorter extends Logging {
 
     while (leftIndex < left.length && rightIndex < right.length) {
       if (compare(left, leftIndex, right, rightIndex) > 0) {
-        System.arraycopy(right, rightIndex, result, resultIndex, chunkSize)
-        rightIndex += chunkSize
+        System.arraycopy(right, rightIndex, result, resultIndex, BIN_SIZE)
+        rightIndex += BIN_SIZE
       } else {
-        System.arraycopy(left, leftIndex, result, resultIndex, chunkSize)
-        leftIndex += chunkSize
+        System.arraycopy(left, leftIndex, result, resultIndex, BIN_SIZE)
+        leftIndex += BIN_SIZE
       }
-      resultIndex += chunkSize
+      resultIndex += BIN_SIZE
     }
     while (leftIndex < left.length) {
-      System.arraycopy(left, leftIndex, result, resultIndex, chunkSize)
-      leftIndex += chunkSize
-      resultIndex += chunkSize
+      System.arraycopy(left, leftIndex, result, resultIndex, BIN_SIZE)
+      leftIndex += BIN_SIZE
+      resultIndex += BIN_SIZE
     }
     while (rightIndex < right.length) {
-      System.arraycopy(right, rightIndex, result, resultIndex, chunkSize)
-      rightIndex += chunkSize
-      resultIndex += chunkSize
+      System.arraycopy(right, rightIndex, result, resultIndex, BIN_SIZE)
+      rightIndex += BIN_SIZE
+      resultIndex += BIN_SIZE
     }
     result
   }
