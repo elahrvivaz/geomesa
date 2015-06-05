@@ -307,13 +307,12 @@ object BinAggregatingIterator extends Logging {
       sizes.append(next.length / chunkSize)
       queue.enqueue((next, 0))
     }
+
     logger.debug(s"Got back ${queue.length} aggregates with an average size of ${sizes.sum / sizes.length}" +
         s" chunks and a median size of ${sizes.sorted.apply(sizes.length / 2)} chunks")
-    println(s"Got back ${queue.length} aggregates with an average size of ${sizes.sum / sizes.length}" +
-        s" chunks and a median size of ${sizes.sorted.apply(sizes.length / 2)} chunks") // TODO remove this
+
     new Iterator[(Array[Byte], Int)] {
       override def hasNext = queue.nonEmpty
-
       override def next() = {
         val (aggregate, offset) = queue.dequeue()
         if (offset < aggregate.length - chunkSize) {
@@ -358,19 +357,13 @@ object BinAggregatingIterator extends Logging {
 
   /**
    * Compares two logical chunks by date
-   *
-   * @param left
-   * @param leftOffset index of the chunk (not index into the array)
-   * @param right
-   * @param rightOffset index of the chunk (not index into the array)
-   * @return
    */
   def compare(left: Array[Byte], leftOffset: Int, right: Array[Byte], rightOffset: Int): Int =
     compareIntLittleEndian(left, leftOffset + 4, right, rightOffset + 4) // offset + 4 is dtg
 
   /**
    * Comparison based on the integer encoding used by ByteBuffer
-   * original code is in private/proected java.nio packages
+   * original code is in private/protected java.nio packages
    */
   def compareIntLittleEndian(left: Array[Byte], leftOffset: Int, right: Array[Byte], rightOffset: Int): Int = {
     val l3 = left(leftOffset + 3)

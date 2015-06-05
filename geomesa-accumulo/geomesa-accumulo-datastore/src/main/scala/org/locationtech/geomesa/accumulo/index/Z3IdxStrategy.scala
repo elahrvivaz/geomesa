@@ -73,12 +73,11 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
       }
       if (isBinQuery) {
         val trackId = query.getHints.get(QueryHints.BIN_TRACK_KEY).asInstanceOf[String]
-        val dtg = Option(query.getHints.get(QueryHints.BIN_DATE_KEY).asInstanceOf[String]).orElse(dtgField).orNull
-        val sort = Option(System.getProperty("bin.sort.iter")).map(_.toBoolean).getOrElse(true)
+        val sort = query.getHints.get(QueryHints.BIN_SORT_KEY).asInstanceOf[Boolean]
         val is = if (sft.getBinTrackId.exists(_ == trackId) && ecql.isEmpty) { // can't apply non st filters
           BinAggregatingIterator.configurePrecomputed(sft, ecql, sort, FILTERING_ITER_PRIORITY)
         } else {
-          BinAggregatingIterator.configureDynamic(sft, ecql, trackId, dtg, sort, FILTERING_ITER_PRIORITY)
+          BinAggregatingIterator.configureDynamic(sft, ecql, trackId, dtgField.get, sort, FILTERING_ITER_PRIORITY)
         }
         (Some(is), Z3Table.BIN_CF)
       } else {

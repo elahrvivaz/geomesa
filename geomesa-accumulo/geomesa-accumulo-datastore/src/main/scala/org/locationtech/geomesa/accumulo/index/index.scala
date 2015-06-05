@@ -198,8 +198,7 @@ package object index {
     val EXACT_COUNT          = new ClassKey(classOf[java.lang.Boolean])
 
     val BIN_TRACK_KEY        = new ClassKey(classOf[java.lang.String])
-    val BIN_LABEL_KEY        = new ClassKey(classOf[java.lang.String])
-    val BIN_DATE_KEY         = new ClassKey(classOf[java.lang.String])
+    val BIN_SORT_KEY         = new ClassKey(classOf[java.lang.Boolean])
 
   }
 
