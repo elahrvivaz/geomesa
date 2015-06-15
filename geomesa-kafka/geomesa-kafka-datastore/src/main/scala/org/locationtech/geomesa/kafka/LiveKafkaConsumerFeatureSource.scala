@@ -21,13 +21,15 @@ import java.util.concurrent.{Executors, LinkedBlockingQueue, TimeUnit}
 import com.google.common.base.Ticker
 import com.google.common.cache.{Cache, CacheBuilder, RemovalListener, RemovalNotification}
 import com.typesafe.scalalogging.slf4j.Logging
+import com.vividsolutions.jts.geom.{Point, Geometry, Envelope}
 import org.geotools.data.Query
 import org.geotools.data.store.ContentEntry
 import org.locationtech.geomesa.kafka.consumer.KafkaConsumerFactory
 import org.locationtech.geomesa.utils.geotools.Conversions._
 import org.locationtech.geomesa.utils.geotools.FR
-import org.locationtech.geomesa.utils.index.SynchronizedQuadtree
-import org.opengis.feature.simple.SimpleFeatureType
+import org.locationtech.geomesa.utils.index.{BucketIndex, SpatialIndex, SynchronizedQuadtree}
+import org.locationtech.geomesa.utils.stats.{AutoLoggingTimings, MethodProfiling}
+import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
 import scala.collection.JavaConverters._
@@ -131,9 +133,10 @@ class LiveKafkaConsumerFeatureSource(entry: ContentEntry,
   */
 class LiveFeatureCache(override val sft: SimpleFeatureType,
                        expirationPeriod: Option[Long])(implicit ticker: Ticker)
-  extends KafkaConsumerFeatureCache {
+  extends KafkaConsumerFeatureCache with MethodProfiling {
 
-  var qt = new SynchronizedQuadtree
+  var spatialIndex: SpatialIndex[SimpleFeature] =
+    new BucketIndex[SimpleFeature](360, 180)
 
   val cache: Cache[String, FeatureHolder] = {
     val cb = CacheBuilder.newBuilder().ticker(ticker)
@@ -142,7 +145,7 @@ class LiveFeatureCache(override val sft: SimpleFeatureType,
         .removalListener(
           new RemovalListener[String, FeatureHolder] {
             def onRemoval(removal: RemovalNotification[String, FeatureHolder]) = {
-              qt.remove(removal.getValue.env, removal.getValue.sf)
+              spatialIndex.remove(removal.getValue.env, removal.getValue.sf)
             }
           }
         )
@@ -151,16 +154,16 @@ class LiveFeatureCache(override val sft: SimpleFeatureType,
   }
 
   override val features: mutable.Map[String, FeatureHolder] = cache.asMap().asScala
-
+implicit val timings = new AutoLoggingTimings(10000)
   def createOrUpdateFeature(update: CreateOrUpdate): Unit = {
     val sf = update.feature
     val id = sf.getID
     val old = cache.getIfPresent(id)
     if (old != null) {
-      qt.remove(old.env, old.sf)
+      profile(spatialIndex.remove(old.env, old.sf), "remove")
     }
     val env = sf.geometry.getEnvelopeInternal
-    qt.insert(env, sf)
+    profile(spatialIndex.insert(env, sf), "insert")
     cache.put(id, FeatureHolder(sf, env))
   }
 
@@ -168,13 +171,13 @@ class LiveFeatureCache(override val sft: SimpleFeatureType,
     val id = toDelete.id
     val old = cache.getIfPresent(id)
     if (old != null) {
-      qt.remove(old.env, old.sf)
+      profile(spatialIndex.remove(old.env, old.sf), "remove")
       cache.invalidate(id)
     }
   }
 
   def clear(): Unit = {
     cache.invalidateAll()
-    qt = new SynchronizedQuadtree
+    spatialIndex = new SynchronizedQuadtree
   }
 }

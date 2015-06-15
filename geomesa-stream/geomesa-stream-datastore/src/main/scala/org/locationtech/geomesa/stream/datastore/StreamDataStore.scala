@@ -105,7 +105,7 @@ class StreamDataStore(source: SimpleFeatureStreamSource, timeout: Int) extends C
 class StreamFeatureStore(entry: ContentEntry,
                          query: Query,
                          features: Cache[String, FeatureHolder],
-                         val qt: SynchronizedQuadtree,
+                         val spatialIndex: SynchronizedQuadtree,
                          val sft: SimpleFeatureType)
   extends ContentFeatureStore(entry, query) with QuadTreeFeatureStore {
 

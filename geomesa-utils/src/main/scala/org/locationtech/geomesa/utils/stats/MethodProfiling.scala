@@ -176,7 +176,7 @@ class AutoLoggingTimings(moduloToLog: Int = 1000) extends TimingsImpl with Loggi
   override def occurrence(identifier: String, time: Long) = {
     super.occurrence(identifier, time)
     if (count.incrementAndGet() % moduloToLog == 0) {
-      logger.debug(averageTimes())
+      println(averageTimes())
     }
   }
 }
