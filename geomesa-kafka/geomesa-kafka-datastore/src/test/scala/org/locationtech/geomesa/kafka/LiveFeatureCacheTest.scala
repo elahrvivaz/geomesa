@@ -44,7 +44,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
       lfc.features must haveSize(1)
       lfc.features.get("track0") must beSome(featureHolder(track0v0))
 
-      lfc.spatialIndex.query(wholeWorld) must containFeatureHolders(track0v0)
+      lfc.spatialIndex.query(wholeWorld) must containTheSameFeatureHoldersAs(track0v0)
     }
 
     "handle two CreateOrUpdate messages" >> {
@@ -59,7 +59,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
       lfc.features must haveSize(2)
       lfc.features.get("track1") must beSome(featureHolder(track1v0))
 
-      lfc.spatialIndex.query(wholeWorld) must containFeatureHolders(track0v0, track1v0)
+      lfc.spatialIndex.query(wholeWorld) must containTheSameFeatureHoldersAs(track0v0, track1v0)
     }
 
     "use the most recent version of a feature" >> {
@@ -75,7 +75,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
       lfc.features must haveSize(2)
       lfc.features.get("track0") must beSome(featureHolder(track0v1))
 
-      lfc.spatialIndex.query(wholeWorld) must containFeatureHolders(track0v1, track1v0)
+      lfc.spatialIndex.query(wholeWorld) must containTheSameFeatureHoldersAs(track0v1, track1v0)
     }
 
     "handle a Delete message" >> {
@@ -92,7 +92,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
       lfc.features must haveSize(1)
       lfc.features.get("track0") must beNone
 
-      lfc.spatialIndex.query(wholeWorld) must containFeatureHolders(track1v0)
+      lfc.spatialIndex.query(wholeWorld) must containTheSameFeatureHoldersAs(track1v0)
     }
 
     "handle a Clear message" >> {
@@ -131,7 +131,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
       lfc.features must haveSize(1)
       lfc.features.get("track0") must beSome(featureHolder(track0v0))
 
-      lfc.spatialIndex.query(wholeWorld) must containFeatureHolders(track0v0)
+      lfc.spatialIndex.query(wholeWorld) must containTheSameFeatureHoldersAs(track0v0)
     }
 
     "expire message correctly" >> {

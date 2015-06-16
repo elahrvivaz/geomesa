@@ -10,6 +10,9 @@ package org.locationtech.geomesa.utils.index
 
 import com.vividsolutions.jts.geom.Envelope
 
+/**
+ * Trait for indexing and querying spatial data
+ */
 trait SpatialIndex[T] {
 
   def insert(envelope: Envelope, item: T): Unit
