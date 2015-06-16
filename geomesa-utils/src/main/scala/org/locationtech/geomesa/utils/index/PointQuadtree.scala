@@ -14,17 +14,35 @@ import scala.collection.mutable
 
 class PointQuadtree[T] extends SpatialIndex[T] {
 
-  private val root = QtNode[T](0, 0) // x is lon, y is lat
+  private val root = QtNode[T](180, 90, 360, 180) // x is lon, y is lat - offset to positive values
 
-  override def insert(envelope: Envelope, item: T) = ???
+  override def insert(envelope: Envelope, item: T): Unit = {
+    val (x, y) = getPoint(envelope)
+    root.insert(QtValue(x, y, item))
+  }
 
-  override def remove(envelope: Envelope, item: T) = ???
+  override def remove(envelope: Envelope, item: T): Boolean = {
+    val (x, y) = getPoint(envelope)
+    root.remove(QtValue(x, y, item))
+  }
 
-  override def query(envelope: Envelope) = ???
+  override def query(envelope: Envelope): Iterator[T] = {
+    val query = new Envelope(envelope)
+    query.translate(180, 90)
+    root.query(query)
+  }
+
+  def getPoint(envelope: Envelope): (Double, Double) = {
+    val x = ((envelope.getMinX + envelope.getMaxX) / 2) + 180
+    val y = ((envelope.getMinY + envelope.getMaxY) / 2) + 90
+    (x, y)
+  }
+
+  def print(): String = root.print("")
 }
 
-case class QtNode[T](x: Double, y: Double) {
-  val extents = Array(x, x, y, y) // low x, hi x, low y, hi y
+case class QtNode[T](x: Double, y: Double, width: Double, height: Double) {
+  val extents = new Envelope(x, x, y, y)
   val values  = mutable.HashSet.empty[QtValue[T]]
 
   var nw: QtNode[T] = null
@@ -32,13 +50,13 @@ case class QtNode[T](x: Double, y: Double) {
   var sw: QtNode[T] = null
   var se: QtNode[T] = null
 
-// TODO synchronization
-  def insert(value: QtValue[T]): Unit = {
-    ensureExtents(value.x, value.y)
-    val done = values.synchronized {
+  def insert(item: QtValue[T]): Unit = {
+    ensureExtents(x, y)
+    val done = values.synchronized { // TODO sync
       if (nw == null) {
         if (values.size < PointQuadtree.MAX_VALUES_PER_NODE) {
-          values.add(value)
+          values.add(item)
+          true
         } else {
           subdivide()
           false
@@ -48,50 +66,84 @@ case class QtNode[T](x: Double, y: Double) {
       }
     }
     if (!done) {
-      insertIntoQuadrant(value)
+      insertIntoQuadrant(item)
     }
   }
 
-  def find(minx: Double, maxx: Double, miny: Double, maxy: Double): Iterator[T] = {
+  // should only be accessed inside value sync block
+  private def subdivide(): Unit = {
+    // TODO this will infinitely recurse if we have too many of the same point...
+    val newWidth = width / 2
+    val newHeight = height / 2
+    nw = QtNode[T](x - newWidth, y + newHeight, newWidth, newHeight)
+    ne = QtNode[T](x + newWidth, y + newHeight, newWidth, newHeight)
+    sw = QtNode[T](x - newWidth, y - newHeight, newWidth, newHeight)
+    se = QtNode[T](x + newWidth, y - newHeight, newWidth, newHeight)
+    values.foreach(insertIntoQuadrant)
+    values.clear()
+  }
+
+  private def insertIntoQuadrant(item: QtValue[T]): Unit = {
+    if (item.x < x) {
+      if (item.y < y) {
+        sw.insert(item)
+      } else {
+        nw.insert(item)
+      }
+    } else {
+      if (item.y < y) {
+        se.insert(item)
+      } else {
+        ne.insert(item)
+      }
+    }
+  }
+
+  def query(envelope: Envelope): Iterator[T] = {
+    if (!extents.intersects(envelope)) {
+      return Iterator.empty
+    }
     val result = values.synchronized {
       if (nw == null) {
-        values.filter(value => value.x >= minx && value.x <= maxx && value.y >= miny && value.y <= maxy)
+        values.filter { value =>
+          value.x >= envelope.getMinX &&
+            value.x <= envelope.getMaxX &&
+            value.y >= envelope.getMinY &&
+            value.y <= envelope.getMaxY
+        }
       } else {
         null
       }
     }
     if (result == null) {
       new Iterator[T]() {
-        var iter = Iterator.empty
+        var iter = Iterator.empty.asInstanceOf[Iterator[T]]
         var count = 0
         override def hasNext = {
           while (!iter.hasNext && count < 4) {
-
+            if (count == 0) {
+              iter = nw.query(envelope)
+            } else if (count == 1) {
+              iter = QtNode.this.ne.query(envelope)
+            } else if (count == 2) {
+              iter = sw.query(envelope)
+            } else {
+              iter = se.query(envelope)
+            }
+            count += 1
           }
-          if (iter.hasNext) {
-            true
-          } else {
-
-            findNextIter
-          }
+          iter.hasNext
         }
 
-        private def findNextIter: Boolean = {
-          if (count == 0) {
-
-          }
-          false
-        }
         override def next() = iter.next()
       }
-      nw.find(minx, maxx, miny, maxy) ++ ne.find(minx, maxx, miny, maxy) ++ sw.find(minx, maxx, miny, maxy) ++ se.find(minx, maxx, miny, maxy)
     } else {
       result.iterator.map(_.value)
     }
   }
 
   def remove(value: QtValue[T]): Boolean = {
-    if (isInside(value.x, value.y)) {
+    if (contained(value.x, value.y)) {
       val (removed, checkQuadrants) = values.synchronized {
         if (nw == null) {
           (values.remove(value), false)
@@ -109,50 +161,18 @@ case class QtNode[T](x: Double, y: Double) {
     }
   }
 
-  private def isInside(x: Double, y: Double): Boolean = extents.synchronized {
-    x >= extents(0) && x <= extents(1) && y >= extents(2) && y <= extents(3)
-  }
+  private def contained(x: Double, y: Double): Boolean =
+    extents.synchronized(extents.covers(x, y))
 
-  private def ensureExtents(x: Double, y: Double): Unit = extents.synchronized {
-    if (extents(0) > x) {
-      extents(0) = x
-    } else if (extents(1) < x) {
-      extents(1) = x
-    }
-    if (extents(2) > y) {
-      extents(2) = y
-    } else if (extents(3) < y) {
-      extents(3) = y
-    }
-  }
+  private def ensureExtents(x: Double, y: Double): Unit =
+    extents.synchronized(extents.expandToInclude(x, y))
 
-  // should only be accessed inside value sync block
-  private def subdivide(): Unit = {
-    val x2 = (x + 180) / 2
-    val y2 = (y + 90) / 2
-    val xx2 = (x + 180) + x2
-    val yy2 = (y + 90) + y2
-    nw = QtNode[T]((x + 180) / 2 - 180, (y + 45) / 2 + 45)
-    ne = QtNode[T]((x + 180) / 2 + 180, yy2)
-    sw = QtNode[T](x2, y2)
-    se = QtNode[T](xx2, y2)
-    values.foreach(insertIntoQuadrant)
-    values.clear()
-  }
-
-  private def insertIntoQuadrant(value: QtValue[T]): Unit = {
-    if (value.x < x) {
-      if (value.y < y) {
-        sw.insert(value)
-      } else {
-        nw.insert(value)
-      }
+  def print(indent: String): String = {
+    if (nw == null) {
+      s"$indent($x $y)[ LEAF[${values.mkString(",")}] ]"
     } else {
-      if (value.y < y) {
-        se.insert(value)
-      } else {
-        ne.insert(value)
-      }
+      val tab = indent + "  "
+      s"$indent($x $y)[\n${tab}NW[${nw.print(tab)}]\n${indent}NE[${ne.print(tab)}]\n${indent}SW[${sw.print(tab)}]\n${indent}SE[${se.print(tab)}]\n$indent]"
     }
   }
 }

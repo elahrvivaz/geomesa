@@ -9,6 +9,7 @@
 package org.locationtech.geomesa.utils.index
 
 import com.vividsolutions.jts.geom.Envelope
+import org.locationtech.geomesa.utils.geotools.GridSnap
 import scala.collection.mutable
 
 class BucketIndex[T](xBuckets: Int = 360,
@@ -17,8 +18,7 @@ class BucketIndex[T](xBuckets: Int = 360,
 
   // create the buckets upfront to avoid having to synchronize the whole array
   val buckets = Array.fill(xBuckets, yBuckets)(mutable.HashSet.empty[T])
-  private val xOffset = (extents.getMaxX - extents.getMinX) / 2.0
-  private val yOffset = (extents.getMaxY - extents.getMinY) / 2.0
+  private val gridSnap = new GridSnap(extents, xBuckets, yBuckets)
 
   override def insert(envelope: Envelope, item: T): Unit = {
     val (i, j) = getBucket(envelope)
@@ -33,23 +33,24 @@ class BucketIndex[T](xBuckets: Int = 360,
   }
 
   override def query(envelope: Envelope): Iterator[T] = {
-    val mini = Math.floor(envelope.getMinX + xOffset).toInt % xBuckets
-    val maxi = (Math.floor(envelope.getMaxX + xOffset).toInt % xBuckets) - 1
-    val minj = Math.floor(envelope.getMinY + xOffset).toInt % xBuckets
-    val maxj = (Math.floor(envelope.getMaxY + xOffset).toInt % xBuckets) - 1
+    val mini = gridSnap.i(envelope.getMinX)
+    val maxi = gridSnap.i(envelope.getMaxX)
+    val minj = gridSnap.j(envelope.getMinY)
+    val maxj = gridSnap.j(envelope.getMaxY)
+
     new Iterator[T]() {
       var i = mini
-      var j = minj - 1
+      var j = minj
       var iter = Iterator.empty.asInstanceOf[Iterator[T]]
       override def hasNext = {
-        while (!iter.hasNext && (i < maxi || j < maxj)) {
+        while (!iter.hasNext && i <= maxi && j <= maxj) {
+          val bucket = buckets(i)(j)
           if (j < maxj) {
             j += 1
           } else {
             j = minj
             i += 1
           }
-          val bucket = buckets(i)(j)
           iter = bucket.synchronized(bucket.toSeq).iterator
         }
         iter.hasNext
@@ -59,9 +60,6 @@ class BucketIndex[T](xBuckets: Int = 360,
     }
   }
 
-  private def getBucket(envelope: Envelope): (Int, Int) = {
-    val i = Math.floor(((envelope.getMinX + envelope.getMaxX) / 2.0) + xOffset).toInt % xBuckets
-    val j = Math.round(((envelope.getMinY + envelope.getMaxY) / 2.0) + yOffset).toInt % yBuckets
-    (i, j)
-  }
+  private def getBucket(envelope: Envelope): (Int, Int) =
+    (gridSnap.i((envelope.getMinX + envelope.getMaxX) / 2.0), gridSnap.j((envelope.getMinY + envelope.getMaxY) / 2.0))
 }
