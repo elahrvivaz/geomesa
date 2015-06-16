@@ -21,13 +21,12 @@ import java.util.concurrent.{Executors, LinkedBlockingQueue, TimeUnit}
 import com.google.common.base.Ticker
 import com.google.common.cache.{Cache, CacheBuilder, RemovalListener, RemovalNotification}
 import com.typesafe.scalalogging.slf4j.Logging
-import com.vividsolutions.jts.geom.{Point, Geometry, Envelope}
 import org.geotools.data.Query
 import org.geotools.data.store.ContentEntry
 import org.locationtech.geomesa.kafka.consumer.KafkaConsumerFactory
 import org.locationtech.geomesa.utils.geotools.Conversions._
 import org.locationtech.geomesa.utils.geotools.FR
-import org.locationtech.geomesa.utils.index.{BucketIndex, SpatialIndex, SynchronizedQuadtree}
+import org.locationtech.geomesa.utils.index.{BucketIndex, SpatialIndex}
 import org.locationtech.geomesa.utils.stats.{AutoLoggingTimings, MethodProfiling}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
@@ -135,8 +134,7 @@ class LiveFeatureCache(override val sft: SimpleFeatureType,
                        expirationPeriod: Option[Long])(implicit ticker: Ticker)
   extends KafkaConsumerFeatureCache with MethodProfiling {
 
-  var spatialIndex: SpatialIndex[SimpleFeature] =
-    new BucketIndex[SimpleFeature](360, 180)
+  var spatialIndex: SpatialIndex[SimpleFeature] = new BucketIndex[SimpleFeature]
 
   val cache: Cache[String, FeatureHolder] = {
     val cb = CacheBuilder.newBuilder().ticker(ticker)
@@ -178,6 +176,6 @@ implicit val timings = new AutoLoggingTimings(10000)
 
   def clear(): Unit = {
     cache.invalidateAll()
-    spatialIndex = new SynchronizedQuadtree
+    spatialIndex = new BucketIndex[SimpleFeature]
   }
 }

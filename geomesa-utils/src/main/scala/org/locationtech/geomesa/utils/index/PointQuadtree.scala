@@ -14,48 +14,40 @@ import scala.collection.mutable
 
 class PointQuadtree[T] extends SpatialIndex[T] {
 
-  private val root = QtNode[T](180, 90, 360, 180) // x is lon, y is lat - offset to positive values
+  throw new NotImplementedError("Not yet finished") // TODO finish implementing this
+
+  private val root = QtNode[T](0, 0, 360, 180) // x is lon, y is lat
 
   override def insert(envelope: Envelope, item: T): Unit = {
-    val (x, y) = getPoint(envelope)
-    root.insert(QtValue(x, y, item))
+    val (x, y) = SpatialIndex.getCenter(envelope)
+    root.insert(x, y, item)
   }
 
   override def remove(envelope: Envelope, item: T): Boolean = {
-    val (x, y) = getPoint(envelope)
-    root.remove(QtValue(x, y, item))
+    val (x, y) = SpatialIndex.getCenter(envelope)
+    root.remove(x, y, item)
   }
 
-  override def query(envelope: Envelope): Iterator[T] = {
-    val query = new Envelope(envelope)
-    query.translate(180, 90)
-    root.query(query)
-  }
-
-  def getPoint(envelope: Envelope): (Double, Double) = {
-    val x = ((envelope.getMinX + envelope.getMaxX) / 2) + 180
-    val y = ((envelope.getMinY + envelope.getMaxY) / 2) + 90
-    (x, y)
-  }
+  override def query(envelope: Envelope): Iterator[T] = root.query(envelope)
 
   def print(): String = root.print("")
 }
 
-case class QtNode[T](x: Double, y: Double, width: Double, height: Double) {
-  val extents = new Envelope(x, x, y, y)
-  val values  = mutable.HashSet.empty[QtValue[T]]
+case class QtNode[T](centerX: Double, centerY: Double, width: Double, height: Double) {
+  val extents = new Envelope(centerX, centerX, centerY, centerY)
+  val values  = mutable.Map.empty[(Double, Double), mutable.HashSet[T]]
 
   var nw: QtNode[T] = null
   var ne: QtNode[T] = null
   var sw: QtNode[T] = null
   var se: QtNode[T] = null
 
-  def insert(item: QtValue[T]): Unit = {
+  def insert(x: Double, y: Double, item: T): Unit = {
     ensureExtents(x, y)
     val done = values.synchronized { // TODO sync
       if (nw == null) {
         if (values.size < PointQuadtree.MAX_VALUES_PER_NODE) {
-          values.add(item)
+          values.getOrElse((x, y), mutable.HashSet.empty[T]).add(item)
           true
         } else {
           subdivide()
@@ -66,35 +58,34 @@ case class QtNode[T](x: Double, y: Double, width: Double, height: Double) {
       }
     }
     if (!done) {
-      insertIntoQuadrant(item)
+      insertIntoQuadrant(x, y, item)
     }
   }
 
   // should only be accessed inside value sync block
   private def subdivide(): Unit = {
-    // TODO this will infinitely recurse if we have too many of the same point...
     val newWidth = width / 2
     val newHeight = height / 2
-    nw = QtNode[T](x - newWidth, y + newHeight, newWidth, newHeight)
-    ne = QtNode[T](x + newWidth, y + newHeight, newWidth, newHeight)
-    sw = QtNode[T](x - newWidth, y - newHeight, newWidth, newHeight)
-    se = QtNode[T](x + newWidth, y - newHeight, newWidth, newHeight)
-    values.foreach(insertIntoQuadrant)
+    nw = QtNode[T](centerX - newWidth, centerY + newHeight, newWidth, newHeight)
+    ne = QtNode[T](centerX + newWidth, centerY + newHeight, newWidth, newHeight)
+    sw = QtNode[T](centerX - newWidth, centerY - newHeight, newWidth, newHeight)
+    se = QtNode[T](centerX + newWidth, centerY - newHeight, newWidth, newHeight)
+    values.foreach { case (pt, items) => items.foreach(insertIntoQuadrant(pt._1, pt._2, _)) }
     values.clear()
   }
 
-  private def insertIntoQuadrant(item: QtValue[T]): Unit = {
-    if (item.x < x) {
-      if (item.y < y) {
-        sw.insert(item)
+  private def insertIntoQuadrant(x: Double, y: Double, item: T): Unit = {
+    if (x < centerX) {
+      if (y < centerY) {
+        sw.insert(x, y, item)
       } else {
-        nw.insert(item)
+        nw.insert(x, y, item)
       }
     } else {
-      if (item.y < y) {
-        se.insert(item)
+      if (y < centerY) {
+        se.insert(x, y, item)
       } else {
-        ne.insert(item)
+        ne.insert(x, y, item)
       }
     }
   }
@@ -105,11 +96,14 @@ case class QtNode[T](x: Double, y: Double, width: Double, height: Double) {
     }
     val result = values.synchronized {
       if (nw == null) {
-        values.filter { value =>
-          value.x >= envelope.getMinX &&
-            value.x <= envelope.getMaxX &&
-            value.y >= envelope.getMinY &&
-            value.y <= envelope.getMaxY
+        values.flatMap { case (pt, items) =>
+          val (x, y) = pt
+          if (x >= envelope.getMinX && x <= envelope.getMaxX &&
+              y >= envelope.getMinY && y <= envelope.getMaxX) {
+            items.toSeq
+          } else {
+            Seq.empty
+          }
         }
       } else {
         null
@@ -138,21 +132,21 @@ case class QtNode[T](x: Double, y: Double, width: Double, height: Double) {
         override def next() = iter.next()
       }
     } else {
-      result.iterator.map(_.value)
+      result.iterator
     }
   }
 
-  def remove(value: QtValue[T]): Boolean = {
-    if (contained(value.x, value.y)) {
+  def remove(x: Double, y: Double, item: T): Boolean = {
+    if (contained(x, y)) {
       val (removed, checkQuadrants) = values.synchronized {
         if (nw == null) {
-          (values.remove(value), false)
+          (values.get((x, y)).exists(_.remove(item)), false)
         } else {
           (false, true)
         }
       }
       if (checkQuadrants) {
-        nw.remove(value) || ne.remove(value) || sw.remove(value) || se.remove(value)
+        nw.remove(x, y, item) || ne.remove(x, y, item) || sw.remove(x, y, item) || se.remove(x, y, item)
       } else {
         removed
       }
@@ -161,18 +155,16 @@ case class QtNode[T](x: Double, y: Double, width: Double, height: Double) {
     }
   }
 
-  private def contained(x: Double, y: Double): Boolean =
-    extents.synchronized(extents.covers(x, y))
+  private def contained(x: Double, y: Double): Boolean = extents.synchronized(extents.covers(x, y))
 
-  private def ensureExtents(x: Double, y: Double): Unit =
-    extents.synchronized(extents.expandToInclude(x, y))
+  private def ensureExtents(x: Double, y: Double): Unit = extents.synchronized(extents.expandToInclude(x, y))
 
   def print(indent: String): String = {
     if (nw == null) {
-      s"$indent($x $y)[ LEAF[${values.mkString(",")}] ]"
+      s"$indent($centerX $centerX)[ LEAF[${values.mkString(",")}] ]"
     } else {
       val tab = indent + "  "
-      s"$indent($x $y)[\n${tab}NW[${nw.print(tab)}]\n${indent}NE[${ne.print(tab)}]\n${indent}SW[${sw.print(tab)}]\n${indent}SE[${se.print(tab)}]\n$indent]"
+      s"$indent($centerX $centerX)[\n${tab}NW[${nw.print(tab)}]\n${indent}NE[${ne.print(tab)}]\n${indent}SW[${sw.print(tab)}]\n${indent}SE[${se.print(tab)}]\n$indent]"
     }
   }
 }

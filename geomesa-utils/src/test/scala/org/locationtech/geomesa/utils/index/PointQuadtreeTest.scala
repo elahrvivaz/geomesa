@@ -23,7 +23,6 @@ class PointQuadtreeTest extends Specification with Logging {
 
   "PointQuadtree" should {
     "be thread safe" in {
-      skipped("t")
       val numFeatures = 100
       val envelopes = (0 until numFeatures).map(i => (i, WKTUtils.read(s"POINT(45.$i 50)").getEnvelopeInternal)).toArray
       val index = new PointQuadtree[Int]()
@@ -58,13 +57,13 @@ class PointQuadtreeTest extends Specification with Logging {
       insert.start()
       query.start()
       remove.start()
-      Thread.sleep(10000)
+      Thread.sleep(1000)
       running.set(false)
       insert.join()
       query.join()
       remove.join()
       success
-    }
+    }.pendingUntilFixed("not implemented")
 
     "support insert and query" in {
       val index = new PointQuadtree[String]()
@@ -80,11 +79,11 @@ class PointQuadtreeTest extends Specification with Logging {
       pts.foreach { pt =>
         val env = WKTUtils.read(pt).getEnvelopeInternal
         val results = index.query(env).toSeq
-//        results must contain(pt)
+        results must contain(pt)
       }
       println("searched")
       success
-    }
+    }.pendingUntilFixed("point quadtree not finished")
   }
 }
 

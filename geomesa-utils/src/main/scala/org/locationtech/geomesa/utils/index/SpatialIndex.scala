@@ -21,3 +21,11 @@ trait SpatialIndex[T] {
   def query(envelope: Envelope, filter: (T) => Boolean): Iterator[T] = query(envelope).filter(filter)
 
 }
+
+object SpatialIndex {
+  def getCenter(envelope: Envelope): (Double, Double) = {
+    val x = (envelope.getMinX + envelope.getMaxX) / 2
+    val y = (envelope.getMinY + envelope.getMaxY) / 2
+    (x, y)
+  }
+}

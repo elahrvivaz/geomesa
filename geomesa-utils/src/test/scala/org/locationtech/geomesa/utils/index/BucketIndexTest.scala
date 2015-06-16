@@ -26,7 +26,6 @@ class BucketIndexTest extends Specification with Logging {
 
   "BucketIndex" should {
     "be thread safe" in {
-skipped("t")
       val numFeatures = 100
       val envelopes = (0 until numFeatures).map(i => (i, WKTUtils.read(s"POINT(45.$i 50)").getEnvelopeInternal)).toArray
       val index = new BucketIndex[Int]()
@@ -61,7 +60,7 @@ skipped("t")
       insert.start()
       query.start()
       remove.start()
-      Thread.sleep(10000)
+      Thread.sleep(1000)
       running.set(false)
       insert.join()
       query.join()
@@ -84,6 +83,35 @@ skipped("t")
         results must contain(pt)
       }
       success
+    }
+
+    "support envelopes" in {
+      val index = new BucketIndex[String]()
+      val pts = for (x <- -180 to 180; y <- -90 to 90) yield {
+        s"POINT($x $y)"
+      }
+      pts.foreach { pt =>
+        val env = WKTUtils.read(pt).getEnvelopeInternal
+        index.insert(env, pt)
+      }
+      val bbox = new Envelope(-10, -8, 8, 10)
+      val results = index.query(bbox).toSeq
+      results must haveLength(9)
+      results must containTheSameElementsAs(for (x <- -10 to -8; y <- 8 to 10) yield s"POINT($x $y)")
+
+      bbox.init(-10.5, -8.5, 8.5, 10.5)
+      val results2 = index.query(bbox).toSeq
+      // fine grain filtering is not applied - we want everything that *might* intersect
+      results2 must haveLength(9)
+      results2 must containTheSameElementsAs(for (x <- -10 to -8; y <- 8 to 10) yield s"POINT($x $y)")
+
+      val results3 = index.query(bbox, (s) => {
+        val x = s.substring(6, s.indexOf(" ")).toInt
+        val y = s.substring(s.indexOf(" ") + 1, s.length - 1).toInt
+        x > -10.5 && x < -8.5 && y > 8.5 && y < 10.5
+      }).toSeq
+      results3 must haveLength(4)
+      results3 must containTheSameElementsAs(for (x <- -10 to -9; y <- 9 to 10) yield s"POINT($x $y)")
     }
   }
 }

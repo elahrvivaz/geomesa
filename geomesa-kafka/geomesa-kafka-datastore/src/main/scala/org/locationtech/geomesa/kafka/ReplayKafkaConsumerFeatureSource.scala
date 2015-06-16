@@ -154,8 +154,11 @@ class ReplayKafkaConsumerFeatureSource(entry: ContentEntry,
     // required: there is only 1 partition;  validate??
     val stream = kafkaConsumer.createMessageStreams(1, offsetRequest).head
 
+    val msgIds = scala.collection.mutable.HashSet.empty[(Int, Long)]
+
     val msgs = stream.iterator
       .stopOnTimeout
+      .filter(m => msgIds.add((m.partition, m.offset))) // avoid replayed duplicates
       .map(msgDecoder.decode)
       .dropWhile(replayConfig.isBeforeRealStart)
       .takeWhile(replayConfig.isNotAfterEnd)
