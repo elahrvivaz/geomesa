@@ -83,6 +83,15 @@ trait KafkaConsumerFeatureCache extends QuadTreeFeatureStore {
     }
   }
 
+  // optimized for filter.include
+  def size(f: Filter): Int = {
+    if (f == Filter.INCLUDE) {
+      features.size
+    } else {
+      getReaderForFilter(f).getIterator.length
+    }
+  }
+
   def getReaderForFilter(f: Filter): FR =
     f match {
       case o: Or             => or(o)

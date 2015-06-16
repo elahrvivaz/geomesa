@@ -166,8 +166,7 @@ implicit val timings = new AutoLoggingTimings(10000)
   }
 
   def removeFeature(toDelete: Delete): Unit = {
-    val id = toDelete.id
-    val old = cache.getIfPresent(id)
+    val old = cache.getIfPresent(toDelete.id)
     if (old != null) {
       profile(spatialIndex.remove(old.env, old.sf), "remove")
       cache.invalidate(id)
