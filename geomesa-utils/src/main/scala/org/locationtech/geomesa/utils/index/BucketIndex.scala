@@ -12,13 +12,17 @@ import com.vividsolutions.jts.geom.Envelope
 import org.locationtech.geomesa.utils.geotools.GridSnap
 import scala.collection.mutable
 
+/**
+ * Spatial index that breaks up space into discrete buckets to index points.
+ * Does not support non-point inserts.
+ */
 class BucketIndex[T](xBuckets: Int = 360,
                      yBuckets: Int = 180,
                      extents: Envelope = new Envelope(-180.0, 180.0, -90.0, 90.0)) extends SpatialIndex[T] {
 
   // create the buckets upfront to avoid having to synchronize the whole array
-  val buckets = Array.fill(xBuckets, yBuckets)(mutable.HashSet.empty[T])
   private val gridSnap = new GridSnap(extents, xBuckets, yBuckets)
+  private val buckets = Array.fill(xBuckets, yBuckets)(mutable.HashSet.empty[T])
 
   override def insert(envelope: Envelope, item: T): Unit = {
     val (i, j) = getBucket(envelope)
@@ -42,6 +46,7 @@ class BucketIndex[T](xBuckets: Int = 360,
       var i = mini
       var j = minj
       var iter = Iterator.empty.asInstanceOf[Iterator[T]]
+
       override def hasNext = {
         while (!iter.hasNext && i <= maxi && j <= maxj) {
           val bucket = buckets(i)(j)
@@ -60,6 +65,8 @@ class BucketIndex[T](xBuckets: Int = 360,
     }
   }
 
-  private def getBucket(envelope: Envelope): (Int, Int) =
-    (gridSnap.i((envelope.getMinX + envelope.getMaxX) / 2.0), gridSnap.j((envelope.getMinY + envelope.getMaxY) / 2.0))
+  private def getBucket(envelope: Envelope): (Int, Int) = {
+    val (x, y) = SpatialIndex.getCenter(envelope)
+    (gridSnap.i(x), gridSnap.j(y))
+  }
 }

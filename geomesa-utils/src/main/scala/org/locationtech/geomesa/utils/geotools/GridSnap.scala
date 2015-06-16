@@ -26,85 +26,68 @@ import org.geotools.referencing.crs.DefaultGeographicCRS
 
 import scala.math.abs
 
-class GridSnap(env: Envelope, xSize: Int, ySize: Int, checkBounds: Boolean = true) {
+class GridSnap(env: Envelope, xSize: Int, ySize: Int) {
 
   val dx = env.getWidth / (xSize - 1)
   val dy = env.getHeight / (ySize - 1)
 
-  private def unsafeX(i: Int) = env.getMinX + i * dx
-  private def safeX(i: Int) =
+  /**
+   * Computes the X ordinate of the i'th grid column.
+   * @param i the index of a grid column
+   * @return the X ordinate of the column
+   */
+  def x(i: Int): Double =
     if (i < 0) {
       env.getMinX
     } else if (i >= xSize - 1) {
       env.getMaxX
     } else {
-      unsafeX(i)
+      env.getMinX + i * dx
     }
 
   /**
-   * Computes the X ordinate of the i'th grid column.
-   * i the index of a grid column
-   * @return the X ordinate of the column
+   * Computes the Y ordinate of the i'th grid row.
+   * @param j the index of a grid row
+   * @return the Y ordinate of the row
    */
-  val x: (Int) => Double = if (checkBounds) safeX else unsafeX
-
-  private def unsafeY(j: Int) = env.getMinY + j * dy
-  private def safeY(j: Int) =
+  def y(j: Int): Double =
     if (j < 0) {
       env.getMinY
     } else if (j >= ySize - 1) {
       env.getMaxY
     } else {
-      unsafeY(j)
+      env.getMinY + j * dy
     }
 
   /**
-   * Computes the Y ordinate of the i'th grid row.
-   * j the index of a grid row
-   * @return the Y ordinate of the row
+   * Computes the column index of an X ordinate.
+   * @param x the X ordinate
+   * @return the column index
    */
-  val y: (Int) => Double  = if (checkBounds) safeY else unsafeY
-
-  private def unsafeI(x: Double): Int = {
-    val ret = (x - env.getMinX) / dx
-    if (ret >= xSize) xSize - 1 else ret.toInt
-  }
-  private def safeI(x: Double): Int =
+  def i(x: Double): Int =
     if (x > env.getMaxX) {
       xSize - 1
     } else if (x < env.getMinX) {
       0
     } else {
-      unsafeI(x)
+      val ret = (x - env.getMinX) / dx
+      if (ret >= xSize) xSize - 1 else ret.toInt
     }
 
   /**
-   * Computes the column index of an X ordinate.
-   * v the X ordinate
+   * Computes the column index of an Y ordinate.
+   * @param y the Y ordinate
    * @return the column index
    */
-  val i: (Double) => Int = if (checkBounds) safeI else unsafeI
-
-  private def unsafeJ(y: Double): Int = {
-    val ret = (y - env.getMinY) / dy
-    if (ret >= ySize) ySize - 1 else ret.toInt
-  }
-  private def safeJ(y: Double): Int = {
+  def j(y: Double): Int =
     if (y > env.getMaxY) {
       ySize - 1
     } else if (y < env.getMinY) {
       0
     } else {
-      unsafeJ(y)
+      val ret = (y - env.getMinY) / dy
+      if (ret >= ySize) ySize - 1 else ret.toInt
     }
-  }
-
-  /**
-   * Computes the column index of an Y ordinate.
-   * v the Y ordinate
-   * @return the column index
-   */
-  val j: (Double) => Int = if (checkBounds) safeJ else unsafeJ
 
   /** Generate a Sequence of Coordinates between two given Snap Coordinates using Bresenham's Line Algorithm */
   def genBresenhamCoordSet(x0: Int, y0: Int, x1: Int, y1: Int): Set[Coordinate] = {
@@ -116,7 +99,7 @@ class GridSnap(env: Envelope, xSize: Int, ySize: Int, checkBounds: Boolean = tru
       def iter = new Iterator[Coordinate] {
         var (xT, yT) = (x0, y0)
         var error = (if (deltaX > deltaY) deltaX else -deltaY) / 2
-        def next = {
+        def next() = {
           val errorT = error
           if(errorT > -deltaX){ error -= deltaY; xT += stepX }
           if(errorT < deltaY){ error += deltaX; yT += stepY }

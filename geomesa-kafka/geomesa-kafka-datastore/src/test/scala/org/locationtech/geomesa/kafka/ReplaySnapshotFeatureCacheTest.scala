@@ -15,6 +15,7 @@
  */
 package org.locationtech.geomesa.kafka
 
+import com.vividsolutions.jts.geom.Envelope
 import org.joda.time.Instant
 import org.junit.runner.RunWith
 import org.opengis.feature.simple.SimpleFeature
@@ -32,6 +33,7 @@ class ReplaySnapshotFeatureCacheTest extends Specification with SimpleFeatureMat
 
   // replay time is arbitrary for this test
   val replayTime = 1000L
+  val wholeWorld = new Envelope(-180, 180, -90, 90)
 
   "ReplaySnapshotFeatureCache" should {
 
@@ -45,7 +47,7 @@ class ReplaySnapshotFeatureCacheTest extends Specification with SimpleFeatureMat
       val holder = cache.features("track0")
       holder.sf must equalSFWithReplayTime(track0v0)
 
-//      cache.spatialIndex.size() mustEqual 1 TODO
+      cache.spatialIndex.query(wholeWorld) must haveSize(1)
       val queryResult = cache.spatialIndex.query(holder.env).toSeq
       queryResult must haveSize(1)
       queryResult.head must beAnInstanceOf[SimpleFeature]
@@ -66,7 +68,7 @@ class ReplaySnapshotFeatureCacheTest extends Specification with SimpleFeatureMat
       val holder = cache.features("track0")
       holder.sf must equalSFWithReplayTime(track0v3)
 
-//      cache.spatialIndex.size() mustEqual 1 TODO
+      cache.spatialIndex.query(wholeWorld) must haveSize(1)
       val queryResult = cache.spatialIndex.query(holder.env).toSeq
       queryResult must haveSize(1)
       queryResult.head must beAnInstanceOf[SimpleFeature]
@@ -84,7 +86,7 @@ class ReplaySnapshotFeatureCacheTest extends Specification with SimpleFeatureMat
       cache.features must haveSize(0)
       cache.features.get("track0") must beNone
 
-//      cache.spatialIndex.size() mustEqual 0 TODO
+      cache.spatialIndex.query(wholeWorld) must beEmpty
     }
 
     "include features created after a delete" >> {
@@ -101,7 +103,7 @@ class ReplaySnapshotFeatureCacheTest extends Specification with SimpleFeatureMat
       val holder = cache.features("track0")
       holder.sf must equalSFWithReplayTime(track0v3)
 
-//      cache.spatialIndex.size() mustEqual 1 TODO
+      cache.spatialIndex.query(wholeWorld) must haveSize(1)
       val queryResult = cache.spatialIndex.query(holder.env).toSeq
       queryResult must haveSize(1)
       queryResult.head must beAnInstanceOf[SimpleFeature]

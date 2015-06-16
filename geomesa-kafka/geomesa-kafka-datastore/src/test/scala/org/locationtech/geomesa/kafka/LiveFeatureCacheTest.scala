@@ -16,6 +16,7 @@
 package org.locationtech.geomesa.kafka
 
 import com.google.common.base.Ticker
+import com.vividsolutions.jts.geom.Envelope
 import org.joda.time.Instant
 import org.junit.runner.RunWith
 import org.specs2.mock.Mockito
@@ -28,6 +29,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
   import KafkaConsumerTestData._
 
   implicit val ticker = Ticker.systemTicker()
+  val wholeWorld = new Envelope(-180, 180, -90, 90)
 
   "LiveFeatureCache" should {
 
@@ -42,8 +44,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
       lfc.features must haveSize(1)
       lfc.features.get("track0") must beSome(featureHolder(track0v0))
 
-//      lfc.spatialIndex.size() mustEqual 1 TODO
-//      lfc.spatialIndex.queryAll() must containFeatureHolders(track0v0) TODO
+      lfc.spatialIndex.query(wholeWorld) must containFeatureHolders(track0v0)
     }
 
     "handle two CreateOrUpdate messages" >> {
@@ -58,8 +59,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
       lfc.features must haveSize(2)
       lfc.features.get("track1") must beSome(featureHolder(track1v0))
 
-//      lfc.spatialIndex.size() mustEqual 2 TODO
-//      lfc.spatialIndex.queryAll() must containFeatureHolders(track0v0, track1v0) TODO
+      lfc.spatialIndex.query(wholeWorld) must containFeatureHolders(track0v0, track1v0)
     }
 
     "use the most recent version of a feature" >> {
@@ -75,8 +75,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
       lfc.features must haveSize(2)
       lfc.features.get("track0") must beSome(featureHolder(track0v1))
 
-//      lfc.spatialIndex.size() mustEqual 2 TODO
-//      lfc.spatialIndex.queryAll() must containFeatureHolders(track0v1, track1v0) TODO
+      lfc.spatialIndex.query(wholeWorld) must containFeatureHolders(track0v1, track1v0)
     }
 
     "handle a Delete message" >> {
@@ -93,8 +92,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
       lfc.features must haveSize(1)
       lfc.features.get("track0") must beNone
 
-//      lfc.spatialIndex.size() mustEqual 1 TODO
-//      lfc.spatialIndex.queryAll() must containFeatureHolders(track1v0) TODO
+      lfc.spatialIndex.query(wholeWorld) must containFeatureHolders(track1v0)
     }
 
     "handle a Clear message" >> {
@@ -112,7 +110,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
 
       lfc.cache.size() mustEqual 0
       lfc.features must haveSize(0)
-//      lfc.spatialIndex.size() mustEqual 0 TODO
+      lfc.spatialIndex.query(wholeWorld) must beEmpty
     }
   }
 
@@ -133,8 +131,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
       lfc.features must haveSize(1)
       lfc.features.get("track0") must beSome(featureHolder(track0v0))
 
-//      lfc.spatialIndex.size() mustEqual 1 TODO
-//      lfc.spatialIndex.queryAll() must containFeatureHolders(track0v0) TODO
+      lfc.spatialIndex.query(wholeWorld) must containFeatureHolders(track0v0)
     }
 
     "expire message correctly" >> {
@@ -153,7 +150,7 @@ class LiveFeatureCacheTest extends Specification with Mockito with SimpleFeature
       lfc.features must haveSize(0)
       lfc.features.get("track0") must beNone
 
-//      lfc.spatialIndex.size() mustEqual 0 TODO
+      lfc.spatialIndex.query(wholeWorld) must beEmpty
     }
   }
 }

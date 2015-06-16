@@ -27,7 +27,6 @@ import org.locationtech.geomesa.kafka.consumer.KafkaConsumerFactory
 import org.locationtech.geomesa.utils.geotools.Conversions._
 import org.locationtech.geomesa.utils.geotools.FR
 import org.locationtech.geomesa.utils.index.{BucketIndex, SpatialIndex}
-import org.locationtech.geomesa.utils.stats.{AutoLoggingTimings, MethodProfiling}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
@@ -132,7 +131,7 @@ class LiveKafkaConsumerFeatureSource(entry: ContentEntry,
   */
 class LiveFeatureCache(override val sft: SimpleFeatureType,
                        expirationPeriod: Option[Long])(implicit ticker: Ticker)
-  extends KafkaConsumerFeatureCache with MethodProfiling {
+  extends KafkaConsumerFeatureCache {
 
   var spatialIndex: SpatialIndex[SimpleFeature] = new BucketIndex[SimpleFeature]
 
@@ -152,23 +151,24 @@ class LiveFeatureCache(override val sft: SimpleFeatureType,
   }
 
   override val features: mutable.Map[String, FeatureHolder] = cache.asMap().asScala
-implicit val timings = new AutoLoggingTimings(10000)
+
   def createOrUpdateFeature(update: CreateOrUpdate): Unit = {
     val sf = update.feature
     val id = sf.getID
     val old = cache.getIfPresent(id)
     if (old != null) {
-      profile(spatialIndex.remove(old.env, old.sf), "remove")
+      spatialIndex.remove(old.env, old.sf)
     }
     val env = sf.geometry.getEnvelopeInternal
-    profile(spatialIndex.insert(env, sf), "insert")
+    spatialIndex.insert(env, sf)
     cache.put(id, FeatureHolder(sf, env))
   }
 
   def removeFeature(toDelete: Delete): Unit = {
-    val old = cache.getIfPresent(toDelete.id)
+    val id = toDelete.id
+    val old = cache.getIfPresent(id)
     if (old != null) {
-      profile(spatialIndex.remove(old.env, old.sf), "remove")
+      spatialIndex.remove(old.env, old.sf)
       cache.invalidate(id)
     }
   }
