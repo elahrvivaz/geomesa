@@ -163,12 +163,12 @@ object Strategy {
   def randomPrintableString(length:Int=5) : String = (1 to length).
     map(i => Random.nextPrintableChar()).mkString
 
-  def getDensityIterCfg(query: Query,
-                        geometryToCover: Geometry,
-                        schema: String,
-                        featureEncoding: SerializationType,
-                        featureType: SimpleFeatureType) = query match {
-    case _ if query.getHints.containsKey(DENSITY_KEY) =>
+  def configureAggregatingIterator(query: Query,
+                                   geometryToCover: Geometry,
+                                   schema: String,
+                                   featureEncoding: SerializationType,
+                                   featureType: SimpleFeatureType) = query match {
+    case _ if query.getHints.isDensityQuery =>
       val clazz = classOf[DensityIterator]
 
       val cfg = new IteratorSetting(iteratorPriority_AnalysisIterator,

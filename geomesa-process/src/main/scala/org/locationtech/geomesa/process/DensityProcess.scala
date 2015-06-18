@@ -35,8 +35,7 @@ class DensityProcess extends HeatmapProcess {
         targetQuery,
         targetGridGeometry)
 
-    q.getHints.put(QueryHints.BBOX_KEY, argOutputEnv)
-    q.getHints.put(QueryHints.DENSITY_KEY, java.lang.Boolean.TRUE)
+    q.getHints.put(QueryHints.DENSITY_BBOX_KEY, argOutputEnv)
     q.getHints.put(QueryHints.WIDTH_KEY, argOutputWidth)
     q.getHints.put(QueryHints.HEIGHT_KEY, argOutputHeight)
     q

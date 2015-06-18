@@ -137,6 +137,7 @@ object DensityIterator extends Logging {
   val BOUNDS_KEY = "geomesa.density.bounds"
   val ENCODED_RASTER_ATTRIBUTE = "encodedraster"
   val DENSITY_FEATURE_SFT_STRING = s"$ENCODED_RASTER_ATTRIBUTE:String,geom:Point:srid=4326"
+  val RASTER_ATTRIBUTE_INDEX = 0  // index of 'encodedraster' attribute in DENSITY_SFT
   type SparseMatrix = HashBasedTable[Double, Double, Long]
   val densitySFT = SimpleFeatureTypes.createType("geomesadensity", "weight:Double,geom:Point:srid=4326")
   val geomFactory = JTSFactoryFinder.getGeometryFactory
@@ -159,12 +160,12 @@ object DensityIterator extends Logging {
     (w, h)
   }
 
-  def expandFeature(sf: SimpleFeature): Iterable[SimpleFeature] = {
+  def expandFeature(sf: SimpleFeature): Iterator[SimpleFeature] = {
     val builder = ScalaSimpleFeatureFactory.featureBuilder(densitySFT)
 
     val decodedMap = Try(decodeSparseMatrix(sf.getAttribute(ENCODED_RASTER_ATTRIBUTE).toString))
 
-    decodedMap match {
+    val expanded = decodedMap match {
       case Success(raster) =>
         raster.rowMap().flatMap { case (latIdx, col) =>
           col.map { case (lonIdx, count) =>
@@ -177,6 +178,7 @@ object DensityIterator extends Logging {
         logger.error(s"Error expanding encoded raster ${sf.getAttribute(ENCODED_RASTER_ATTRIBUTE)}: ${e.toString}", e)
         List(builder.buildFeature(sf.getID, Array(1, sf.point).asInstanceOf[Array[AnyRef]]))
     }
+    expanded.iterator
   }
 
   def encodeSparseMatrix(sparseMatrix: SparseMatrix): String = {

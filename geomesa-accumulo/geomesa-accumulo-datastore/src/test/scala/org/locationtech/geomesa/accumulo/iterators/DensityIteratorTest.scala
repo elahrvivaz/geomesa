@@ -13,23 +13,17 @@ import java.util.{Date, Properties}
 
 import com.google.common.collect.HashBasedTable
 import com.vividsolutions.jts.geom.{Envelope, Point}
-import org.apache.accumulo.core.client.mock.MockInstance
-import org.apache.accumulo.core.client.security.tokens.PasswordToken
-import org.apache.hadoop.io.Text
-import org.geotools.data.simple.SimpleFeatureStore
-import org.geotools.data.{DataStore, DataUtilities, Query}
-import org.geotools.factory.Hints
+import org.geotools.data.Query
 import org.geotools.filter.text.ecql.ECQL
 import org.geotools.filter.visitor.ExtractBoundsFilterVisitor
 import org.geotools.geometry.jts.ReferencedEnvelope
 import org.geotools.referencing.crs.DefaultGeographicCRS
 import org.joda.time.{DateTime, DateTimeZone}
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.data.AccumuloDataStoreFactory
-import org.locationtech.geomesa.accumulo.index.{Constants, QueryHints}
-import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
-import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
-import org.opengis.feature.simple.SimpleFeatureType
+import org.locationtech.geomesa.accumulo.TestWithDataStore
+import org.locationtech.geomesa.accumulo.index.QueryHints
+import org.locationtech.geomesa.features.ScalaSimpleFeature
+import org.locationtech.geomesa.utils.geotools.Conversions._
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
@@ -37,158 +31,119 @@ import scala.collection.JavaConversions._
 import scala.util.Random
 
 @RunWith(classOf[JUnitRunner])
-class DensityIteratorTest extends Specification {
+class DensityIteratorTest extends Specification with TestWithDataStore {
 
   sequential
 
-  import org.locationtech.geomesa.utils.geotools.Conversions._
-
-  val dataFile = new Properties
-  dataFile.load(getClass.getClassLoader.getResourceAsStream("data/density-iterator.properties"))
-  val testData : Map[String,String] = dataFile.toMap
-
-  def createDataStore(sft: SimpleFeatureType, i: Int = 0): DataStore = {
-    val mockInstance = new MockInstance("dummy" + i)
-    val c = mockInstance.getConnector("user", new PasswordToken("pass".getBytes))
-    c.tableOperations.create("test")
-    val splits = (0 to 99).map {
-      s => "%02d".format(s)
-    }.map(new Text(_))
-    c.tableOperations().addSplits("test", new java.util.TreeSet[Text](splits))
-
-    val dsf = new AccumuloDataStoreFactory
-
-    import org.locationtech.geomesa.accumulo.data.AccumuloDataStoreFactory.params._
-
-    val ds = dsf.createDataStore(Map(
-      zookeepersParam.key -> "dummy",
-      instanceIdParam.key -> f"dummy$i%d",
-      userParam.key       -> "user",
-      passwordParam.key   -> "pass",
-      tableNameParam.key  -> "test",
-      mockParam.key       -> "true"))
-    ds.createSchema(sft)
-    ds
+  val testData : Map[String,String] = {
+    val dataFile = new Properties
+    dataFile.load(getClass.getClassLoader.getResourceAsStream("data/density-iterator.properties"))
+    dataFile.toMap
   }
 
-  def loadFeatures(ds: DataStore, sft: SimpleFeatureType, encodedFeatures: Array[_<:Array[_]]): SimpleFeatureStore = {
-    val builder = AvroSimpleFeatureFactory.featureBuilder(sft)
-    val features = encodedFeatures.map {
-      e =>
-        val f = builder.buildFeature(e(0).toString, e.asInstanceOf[Array[AnyRef]])
-        f.getUserData.put(Hints.USE_PROVIDED_FID, java.lang.Boolean.TRUE)
-        f.getUserData.put(Hints.PROVIDED_FID, e(0).toString)
-        f
-    }
-
-    val fs = ds.getFeatureSource("test").asInstanceOf[SimpleFeatureStore]
-    fs.addFeatures(DataUtilities.collection(features))
-    fs.getTransaction.commit()
-    fs
-  }
+  override val spec = "id:java.lang.Integer,attr:java.lang.Double,dtg:Date,geom:Geometry:srid=4326"
 
   def getQuery(query: String): Query = {
-    val q = new Query("test", ECQL.toFilter(query))
+    val q = new Query(sftName, ECQL.toFilter(query))
     val geom = q.getFilter.accept(ExtractBoundsFilterVisitor.BOUNDS_VISITOR, null).asInstanceOf[Envelope]
-    q.getHints.put(QueryHints.DENSITY_KEY, java.lang.Boolean.TRUE)
-    q.getHints.put(QueryHints.BBOX_KEY, new ReferencedEnvelope(geom, DefaultGeographicCRS.WGS84))
+    q.getHints.put(QueryHints.DENSITY_BBOX_KEY, new ReferencedEnvelope(geom, DefaultGeographicCRS.WGS84))
     q.getHints.put(QueryHints.WIDTH_KEY, 500)
     q.getHints.put(QueryHints.HEIGHT_KEY, 500)
     q
   }
 
   "DensityIterator" should {
-    val spec = "id:java.lang.Integer,attr:java.lang.Double,dtg:Date,geom:Geometry:srid=4326"
-    val sft = SimpleFeatureTypes.createType("test", spec)
-    sft.getUserData.put(Constants.SF_PROPERTY_START_TIME, "dtg")
-    val ds = createDataStore(sft, 0)
-    val encodedFeatures = (0 until 150).toArray.map {
-      i =>
-        Array(i.toString, "1.0", new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate, "POINT(-77 38)")
-    }
-    val fs = loadFeatures(ds, sft, encodedFeatures)
 
     "reduce total features returned" in {
+      clearFeatures()
+      val features = (0 until 150).toArray.map { i =>
+        val sf = new ScalaSimpleFeature(i.toString, sft)
+        sf.setAttribute(0, i.toString)
+        sf.setAttribute(1, "1.0")
+        sf.setAttribute(2, new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate)
+        sf.setAttribute(3, "POINT(-77 38)")
+        sf
+      }
+      addFeatures(features)
 
       val q = getQuery("(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -80, 33, -70, 40)")
-
       val results = fs.getFeatures(q)
-
       val iter = results.features().toList
       (iter must not).beNull
-
-      iter.length should be lessThan 150
+      iter.length must beLessThan(150)
     }
 
     "maintain total weight of points" in {
+      clearFeatures()
+      val features = (0 until 150).toArray.map { i =>
+        val sf = new ScalaSimpleFeature(i.toString, sft)
+        sf.setAttribute(0, i.toString)
+        sf.setAttribute(1, "1.0")
+        sf.setAttribute(2, new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate)
+        sf.setAttribute(3, "POINT(-77 38)")
+        sf
+      }
+      addFeatures(features)
 
       val q = getQuery("(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -80, 33, -70, 40)")
-
       val results = fs.getFeatures(q)
-
       val iter = results.features().toList
       (iter must not).beNull
-
       val total = iter.map(_.getAttribute("weight").asInstanceOf[Double]).sum
-
-      total should be equalTo 150
+      total mustEqual 150
     }
 
     "maintain weights irrespective of dates" in {
-
-      val ds = createDataStore(sft, 2)
-
-      val encodedFeatures = (0 until 150).toArray.map {
-        i =>
-          val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate
-          Array(s"$i", "1.0", new Date(date.getTime + i * 60000), "POINT(-77 38)")
+      clearFeatures()
+      val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate.getTime
+      val features = (0 until 150).toArray.map { i =>
+        val sf = new ScalaSimpleFeature(i.toString, sft)
+        sf.setAttribute(0, i.toString)
+        sf.setAttribute(1, "1.0")
+        sf.setAttribute(2, new Date(date + i * 60000))
+        sf.setAttribute(3, "POINT(-77 38)")
+        sf
       }
-
-      val fs = loadFeatures(ds, sft, encodedFeatures)
+      addFeatures(features)
 
       val q = getQuery("(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -80, 33, -70, 40)")
-
       val results = fs.getFeatures(q)
-
       val iter = results.features().toList
       (iter must not).beNull
-
       val total = iter.map(_.getAttribute("weight").asInstanceOf[Double]).sum
-
-      total should be equalTo 150
+      total mustEqual 150
     }
 
     "correctly bin points" in {
-
-      val ds = createDataStore(sft, 3)
-
-      val encodedFeatures = (0 until 150).toArray.map {
-        i =>
-          val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate
-          // space out the points very slightly around 5 primary latitudes 1 degree apart
-          val lat = (i/30).toInt + 1 + (Random.nextDouble() - 0.5) / 1000.0
-          Array(s"$i", "1.0", new Date(date.getTime + i * 60000), s"POINT($lat 37)")
+      clearFeatures()
+      val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate.getTime
+      val features = (0 until 150).toArray.map { i =>
+        // space out the points very slightly around 5 primary latitudes 1 degree apart
+        val lat = (i / 30) + 1 + (Random.nextDouble() - 0.5) / 1000.0
+        val sf = new ScalaSimpleFeature(i.toString, sft)
+        sf.setAttribute(0, i.toString)
+        sf.setAttribute(1, "1.0")
+        sf.setAttribute(2, new Date(date + i * 60000))
+        sf.setAttribute(3, s"POINT($lat 37)")
+        sf
       }
-
-      val fs = loadFeatures(ds, sft, encodedFeatures)
+      addFeatures(features)
 
       val q = getQuery("(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -1, 33, 6, 40)")
-
       val results = fs.getFeatures(q)
-
       val iter = results.features().toList
-      (iter must not).beNull
 
+      (iter must not).beNull
       val total = iter.map(_.getAttribute("weight").asInstanceOf[Double]).sum
 
-      total should be equalTo 150
+      total mustEqual 150
 
       val compiled = iter.groupBy(_.getAttribute("geom").asInstanceOf[Point])
         .map(entry => (entry._1, entry._2.map(_.getAttribute("weight").asInstanceOf[Double]).sum))
 
       // should be 5 bins of 30
       compiled.size should be equalTo 5
-      compiled.forall(entry => entry._2 == 30) should be equalTo true
+      forall(compiled)(entry => entry._2 mustEqual 30)
     }
 
     "encode and decode features" in {
@@ -198,135 +153,124 @@ class DensityIteratorTest extends Specification {
       matrix.put(2.0, 3.0, 5)
 
       val encoded = DensityIterator.encodeSparseMatrix(matrix)
-
       val decoded = DensityIterator.decodeSparseMatrix(encoded)
 
-      matrix should be equalTo decoded
+      matrix mustEqual decoded
     }
 
     "do density calc on a realistic polygon" in {
-
-      val ds = createDataStore(sft, 4)
-
-      val encodedFeatures = (0 until 1).toArray.map {
-        i =>
-          val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate
-          Array(s"$i", "1.0", new Date(date.getTime + i * 60000), testData("[POLYGON] Charlottesville"))
+      clearFeatures()
+      val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate.getTime
+      val features = (0 until 15).toArray.map { i =>
+        // space out the points very slightly around 5 primary latitudes 1 degree apart
+        val lat = (i / 30) + 1 + (Random.nextDouble() - 0.5) / 1000.0
+        val sf = new ScalaSimpleFeature(i.toString, sft)
+        sf.setAttribute(0, i.toString)
+        sf.setAttribute(1, "1.0")
+        sf.setAttribute(2, new Date(date + i * 60000))
+        sf.setAttribute(3, testData("[POLYGON] Charlottesville"))
+        sf
       }
-
-      val fs = loadFeatures(ds, sft, encodedFeatures)
+      addFeatures(features)
 
       val q = getQuery("(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -78.598118, 37.992204, -78.337364, 38.091238)")
-
       val results = fs.getFeatures(q)
-
       val iter = results.features().toList
-
       iter must not beNull
-
       val total = iter.map(_.getAttribute("weight").asInstanceOf[Double]).sum
-
-      total should be greaterThan 0
+      total must beGreaterThan(0.0)
     }
 
     "do density calc on a realistic multilinestring" in {
-
-      val ds = createDataStore(sft, 5)
-
-      val encodedFeatures = (0 until 150).toArray.map {
-        i =>
-          val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate
-          Array(s"$i", "1.0", new Date(date.getTime + i * 60000), testData("[MULTILINE] Cherry Avenue entirety"))
+      clearFeatures()
+      val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate.getTime
+      val features = (0 until 15).toArray.map { i =>
+        // space out the points very slightly around 5 primary latitudes 1 degree apart
+        val lat = (i / 30) + 1 + (Random.nextDouble() - 0.5) / 1000.0
+        val sf = new ScalaSimpleFeature(i.toString, sft)
+        sf.setAttribute(0, i.toString)
+        sf.setAttribute(1, "1.0")
+        sf.setAttribute(2, new Date(date + i * 60000))
+        sf.setAttribute(3, testData("[MULTILINE] Cherry Avenue entirety"))
+        sf
       }
-
-      val fs = loadFeatures(ds, sft, encodedFeatures)
+      addFeatures(features)
 
       val q = getQuery("(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -78.511236, 38.019947, -78.485830, 38.030265)")
-
       val results = fs.getFeatures(q)
-
       val iter = results.features().toList
-
       iter must not beNull
-
       val total = iter.map(_.getAttribute("weight").asInstanceOf[Double]).sum
-
-      total should be greaterThan 0
+      total must beGreaterThan(0.0)
     }
 
     "do density calc on a realistic linestring" in {
-
-      val ds = createDataStore(sft, 6)
-
-      val encodedFeatures = (0 until 150).toArray.map {
-        i =>
-          val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate
-          Array(s"$i", "1.0", new Date(date.getTime + i * 60000), testData("[LINE] Cherry Avenue segment"))
+      clearFeatures()
+      val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate.getTime
+      val features = (0 until 15).toArray.map { i =>
+        // space out the points very slightly around 5 primary latitudes 1 degree apart
+        val lat = (i / 30) + 1 + (Random.nextDouble() - 0.5) / 1000.0
+        val sf = new ScalaSimpleFeature(i.toString, sft)
+        sf.setAttribute(0, i.toString)
+        sf.setAttribute(1, "1.0")
+        sf.setAttribute(2, new Date(date + i * 60000))
+        sf.setAttribute(3, testData("[LINE] Cherry Avenue segment"))
+        sf
       }
-
-      val fs = loadFeatures(ds, sft, encodedFeatures)
+      addFeatures(features)
 
       val q = getQuery("(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -78.511236, 38.019947, -78.485830, 38.030265)")
-
       val results = fs.getFeatures(q)
-
       val iter = results.features().toList
-
       iter must not beNull
-
       val total = iter.map(_.getAttribute("weight").asInstanceOf[Double]).sum
-
-      total should be greaterThan 0
+      total must beGreaterThan(0.0)
     }
 
     "do density calc on a simplistic multi polygon" in {
-
-      val ds = createDataStore(sft, 7)
-
-      val encodedFeatures = (0 until 1).toArray.map {
-        i =>
-          val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate
-          Array(s"$i", "1.0", new Date(date.getTime + i * 60000), testData("[MULTIPOLYGON] test box"))
+      clearFeatures()
+      val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate.getTime
+      val features = (0 until 15).toArray.map { i =>
+        // space out the points very slightly around 5 primary latitudes 1 degree apart
+        val lat = (i / 30) + 1 + (Random.nextDouble() - 0.5) / 1000.0
+        val sf = new ScalaSimpleFeature(i.toString, sft)
+        sf.setAttribute(0, i.toString)
+        sf.setAttribute(1, "1.0")
+        sf.setAttribute(2, new Date(date + i * 60000))
+        sf.setAttribute(3, testData("[MULTIPOLYGON] test box"))
+        sf
       }
-
-      val fs = loadFeatures(ds, sft, encodedFeatures)
+      addFeatures(features)
 
       val q = getQuery("(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, 0.0, 0.0, 10.0, 10.0)")
-
       val results = fs.getFeatures(q)
-
       val iter = results.features().toList
-
       iter must not beNull
-
       val total = iter.map(_.getAttribute("weight").asInstanceOf[Double]).sum
-
-      total should be greaterThan 120000
+      total must beGreaterThan(12000.0)
     }
 
     "do density calc on a simplistic linestring" in {
-
-      val ds = createDataStore(sft, 8)
-
-      val encodedFeatures = (0 until 1).toArray.map {
-        i =>
-          val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate
-          Array(s"$i", "1.0", new Date(date.getTime + i * 60000), testData("[LINE] test line"))
+      clearFeatures()
+      val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate.getTime
+      val features = (0 until 15).toArray.map { i =>
+        // space out the points very slightly around 5 primary latitudes 1 degree apart
+        val lat = (i / 30) + 1 + (Random.nextDouble() - 0.5) / 1000.0
+        val sf = new ScalaSimpleFeature(i.toString, sft)
+        sf.setAttribute(0, i.toString)
+        sf.setAttribute(1, "1.0")
+        sf.setAttribute(2, new Date(date + i * 60000))
+        sf.setAttribute(3, testData("[LINE] test line"))
+        sf
       }
-
-      val fs = loadFeatures(ds, sft, encodedFeatures)
+      addFeatures(features)
 
       val q = getQuery("(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, 0.0, 0.0, 10.0, 10.0)")
-
       val results = fs.getFeatures(q)
-
       val iter = results.features().toList
-
       iter must not beNull
-
       val total = iter.map(_.getAttribute("weight").asInstanceOf[Double]).sum
-
-      total should be greaterThan 0
+      total must beGreaterThan(0.0)
     }
   }
 }

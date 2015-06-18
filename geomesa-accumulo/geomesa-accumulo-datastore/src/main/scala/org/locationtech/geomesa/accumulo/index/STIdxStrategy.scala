@@ -16,8 +16,9 @@ import org.apache.hadoop.io.Text
 import org.geotools.data.Query
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.accumulo.GEOMESA_ITERATORS_IS_DENSITY_TYPE
-import org.locationtech.geomesa.accumulo.index.QueryHints.{RichHints, _}
+import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
+import org.locationtech.geomesa.accumulo.index.QueryPlanners.ExpandFeatures
 import org.locationtech.geomesa.accumulo.index.Strategy._
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.features.SerializationType.SerializationType
@@ -91,17 +92,17 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
 
     val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, sft)
     val stiiIterCfg = getSTIIIterCfg(iteratorConfig, query, sft, ofilter, ecql, featureEncoding, version)
-    val densityIterCfg = getDensityIterCfg(query, geometryToCover, schema, featureEncoding, sft)
+    val aggregatingIterCfg = configureAggregatingIterator(query, geometryToCover, schema, featureEncoding, sft)
 
     val useIndexEntries = iteratorConfig.iterator match {
       case IndexOnlyIterator      => true
       case SpatioTemporalIterator => false
     }
-    val iterators = Seq(stiiIterCfg) ++ densityIterCfg
+    val iterators = Seq(stiiIterCfg) ++ aggregatingIterCfg
 
-    val adaptIter = if (query.getHints.isBinQuery) {
+    val kvsToFeatures = if (query.getHints.isBinQuery) {
       // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
-      BinAggregatingIterator.adaptNonAggregatedIterator(query, sft, featureEncoding)
+      BinAggregatingIterator.nonAggregatedKvsToFeatures(query, sft, featureEncoding)
     } else {
       queryPlanner.defaultKVsToFeatures(query)
     }
@@ -109,14 +110,15 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
     // set up row ranges and regular expression filter
     val qp = planQuery(filter, useIndexEntries, output, keyPlanner, cfPlanner)
 
+    val adaptFeatures: Option[ExpandFeatures] =
+      if (query.getHints.isDensityQuery) Some(DensityIterator.expandFeature) else None
     val table = acc.getSpatioTemporalTable(sft)
     val numThreads = acc.getSuggestedSpatioTemporalThreads(sft)
-    val hasDupes = IndexSchema.mayContainDuplicates(sft)
-    val res = qp.copy(table = table, iterators = iterators, kvsToFeatures = adaptIter,
-      numThreads = numThreads, hasDuplicates = hasDupes)
+    val hasDupes = !query.getHints.isDensityQuery && IndexSchema.mayContainDuplicates(sft)
+    val res = qp.copy(table = table, iterators = iterators, kvsToFeatures = kvsToFeatures,
+      expandFeatures = adaptFeatures, numThreads = numThreads, hasDuplicates = hasDupes)
     Seq(res)
   }
-
 
   private def getSTIIIterCfg(iteratorConfig: IteratorConfig,
                      query: Query,
@@ -130,12 +132,10 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
         configureIndexIterator(featureType, query, featureEncoding, stFilter,
           iteratorConfig.transformCoversFilter, version)
       case SpatioTemporalIterator =>
-        val isDensity = query.getHints.containsKey(DENSITY_KEY)
         configureSpatioTemporalIntersectingIterator(featureType, query, featureEncoding, stFilter,
-          ecqlFilter, isDensity)
+          ecqlFilter, query.getHints.isDensityQuery)
     }
   }
-
 
   // establishes the regular expression that defines (minimally) acceptable rows
   def configureRowRegexIterator(regex: String): IteratorSetting = {
@@ -231,7 +231,7 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
     }
 
     // partially fill in, rest will be filled in later
-    BatchScanPlan(null, accRanges, null, cf, null, -1, hasDuplicates = false)
+    BatchScanPlan(null, accRanges, null, cf, null, null, -1, hasDuplicates = false)
   }
 }
 

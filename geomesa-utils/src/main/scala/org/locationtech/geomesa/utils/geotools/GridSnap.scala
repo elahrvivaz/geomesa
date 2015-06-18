@@ -15,6 +15,7 @@ import org.geotools.geometry.jts.ReferencedEnvelope
 import org.geotools.grid.DefaultGridFeatureBuilder
 import org.geotools.grid.oblong.Oblongs
 import org.geotools.referencing.crs.DefaultGeographicCRS
+import scala.collection.mutable
 
 import scala.math.abs
 
@@ -80,6 +81,52 @@ class GridSnap(env: Envelope, xSize: Int, ySize: Int) {
       val ret = (y - env.getMinY) / dy
       if (ret >= ySize) ySize - 1 else ret.toInt
     }
+
+  def snap(x: Double, y: Double): (Double, Double) = (this.x(i(x)), this.y(j(y)))
+//
+//  lazy val precision = {
+//    val max = math.max(dx, dy)
+//    if (max < 1) {
+//      math.pow(10, max.toString.dropWhile(_ != '.').drop(1).indexWhere(_ != '0') + 2).toInt
+//    } else {
+//      10
+//    }
+//  }
+
+  /** Generate a Sequence of Coordinates between two given Snap Coordinates using Bresenham's Line Algorithm */
+  def snapBresenham(x0: Int, y0: Int, x1: Int, y1: Int): Set[(Int, Int)] = {
+//    val (deltaX, deltaY) = (abs(x1 - x0), abs(y1 - y0))
+//    if (deltaX == 0 && deltaY == 0) {
+//      Set.empty
+//    } else {
+//      val stepX = if (x0 < x1) 1 else -1
+//      val stepY = if (y0 < y1) 1 else -1
+//      val fX = stepX * x1
+//      val fY = stepY * y1
+//      var xT = x0
+//      var yT = y0
+//      var error = (if (deltaX > deltaY) deltaX else -deltaY) / 2
+//      val result = mutable.HashSet.empty[(Int, Int)]
+//      while (stepX * xT <= fX && stepY * yT <= fY) {
+//        val errorT = error
+//        if(errorT > -deltaX){ error -= deltaY; xT += stepX }
+//        if(errorT < deltaY){ error += deltaX; yT += stepY }
+//        result.add((x(xT), y(yT)))
+//      }
+//      result
+//      iter.toList.dropRight(1).toSet
+//    }
+    Set.empty
+  }
+
+  /** Generate a Set of Coordinates between two given Snap Coordinates which includes both start and end points*/
+  def snapLine(start: (Double, Double), end: (Double, Double)): Set[(Int, Int)] = {
+    val iStart = i(start._1)
+    val jStart = j(start._2)
+    val iEnd = i(end._1)
+    val jEnd = j(end._2)
+    snapBresenham(iStart, jStart, iEnd, jEnd) ++ Set((iStart, iEnd), (jStart, jEnd))
+  }
 
   /** Generate a Sequence of Coordinates between two given Snap Coordinates using Bresenham's Line Algorithm */
   def genBresenhamCoordSet(x0: Int, y0: Int, x1: Int, y1: Int): Set[Coordinate] = {

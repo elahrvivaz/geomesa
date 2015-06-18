@@ -13,7 +13,7 @@ import java.util.{Map => JMap}
 
 import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.data.{Key, Value}
-import org.geotools.data.{DataUtilities, Query}
+import org.geotools.data.Query
 import org.geotools.feature.AttributeTypeBuilder
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder
 import org.geotools.filter.FunctionExpressionImpl
@@ -26,8 +26,8 @@ import org.locationtech.geomesa.accumulo.index.QueryPlanners.FeatureFunction
 import org.locationtech.geomesa.accumulo.iterators.TemporalDensityIterator._
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.accumulo.sumNumericValueMutableMaps
-import org.locationtech.geomesa.accumulo.util.CloseableIterator
 import org.locationtech.geomesa.accumulo.util.CloseableIterator._
+import org.locationtech.geomesa.accumulo.util.{CloseableIterator, SelfClosingIterator}
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features._
 import org.locationtech.geomesa.filter._
@@ -38,9 +38,11 @@ import org.locationtech.geomesa.utils.stats.{MethodProfiling, TimingsImpl}
 import org.opengis.feature.GeometryAttribute
 import org.opengis.feature.`type`.{AttributeDescriptor, GeometryDescriptor}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
+import org.opengis.filter.Filter
 import org.opengis.filter.expression.PropertyName
 import org.opengis.filter.sort.{SortBy, SortOrder}
 
+import scala.collection.JavaConversions._
 import scala.collection.JavaConverters._
 import scala.reflect.ClassTag
 
@@ -74,7 +76,8 @@ case class QueryPlanner(sft: SimpleFeatureType,
    */
   def runQuery(query: Query, strategy: Option[Strategy] = None): SFIter = {
     val (plans, numClauses) = getStrategyPlans(query, strategy, log)
-    val dedupe = numClauses > 1 || plans.exists(_.plan.hasDuplicates)
+    // don't deduplicate density queries, as they don't have dupes but re-use feature ids in the results
+    val dedupe = !query.getHints.isDensityQuery && (numClauses > 1 || plans.exists(_.plan.hasDuplicates))
     executePlans(query, plans, dedupe)
   }
 
@@ -83,19 +86,36 @@ case class QueryPlanner(sft: SimpleFeatureType,
    */
   private def executePlans(query: Query, strategyPlans: Seq[StrategyPlan], deduplicate: Boolean): SFIter = {
     val features = strategyPlans.iterator.ciFlatMap { sp =>
-      sp.strategy.execute(sp.plan, acc, log).map(sp.plan.kvsToFeatures)
+      // scan accumulo and map key/values to features
+      val simple = sp.strategy.execute(sp.plan, acc, log).map(sp.plan.kvsToFeatures)
+      // expand features if there is a 1-to-many mapping
+      sp.plan.expandFeatures match {
+        case Some(fn) => CloseableIterator(simple.flatMap(fn), simple.close())
+        case None     => simple
+      }
     }
 
-    val dedupedFeatures = if (deduplicate) new DeDuplicatingIterator(features) else features
+    // deduplication between query plans, if there is an OR
+    val deduped = if (deduplicate) new DeDuplicatingIterator(features) else features
 
-    //noinspection EmptyCheck
-    val sortedFeatures = if (query.getSortBy != null && query.getSortBy.length > 0) {
-      new LazySortedIterator(dedupedFeatures, query.getHints.getReturnSft, query.getSortBy)
+    // noinspection EmptyCheck - sort if requested
+    val sortedAndSelfClosing = if (query.getSortBy != null && query.getSortBy.length > 0) {
+      // sort will self-close itself
+      new LazySortedIterator(deduped, query.getHints.getReturnSft, query.getSortBy)
     } else {
-      dedupedFeatures
+      // wrap in a self-closing iterator to mitigate clients not calling close
+      SelfClosingIterator(deduped)
     }
 
-    adaptIterator(query, sortedFeatures)
+    // reduce feature checks // TODO include this in query plan
+    if (query.getHints.containsKey(TEMPORAL_DENSITY_KEY)) {
+      val encode = query.getHints.containsKey(RETURN_ENCODED)
+      adaptTemporalFeatures(sortedAndSelfClosing, query.getHints.getReturnSft, encode)
+    } else if (query.getHints.containsKey(MAP_AGGREGATION_KEY)) {
+      adaptMapAggregationFeatures(sortedAndSelfClosing, query.getHints.getReturnSft, query)
+    } else {
+      sortedAndSelfClosing
+    }
   }
 
   /**
@@ -111,13 +131,19 @@ case class QueryPlanner(sft: SimpleFeatureType,
     requested.foreach(r => output(s"STRATEGY FORCED TO ${r.getClass.getName}"))
     implicit val timings = new TimingsImpl
     val (queryPlans, numClauses) = profile({
-      val isDensity = query.getHints.containsKey(BBOX_KEY)
-      if (isDensity) {
-        val env = query.getHints.get(BBOX_KEY).asInstanceOf[ReferencedEnvelope]
-        val q1 = new Query(sft.getTypeName, ff.bbox(ff.property(sft.getGeometryDescriptor.getLocalName), env))
-        val mixedQuery = DataUtilities.mixQueries(q1, query, "geomesa.mixed.query")
-        val strategy = QueryStrategyDecider.chooseStrategy(sft, mixedQuery, hints, version)
-        val plans = strategy.getQueryPlans(mixedQuery, this, output)
+      if (query.getHints.isDensityQuery) {
+        val env = query.getHints.get(DENSITY_BBOX_KEY).asInstanceOf[ReferencedEnvelope]
+        val bbox = ff.bbox(ff.property(sft.getGeometryDescriptor.getLocalName), env)
+        val densityQuery = new Query(query)
+        if (densityQuery.getFilter == Filter.INCLUDE) {
+          densityQuery.setFilter(bbox)
+        } else {
+          // quick check to try to remove duplicate bboxes
+          val filters = (decomposeAnd(densityQuery.getFilter) ++ Seq(bbox)).distinct
+          densityQuery.setFilter(ff.and(filters))
+        }
+        val strategy = QueryStrategyDecider.chooseStrategy(sft, densityQuery, hints, version)
+        val plans = strategy.getQueryPlans(densityQuery, this, output)
         (plans.map { p => StrategyPlan(strategy, p) }, 1)
       } else {
         // As a pre-processing step, we examine the query/filter and split it into multiple queries.
@@ -154,23 +180,7 @@ case class QueryPlanner(sft: SimpleFeatureType,
     }
   }
 
-  def adaptIterator(query: Query, features: SFIter): SFIter = {
-    // Decode according to the SFT return type.
-    // if this is a density query, expand the map
-    if (query.getHints.containsKey(DENSITY_KEY)) {
-      adaptDensityIterator(features)
-    } else if (query.getHints.containsKey(TEMPORAL_DENSITY_KEY)) {
-      adaptTemporalIterator(features, query.getHints.getReturnSft, query.getHints.containsKey(RETURN_ENCODED))
-    } else if (query.getHints.containsKey(MAP_AGGREGATION_KEY)) {
-      adaptMapAggregationIterator(features, query.getHints.getReturnSft, query)
-    } else {
-      features // already decoded
-    }
-  }
-
-  def adaptDensityIterator(features: SFIter): SFIter = features.flatMap(DensityIterator.expandFeature)
-
-  def adaptTemporalIterator(features: SFIter, sft: SimpleFeatureType, returnEncoded: Boolean): SFIter = {
+  private def adaptTemporalFeatures(features: SFIter, sft: SimpleFeatureType, returnEncoded: Boolean): SFIter = {
     val timeSeriesStrings = features.map(f => decodeTimeSeries(f.getAttribute(TIME_SERIES).toString))
     val summedTimeSeries = timeSeriesStrings.reduceOption(combineTimeSeries)
 
@@ -188,7 +198,7 @@ case class QueryPlanner(sft: SimpleFeatureType,
     feature.iterator
   }
 
-  def adaptMapAggregationIterator(features: SFIter, sft: SimpleFeatureType, query: Query): SFIter = {
+  private def adaptMapAggregationFeatures(features: SFIter, sft: SimpleFeatureType, query: Query): SFIter = {
     val aggregateKeyName = query.getHints.get(MAP_AGGREGATION_KEY).asInstanceOf[String]
 
     val maps = features.map(_.getAttribute(aggregateKeyName).asInstanceOf[JMap[AnyRef, Int]].asScala)
@@ -345,9 +355,9 @@ object QueryPlanner {
 
   // This function calculates the SimpleFeatureType of the returned SFs.
   private def setReturnSft(query: Query, baseSft: SimpleFeatureType): SimpleFeatureType = {
-    val sft = if (query.getHints.containsKey(BIN_TRACK_KEY)) {
+    val sft = if (query.getHints.isBinQuery) {
       BinAggregatingIterator.BIN_SFT
-    } else if (query.getHints.containsKey(DENSITY_KEY)) {
+    } else if (query.getHints.isDensityQuery) {
       SimpleFeatureTypes.createType(baseSft.getTypeName, DensityIterator.DENSITY_FEATURE_SFT_STRING)
     } else if (query.getHints.containsKey(TEMPORAL_DENSITY_KEY)) {
       TemporalDensityIterator.createFeatureType(baseSft)
@@ -416,6 +426,6 @@ class LazySortedIterator(features: CloseableIterator[SimpleFeature],
 
   override def next(): SimpleFeature = sorted.next()
 
-  override def close(): Unit = {}
+  override def close(): Unit = features.close()
 }
 
