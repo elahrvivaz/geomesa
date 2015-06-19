@@ -103,7 +103,7 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
         filterSeq.headOption
       }
 
-      val iter = DensityIterator.configure(sft, featureEncoding, filter, envelope, width, height, weight, p)
+      val iter = DensityIterator.configure(sft, featureEncoding, schema, filter, envelope, width, height, weight, p)
       (Seq(iter), Z3DensityIterator.kvsToFeatures(), false)
     } else {
       val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, sft)

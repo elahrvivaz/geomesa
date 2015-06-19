@@ -61,8 +61,8 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
   override def init(src: SortedKeyValueIterator[Key, Value],
                     jOptions: jMap[String, String],
                     env: IteratorEnvironment): Unit = {
-//    IteratorClassLoader.initClassLoader(logger)
-    initClassLoader(logger)
+    IteratorClassLoader.initClassLoader(getClass)
+//    initClassLoader(logger)
 
     this.source = src.deepCopy(env)
     val options = jOptions.asScala
@@ -206,14 +206,24 @@ object Z3DensityIterator extends Logging {
   def configure(sft: SimpleFeatureType,
                 filter: Option[Filter],
                 envelope: Envelope,
-                gridWith: Int,
+                gridWidth: Int,
                 gridHeight: Int,
                 weightAttribute: Option[String],
                 priority: Int): IteratorSetting = {
-    val is = new IteratorSetting(priority, "z3-density-iter", classOf[Z3DensityIterator])
+    configure(new IteratorSetting(priority, "z3-density-iter", classOf[Z3DensityIterator]),
+      sft, filter, envelope, gridWidth, gridHeight, weightAttribute)
+  }
+
+  protected[iterators] def configure(is: IteratorSetting,
+                                     sft: SimpleFeatureType,
+                                     filter: Option[Filter],
+                                     envelope: Envelope,
+                                     gridWidth: Int,
+                                     gridHeight: Int,
+                                     weightAttribute: Option[String]): IteratorSetting = {
     is.addOption(SFT_OPT, SimpleFeatureTypes.encodeType(sft))
     is.addOption(ENVELOPE_OPT, s"${envelope.getMinX},${envelope.getMaxX},${envelope.getMinY},${envelope.getMaxY}")
-    is.addOption(GRID_OPT, s"$gridWith,$gridHeight")
+    is.addOption(GRID_OPT, s"$gridWidth,$gridHeight")
     filter.foreach(f => is.addOption(CQL_OPT, ECQL.toCQL(f)))
     weightAttribute.foreach(is.addOption(WEIGHT_OPT, _))
     is

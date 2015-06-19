@@ -74,6 +74,7 @@ case class JoinPlan(table: String,
   override val join = Some((joinFunction, joinQuery))
 }
 
+
 trait KeyPlanningFilter
 
 case object AcceptEverythingFilter extends KeyPlanningFilter

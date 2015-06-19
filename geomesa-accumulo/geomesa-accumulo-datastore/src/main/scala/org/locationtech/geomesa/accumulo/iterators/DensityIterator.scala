@@ -16,7 +16,7 @@ import java.util.{Map => jMap}
 import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom._
 import org.apache.accumulo.core.client.IteratorSetting
-import org.apache.accumulo.core.data.{Key, Range => aRange, Value}
+import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.data._
@@ -29,6 +29,10 @@ import org.opengis.filter.Filter
 
 import scala.collection.JavaConverters._
 
+/**
+ * Iterator that expands the z3 density iterator by adding support for non-kryo serialization types and
+ * non-point geoms.
+ */
 class DensityIterator extends Z3DensityIterator with Logging {
 
   override def init(src: SortedKeyValueIterator[Key, Value],
@@ -120,14 +124,16 @@ object DensityIterator extends Logging {
    */
   def configure(sft: SimpleFeatureType,
                 serializationType: SerializationType,
+                schema: String,
                 filter: Option[Filter],
                 envelope: Envelope,
-                gridWith: Int,
+                gridWidth: Int,
                 gridHeight: Int,
                 weightAttribute: Option[String],
                 priority: Int): IteratorSetting = {
-    val is = Z3DensityIterator.configure(sft, filter, envelope, gridWith, gridHeight, weightAttribute, priority)
+    val is = new IteratorSetting(priority, "density-iter", classOf[DensityIterator])
     org.locationtech.geomesa.accumulo.index.Strategy.configureFeatureEncoding(is, serializationType)
-    is
+    is.addOption(DEFAULT_SCHEMA_NAME, schema)
+    Z3DensityIterator.configure(is, sft, filter, envelope, gridWidth, gridHeight, weightAttribute)
   }
 }

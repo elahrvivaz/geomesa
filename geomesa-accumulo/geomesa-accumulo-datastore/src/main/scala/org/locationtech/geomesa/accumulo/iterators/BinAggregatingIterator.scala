@@ -67,7 +67,7 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
   override def init(src: SortedKeyValueIterator[Key, Value],
                     jOptions: jMap[String, String],
                     env: IteratorEnvironment): Unit = {
-    IteratorClassLoader.initClassLoader(logger)
+    IteratorClassLoader.initClassLoader(getClass)
 
     this.source = src.deepCopy(env)
     val options = jOptions.asScala

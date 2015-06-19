@@ -8,26 +8,23 @@
 
 package org.locationtech.geomesa.accumulo.iterators
 
-import com.typesafe.scalalogging.slf4j.Logger
+import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.commons.vfs2.impl.VFSClassLoader
 import org.geotools.factory.GeoTools
 
-object IteratorClassLoader {
+object IteratorClassLoader extends Logging {
 
   private var initialized = false
-  private val GEOMESA_JAR_NAME = "geomesa"
 
-  def initClassLoader(log: Logger) = synchronized {
+  def initClassLoader(clas: Class[_]) = synchronized {
     if (!initialized) {
       try {
-        log.trace("Initializing classLoader")
+        logger.trace("Initializing classLoader")
         // locate the geomesa jars
-        this.getClass.getClassLoader match {
+        clas.getClassLoader match {
           case vfsCl: VFSClassLoader =>
-            vfsCl.getFileObjects.map(_.getURL).filter(_.toString.contains(GEOMESA_JAR_NAME)).foreach { url =>
-              if (log != null) {
-                log.debug(s"Found geomesa jar at $url")
-              }
+            vfsCl.getFileObjects.map(_.getURL).filter(_.toString.contains("geomesa")).foreach { url =>
+              logger.debug(s"Found geomesa jar at $url")
               val classLoader = java.net.URLClassLoader.newInstance(Array(url), vfsCl)
               GeoTools.addClassLoader(classLoader)
             }
@@ -35,10 +32,7 @@ object IteratorClassLoader {
           case _ => // no -op
         }
       } catch {
-        case t: Throwable =>
-          if (log != null) {
-            log.error("Failed to initialize GeoTools' ClassLoader", t)
-          }
+        case t: Throwable => logger.error("Failed to initialize GeoTools' ClassLoader", t)
       } finally {
         initialized = true
       }

@@ -55,7 +55,7 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
   override def init(source: SortedKeyValueIterator[Key, Value],
                     options: java.util.Map[String, String],
                     env: IteratorEnvironment): Unit = {
-    IteratorClassLoader.initClassLoader(null)
+    IteratorClassLoader.initClassLoader(getClass)
 
     this.source = source.deepCopy(env)
     val zmin = options.get(zminKey).toLong
