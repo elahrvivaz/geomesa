@@ -20,13 +20,16 @@ import org.geotools.process.ProcessException
 import org.geotools.process.factory.{DescribeParameter, DescribeProcess, DescribeResult}
 import org.geotools.process.vector.{HeatmapSurface, VectorProcess}
 import org.locationtech.geomesa.accumulo.index.QueryHints
-import org.locationtech.geomesa.accumulo.iterators.{DensityIterator, Z3DensityIterator}
+import org.locationtech.geomesa.accumulo.iterators.Z3DensityIterator
 import org.opengis.coverage.grid.GridGeometry
 import org.opengis.filter.Filter
 import org.opengis.filter.expression.Expression
 import org.opengis.filter.spatial.BBOX
 import org.opengis.util.ProgressListener
 
+/**
+ * Stripped down version of torg.geotools.process.vector.HeatmapProcess
+ */
 @DescribeProcess(
   title = "Density Map",
   description = "Computes a density map over a set of features stored in Geomesa"
@@ -70,62 +73,9 @@ class DensityProcess extends VectorProcess {
       case e: Exception => throw new ProcessException("Error processing heatmap", e)
     }
 
-    val heatMapGrid = flipXY(heatMap.computeSurface)
+    val heatMapGrid = DensityProcess.flipXY(heatMap.computeSurface)
     val gcf = CoverageFactoryFinder.getGridCoverageFactory(GeoTools.getDefaultHints)
     gcf.create("Process Results", heatMapGrid, argOutputEnv)
-  }
-
-  /**
-   * Flips an XY matrix along the X=Y axis, and inverts the Y axis. Used to convert from
-   * "map orientation" into the "image orientation" used by GridCoverageFactory. The surface
-   * interpolation is done on an XY grid, with Y=0 being the bottom of the space. GridCoverages
-   * are stored in an image format, in a YX grid with Y=0 being the top.
-   *
-   * @param grid the grid to flip
-   * @return the flipped grid
-   */
-  def flipXY(grid: Array[Array[Float]]): Array[Array[Float]] = {
-    val xSize = grid.length
-    val ySize = grid(0).length
-    val grid2 = Array.ofDim[Float](ySize, xSize)
-    var ix = 0
-    while (ix < xSize) {
-      var iy = 0
-      while (iy < ySize) {
-        val iy2 = ySize - iy - 1
-        grid2(iy2)(ix) = grid(ix)(iy)
-        iy += 1
-      }
-      ix += 1
-    }
-    grid2
-  }
-
-
-  /**
-   * Flips an XY matrix along the X=Y axis, and inverts the Y axis. Used to convert from
-   * "map orientation" into the "image orientation" used by GridCoverageFactory. The surface
-   * interpolation is done on an XY grid, with Y=0 being the bottom of the space. GridCoverages
-   * are stored in an image format, in a YX grid with Y=0 being the top.
-   *
-   * @param grid the grid to flip
-   * @return the flipped grid
-   */
-  def flipXYInPlace(grid: Array[Array[Float]]): Unit = {
-    val xSize = grid.length
-    val ySize = grid(0).length
-    var ix = 0
-    while (ix < xSize) {
-      var iy = 0
-      while (iy < ySize) {
-        val iy2 = ySize - iy - 1
-//        grid2(iy2)(ix) = grid(ix)(iy)
-        iy += 1
-      }
-      ix += 1
-    }
-//    grid2
-    // TODO
   }
 
   /**
@@ -170,6 +120,35 @@ class DensityProcess extends VectorProcess {
       targetQuery.getHints.put(QueryHints.DENSITY_WEIGHT, argWeightAttr)
     }
     targetQuery
+  }
+}
+
+object DensityProcess {
+
+  /**
+   * Flips an XY matrix along the X=Y axis, and inverts the Y axis. Used to convert from
+   * "map orientation" into the "image orientation" used by GridCoverageFactory. The surface
+   * interpolation is done on an XY grid, with Y=0 being the bottom of the space. GridCoverages
+   * are stored in an image format, in a YX grid with Y=0 being the top.
+   *
+   * @param grid the grid to flip
+   * @return the flipped grid
+   */
+  def flipXY(grid: Array[Array[Float]]): Array[Array[Float]] = {
+    val xSize = grid.length
+    val ySize = grid(0).length
+    val grid2 = Array.ofDim[Float](ySize, xSize)
+    var ix = 0
+    while (ix < xSize) {
+      var iy = 0
+      while (iy < ySize) {
+        val iy2 = ySize - iy - 1
+        grid2(iy2)(ix) = grid(ix)(iy)
+        iy += 1
+      }
+      ix += 1
+    }
+    grid2
   }
 }
 
