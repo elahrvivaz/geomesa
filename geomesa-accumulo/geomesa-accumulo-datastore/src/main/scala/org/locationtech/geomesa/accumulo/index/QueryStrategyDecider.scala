@@ -24,12 +24,9 @@ trait VersionedQueryStrategyDecider {
 }
 
 object VersionedQueryStrategyDecider {
-  def apply(version: Int): VersionedQueryStrategyDecider =
-    if (version <= 4) {
-      new QueryStrategyDeciderV4
-    } else {
-      new QueryStrategyDeciderV5
-    }
+  def apply(version: Int): VersionedQueryStrategyDecider = {
+    if (version <= 4) new QueryStrategyDeciderV4 else new QueryStrategyDeciderV5
+  }
 }
 
 object QueryStrategyDecider {

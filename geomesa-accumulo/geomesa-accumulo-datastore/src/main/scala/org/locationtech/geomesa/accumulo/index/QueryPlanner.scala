@@ -79,35 +79,34 @@ case class QueryPlanner(sft: SimpleFeatureType,
   }
 
   /**
-   * Execute a query plan. Split out to allow for easier testing.
+   * Execute a sequence of query plans
    */
   private def executePlans(query: Query, strategyPlans: Seq[StrategyPlan], deduplicate: Boolean): SFIter = {
-    val features = strategyPlans.iterator.ciFlatMap { sp =>
+    def scan(sps: Seq[StrategyPlan]): SFIter = sps.iterator.ciFlatMap { sp =>
       sp.strategy.execute(sp.plan, acc, log).map(sp.plan.kvsToFeatures)
     }
 
-    // deduplication between query plans, if there is an OR
-    val deduped = if (deduplicate) new DeDuplicatingIterator(features) else features
+    def dedupe(iter: SFIter): SFIter = if (deduplicate) new DeDuplicatingIterator(iter) else iter
 
-    // noinspection EmptyCheck - sort if requested
-    val sortedAndSelfClosing = if (query.getSortBy != null && query.getSortBy.length > 0) {
+    // noinspection EmptyCheck
+    def sort(iter: SFIter): SFIter = if (query.getSortBy != null && query.getSortBy.length > 0) {
       // sort will self-close itself
-      new LazySortedIterator(deduped, query.getHints.getReturnSft, query.getSortBy)
+      new LazySortedIterator(iter, query.getHints.getReturnSft, query.getSortBy)
     } else {
       // wrap in a self-closing iterator to mitigate clients not calling close
-      SelfClosingIterator(deduped)
+      SelfClosingIterator(iter)
     }
 
-    if (query.getHints.isTemporalDensityQuery) {
+    def expand(iter: SFIter): SFIter = if (query.getHints.isTemporalDensityQuery) {
       val encode = query.getHints.containsKey(RETURN_ENCODED)
-      val returnSft = query.getHints.getReturnSft
-      TemporalDensityIterator.reduceTemporalFeatures(sortedAndSelfClosing, returnSft, encode)
+      TemporalDensityIterator.reduceTemporalFeatures(iter, query.getHints.getReturnSft, encode)
     } else if (query.getHints.isMapAggregatingQuery) {
-      val returnSft = query.getHints.getReturnSft
-      MapAggregatingIterator.reduceMapAggregationFeatures(sortedAndSelfClosing, returnSft, query)
+      MapAggregatingIterator.reduceMapAggregationFeatures(iter, query.getHints.getReturnSft, query)
     } else {
-      sortedAndSelfClosing
+      iter
     }
+
+    expand(sort(dedupe(scan(strategyPlans))))
   }
 
   /**

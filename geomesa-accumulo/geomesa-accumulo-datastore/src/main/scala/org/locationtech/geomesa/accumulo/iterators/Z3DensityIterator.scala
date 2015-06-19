@@ -11,14 +11,13 @@ package org.locationtech.geomesa.accumulo.iterators
 import java.util.Map.Entry
 import java.util.{Collection => jCollection, Map => jMap}
 
-import com.typesafe.scalalogging.slf4j.{Logger, Logging}
+import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom._
 import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{Range => aRange, _}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
-import org.apache.commons.vfs2.impl.VFSClassLoader
-import org.geotools.factory.GeoTools
 import org.geotools.filter.text.ecql.ECQL
+import org.geotools.util.Converters
 import org.locationtech.geomesa.accumulo.index.QueryPlanners._
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.features.kryo.{KryoBufferSimpleFeature, KryoFeatureSerializer}
@@ -49,6 +48,7 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
   var width: Int = -1
   var height: Int = -1
 
+  // map of our snapped points to accumulated weight
   var result = mutable.Map.empty[(Int, Int), Double]
 
   var topKey: Key = null
@@ -145,24 +145,25 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
     }
   }
 
+  /**
+   * Gets the weight for a feature from a double attribute
+   */
   private def getWeightFromDouble(sf: SimpleFeature, i: Int): Double = {
     val d = sf.getAttribute(i).asInstanceOf[java.lang.Double]
     if (d == null) 0.0 else d
   }
 
+  /**
+   * Tries to convert a non-double attribute into a double
+   */
   private def getWeightFromNonDouble(sf: SimpleFeature, i: Int): Double = {
     val d = sf.getAttribute(i)
-    if (d == null) {
-      0.0
-    } else {
-      try {
-        d.toString.toDouble
-      } catch {
-        case e: NumberFormatException => 0.0
-      }
-    }
+    if (d == null) 0.0 else Converters.convert(d, classOf[java.lang.Double])
   }
 
+  /**
+   * Evaluates an arbitrary expression against the simple feature to return a weight
+   */
   private def getWeightFromExpression(sf: SimpleFeature, e: Expression): Double = {
     val d = e.evaluate(sf, classOf[java.lang.Double])
     if (d == null) 0.0 else d
@@ -200,7 +201,7 @@ object Z3DensityIterator extends Logging {
   private val WEIGHT_OPT     = "weight"
 
   /**
-   * Creates an iterator config that expects entries to be precomputed bin values
+   * Creates an iterator config for the z3 density iterator
    */
   def configure(sft: SimpleFeatureType,
                 filter: Option[Filter],
@@ -243,6 +244,9 @@ object Z3DensityIterator extends Logging {
     }
   }
 
+  /**
+   * Encodes a sparse matrix into a byte array
+   */
   def encodeResult(result: mutable.Map[(Int, Int), Double]): Array[Byte] = {
     val output = KryoFeatureSerializer.getOutput()
     result.toList.groupBy(_._1._1).foreach { case (row, cols) =>
@@ -258,17 +262,21 @@ object Z3DensityIterator extends Logging {
 
   type GridIterator = (SimpleFeature) => Iterator[(Double, Double, Double)]
 
+  /**
+   * Returns a mapping of simple features (returned from a density query) to weighted points in the
+   * form of (x, y, weight)
+   */
   def decodeResult(envelope: Envelope, gridWidth: Int, gridHeight: Int): GridIterator = {
     val gs = new GridSnap(envelope, gridWidth, gridHeight)
     val decode = decodeResult(_: SimpleFeature, gs)
     (f) => decode(f)
   }
 
-  private def decodeResult(sf: SimpleFeature, gridSnap: GridSnap): Iterator[(Double, Double, Double)] =
-    decodeResult(sf.getAttribute(0).asInstanceOf[Array[Byte]], gridSnap)
-
-  protected[iterators] def decodeResult(result: Array[Byte],
-                                        gridSnap: GridSnap): Iterator[(Double, Double, Double)] = {
+  /**
+   * Decodes a result feature into an iterator of (x, y, weight)
+   */
+  private def decodeResult(sf: SimpleFeature, gridSnap: GridSnap): Iterator[(Double, Double, Double)] = {
+    val result = sf.getAttribute(0).asInstanceOf[Array[Byte]]
     val input = KryoFeatureSerializer.getInput(result)
     new Iterator[(Double, Double, Double)]() {
       private var x = 0.0
@@ -283,35 +291,6 @@ object Z3DensityIterator extends Logging {
         val weight = input.readDouble()
         colCount -= 1
         (x, y, weight)
-      }
-    }
-  }
-
-  var initialized = false
-  def initClassLoader(log: Logger) = synchronized {
-    if (!initialized) {
-      try {
-        log.trace("Initializing classLoader")
-        // locate the geomesa jars
-        this.getClass.getClassLoader match {
-          case vfsCl: VFSClassLoader =>
-            vfsCl.getFileObjects.map(_.getURL).filter(_.toString.contains("geomesa")).foreach { url =>
-              if (log != null) {
-                log.debug(s"Found geomesa jar at $url")
-              }
-              val classLoader = java.net.URLClassLoader.newInstance(Array(url), vfsCl)
-              GeoTools.addClassLoader(classLoader)
-            }
-
-          case _ => // no -op
-        }
-      } catch {
-        case t: Throwable =>
-          if (log != null) {
-            log.error("Failed to initialize GeoTools' ClassLoader", t)
-          }
-      } finally {
-        initialized = true
       }
     }
   }

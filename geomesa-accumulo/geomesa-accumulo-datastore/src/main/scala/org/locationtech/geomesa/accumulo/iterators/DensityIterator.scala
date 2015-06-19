@@ -20,7 +20,7 @@ import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.IndexSchema
+import org.locationtech.geomesa.accumulo.index.{IndexSchema, Strategy}
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features.{SerializationType, SimpleFeatureDeserializers}
 import org.locationtech.geomesa.utils.geotools.Conversions.{RichSimpleFeature, toRichSimpleFeatureIterator}
@@ -62,15 +62,16 @@ class DensityIterator extends Z3DensityIterator with Logging {
         val feature = deserializer.deserialize(source.getTopValue.get)
         if (filter == null || filter.evaluate(feature)) {
           topKey = source.getTopKey
+          val weight = weightFn(feature)
           lazy val geohash = indexDecoder.decode(source.getTopKey).getDefaultGeometry.asInstanceOf[Geometry]
           feature.getDefaultGeometry match {
-            case g: Point => writePointToResult(g, weightFn(feature))
-            case g: MultiPoint => writeMultiPoint(g, geohash, weightFn(feature))
-            case g: LineString => writeLineString(g, geohash, weightFn(feature))
-            case g: MultiLineString => writeMultiLineString(g, geohash, weightFn(feature))
-            case g: Polygon => writePolygon(g, geohash, weightFn(feature))
-            case g: MultiPolygon => writeMultiPolygon(g, geohash, weightFn(feature))
-            case g: Geometry => () => writePointToResult(g.getCentroid, weightFn(feature))
+            case g: Point           => writePointToResult(g, weight)
+            case g: MultiPoint      => writeMultiPoint(g, geohash, weight)
+            case g: LineString      => writeLineString(g, geohash, weight)
+            case g: MultiLineString => writeMultiLineString(g, geohash, weight)
+            case g: Polygon         => writePolygon(g, geohash, weight)
+            case g: MultiPolygon    => writeMultiPolygon(g, geohash, weight)
+            case g: Geometry        => writePointToResult(g.getCentroid, weight)
           }
         }
       }
@@ -132,7 +133,7 @@ object DensityIterator extends Logging {
                 weightAttribute: Option[String],
                 priority: Int): IteratorSetting = {
     val is = new IteratorSetting(priority, "density-iter", classOf[DensityIterator])
-    org.locationtech.geomesa.accumulo.index.Strategy.configureFeatureEncoding(is, serializationType)
+    Strategy.configureFeatureEncoding(is, serializationType)
     is.addOption(DEFAULT_SCHEMA_NAME, schema)
     Z3DensityIterator.configure(is, sft, filter, envelope, gridWidth, gridHeight, weightAttribute)
   }
