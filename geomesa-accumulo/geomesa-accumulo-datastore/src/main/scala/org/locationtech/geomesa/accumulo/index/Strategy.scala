@@ -168,24 +168,6 @@ object Strategy {
                                    schema: String,
                                    featureEncoding: SerializationType,
                                    featureType: SimpleFeatureType) = query match {
-    case _ if query.getHints.isDensityQuery =>
-      val clazz = classOf[DensityIterator]
-
-      val cfg = new IteratorSetting(iteratorPriority_AnalysisIterator,
-        "topfilter-" + randomPrintableString(5),
-        clazz)
-
-      val width = query.getHints.get(WIDTH_KEY).asInstanceOf[Int]
-      val height = query.getHints.get(HEIGHT_KEY).asInstanceOf[Int]
-      val polygon = if (geometryToCover == null) null else geometryToCover.getEnvelope.asInstanceOf[Polygon]
-
-      DensityIterator.configure(cfg, polygon, width, height)
-
-      cfg.addOption(DEFAULT_SCHEMA_NAME, schema)
-      configureFeatureEncoding(cfg, featureEncoding)
-      configureFeatureType(cfg, featureType)
-
-      Some(cfg)
     case _ if query.getHints.containsKey(TEMPORAL_DENSITY_KEY) =>
       val clazz = classOf[TemporalDensityIterator]
 

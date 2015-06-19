@@ -46,7 +46,7 @@ class Z3DensityIteratorTest extends Specification with TestWithDataStore {
     q
   }
 
-  "DensityIterator" should {
+  "Z3DensityIterator" should {
 
     "reduce total features returned" in {
       clearFeatures()

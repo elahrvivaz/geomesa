@@ -16,9 +16,8 @@ import org.apache.hadoop.io.Text
 import org.geotools.data.Query
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.accumulo.GEOMESA_ITERATORS_IS_DENSITY_TYPE
-import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
+import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
-import org.locationtech.geomesa.accumulo.index.QueryPlanners.ExpandFeatures
 import org.locationtech.geomesa.accumulo.index.Strategy._
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.features.SerializationType.SerializationType
@@ -27,6 +26,8 @@ import org.locationtech.geomesa.filter._
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 import org.opengis.filter.spatial.BinarySpatialOperator
+
+import scala.collection.JavaConversions._
 
 class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
 
@@ -90,33 +91,48 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
     output(s"Interval:  ${oint.getOrElse("No interval")}")
     output(s"Filter: ${Option(filter).getOrElse("No Filter")}")
 
-    val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, sft)
-    val stiiIterCfg = getSTIIIterCfg(iteratorConfig, query, sft, ofilter, ecql, featureEncoding, version)
-    val aggregatingIterCfg = configureAggregatingIterator(query, geometryToCover, schema, featureEncoding, sft)
+    val (iterators, kvsToFeatures, useIndexEntries) = if (query.getHints.isDensityQuery) {
+      val (width, height) = query.getHints.getDensityBounds.get
+      val envelope = query.getHints.getDensityEnvelope.get
+      val weight = query.getHints.getDensityWeight
+      val p = iteratorPriority_AnalysisIterator
+      val filterSeq = (ecql ++ ofilter).toSeq
+      val filter = if (filterSeq.length > 1) {
+        Some(ff.and(filterSeq))
+      } else {
+        filterSeq.headOption
+      }
 
-    val useIndexEntries = iteratorConfig.iterator match {
-      case IndexOnlyIterator      => true
-      case SpatioTemporalIterator => false
-    }
-    val iterators = Seq(stiiIterCfg) ++ aggregatingIterCfg
-
-    val kvsToFeatures = if (query.getHints.isBinQuery) {
-      // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
-      BinAggregatingIterator.nonAggregatedKvsToFeatures(query, sft, featureEncoding)
+      val iter = DensityIterator.configure(sft, featureEncoding, filter, envelope, width, height, weight, p)
+      (Seq(iter), Z3DensityIterator.kvsToFeatures(), false)
     } else {
-      queryPlanner.defaultKVsToFeatures(query)
+      val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, sft)
+      val stiiIterCfg = getSTIIIterCfg(iteratorConfig, query, sft, ofilter, ecql, featureEncoding, version)
+      val aggregatingIterCfg = configureAggregatingIterator(query, geometryToCover, schema, featureEncoding, sft)
+
+      val indexEntries = iteratorConfig.iterator match {
+        case IndexOnlyIterator      => true
+        case SpatioTemporalIterator => false
+      }
+      val iters = Seq(stiiIterCfg) ++ aggregatingIterCfg
+      val kvs = if (query.getHints.isBinQuery) {
+        // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
+        BinAggregatingIterator.nonAggregatedKvsToFeatures(query, sft, featureEncoding)
+      } else {
+        queryPlanner.defaultKVsToFeatures(query)
+      }
+      (iters, kvs, indexEntries)
     }
 
     // set up row ranges and regular expression filter
     val qp = planQuery(filter, useIndexEntries, output, keyPlanner, cfPlanner)
 
-    val adaptFeatures: Option[ExpandFeatures] =
-      if (query.getHints.isDensityQuery) Some(DensityIterator.expandFeature) else None
     val table = acc.getSpatioTemporalTable(sft)
     val numThreads = acc.getSuggestedSpatioTemporalThreads(sft)
     val hasDupes = !query.getHints.isDensityQuery && IndexSchema.mayContainDuplicates(sft)
     val res = qp.copy(table = table, iterators = iterators, kvsToFeatures = kvsToFeatures,
-      expandFeatures = adaptFeatures, numThreads = numThreads, hasDuplicates = hasDupes)
+      numThreads = numThreads, hasDuplicates = hasDupes)
+
     Seq(res)
   }
 
@@ -231,7 +247,7 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
     }
 
     // partially fill in, rest will be filled in later
-    BatchScanPlan(null, accRanges, null, cf, null, null, -1, hasDuplicates = false)
+    BatchScanPlan(null, accRanges, null, cf, null, -1, hasDuplicates = false)
   }
 }
 

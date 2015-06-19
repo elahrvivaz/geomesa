@@ -19,7 +19,7 @@ import org.joda.time.format.DateTimeFormatter
 import org.joda.time.{DateTime, DateTimeZone}
 import org.locationtech.geomesa.accumulo.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.accumulo.index.KeyUtils._
-import org.locationtech.geomesa.accumulo.index.QueryPlanners.{FeatureFunction, JoinFunction, ExpandFeatures}
+import org.locationtech.geomesa.accumulo.index.QueryPlanners.{FeatureFunction, JoinFunction}
 import org.locationtech.geomesa.utils.CartesianProductIterable
 import org.locationtech.geomesa.utils.geohash.{GeoHash, GeohashUtils}
 import org.opengis.feature.simple.SimpleFeature
@@ -27,7 +27,6 @@ import org.opengis.feature.simple.SimpleFeature
 object QueryPlanners {
   type JoinFunction = (java.util.Map.Entry[Key, Value]) => AccRange
   type FeatureFunction = (Entry[Key, Value]) => SimpleFeature
-  type ExpandFeatures = (SimpleFeature) => Iterator[SimpleFeature]
 }
 
 sealed trait QueryPlan {
@@ -38,7 +37,6 @@ sealed trait QueryPlan {
   def numThreads: Int
   def hasDuplicates: Boolean
   def kvsToFeatures: FeatureFunction
-  def expandFeatures: Option[ExpandFeatures]
 
   def join: Option[(JoinFunction, QueryPlan)] = None
 }
@@ -49,7 +47,6 @@ case class ScanPlan(table: String,
                     iterators: Seq[IteratorSetting],
                     columnFamilies: Seq[Text],
                     kvsToFeatures: FeatureFunction,
-                    expandFeatures: Option[ExpandFeatures],
                     hasDuplicates: Boolean) extends QueryPlan {
   val numThreads = 1
   val ranges = Seq(range)
@@ -61,7 +58,6 @@ case class BatchScanPlan(table: String,
                          iterators: Seq[IteratorSetting],
                          columnFamilies: Seq[Text],
                          kvsToFeatures: FeatureFunction,
-                         expandFeatures: Option[ExpandFeatures],
                          numThreads: Int,
                          hasDuplicates: Boolean) extends QueryPlan
 
@@ -75,10 +71,8 @@ case class JoinPlan(table: String,
                     joinFunction: JoinFunction,
                     joinQuery: BatchScanPlan) extends QueryPlan {
   def kvsToFeatures: FeatureFunction = joinQuery.kvsToFeatures
-  def expandFeatures: Option[ExpandFeatures] = joinQuery.expandFeatures
   override val join = Some((joinFunction, joinQuery))
 }
-
 
 trait KeyPlanningFilter
 

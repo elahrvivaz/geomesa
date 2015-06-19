@@ -11,13 +11,14 @@ package org.locationtech.geomesa.accumulo.iterators
 import java.util.Map.Entry
 import java.util.{Collection => jCollection, Map => jMap}
 
-import com.typesafe.scalalogging.slf4j.Logging
+import com.typesafe.scalalogging.slf4j.{Logger, Logging}
 import com.vividsolutions.jts.geom._
 import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{Range => aRange, _}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
+import org.apache.commons.vfs2.impl.VFSClassLoader
+import org.geotools.factory.GeoTools
 import org.geotools.filter.text.ecql.ECQL
-import org.geotools.geometry.jts.JTSFactoryFinder
 import org.locationtech.geomesa.accumulo.index.QueryPlanners._
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.features.kryo.{KryoBufferSimpleFeature, KryoFeatureSerializer}
@@ -27,12 +28,13 @@ import org.locationtech.geomesa.utils.geotools.{GridSnap, SimpleFeatureTypes}
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
+import org.opengis.filter.expression.Expression
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 /**
- * Iterator that computes and aggregates 'bin' entries. Currently supports 16 byte entries only.
+ * Density iterator - only works on kryo-encoded point geometries
  */
 class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging {
 
@@ -42,22 +44,25 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
   var source: SortedKeyValueIterator[Key, Value] = null
   var filter: Filter = null
   var geomIndex: Int = -1
-  var batchSize: Int = -1
 
   var gridSnap: GridSnap = null
-  var result = mutable.Map.empty[Int, mutable.Map[Int, Long]]
-  var pointsWritten: Int = -1
+  var width: Int = -1
+  var height: Int = -1
+
+  var result = mutable.Map.empty[(Int, Int), Double]
 
   var topKey: Key = null
   var topValue: Value = new Value()
   var currentRange: aRange = null
 
   var handleValue: () => Unit = null
+  var weightFn: (SimpleFeature) => Double = null
 
   override def init(src: SortedKeyValueIterator[Key, Value],
                     jOptions: jMap[String, String],
                     env: IteratorEnvironment): Unit = {
-    IteratorClassLoader.initClassLoader(logger)
+//    IteratorClassLoader.initClassLoader(logger)
+    initClassLoader(logger)
 
     this.source = src.deepCopy(env)
     val options = jOptions.asScala
@@ -65,45 +70,38 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
     sft = SimpleFeatureTypes.createType("test", options(SFT_OPT))
     filter = options.get(CQL_OPT).map(FastFilterFactory.toFilter).orNull
     geomIndex = sft.getGeomIndex
-    batchSize = options(BATCH_SIZE_OPT).toInt
 
     val bounds = options(ENVELOPE_OPT).split(",").map(_.toDouble)
     val envelope = new Envelope(bounds(0), bounds(1), bounds(2), bounds(3))
     val xy = options(GRID_OPT).split(",").map(_.toInt)
-    gridSnap = new GridSnap(envelope, xy(0), xy(1))
+    width = xy(0)
+    height = xy(1)
+    gridSnap = new GridSnap(envelope, width, height)
 
-    // we need to derive the bin values from the features
+    // function to get the weight from the feature - defaults to 1.0 unless an attribute is specified
+    weightFn = options.get(WEIGHT_OPT).map(sft.indexOf).map {
+      case i if i == -1 =>
+        val expression = ECQL.toExpression(options(WEIGHT_OPT))
+        getWeightFromExpression(_: SimpleFeature, expression)
+      case i if sft.getDescriptor(i).getType.getBinding == classOf[java.lang.Double] =>
+        getWeightFromDouble(_: SimpleFeature, i)
+      case i =>
+        getWeightFromNonDouble(_: SimpleFeature, i)
+    }.getOrElse((sf: SimpleFeature) => 1.0)
+
     val reusableSf = new KryoFeatureSerializer(sft).getReusableFeature
-    val geomBinding = sft.getDescriptor(geomIndex).getType.getBinding
-    val writeDensity: (KryoBufferSimpleFeature) => Unit =
-      if (geomBinding == classOf[Point]) {
-        writePoint
-      } else if (geomBinding == classOf[MultiPoint]) {
-        writeMultiPoint
-      } else if (geomBinding == classOf[LineString]) {
-        writeLineString
-      } else if (geomBinding == classOf[MultiLineString]) {
-        writeMultiLineString
-      } else if (geomBinding == classOf[Polygon]) {
-        writePolygon
-      } else if (geomBinding == classOf[MultiPolygon]) {
-        writeMultiPolygon
-      } else {
-        writeGeometry
-      }
-
     handleValue = if (filter == null) {
       () => {
         reusableSf.setBuffer(source.getTopValue.get())
         topKey = source.getTopKey
-        writeDensity(reusableSf)
+        writePoint(reusableSf, weightFn(reusableSf))
       }
     } else {
       () => {
         reusableSf.setBuffer(source.getTopValue.get())
         if (filter.evaluate(reusableSf)) {
           topKey = source.getTopKey
-          writeDensity(reusableSf)
+          writePoint(reusableSf, weightFn(reusableSf))
         }
       }
     }
@@ -130,14 +128,13 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
 
   def findTop(): Unit = {
     result.clear()
-    pointsWritten = 0
 
-    while (source.hasTop && !currentRange.afterEndKey(source.getTopKey) && pointsWritten < batchSize) {
+    while (source.hasTop && !currentRange.afterEndKey(source.getTopKey)) {
       handleValue() // write the record to our aggregated results
       source.next() // Advance the source iterator
     }
 
-    if (pointsWritten == 0) {
+    if (result.isEmpty) {
       topKey = null // hasTop will be false
       topValue = null
     } else {
@@ -149,78 +146,43 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
     }
   }
 
+  private def getWeightFromDouble(sf: SimpleFeature, i: Int): Double = {
+    val d = sf.getAttribute(i).asInstanceOf[java.lang.Double]
+    if (d == null) 0.0 else d
+  }
+
+  private def getWeightFromNonDouble(sf: SimpleFeature, i: Int): Double = {
+    val d = sf.getAttribute(i)
+    if (d == null) {
+      0.0
+    } else {
+      try {
+        d.toString.toDouble
+      } catch {
+        case e: NumberFormatException => 0.0
+      }
+    }
+  }
+
+  private def getWeightFromExpression(sf: SimpleFeature, e: Expression): Double = {
+    val d = e.evaluate(sf, classOf[java.lang.Double])
+    if (d == null) 0.0 else d
+  }
+
   /**
    * Writes a density record from a feature that has a point geometry
    */
-  private def writePoint(sf: KryoBufferSimpleFeature): Unit =
-    writePointToResult(sf.getAttribute(geomIndex).asInstanceOf[Point])
+  private def writePoint(sf: KryoBufferSimpleFeature, weight: Double): Unit =
+    writePointToResult(sf.getAttribute(geomIndex).asInstanceOf[Point], weight)
 
+  protected[iterators] def writePointToResult(pt: Point, weight: Double): Unit =
+    writeSnappedPoint((gridSnap.i(pt.getX), gridSnap.j(pt.getY)), weight)
 
-  /**
-   * Writes a density record from a feature that has a line string geometry
-   */
-  private def writeLineString(sf: KryoBufferSimpleFeature): Unit = {
-    val geom = sf.getAttribute(geomIndex).asInstanceOf[LineString]
-    var i = 0
-    while (i < geom.getNumPoints) {
-//      writeBinToBuffer(sf, geom.getPointN(i))
-      i += 1
-    }
-//    handleLineString(result.densityGrid, line.intersection(geoHashGeom).asInstanceOf[LineString])
-    // TODO
-//    geom.getCoordinates.sliding(2).flatMap { case Array(p0, p1) =>
-//      gridSnap.snapLine((p0.getOrdinate(0), p0.getOrdinate(1)), (p1.getOrdinate(0), p1.getOrdinate(1))) // TODO
-//    }.toSeq.distinct.foreach(key => result.update(key, result.getOrElse(key, 0L) + 1))
-  }
+  protected[iterators] def writePointToResult(pt: Coordinate, weight: Double): Unit =
+    writeSnappedPoint((gridSnap.i(pt.x), gridSnap.j(pt.y)), weight)
 
-  private def writeMultiLineString(sf: KryoBufferSimpleFeature): Unit = {
-//    (0 until multiLineString.getNumGeometries).foreach {
-//      i => handleLineString(result.densityGrid, multiLineString.getGeometryN(i).intersection(geoHashGeom).asInstanceOf[LineString])
-//    }
-  }
-  private def writeMultiPoint(sf: KryoBufferSimpleFeature): Unit = {
-//    (0 until multiPoint.getNumGeometries).foreach {
-//      i => addResultPoint(result.densityGrid, multiPoint.getGeometryN(i).intersection(geoHashGeom).asInstanceOf[Point])
-//    }
-// TODO
-  }
-
-  /** for a given polygon, take the centroid of each polygon from the BBOX coverage grid
-    * if the given polygon contains the centroid then it is passed on to addResultPoint */
-  def writePolygon(sf: KryoBufferSimpleFeature) = {
-    //    val grid = snap.generateCwoverageGrid
-    //    val featureIterator = grid.getFeatures.features
-    //    featureIterator
-    //        .filter{ f => inPolygon.intersects(f.polygon) }
-    //        .foreach{ f => addResultPoint(result, f.polygon.getCentroid) }
-//    handlePolygon(result.densityGrid, polygon.intersection(geoHashGeom).asInstanceOf[Polygon])
-    // TODO
-  }
-
-  def writeMultiPolygon(sf: KryoBufferSimpleFeature): Unit = {
-//    (0 until multiPolygon.getNumGeometries).foreach {
-//      i => handlePolygon(result.densityGrid, multiPolygon.getGeometryN(i).intersection(geoHashGeom).asInstanceOf[Polygon])
-//    }
-// TODO
-  }
-  /**
-   * Writes a bin record from a feature that has a arbitrary geometry.
-   * A single internal point will be written.
-   */
-  def writeGeometry(sf: KryoBufferSimpleFeature): Unit = {
-    // just use centroid
-//    addResultPoint(result.densityGrid, someGeometry.getCentroid)
-//    writeBinToBuffer(sf, sf.getAttribute(geomIndex).asInstanceOf[Geometry].getInteriorPoint)
-    // TODO
-  }
-
-  private def writePointToResult(pt: Point): Unit = writeSnappedPoint(gridSnap.i(pt.getX), gridSnap.j(pt.getY))
-
-  private def writeSnappedPoint(x: Int, y: Int): Unit = {
-    val row = result.getOrElseUpdate(x, mutable.Map.empty[Int, Long])
-    row.update(y, row.getOrElse(y, 0L) + 1)
-    pointsWritten += 1
-  }
+  protected[iterators] def writeSnappedPoint(xy: (Int, Int), weight: Double): Unit =
+    result.update(xy, result.getOrElse(xy, 0.0) + weight)
 
   override def deepCopy(env: IteratorEnvironment): SortedKeyValueIterator[Key, Value] = ???
 }
@@ -228,8 +190,7 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
 object Z3DensityIterator extends Logging {
 
   // need to be lazy to avoid class loading issues before init is called
-  lazy val DENSITY_SFT = SimpleFeatureTypes.createType("density", "weight:Long,*geom:Point:srid=4326")
-  lazy val ENCODED_DENSITY_SFT = SimpleFeatureTypes.createType("density", "result:String,*geom:Point:srid=4326")
+  lazy val DENSITY_SFT = SimpleFeatureTypes.createType("density", "result:String,*geom:Point:srid=4326")
   private lazy val zeroPoint = WKTUtils.read("POINT(0 0)")
 
   // configuration keys
@@ -237,7 +198,7 @@ object Z3DensityIterator extends Logging {
   private val CQL_OPT        = "cql"
   private val ENVELOPE_OPT   = "envelope"
   private val GRID_OPT       = "grid"
-  private val BATCH_SIZE_OPT = "batch"
+  private val WEIGHT_OPT     = "weight"
 
   /**
    * Creates an iterator config that expects entries to be precomputed bin values
@@ -247,14 +208,14 @@ object Z3DensityIterator extends Logging {
                 envelope: Envelope,
                 gridWith: Int,
                 gridHeight: Int,
-                batchSize: Int,
+                weightAttribute: Option[String],
                 priority: Int): IteratorSetting = {
     val is = new IteratorSetting(priority, "z3-density-iter", classOf[Z3DensityIterator])
     is.addOption(SFT_OPT, SimpleFeatureTypes.encodeType(sft))
     is.addOption(ENVELOPE_OPT, s"${envelope.getMinX},${envelope.getMaxX},${envelope.getMinY},${envelope.getMaxY}")
     is.addOption(GRID_OPT, s"$gridWith,$gridHeight")
-    is.addOption(BATCH_SIZE_OPT, batchSize.toString)
     filter.foreach(f => is.addOption(CQL_OPT, ECQL.toCQL(f)))
+    weightAttribute.foreach(is.addOption(WEIGHT_OPT, _))
     is
   }
 
@@ -273,33 +234,34 @@ object Z3DensityIterator extends Logging {
     }
   }
 
-  def adaptIterator(envelope: Envelope, gridWidth: Int, gridHeight: Int): ExpandFeatures = {
-    val sf = new ScalaSimpleFeature("", DENSITY_SFT)
-    val gridSnap = new GridSnap(envelope, gridWidth, gridHeight)
-    val geometryFactory = JTSFactoryFinder.getGeometryFactory
-    val decode = decodeResult(_: Array[Byte], sf, gridSnap, geometryFactory)
-    (f) => decode(f.getAttribute(0).asInstanceOf[Array[Byte]])
-  }
-
-  def encodeResult(result: mutable.Map[Int, mutable.Map[Int, Long]]): Array[Byte] = {
+  def encodeResult(result: mutable.Map[(Int, Int), Double]): Array[Byte] = {
     val output = KryoFeatureSerializer.getOutput()
-    result.foreach { case (row, cols) =>
+    result.toList.groupBy(_._1._1).foreach { case (row, cols) =>
       output.writeInt(row, true)
       output.writeInt(cols.size, true)
-      cols.foreach { case (col, count) =>
-        output.writeInt(col, true)
-        output.writeLong(count, true)
+      cols.foreach { case (xy, weight) =>
+        output.writeInt(xy._2, true)
+        output.writeDouble(weight)
       }
     }
     output.toBytes
   }
 
-  def decodeResult(encoded: Array[Byte],
-                   reusableFeature: ScalaSimpleFeature,
-                   gridSnap: GridSnap,
-                   geometryFactory: GeometryFactory): Iterator[SimpleFeature] = {
-    val input = KryoFeatureSerializer.getInput(encoded)
-    new Iterator[SimpleFeature]() {
+  type GridIterator = (SimpleFeature) => Iterator[(Double, Double, Double)]
+
+  def decodeResult(envelope: Envelope, gridWidth: Int, gridHeight: Int): GridIterator = {
+    val gs = new GridSnap(envelope, gridWidth, gridHeight)
+    val decode = decodeResult(_: SimpleFeature, gs)
+    (f) => decode(f)
+  }
+
+  private def decodeResult(sf: SimpleFeature, gridSnap: GridSnap): Iterator[(Double, Double, Double)] =
+    decodeResult(sf.getAttribute(0).asInstanceOf[Array[Byte]], gridSnap)
+
+  protected[iterators] def decodeResult(result: Array[Byte],
+                                        gridSnap: GridSnap): Iterator[(Double, Double, Double)] = {
+    val input = KryoFeatureSerializer.getInput(result)
+    new Iterator[(Double, Double, Double)]() {
       private var x = 0.0
       private var colCount = 0
       override def hasNext = input.position < input.limit
@@ -309,11 +271,38 @@ object Z3DensityIterator extends Logging {
           colCount = input.readInt(true)
         }
         val y = gridSnap.y(input.readInt(true))
-        val weight = input.readLong(true)
+        val weight = input.readDouble()
         colCount -= 1
-        reusableFeature.setAttribute(0, weight.asInstanceOf[AnyRef])
-        reusableFeature.setAttribute(1, geometryFactory.createPoint(new Coordinate(x, y)))
-        reusableFeature
+        (x, y, weight)
+      }
+    }
+  }
+
+  var initialized = false
+  def initClassLoader(log: Logger) = synchronized {
+    if (!initialized) {
+      try {
+        log.trace("Initializing classLoader")
+        // locate the geomesa jars
+        this.getClass.getClassLoader match {
+          case vfsCl: VFSClassLoader =>
+            vfsCl.getFileObjects.map(_.getURL).filter(_.toString.contains("geomesa")).foreach { url =>
+              if (log != null) {
+                log.debug(s"Found geomesa jar at $url")
+              }
+              val classLoader = java.net.URLClassLoader.newInstance(Array(url), vfsCl)
+              GeoTools.addClassLoader(classLoader)
+            }
+
+          case _ => // no -op
+        }
+      } catch {
+        case t: Throwable =>
+          if (log != null) {
+            log.error("Failed to initialize GeoTools' ClassLoader", t)
+          }
+      } finally {
+        initialized = true
       }
     }
   }

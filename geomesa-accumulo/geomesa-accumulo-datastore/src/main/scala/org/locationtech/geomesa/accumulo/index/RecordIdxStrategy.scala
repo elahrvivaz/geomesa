@@ -117,6 +117,6 @@ class RecordIdxStrategy extends Strategy with Logging {
     } else {
       queryPlanner.defaultKVsToFeatures(query)
     }
-    Seq(BatchScanPlan(table, ranges.toSeq, iters, Seq.empty, kvsToFeatures, None, threads, hasDuplicates = false))
+    Seq(BatchScanPlan(table, ranges.toSeq, iters, Seq.empty, kvsToFeatures, threads, hasDuplicates = false))
   }
 }

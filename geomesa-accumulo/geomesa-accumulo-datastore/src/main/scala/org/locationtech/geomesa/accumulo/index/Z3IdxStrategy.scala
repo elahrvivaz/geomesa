@@ -11,7 +11,7 @@ import org.joda.time.Weeks
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
-import org.locationtech.geomesa.accumulo.index.QueryPlanners.{FeatureFunction, ExpandFeatures}
+import org.locationtech.geomesa.accumulo.index.QueryPlanners.FeatureFunction
 import org.locationtech.geomesa.accumulo.iterators.{BinAggregatingIterator, Z3DensityIterator, Z3Iterator}
 import org.locationtech.geomesa.curve.Z3SFC
 import org.locationtech.geomesa.filter
@@ -72,13 +72,9 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
       case _ => Some(ff.and(ecqlFilters))
     }
 
-    var colFamily: Text = Z3Table.FULL_CF
-    var iterators: Seq[IteratorSetting] = null
-    var kvsToFeatures: FeatureFunction = null
-    var adaptFeatures: Option[ExpandFeatures] = None
     val fp = FILTERING_ITER_PRIORITY
 
-    if (query.getHints.isBinQuery) {
+    val (iterators, kvsToFeatures, colFamily) = if (query.getHints.isBinQuery) {
       val trackId = query.getHints.getBinTrackIdField
       val geom = query.getHints.getBinGeomField
       val dtg = query.getHints.getBinDtgField
@@ -89,24 +85,22 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
 
       // if possible, use the pre-computed values
       // can't use if there are non-st filters or if custom fields are requested
-      if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, trackId, geom, dtg, label)) {
-        iterators = Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, batchSize, sort, fp))
-        colFamily = Z3Table.BIN_CF
+      val (iters, cf) = if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, trackId, geom, dtg, label)) {
+        (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, batchSize, sort, fp)), Z3Table.BIN_CF)
       } else {
         val binDtg = dtg.getOrElse(dtgField.get) // dtgField is always defined if we're using z3
         val binGeom = geom.getOrElse(sft.getGeomField)
         val iter =
           BinAggregatingIterator.configureDynamic(sft, ecql, trackId, binGeom, binDtg, label, batchSize, sort, fp)
-        iterators = Seq(iter)
+        (Seq(iter), Z3Table.FULL_CF)
       }
-      kvsToFeatures = BinAggregatingIterator.kvsToFeatures()
+      (iters, BinAggregatingIterator.kvsToFeatures(), cf)
     } else if (query.getHints.isDensityQuery) {
       val envelope = query.getHints.getDensityEnvelope.get
       val (width, height) = query.getHints.getDensityBounds.get
-      val iter = Z3DensityIterator.configure(sft, ecql, envelope, width, height, 1000, fp)
-      iterators = Seq(iter)
-      kvsToFeatures = Z3DensityIterator.kvsToFeatures()
-      adaptFeatures = Some(Z3DensityIterator.adaptIterator(envelope, width, height))
+      val weight = query.getHints.getDensityWeight
+      val iter = Z3DensityIterator.configure(sft, ecql, envelope, width, height, weight, fp)
+      (Seq(iter), Z3DensityIterator.kvsToFeatures(), Z3Table.FULL_CF)
     } else {
       val transforms = for {
         tdef <- index.getTransformDefinition(query)
@@ -114,14 +108,12 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
       } yield { (tdef, tsft) }
       output(s"Transforms: $transforms")
 
-      (ecql, transforms) match {
-        case (None, None) => iterators = Seq.empty
+      val iters = (ecql, transforms) match {
+        case (None, None) => Seq.empty
         case _ =>
-          val iter =
-            LazyFilterTransformIterator.configure[KryoLazyFilterTransformIterator](sft, ecql, transforms, fp)
-          iterators = Seq(iter)
+          Seq(LazyFilterTransformIterator.configure[KryoLazyFilterTransformIterator](sft, ecql, transforms, fp))
       }
-      kvsToFeatures = Z3Table.adaptZ3KryoIterator(query.getHints.getReturnSft)
+      (iters, Z3Table.adaptZ3KryoIterator(query.getHints.getReturnSft), Z3Table.FULL_CF)
     }
 
     val z3table = acc.getZ3Table(sft)
@@ -137,18 +129,18 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
     val ut = Z3Table.secondsInCurrentWeek(interval.getEnd, epochWeekStart)
     if (weeks.length == 1) {
       Seq(queryPlanForPrefix(weeks.head, lt ,ut, lx, ly, ux, uy,
-        z3table, kvsToFeatures, adaptFeatures, iterators, colFamily, numThreads, contained = false))
+        z3table, kvsToFeatures, iterators, colFamily, numThreads, contained = false))
     } else {
       val oneWeekInSeconds = Weeks.ONE.toStandardSeconds.getSeconds
       val head +: xs :+ last = weeks.toList
       val middleQPs = xs.map { w =>
         queryPlanForPrefix(w, 0, oneWeekInSeconds, lx, ly, ux, uy,
-          z3table, kvsToFeatures, adaptFeatures, iterators, colFamily, numThreads, contained = true)
+          z3table, kvsToFeatures, iterators, colFamily, numThreads, contained = true)
       }
       val startQP = queryPlanForPrefix(head, lt, oneWeekInSeconds, lx, ly, ux, uy,
-        z3table, kvsToFeatures, adaptFeatures, iterators, colFamily, numThreads, contained = false)
+        z3table, kvsToFeatures, iterators, colFamily, numThreads, contained = false)
       val endQP = queryPlanForPrefix(last, 0, ut, lx, ly, ux, uy,
-        z3table, kvsToFeatures, adaptFeatures, iterators, colFamily, numThreads, contained = false)
+        z3table, kvsToFeatures, iterators, colFamily, numThreads, contained = false)
       Seq(startQP, endQP) ++ middleQPs
     }
   }
@@ -157,7 +149,6 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
                          lx: Double, ly: Double, ux: Double, uy: Double,
                          table: String,
                          kvsToFeatures: FeatureFunction,
-                         adaptFeatures: Option[ExpandFeatures],
                          is: Seq[IteratorSetting],
                          colFamily: Text,
                          numThreads: Int,
@@ -178,7 +169,7 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
     val iter = Z3Iterator.configure(Z3_CURVE.index(lx, ly, lt), Z3_CURVE.index(ux, uy, ut), Z3_ITER_PRIORITY)
 
     val iters = Seq(iter) ++ is
-    BatchScanPlan(table, accRanges, iters, Seq(colFamily), kvsToFeatures, adaptFeatures, numThreads, hasDuplicates = false)
+    BatchScanPlan(table, accRanges, iters, Seq(colFamily), kvsToFeatures, numThreads, hasDuplicates = false)
   }
 }
 

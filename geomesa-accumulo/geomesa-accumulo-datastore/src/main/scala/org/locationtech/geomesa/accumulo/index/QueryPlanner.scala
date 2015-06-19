@@ -9,7 +9,6 @@
 package org.locationtech.geomesa.accumulo.index
 
 import java.util.Map.Entry
-import java.util.{Map => JMap}
 
 import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.data.{Key, Value}
@@ -23,9 +22,7 @@ import org.geotools.process.vector.TransformProcess.Definition
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanners.FeatureFunction
-import org.locationtech.geomesa.accumulo.iterators.TemporalDensityIterator._
 import org.locationtech.geomesa.accumulo.iterators._
-import org.locationtech.geomesa.accumulo.sumNumericValueMutableMaps
 import org.locationtech.geomesa.accumulo.util.CloseableIterator._
 import org.locationtech.geomesa.accumulo.util.{CloseableIterator, SelfClosingIterator}
 import org.locationtech.geomesa.features.SerializationType.SerializationType
@@ -33,7 +30,7 @@ import org.locationtech.geomesa.features._
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.security.SecurityUtils
 import org.locationtech.geomesa.utils.cache.SoftThreadLocal
-import org.locationtech.geomesa.utils.geotools.{GeometryUtils, SimpleFeatureTypes}
+import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.stats.{MethodProfiling, TimingsImpl}
 import org.opengis.feature.GeometryAttribute
 import org.opengis.feature.`type`.{AttributeDescriptor, GeometryDescriptor}
@@ -86,13 +83,7 @@ case class QueryPlanner(sft: SimpleFeatureType,
    */
   private def executePlans(query: Query, strategyPlans: Seq[StrategyPlan], deduplicate: Boolean): SFIter = {
     val features = strategyPlans.iterator.ciFlatMap { sp =>
-      // scan accumulo and map key/values to features
-      val simple = sp.strategy.execute(sp.plan, acc, log).map(sp.plan.kvsToFeatures)
-      // expand features if there is a 1-to-many mapping
-      sp.plan.expandFeatures match {
-        case Some(fn) => CloseableIterator(simple.flatMap(fn), simple.close())
-        case None     => simple
-      }
+      sp.strategy.execute(sp.plan, acc, log).map(sp.plan.kvsToFeatures)
     }
 
     // deduplication between query plans, if there is an OR
@@ -107,12 +98,13 @@ case class QueryPlanner(sft: SimpleFeatureType,
       SelfClosingIterator(deduped)
     }
 
-    // reduce feature checks // TODO include this in query plan
-    if (query.getHints.containsKey(TEMPORAL_DENSITY_KEY)) {
+    if (query.getHints.isTemporalDensityQuery) {
       val encode = query.getHints.containsKey(RETURN_ENCODED)
-      adaptTemporalFeatures(sortedAndSelfClosing, query.getHints.getReturnSft, encode)
-    } else if (query.getHints.containsKey(MAP_AGGREGATION_KEY)) {
-      adaptMapAggregationFeatures(sortedAndSelfClosing, query.getHints.getReturnSft, query)
+      val returnSft = query.getHints.getReturnSft
+      TemporalDensityIterator.reduceTemporalFeatures(sortedAndSelfClosing, returnSft, encode)
+    } else if (query.getHints.isMapAggregatingQuery) {
+      val returnSft = query.getHints.getReturnSft
+      MapAggregatingIterator.reduceMapAggregationFeatures(sortedAndSelfClosing, returnSft, query)
     } else {
       sortedAndSelfClosing
     }
@@ -177,44 +169,6 @@ case class QueryPlanner(sft: SimpleFeatureType,
       val sf = deserializer.deserialize(kv.getValue.get)
       applyVisibility(sf, kv.getKey)
       sf
-    }
-  }
-
-  private def adaptTemporalFeatures(features: SFIter, sft: SimpleFeatureType, returnEncoded: Boolean): SFIter = {
-    val timeSeriesStrings = features.map(f => decodeTimeSeries(f.getAttribute(TIME_SERIES).toString))
-    val summedTimeSeries = timeSeriesStrings.reduceOption(combineTimeSeries)
-
-    val feature = summedTimeSeries.map { sum =>
-      val featureBuilder = ScalaSimpleFeatureFactory.featureBuilder(sft)
-      if (returnEncoded) {
-        featureBuilder.add(TemporalDensityIterator.encodeTimeSeries(sum))
-      } else {
-        featureBuilder.add(timeSeriesToJSON(sum))
-      }
-      featureBuilder.add(GeometryUtils.zeroPoint) // Filler value as Feature requires a geometry
-      featureBuilder.buildFeature(null)
-    }
-
-    feature.iterator
-  }
-
-  private def adaptMapAggregationFeatures(features: SFIter, sft: SimpleFeatureType, query: Query): SFIter = {
-    val aggregateKeyName = query.getHints.get(MAP_AGGREGATION_KEY).asInstanceOf[String]
-
-    val maps = features.map(_.getAttribute(aggregateKeyName).asInstanceOf[JMap[AnyRef, Int]].asScala)
-
-    if (maps.nonEmpty) {
-      val reducedMap = sumNumericValueMutableMaps(maps.toIterable).toMap // to immutable map
-
-      val featureBuilder = ScalaSimpleFeatureFactory.featureBuilder(sft)
-      featureBuilder.reset()
-      featureBuilder.add(reducedMap)
-      featureBuilder.add(GeometryUtils.zeroPoint) // Filler value as Feature requires a geometry
-      val result = featureBuilder.buildFeature(null)
-
-      Iterator(result)
-    } else {
-      CloseableIterator.empty
     }
   }
 }
@@ -358,7 +312,7 @@ object QueryPlanner {
     val sft = if (query.getHints.isBinQuery) {
       BinAggregatingIterator.BIN_SFT
     } else if (query.getHints.isDensityQuery) {
-      SimpleFeatureTypes.createType(baseSft.getTypeName, DensityIterator.DENSITY_FEATURE_SFT_STRING)
+      Z3DensityIterator.DENSITY_SFT
     } else if (query.getHints.containsKey(TEMPORAL_DENSITY_KEY)) {
       TemporalDensityIterator.createFeatureType(baseSft)
     } else if (query.getHints.containsKey(MAP_AGGREGATION_KEY)) {

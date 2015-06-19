@@ -146,18 +146,6 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
       forall(compiled)(entry => entry._2 mustEqual 30)
     }
 
-    "encode and decode features" in {
-
-      val matrix = HashBasedTable.create[Double, Double, Long]()
-      matrix.put(1.0, 2.0, 3)
-      matrix.put(2.0, 3.0, 5)
-
-      val encoded = DensityIterator.encodeSparseMatrix(matrix)
-      val decoded = DensityIterator.decodeSparseMatrix(encoded)
-
-      matrix mustEqual decoded
-    }
-
     "do density calc on a realistic polygon" in {
       clearFeatures()
       val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate.getTime

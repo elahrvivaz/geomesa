@@ -101,7 +101,7 @@ trait AttributeIdxStrategy extends Strategy with Logging {
 
         // there won't be any non-date/time-filters if the index only iterator has been selected
         val table = acc.getAttributeTable(sft)
-        ScanPlan(table, range, attributeIterators.toSeq, Seq.empty, kvsToFeatures, None, hasDupes)
+        ScanPlan(table, range, attributeIterators.toSeq, Seq.empty, kvsToFeatures, hasDupes)
 
       case RecordJoinIterator =>
         output("Using record join iterator")
@@ -127,7 +127,7 @@ trait AttributeIdxStrategy extends Strategy with Logging {
         val recordRanges = Seq(new AccRange()) // this will get overwritten in the join method
         val recordThreads = acc.getSuggestedRecordThreads(sft)
         val joinQuery = BatchScanPlan(recordTable, recordRanges, recordIterators.toSeq, Seq.empty,
-          kvsToFeatures, None, recordThreads, hasDupes)
+          kvsToFeatures, recordThreads, hasDupes)
 
         val attrTable = acc.getAttributeTable(sft)
         val attrThreads = acc.getSuggestedAttributeThreads(sft)
