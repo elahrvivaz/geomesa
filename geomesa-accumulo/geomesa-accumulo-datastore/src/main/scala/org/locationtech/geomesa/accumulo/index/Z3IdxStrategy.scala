@@ -85,15 +85,16 @@ class Z3IdxStrategy extends Strategy with Logging with IndexFilterHelpers  {
 
       // if possible, use the pre-computed values
       // can't use if there are non-st filters or if custom fields are requested
-      val (iters, cf) = if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, trackId, geom, dtg, label)) {
-        (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, batchSize, sort, fp)), Z3Table.BIN_CF)
-      } else {
-        val binDtg = dtg.getOrElse(dtgField.get) // dtgField is always defined if we're using z3
-        val binGeom = geom.getOrElse(sft.getGeomField)
-        val iter =
-          BinAggregatingIterator.configureDynamic(sft, ecql, trackId, binGeom, binDtg, label, batchSize, sort, fp)
-        (Seq(iter), Z3Table.FULL_CF)
-      }
+      val (iters, cf) =
+        if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, trackId, geom, dtg, label)) {
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, batchSize, sort, fp)), Z3Table.BIN_CF)
+        } else {
+          val binDtg = dtg.getOrElse(dtgField.get) // dtgField is always defined if we're using z3
+          val binGeom = geom.getOrElse(sft.getGeomField)
+          val iter = BinAggregatingIterator.configureDynamic(sft, ecql, trackId, binGeom, binDtg, label,
+            batchSize, sort, fp)
+          (Seq(iter), Z3Table.FULL_CF)
+        }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf)
     } else if (query.getHints.isDensityQuery) {
       val envelope = query.getHints.getDensityEnvelope.get

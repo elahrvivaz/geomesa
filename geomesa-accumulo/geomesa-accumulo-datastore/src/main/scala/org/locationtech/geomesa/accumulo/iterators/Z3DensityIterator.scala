@@ -62,7 +62,6 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
                     jOptions: jMap[String, String],
                     env: IteratorEnvironment): Unit = {
     IteratorClassLoader.initClassLoader(getClass)
-//    initClassLoader(logger)
 
     this.source = src.deepCopy(env)
     val options = jOptions.asScala

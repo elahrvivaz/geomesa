@@ -103,18 +103,19 @@ class STIdxStrategy extends Strategy with Logging with IndexFilterHelpers {
         filterSeq.headOption
       }
 
-      val iter = DensityIterator.configure(sft, featureEncoding, schema, filter, envelope, width, height, weight, p)
+      val iter =
+        DensityIterator.configure(sft, featureEncoding, schema, filter, envelope, width, height, weight, p)
       (Seq(iter), Z3DensityIterator.kvsToFeatures(), false)
     } else {
       val iteratorConfig = IteratorTrigger.chooseIterator(ecql, query, sft)
       val stiiIterCfg = getSTIIIterCfg(iteratorConfig, query, sft, ofilter, ecql, featureEncoding, version)
-      val aggregatingIterCfg = configureAggregatingIterator(query, geometryToCover, schema, featureEncoding, sft)
+      val aggIterCfg = configureAggregatingIterator(query, geometryToCover, schema, featureEncoding, sft)
 
       val indexEntries = iteratorConfig.iterator match {
         case IndexOnlyIterator      => true
         case SpatioTemporalIterator => false
       }
-      val iters = Seq(stiiIterCfg) ++ aggregatingIterCfg
+      val iters = Seq(stiiIterCfg) ++ aggIterCfg
       val kvs = if (query.getHints.isBinQuery) {
         // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
         BinAggregatingIterator.nonAggregatedKvsToFeatures(query, sft, featureEncoding)
