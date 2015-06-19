@@ -44,6 +44,7 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
   var filter: Filter = null
   var geomIndex: Int = -1
 
+  // we snap each point into a pixel and aggregate based on that
   var gridSnap: GridSnap = null
   var width: Int = -1
   var height: Int = -1
