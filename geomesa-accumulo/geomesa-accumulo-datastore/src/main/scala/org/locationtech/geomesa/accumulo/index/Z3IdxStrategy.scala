@@ -33,7 +33,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     val sft = queryPlanner.sft
     val acc = queryPlanner.acc
 
-    val dtgField = getDtgFieldName(sft)
+    val dtgField = sft.getDtgField
 
     val (geomFilters, temporalFilters) = filter.primary.partition(isSpatialFilter)
     val ecql = filter.secondary

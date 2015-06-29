@@ -15,8 +15,8 @@ import org.geotools.data.Query
 import org.geotools.factory.CommonFactoryFinder
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.accumulo.TestWithDataStore
-import org.locationtech.geomesa.accumulo.data.INTERNAL_GEOMESA_VERSION
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
 import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
@@ -60,7 +60,7 @@ class Z3IdxStrategyTest extends Specification with TestWithDataStore {
 
   implicit val ff = CommonFactoryFinder.getFilterFactory2
   val strategy = StrategyType.Z3
-  val queryPlanner = new QueryPlanner(sft, SerializationType.KRYO, null, ds, NoOpHints, INTERNAL_GEOMESA_VERSION)
+  val queryPlanner = new QueryPlanner(sft, SerializationType.KRYO, null, ds, NoOpHints, CURRENT_SCHEMA_VERSION)
   val output = ExplainNull
 
   "Z3IdxStrategy" should {

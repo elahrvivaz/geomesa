@@ -9,16 +9,15 @@
 package org.locationtech.geomesa.accumulo.index;
 
 import org.joda.time.DateTime;
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType$;
 
 /**
  * This is a utility class to allow for simpler use of Scala constants within
  * the Java portion of the API.
  */
 public class Constants {
-  public final static String SF_PROPERTY_GEOMETRY   = package$.MODULE$.SF_PROPERTY_GEOMETRY();
-  public final static String SF_PROPERTY_START_TIME = package$.MODULE$.SF_PROPERTY_START_TIME();
-  public final static String SF_PROPERTY_END_TIME   = package$.MODULE$.SF_PROPERTY_END_TIME();
-  public final static String SFT_INDEX_SCHEMA       = package$.MODULE$.SFT_INDEX_SCHEMA();
+  public final static String SF_PROPERTY_START_TIME = RichSimpleFeatureType$.MODULE$.DEFAULT_DATE_KEY();
+  public final static String SFT_INDEX_SCHEMA       = RichSimpleFeatureType$.MODULE$.ST_INDEX_SCHEMA_KEY();
 
   public final static String TYPE_SPEC              = package$.MODULE$.spec();
 

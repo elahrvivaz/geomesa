@@ -22,7 +22,7 @@ import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
 import org.locationtech.geomesa.utils.text.WKBUtils
 import org.opengis.feature.`type`.AttributeDescriptor
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
-
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import scala.collection.JavaConversions._
 import scala.collection.mutable
 
@@ -130,7 +130,7 @@ import scala.collection.JavaConversions._
    */
   protected[index] def getIndexValueAttributes(sft: SimpleFeatureType): Seq[AttributeDescriptor] = {
     val geom = sft.getGeometryDescriptor
-    val dtg = index.getDtgFieldName(sft)
+    val dtg = sft.getDtgField
     val attributes = mutable.Buffer.empty[AttributeDescriptor]
     var i = 0
     while (i < sft.getAttributeCount) {
@@ -244,7 +244,7 @@ class OldIndexValueEncoder(sft: SimpleFeatureType, encodedSft: SimpleFeatureType
   }
 
   val geomField = sft.getGeometryDescriptor.getLocalName
-  val dtgField = index.getDtgFieldName(sft)
+  val dtgField = sft.getDtgField
 
   /**
    * Decodes a byte array into a map of attribute name -> attribute value pairs
@@ -295,7 +295,7 @@ object OldIndexValueEncoder {
   // gets the default schema, which includes ID, geom and date (if available)
   // order is important here, as it needs to match the old IndexEntry encoding
   def getDefaultSchema(sft: SimpleFeatureType): Seq[String] =
-    Seq(ID_FIELD, sft.getGeometryDescriptor.getLocalName) ++ index.getDtgFieldName(sft)
+    Seq(ID_FIELD, sft.getGeometryDescriptor.getLocalName) ++ sft.getDtgField
 
   def getSchema(sft: SimpleFeatureType): Seq[String] = {
     import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor

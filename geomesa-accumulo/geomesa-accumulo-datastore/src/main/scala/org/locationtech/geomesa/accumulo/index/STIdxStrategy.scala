@@ -23,6 +23,7 @@ import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.filter.FilterHelper._
 import org.locationtech.geomesa.filter._
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
@@ -43,7 +44,7 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     output(s"Scanning ST index table for feature type ${sft.getTypeName}")
     output(s"Filter: ${filter.primary} ${filter.secondary.map(_.toString).getOrElse("")}")
 
-    val dtgField = getDtgFieldName(sft)
+    val dtgField = sft.getDtgField
 
     val (geomFilters, temporalFilters) = filter.primary.partition(isSpatialFilter)
     val ecql = filter.secondary

@@ -9,7 +9,7 @@
 package org.locationtech.geomesa.accumulo.index
 
 import org.geotools.data.Query
-import org.locationtech.geomesa.accumulo.data.INTERNAL_GEOMESA_VERSION
+import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
@@ -28,7 +28,7 @@ object QueryStrategyDecider {
 
   // first element is null so that the array index aligns with the version
   private val strategies: Array[QueryStrategyDecider] =
-    Array[QueryStrategyDecider](null) ++ (1 to INTERNAL_GEOMESA_VERSION).map(QueryStrategyDecider.apply)
+    Array[QueryStrategyDecider](null) ++ (1 to CURRENT_SCHEMA_VERSION).map(QueryStrategyDecider.apply)
 
   def apply(version: Int): QueryStrategyDecider = {
     if (version <= 4) new QueryStrategyDeciderV4 else new QueryStrategyDeciderV5

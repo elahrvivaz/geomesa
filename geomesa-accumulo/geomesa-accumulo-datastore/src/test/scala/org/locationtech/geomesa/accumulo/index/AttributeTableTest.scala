@@ -10,11 +10,13 @@ package org.locationtech.geomesa.accumulo.index
 
 import org.geotools.factory.Hints
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToWrite
+import org.locationtech.geomesa.accumulo.data.DEFAULT_ENCODING
 import org.locationtech.geomesa.accumulo.data.tables.{AttributeIndexRow, AttributeTable}
-import org.locationtech.geomesa.accumulo.data.{DEFAULT_ENCODING, INTERNAL_GEOMESA_VERSION}
 import org.locationtech.geomesa.features.SimpleFeatureSerializers
 import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes._
 import org.locationtech.geomesa.utils.text.WKTUtils
@@ -30,7 +32,7 @@ class AttributeTableTest extends Specification {
   val sftName = "mutableType"
   val spec = s"name:String:$OPT_INDEX=true,age:Integer:$OPT_INDEX=true,*geom:Geometry:srid=4326,dtg:Date:$OPT_INDEX=true"
   val sft = SimpleFeatureTypes.createType(sftName, spec)
-  sft.getUserData.put(SF_PROPERTY_START_TIME, "dtg")
+  sft.setDtgField("dtg")
 
     "AttributeTable" should {
 
@@ -44,7 +46,7 @@ class AttributeTableTest extends Specification {
         feature.setAttribute("age",50.asInstanceOf[Any])
         feature.getUserData()(Hints.USE_PROVIDED_FID) = java.lang.Boolean.TRUE
 
-        val indexValueEncoder = IndexValueEncoder(sft, INTERNAL_GEOMESA_VERSION)
+        val indexValueEncoder = IndexValueEncoder(sft, CURRENT_SCHEMA_VERSION)
         val featureEncoder = SimpleFeatureSerializers(sft, DEFAULT_ENCODING)
 
         val toWrite = new FeatureToWrite(feature, "", featureEncoder, indexValueEncoder)

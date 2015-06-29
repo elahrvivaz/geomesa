@@ -62,14 +62,6 @@ package object data {
   val ALL_TIME_BOUNDS      = new Interval(new DateTime(0l), new DateTime())  // Epoch till now
   val DEFAULT_ENCODING     = SerializationType.KRYO
 
-  // 0 == old single table style
-  // 1 == multi-table style
-  // 2 == sorted keys in the STIDX table
-  // skipping 3 for integration...
-  // 4 is kryo encoded index values
-  // 5 == z3 index
-  val INTERNAL_GEOMESA_VERSION = 5
-
   // SimpleFeature Hints
   val TRANSFORMS           = new ClassKey(classOf[String])
   val TRANSFORM_SCHEMA     = new ClassKey(classOf[SimpleFeatureType])

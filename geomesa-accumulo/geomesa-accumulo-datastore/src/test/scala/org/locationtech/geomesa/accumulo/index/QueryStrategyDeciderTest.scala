@@ -12,6 +12,7 @@ import org.geotools.data.Query
 import org.geotools.factory.CommonFactoryFinder
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.accumulo.data
 import org.locationtech.geomesa.accumulo.filter.TestFilters._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
@@ -49,7 +50,7 @@ class QueryStrategyDeciderTest extends Specification {
     .stringType("attr2")
     .build("featureNonIndex")
 
-  def getStrategy(filterString: String, version: Int = data.INTERNAL_GEOMESA_VERSION): Strategy = {
+  def getStrategy(filterString: String, version: Int = CURRENT_SCHEMA_VERSION): Strategy = {
     val sft = if (version > 0) sftIndex else sftNonIndex
     val filter = ECQL.toFilter(filterString)
     val hints = new UserDataStrategyHints()
@@ -163,7 +164,7 @@ class QueryStrategyDeciderTest extends Specification {
       val weightFilter = ff.equals(ff.literal(21.12D), ff.property("weight"))
 
       val hints = new UserDataStrategyHints()
-      val version = data.INTERNAL_GEOMESA_VERSION
+      val version = CURRENT_SCHEMA_VERSION
 
       "when best is first" >> {
         val filter = ff.and(Seq(nameFilter, heightFilter, weightFilter, ageFilter))

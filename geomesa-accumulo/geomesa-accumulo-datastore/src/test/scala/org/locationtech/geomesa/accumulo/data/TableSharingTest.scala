@@ -67,7 +67,6 @@ class TableSharingTest extends Specification with Logging {
   // Check the sft's indexschema
 
   val retrievedSFT1 = ds.getSchema(sft1.getTypeName)
-  val sft1Schema = org.locationtech.geomesa.accumulo.index.getIndexSchema(retrievedSFT1)
 
   val list2: util.SortedSet[String] = c.tableOperations().list
 

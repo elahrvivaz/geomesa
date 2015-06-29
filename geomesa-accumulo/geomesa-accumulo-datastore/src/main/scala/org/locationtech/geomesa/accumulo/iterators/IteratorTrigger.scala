@@ -12,7 +12,6 @@ import com.typesafe.scalalogging.slf4j.Logging
 import org.geotools.data.DataUtilities
 import org.geotools.factory.Hints
 import org.geotools.process.vector.TransformProcess
-import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
@@ -42,9 +41,6 @@ object IteratorTrigger extends Logging {
    */
   implicit class IndexAttributeNames(sft: SimpleFeatureType) {
     def geoName = sft.getGeometryDescriptor.getLocalName
-
-    def startTimeName =  attributeNameHandler(SF_PROPERTY_START_TIME,DEFAULT_DTG_PROPERTY_NAME)
-    def endTimeName   =  attributeNameHandler(SF_PROPERTY_END_TIME,DEFAULT_DTG_END_PROPERTY_NAME)
 
     def attributeNameHandler(attributeKey: String, attributeDefault:String): Option[String] = {
       // try to get the name from the user data, which may not exist, then check if the attribute exists

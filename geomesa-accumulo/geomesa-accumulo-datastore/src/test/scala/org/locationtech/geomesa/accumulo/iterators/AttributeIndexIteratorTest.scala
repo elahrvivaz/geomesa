@@ -20,6 +20,7 @@ import org.geotools.factory.{CommonFactoryFinder, Hints}
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToWrite
 import org.locationtech.geomesa.accumulo.data._
@@ -71,7 +72,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
 
       val bw = connector.createBatchWriter(table, GeoMesaBatchWriterConfig())
       val attributes = SimpleFeatureTypes.getSecondaryIndexedAttributes(sft).zipWithIndex
-      val indexValueEncoder = IndexValueEncoder(sft, INTERNAL_GEOMESA_VERSION)
+      val indexValueEncoder = IndexValueEncoder(sft, CURRENT_SCHEMA_VERSION)
       val featureEncoder = SimpleFeatureSerializers(sft, DEFAULT_ENCODING)
       val rowIdPrefix = org.locationtech.geomesa.accumulo.index.getTableSharingPrefix(sft)
 
@@ -88,7 +89,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
         GEOMESA_ITERATORS_SIMPLE_FEATURE_TYPE -> "dtg:Date,*geom:Geometry:srid=4326",
         GEOMESA_ITERATORS_SFT_NAME -> sftName,
         GEOMESA_ITERATORS_SFT_INDEX_VALUE -> spec,
-        GEOMESA_ITERATORS_VERSION -> INTERNAL_GEOMESA_VERSION.toString
+        GEOMESA_ITERATORS_VERSION -> CURRENT_SCHEMA_VERSION.toString
       )
       val is = new IteratorSetting(40, classOf[AttributeIndexIterator], opts)
       scanner.addScanIterator(is)

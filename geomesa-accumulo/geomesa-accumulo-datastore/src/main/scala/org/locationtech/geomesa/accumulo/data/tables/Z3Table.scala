@@ -44,7 +44,7 @@ object Z3Table extends GeoMesaTable {
   def epochWeeks(dtg: DateTime) = Weeks.weeksBetween(EPOCH, new DateTime(dtg))
 
   override def supports(sft: SimpleFeatureType): Boolean =
-    sft.getGeometryDescriptor.getType.getBinding == classOf[Point] && index.getDtgFieldName(sft).isDefined
+    sft.getGeometryDescriptor.getType.getBinding == classOf[Point] && sft.getDtgField.isDefined
 
   override val suffix: String = "z3"
 
@@ -80,9 +80,7 @@ object Z3Table extends GeoMesaTable {
   }
 
   override def remover(sft: SimpleFeatureType): Option[FeatureToMutations] = {
-    val dtgIndex = index.getDtgDescriptor(sft)
-        .map { desc => sft.indexOf(desc.getName) }
-        .getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
+    val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
     val fn = (fw: FeatureToWrite) => {
       val mutation = new Mutation(getRowKey(fw, dtgIndex))
       mutation.putDelete(BIN_CF, EMPTY_TEXT, fw.columnVisibility)

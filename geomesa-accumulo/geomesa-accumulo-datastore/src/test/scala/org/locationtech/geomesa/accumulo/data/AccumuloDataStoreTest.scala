@@ -41,6 +41,7 @@ import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.filter.function.Convert2ViewerFunction
 import org.locationtech.geomesa.security.{AuthorizationsProvider, DefaultAuthorizationsProvider, FilteringAuthorizationsProvider}
 import org.locationtech.geomesa.utils.geotools.Conversions._
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes._
 import org.locationtech.geomesa.utils.text.WKTUtils
@@ -79,21 +80,21 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
           .id()
           .build()
       val sft = SimpleFeatureTypes.createType(sftName, defaultSchema)
-      sft.getUserData.put(SF_PROPERTY_START_TIME, "dtg")
-      sft.getUserData.put(SFT_INDEX_SCHEMA, indexSchema)
+      sft.setDtgField("dtg")
+      sft.setStIndexSchema(indexSchema)
       ds.createSchema(sft)
 
       val retrievedSft = ds.getSchema(sftName)
 
       retrievedSft must equalTo(sft)
-      retrievedSft.getUserData.get(SF_PROPERTY_START_TIME) mustEqual "dtg"
-      retrievedSft.getUserData.get(SFT_INDEX_SCHEMA) must beEqualTo(indexSchema)
-      getIndexSchema(retrievedSft) must beEqualTo(Option(indexSchema))
+      retrievedSft.getDtgField must beSome("dtg")
+      retrievedSft.getStIndexSchema mustEqual indexSchema
+      retrievedSft.getStIndexSchema mustEqual indexSchema
     }
     "create and retrieve a schema without a custom IndexSchema" in {
       val sftName = "schematestDefaultSchema"
       val sft = SimpleFeatureTypes.createType(sftName, defaultSchema)
-      sft.getUserData.put(SF_PROPERTY_START_TIME, "dtg")
+      sft.setDtgField("dtg")
 
       val mockMaxShards = ds.DEFAULT_MAX_SHARD
       val indexSchema = ds.computeSpatioTemporalSchema(sft)
@@ -104,9 +105,8 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
 
       mockMaxShards mustEqual 0
       retrievedSft mustEqual sft
-      retrievedSft.getUserData.get(SF_PROPERTY_START_TIME) mustEqual "dtg"
-      retrievedSft.getUserData.get(SFT_INDEX_SCHEMA) mustEqual indexSchema
-      getIndexSchema(retrievedSft) mustEqual Option(indexSchema)
+      retrievedSft.getDtgField must beSome("dtg")
+      retrievedSft.getStIndexSchema mustEqual indexSchema
     }
     "return NULL when a feature name does not exist" in {
       ds.getSchema("testTypeThatDoesNotExist") must beNull
@@ -179,7 +179,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       val spec = "name:String,dtg:Date,*geom:Point:srid=4326;table.splitter.class=" +
           s"${classOf[DigitSplitter].getName},table.splitter.options=fmt:%02d,min:0,max:99"
       val sft = SimpleFeatureTypes.createType("customsplit", spec)
-      org.locationtech.geomesa.accumulo.index.setTableSharing(sft, false)
+      sft.setTableSharing(false)
       ds.createSchema(sft)
       val recTable = ds.getRecordTable(sft)
       val splits = ds.connector.tableOperations().listSplits(recTable)
@@ -770,7 +770,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       // this should end up hex encoded
       val sftName = "nihao你好"
       val sft = SimpleFeatureTypes.createType(sftName, s"name:String,dtg:Date,*geom:Point:srid=4326")
-      org.locationtech.geomesa.accumulo.index.setTableSharing(sft, false)
+      sft.setTableSharing(false)
       ds.createSchema(sft)
 
       // encode groups of 2 hex chars since we are doing multibyte chars
@@ -841,7 +841,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
           "000000013500000015000000000140468000000000004046800000000000000001349ccf6e18").map {v =>
           hex.decode(v.getBytes)}
         val sft = SimpleFeatureTypes.createType(sftName, s"name:String,$geotimeAttributes")
-        sft.getUserData.put(SF_PROPERTY_START_TIME, "dtg")
+        sft.setDtgField("dtg")
 
         val instance = new MockInstance(params("instanceId"))
         val connector = instance.getConnector(params("user"), new PasswordToken(params("password").getBytes))
@@ -874,7 +874,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
 
       def createFeature(sftName: String, ds: AccumuloDataStore, sharedTables: Boolean = true) = {
         val sft = SimpleFeatureTypes.createType(sftName, defaultSchema)
-        org.locationtech.geomesa.accumulo.index.setTableSharing(sft, sharedTables)
+        sft.setTableSharing(sharedTables)
         ds.createSchema(sft)
         addDefaultPoint(sft, dataStore = ds)
       }

@@ -10,6 +10,7 @@ package org.locationtech.geomesa.accumulo.index
 
 import org.geotools.data.Query
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes._
 import org.opengis.filter.Filter
@@ -24,7 +25,7 @@ class IndexPackageObjectTest extends Specification {
       val sftName = "targetSchemaTest"
       val defaultSchema = "name:String,geom:Point:srid=4326,dtg:Date"
       val origSFT = SimpleFeatureTypes.createType(sftName, defaultSchema)
-      origSFT.getUserData.put(SF_PROPERTY_START_TIME, "dtg")
+      origSFT.setDtgField("dtg")
 
       val query = new Query(sftName, Filter.INCLUDE, Array("name", "helloName=strConcat('hello', name)", "geom"))
       QueryPlanner.setQueryTransforms(query, origSFT)

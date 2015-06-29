@@ -8,6 +8,9 @@
 
 package org.locationtech.geomesa.utils.geotools
 
+import java.util.Date
+
+import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom._
 import org.geotools.data.FeatureReader
 import org.geotools.data.simple.SimpleFeatureIterator
@@ -15,9 +18,10 @@ import org.geotools.factory.Hints
 import org.geotools.feature.AttributeTypeBuilder
 import org.geotools.geometry.DirectPosition2D
 import org.geotools.temporal.`object`.{DefaultInstant, DefaultPeriod, DefaultPosition}
-import org.geotools.util.{Converter, ConverterFactory}
+import org.geotools.util.{Converters, Converter, ConverterFactory}
 import org.joda.time.DateTime
 import org.joda.time.format.ISODateTimeFormat
+import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.utils.stats.Cardinality._
 import org.locationtech.geomesa.utils.stats.IndexCoverage._
 import org.locationtech.geomesa.utils.stats.{Cardinality, IndexCoverage}
@@ -80,7 +84,6 @@ object Conversions {
     def get[T](name: String) = sf.getAttribute(name).asInstanceOf[T]
 
     def getDouble(str: String): Double = {
-
       val ret = sf.getAttribute(str)
       ret match {
         case d: java.lang.Double  => d
@@ -184,24 +187,47 @@ object RichAttributeDescriptors {
   }
 }
 
-object RichSimpleFeatureType {
+object RichSimpleFeatureType extends Logging {
 
   import RichAttributeDescriptors.RichAttributeDescriptor
-  import SimpleFeatureTypes.DEFAULT_DATE_FIELD
 
   import scala.collection.JavaConversions._
 
+  val SCHEMA_VERSION_KEY  = "geomesa.version"
+  val TABLE_SHARING_KEY   = "geomesa.table.sharing"
+  val DEFAULT_DATE_KEY    = "geomesa.index.dtg"
+  val ST_INDEX_SCHEMA_KEY = "geomesa.index.st.schema"
+
+  // in general we store everything as strings so that it's easy to pass to accumulo iterators
   implicit class RichSimpleFeatureType(val sft: SimpleFeatureType) extends AnyVal {
+
     def getGeomField: String = sft.getGeometryDescriptor.getLocalName
     def getGeomIndex: Int = sft.indexOf(sft.getGeometryDescriptor.getLocalName)
-    def getDtgField: Option[String] = Option(sft.getUserData.get(DEFAULT_DATE_FIELD)).map(_.toString)
-    def getDtgIndex: Option[Int] = getDtgField.map(sft.indexOf)
+
+    def getDtgField: Option[String] = userData[String](DEFAULT_DATE_KEY)
+    def getDtgIndex: Option[Int] = getDtgField.map(sft.indexOf).filter(_ != -1)
+    def getDtgDescriptor = getDtgIndex.map(sft.getDescriptor)
+    def clearDtgField(): Unit = sft.getUserData.remove(DEFAULT_DATE_KEY)
+    def setDtgField(dtg: String): Unit = {
+      val descriptor = sft.getDescriptor(dtg)
+      require(descriptor != null && descriptor.getType.getBinding == classOf[Date],
+        s"Invalid date field '$dtg' for schema $sft")
+      sft.getUserData.put(DEFAULT_DATE_KEY, dtg)
+    }
+
+    def getStIndexSchema: String = userData[String](ST_INDEX_SCHEMA_KEY).orNull
+    def setStIndexSchema(schema: String): Unit = sft.getUserData.put(ST_INDEX_SCHEMA_KEY, schema)
+
     def getBinTrackId: Option[String] = sft.getAttributeDescriptors.find(_.isBinTrackId).map(_.getLocalName)
-    def userData[T](key: AnyRef)(implicit ct: ClassTag[T]): Option[T] =
-      Option(sft.getUserData.get(key)).flatMap {
-        case ct(x) => Some(x)
-        case _ => None
-      }
+
+    def getSchemaVersion: Int = userData[String](SCHEMA_VERSION_KEY).map(_.toInt).getOrElse(CURRENT_SCHEMA_VERSION)
+    def setSchemaVersion(version: Int): Unit = sft.getUserData.put(SCHEMA_VERSION_KEY, version.toString)
+
+    //  If no user data is specified when creating a new SFT, we should default to 'true'.
+    def isTableSharing: Boolean = userData[String](TABLE_SHARING_KEY).map(_.toBoolean).getOrElse(true)
+    def setTableSharing(sharing: Boolean): Unit = sft.getUserData.put(TABLE_SHARING_KEY, sharing.toString)
+
+    def userData[T](key: AnyRef): Option[T] = Option(sft.getUserData.get(key).asInstanceOf[T])
   }
 }
 

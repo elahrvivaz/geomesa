@@ -17,12 +17,12 @@ import org.apache.accumulo.core.data.Mutation
 import org.apache.hadoop.io.Text
 import org.apache.hadoop.mapreduce._
 import org.geotools.data.DataStoreFinder
-import org.locationtech.geomesa.accumulo
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloDataStoreFactory, AccumuloFeatureWriter}
 import org.locationtech.geomesa.accumulo.index.IndexValueEncoder
 import org.locationtech.geomesa.features.SimpleFeatureSerializers
 import org.locationtech.geomesa.jobs.GeoMesaConfigurator
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeature
 
 import scala.collection.JavaConversions._
@@ -115,9 +115,9 @@ class GeoMesaRecordWriter(params: Map[String, String], delegate: RecordWriter[Te
     }
 
     val writers = writerCache.getOrElseUpdate(sftName, {
-      if (sft.getUserData.get(accumulo.index.SFT_INDEX_SCHEMA) == null) {
+      if (sft.getStIndexSchema == null) {
         // needed for st writer
-        sft.getUserData.put(accumulo.index.SFT_INDEX_SCHEMA, ds.getIndexSchemaFmt(sft.getTypeName))
+        sft.setStIndexSchema(ds.getIndexSchemaFmt(sft.getTypeName))
       }
       AccumuloFeatureWriter.getTablesAndWriters(sft, ds).map {
         case (table, writer) => (new Text(table), writer)

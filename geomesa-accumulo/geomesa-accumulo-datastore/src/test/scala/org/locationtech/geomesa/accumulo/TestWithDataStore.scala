@@ -15,6 +15,7 @@ import org.geotools.factory.Hints
 import org.geotools.feature.DefaultFeatureCollection
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloFeatureStore}
 import org.locationtech.geomesa.accumulo.index._
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeature
 import org.opengis.filter.Filter
@@ -33,7 +34,7 @@ trait TestWithDataStore {
   val sftName = getClass.getSimpleName
   lazy val sft = {
     val sft = SimpleFeatureTypes.createType(sftName, spec)
-    sft.getUserData.put(SF_PROPERTY_START_TIME, dtgField)
+    sft.setDtgField(dtgField)
     sft
   }
 

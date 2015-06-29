@@ -20,6 +20,7 @@ import org.locationtech.geomesa.accumulo
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
 import org.locationtech.geomesa.accumulo.index.{IndexSchema, _}
 import org.opengis.feature.simple.SimpleFeatureType
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
 import scala.collection.JavaConversions._
 
@@ -36,14 +37,12 @@ object SpatioTemporalTable extends GeoMesaTable with Logging {
   override val suffix: String = "st_idx"
 
   override def writer(sft: SimpleFeatureType): Option[FeatureToMutations] = {
-    val indexSchema = sft.getUserData.get(accumulo.index.SFT_INDEX_SCHEMA).asInstanceOf[String]
-    val stEncoder = IndexSchema.buildKeyEncoder(sft, indexSchema)
+    val stEncoder = IndexSchema.buildKeyEncoder(sft, sft.getStIndexSchema)
     Some((toWrite: FeatureToWrite) => stEncoder.encode(toWrite))
   }
 
   override def remover(sft: SimpleFeatureType): Option[FeatureToMutations] = {
-    val indexSchema = sft.getUserData.get(accumulo.index.SFT_INDEX_SCHEMA).asInstanceOf[String]
-    val stEncoder = IndexSchema.buildKeyEncoder(sft, indexSchema)
+    val stEncoder = IndexSchema.buildKeyEncoder(sft, sft.getStIndexSchema)
     Some((toWrite: FeatureToWrite) => stEncoder.encode(toWrite, delete = true))
   }
 
@@ -57,9 +56,8 @@ object SpatioTemporalTable extends GeoMesaTable with Logging {
     val MIN_START = "\u0000"
     val MAX_END = "~"
 
-    val schema = getIndexSchema(sft).getOrElse {
-      val msg = s"Cannot delete ${sft.getTypeName}. SFT does not have its index schema stored."
-      throw new Exception(msg)
+    val schema = Option(sft.getStIndexSchema).getOrElse {
+      throw new IllegalStateException(s"Can't delete ${sft.getTypeName} - missing index schema.")
     }
 
     val (rowf, _,_) = IndexSchema.parse(IndexSchema.formatter, schema).get

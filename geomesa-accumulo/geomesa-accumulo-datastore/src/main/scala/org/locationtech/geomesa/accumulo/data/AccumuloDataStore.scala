@@ -25,7 +25,6 @@ import org.geotools.feature.NameImpl
 import org.geotools.geometry.jts.ReferencedEnvelope
 import org.geotools.referencing.crs.DefaultGeographicCRS
 import org.joda.time.Interval
-import org.locationtech.geomesa.accumulo
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore._
 import org.locationtech.geomesa.accumulo.data.tables._
@@ -34,9 +33,11 @@ import org.locationtech.geomesa.accumulo.util.{ExplainingConnectorCreator, GeoMe
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features.{SerializationType, SimpleFeatureSerializers}
 import org.locationtech.geomesa.security.AuthorizationsProvider
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes.{FeatureSpec, NonGeomAttributeSpec}
 import org.locationtech.geomesa.utils.time.Time._
+import org.locationtech.geomesa.{CURRENT_SCHEMA_VERSION, accumulo}
 import org.opengis.feature.`type`.Name
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
@@ -132,33 +133,23 @@ class AccumuloDataStore(val connector: Connector,
 
     // compute the metadata values
     val attributesValue = SimpleFeatureTypes.encodeType(sft)
-    val dtgValue: Option[String] = {
-      val userData = sft.getUserData
-      // inspect, warn and set SF_PROPERTY_START_TIME if appropriate
-      TemporalIndexCheck.extractNewDTGFieldCandidate(sft)
-        .foreach { name => userData.put(accumulo.index.SF_PROPERTY_START_TIME, name) }
-      if (userData.containsKey(accumulo.index.SF_PROPERTY_START_TIME)) {
-        Option(userData.get(accumulo.index.SF_PROPERTY_START_TIME).asInstanceOf[String])
-      } else {
-        None
-      }
-    }
+    // inspect, warn and set SF_PROPERTY_START_TIME if appropriate
+    TemporalIndexCheck.validateDtgField(sft)
+    val dtgValue: Option[String] = sft.getDtgField
     val featureEncodingValue        = /*_*/fe.toString/*_*/
     val z3TableValue                = formatZ3TableName(catalogTable, sft)
     val spatioTemporalIdxTableValue = formatSpatioTemporalIdxTableName(catalogTable, sft)
     val attrIdxTableValue           = formatAttrIdxTableName(catalogTable, sft)
     val recordTableValue            = formatRecordTableName(catalogTable, sft)
     val queriesTableValue           = formatQueriesTableName(catalogTable, sft)
-    val dtgFieldValue               = dtgValue.getOrElse(accumulo.DEFAULT_DTG_PROPERTY_NAME)
-    val tableSharingValue           = accumulo.index.getTableSharing(sft).toString
-    val dataStoreVersion            = INTERNAL_GEOMESA_VERSION.toString
+    val tableSharingValue           = sft.isTableSharing.toString
+    val dataStoreVersion            = CURRENT_SCHEMA_VERSION.toString
 
     // store each metadata in the associated key
     val attributeMap =
       Map(
         ATTRIBUTES_KEY        -> attributesValue,
         SCHEMA_KEY            -> spatioTemporalSchemaValue,
-        DTGFIELD_KEY          -> dtgFieldValue,
         FEATURE_ENCODING_KEY  -> featureEncodingValue,
         VISIBILITIES_KEY      -> writeVisibilities,
         Z3_TABLE_KEY          -> z3TableValue,
@@ -172,6 +163,7 @@ class AccumuloDataStore(val connector: Connector,
 
     val featureName = getFeatureName(sft)
     metadata.insert(featureName, attributeMap)
+    dtgValue.foreach(metadata.insert(featureName, DTGFIELD_KEY, _))
 
     // write out a visibilities protected entry that we can use to validate that a user can see
     // data in this store
@@ -314,9 +306,7 @@ class AccumuloDataStore(val connector: Connector,
 
   // Retrieves or computes the indexSchema
   def computeSpatioTemporalSchema(sft: SimpleFeatureType): String = {
-    val spatioTemporalIdxSchemaFmt: Option[String] = accumulo.index.getIndexSchema(sft)
-
-    spatioTemporalIdxSchemaFmt match {
+    Option(sft.getStIndexSchema) match {
       case None         => buildDefaultSpatioTemporalSchema(getFeatureName(sft))
       case Some(schema) => schema
     }
@@ -340,8 +330,7 @@ class AccumuloDataStore(val connector: Connector,
   //  For a shared ST table, the IndexSchema must start with a partition number and a constant string.
   //  TODO: This function should check if the constant is equal to the featureType.getTypeName
   def checkSchemaRequirements(featureType: SimpleFeatureType, schema: String) {
-    if(accumulo.index.getTableSharing(featureType)) {
-
+    if (featureType.isTableSharing) {
       val (rowf, _,_) = IndexSchema.parse(IndexSchema.formatter, schema).get
       rowf.lf match {
         case Seq(pf: PartitionTextFormatter, i: IndexOrDataTextFormatter, const: ConstantTextFormatter, r@_*) =>
@@ -374,7 +363,7 @@ class AccumuloDataStore(val connector: Connector,
     if (metadata.read(featureName, ST_IDX_TABLE_KEY).nonEmpty) {
       val featureType = getSchema(featureName)
 
-      if (accumulo.index.getTableSharing(featureType)) {
+      if (featureType.isTableSharing) {
         deleteSharedTables(featureType)
       } else {
         deleteStandAloneTables(featureType)
@@ -739,15 +728,11 @@ class AccumuloDataStore(val connector: Connector,
     val featureName = name.getLocalPart
     getAttributes(featureName).map { attributes =>
       val sft = SimpleFeatureTypes.createType(name.getURI, attributes)
-      val dtgField = metadata.read(featureName, DTGFIELD_KEY).getOrElse(accumulo.DEFAULT_DTG_PROPERTY_NAME)
-      val indexSchema = metadata.read(featureName, SCHEMA_KEY).orNull
+      metadata.read(featureName, DTGFIELD_KEY).foreach(sft.setDtgField)
+      sft.setSchemaVersion(metadata.readRequired(featureName, VERSION_KEY).toInt)
+      sft.setStIndexSchema(metadata.read(featureName, SCHEMA_KEY).orNull)
       // If no data is written, we default to 'false' in order to support old tables.
-      val sharingBoolean = metadata.read(featureName, SHARED_TABLES_KEY).getOrElse("false")
-
-      sft.getUserData.put(accumulo.index.SF_PROPERTY_START_TIME, dtgField)
-      sft.getUserData.put(accumulo.index.SF_PROPERTY_END_TIME, dtgField)
-      sft.getUserData.put(accumulo.index.SFT_INDEX_SCHEMA, indexSchema)
-      accumulo.index.setTableSharing(sft, new java.lang.Boolean(sharingBoolean))
+      sft.setTableSharing(metadata.read(featureName, SHARED_TABLES_KEY).exists(_.toBoolean))
       sft
     }.orNull
   }
@@ -916,7 +901,7 @@ object AccumuloDataStore {
    * but still human readable.
    */
   def formatTableName(catalogTable: String, featureType: SimpleFeatureType, suffix: String): String =
-    if (accumulo.index.getTableSharing(featureType))
+    if (featureType.isTableSharing)
       formatTableName(catalogTable, suffix)
     else
       formatTableName(catalogTable, featureType.getTypeName, suffix)
