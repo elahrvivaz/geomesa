@@ -14,6 +14,7 @@ import org.geotools.feature.simple.SimpleFeatureTypeBuilder
 import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.data.tables.AttributeTable._
 import org.locationtech.geomesa.features.ScalaSimpleFeature
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.stats.IndexCoverage
 import org.opengis.feature.`type`.AttributeDescriptor
 import org.opengis.feature.simple.SimpleFeature
@@ -54,7 +55,7 @@ class AttributeIndexIterator
     initFeatureType(options)
     init(featureType, options)
 
-    attributeRowPrefix = index.getTableSharingPrefix(featureType)
+    attributeRowPrefix = featureType.getTableSharingPrefix
     // if we're retrieving the attribute, we need the class in order to decode it
     attributeType = Option(options.get(GEOMESA_ITERATORS_ATTRIBUTE_NAME))
         .flatMap(n => Option(featureType.getDescriptor(n))).orNull

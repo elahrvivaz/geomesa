@@ -14,7 +14,7 @@ import org.apache.accumulo.core.data.{Range => AccRange}
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter._
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index._
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.collection.JavaConversions._
@@ -45,7 +45,7 @@ trait GeoMesaTable {
    * Deletes all features from the table
    */
   def deleteFeaturesForType(sft: SimpleFeatureType, bd: BatchDeleter): Unit = {
-    val prefix = getTableSharingPrefix(sft)
+    val prefix = sft.getTableSharingPrefix
     val range = new AccRange(new Text(prefix), true, AccRange.followingPrefix(new Text(prefix)), false)
     bd.setRanges(Seq(range))
     bd.delete()

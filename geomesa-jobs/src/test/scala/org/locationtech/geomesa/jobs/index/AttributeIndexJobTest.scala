@@ -49,8 +49,9 @@ class AttributeIndexJobTest extends Specification {
 
   val ds = DataStoreFinder.getDataStore(params).asInstanceOf[AccumuloDataStore]
 
-  def test(sft: SimpleFeatureType, feats: Seq[SimpleFeature]) = {
-    ds.createSchema(sft)
+  def test(schema: SimpleFeatureType, feats: Seq[SimpleFeature]) = {
+    ds.createSchema(schema)
+    val sft = ds.getSchema(schema.getTypeName)
     ds.getFeatureSource(sft.getTypeName).asInstanceOf[AccumuloFeatureStore].addFeatures {
       val collection = new DefaultFeatureCollection(sft.getTypeName, sft)
       collection.addAll(feats)
@@ -77,7 +78,7 @@ class AttributeIndexJobTest extends Specification {
     val descriptor = sft.getDescriptor("name")
     descriptor.setIndexCoverage(IndexCoverage.JOIN)
     val attrList = Seq((descriptor, sft.indexOf(descriptor.getName)))
-    val prefix = org.locationtech.geomesa.accumulo.index.getTableSharingPrefix(sft)
+    val prefix = sft.getTableSharingPrefix
     val indexValueEncoder = IndexValueEncoder(sft, ds.getGeomesaVersion(sft))
     val encoder = SimpleFeatureSerializers(sft, ds.getFeatureEncoding(sft))
 

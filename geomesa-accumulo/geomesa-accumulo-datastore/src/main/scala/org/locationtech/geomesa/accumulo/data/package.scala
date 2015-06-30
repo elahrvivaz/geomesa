@@ -46,6 +46,7 @@ package object data {
   val Z3_TABLE_KEY           = "tables.z3.name"
   val QUERIES_TABLE_KEY      = "tables.queries.name"
   val SHARED_TABLES_KEY      = "tables.sharing"
+  val SCHEMA_ID_KEY          = "id"
   val VERSION_KEY            = "version"
 
   // Storage implementation constants

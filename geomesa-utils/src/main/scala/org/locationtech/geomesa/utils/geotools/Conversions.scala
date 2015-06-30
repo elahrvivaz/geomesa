@@ -195,6 +195,7 @@ object RichSimpleFeatureType extends Logging {
 
   val SCHEMA_VERSION_KEY  = "geomesa.version"
   val TABLE_SHARING_KEY   = "geomesa.table.sharing"
+  val SHARING_PREFIX_KEY  = "geomesa.table.sharing.prefix"
   val DEFAULT_DATE_KEY    = "geomesa.index.dtg"
   val ST_INDEX_SCHEMA_KEY = "geomesa.index.st.schema"
 
@@ -226,6 +227,9 @@ object RichSimpleFeatureType extends Logging {
     //  If no user data is specified when creating a new SFT, we should default to 'true'.
     def isTableSharing: Boolean = userData[String](TABLE_SHARING_KEY).map(_.toBoolean).getOrElse(true)
     def setTableSharing(sharing: Boolean): Unit = sft.getUserData.put(TABLE_SHARING_KEY, sharing.toString)
+
+    def getTableSharingPrefix: String = userData[String](SHARING_PREFIX_KEY).getOrElse("")
+    def setTableSharingPrefix(prefix: String): Unit = sft.getUserData.put(SHARING_PREFIX_KEY, prefix)
 
     def userData[T](key: AnyRef): Option[T] = Option(sft.getUserData.get(key).asInstanceOf[T])
   }

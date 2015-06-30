@@ -28,6 +28,7 @@ import org.locationtech.geomesa.accumulo.data.tables.AttributeTable
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.util.{GeoMesaBatchWriterConfig, SelfClosingIterator}
 import org.locationtech.geomesa.features.SimpleFeatureSerializers
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.{Conversions, SimpleFeatureTypes}
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.specs2.mutable.Specification
@@ -74,7 +75,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       val attributes = SimpleFeatureTypes.getSecondaryIndexedAttributes(sft).zipWithIndex
       val indexValueEncoder = IndexValueEncoder(sft, CURRENT_SCHEMA_VERSION)
       val featureEncoder = SimpleFeatureSerializers(sft, DEFAULT_ENCODING)
-      val rowIdPrefix = org.locationtech.geomesa.accumulo.index.getTableSharingPrefix(sft)
+      val rowIdPrefix = sft.getTableSharingPrefix
 
       fs.getFeatures().features().foreach { feature =>
         val toWrite = new FeatureToWrite(feature, "", featureEncoder, indexValueEncoder)

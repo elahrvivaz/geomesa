@@ -24,6 +24,7 @@ import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.data.tables.AttributeTable
 import org.locationtech.geomesa.features.{SerializationType, SimpleFeatureDeserializers}
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.specs2.execute.Success
@@ -36,7 +37,7 @@ import scala.collection.JavaConversions._
 class BatchMultiScannerTest extends Specification {
 
   val sftName = "bmstest"
-  val sft = SimpleFeatureTypes.createType(sftName, s"name:String:index=true,age:String:index=true,idStr:String:index=true,dtg:Date,*geom:Geometry:srid=4326")
+  val schema = SimpleFeatureTypes.createType(sftName, s"name:String:index=true,age:String:index=true,idStr:String:index=true,dtg:Date,*geom:Geometry:srid=4326")
 
   val sdf = new SimpleDateFormat("yyyyMMdd")
   sdf.setTimeZone(TimeZone.getTimeZone("Zulu"))
@@ -61,7 +62,8 @@ class BatchMultiScannerTest extends Specification {
     ).asInstanceOf[AccumuloDataStore]
 
   val ds = createStore
-  ds.createSchema(sft)
+  ds.createSchema(schema)
+  val sft = ds.getSchema(sftName)
   val fs = ds.getFeatureSource(sftName).asInstanceOf[AccumuloFeatureStore]
 
   val featureCollection = new DefaultFeatureCollection(sftName, sft)
@@ -89,7 +91,7 @@ class BatchMultiScannerTest extends Specification {
     conn.tableOperations.exists(attrIdxTable) must beTrue
     val attrScanner = conn.createScanner(attrIdxTable, new Authorizations())
 
-    val rowIdPrefix = org.locationtech.geomesa.accumulo.index.getTableSharingPrefix(sft)
+    val rowIdPrefix = sft.getTableSharingPrefix
     val descriptor = sft.getDescriptor(attr)
     val range = new ARange(AttributeTable.getAttributeIndexRows(rowIdPrefix, descriptor, value).head)
     attrScanner.setRange(range)
@@ -98,7 +100,7 @@ class BatchMultiScannerTest extends Specification {
     conn.tableOperations().exists(recordTable) must beTrue
     val recordScanner = conn.createBatchScanner(recordTable, new Authorizations(), 5)
 
-    val prefix = org.locationtech.geomesa.accumulo.index.getTableSharingPrefix(sft)
+    val prefix = sft.getTableSharingPrefix
     val joinFunction = (kv: java.util.Map.Entry[Key, Value]) => new ARange(prefix + kv.getKey.getColumnQualifier)
     val bms = new BatchMultiScanner(attrScanner, recordScanner, joinFunction, batchSize)
 

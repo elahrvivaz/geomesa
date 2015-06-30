@@ -16,7 +16,7 @@ import org.apache.accumulo.core.file.keyfunctor.RowFunctor
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter._
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeatureType
 
@@ -29,7 +29,7 @@ object RecordTable extends GeoMesaTable {
   override val suffix: String = "records"
 
   override def writer(sft: SimpleFeatureType): Option[FeatureToMutations] = {
-    val rowIdPrefix = org.locationtech.geomesa.accumulo.index.getTableSharingPrefix(sft)
+    val rowIdPrefix = sft.getTableSharingPrefix
     val fn = (toWrite: FeatureToWrite) => {
       val m = new Mutation(getRowKey(rowIdPrefix, toWrite.feature.getID))
       m.put(SFT_CF, EMPTY_COLQ, toWrite.columnVisibility, toWrite.dataValue)
@@ -39,7 +39,7 @@ object RecordTable extends GeoMesaTable {
   }
 
   override def remover(sft: SimpleFeatureType): Option[FeatureToMutations] = {
-    val rowIdPrefix = org.locationtech.geomesa.accumulo.index.getTableSharingPrefix(sft)
+    val rowIdPrefix = sft.getTableSharingPrefix
     val fn = (toWrite: FeatureToWrite) => {
       val m = new Mutation(getRowKey(rowIdPrefix, toWrite.feature.getID))
       m.putDelete(SFT_CF, EMPTY_COLQ, toWrite.columnVisibility)
@@ -53,7 +53,7 @@ object RecordTable extends GeoMesaTable {
   override def configureTable(featureType: SimpleFeatureType, recordTable: String, tableOps: TableOperations): Unit = {
     import scala.collection.JavaConversions._
 
-    val prefix = index.getTableSharingPrefix(featureType)
+    val prefix = featureType.getTableSharingPrefix
     val prefixFn = RecordTable.getRowKey(prefix, _: String)
     val splitterClazz = featureType.getUserData.getOrElse(SimpleFeatureTypes.TABLE_SPLITTER, classOf[HexSplitter].getCanonicalName).asInstanceOf[String]
     val clazz = Class.forName(splitterClazz)

@@ -19,14 +19,15 @@ import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.text.cql2.CQLException
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.accumulo.TestWithDataStore
 import org.locationtech.geomesa.accumulo.data.tables.AttributeTable
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
 import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
-import org.locationtech.geomesa.accumulo.{TestWithDataStore, index}
 import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.function.Convert2ViewerFunction
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
@@ -89,7 +90,7 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
     "print values" in {
       skipped("used for debugging")
       val scanner = connector.createScanner(ds.getAttributeTable(sftName), new Authorizations())
-      val prefix = AttributeTable.getAttributeIndexRowPrefix(index.getTableSharingPrefix(sft),
+      val prefix = AttributeTable.getAttributeIndexRowPrefix(sft.getTableSharingPrefix,
         sft.getDescriptor("fingers"))
       scanner.setRange(AccRange.prefix(prefix))
       scanner.asScala.foreach(println)

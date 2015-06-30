@@ -9,7 +9,7 @@
 
 package org.locationtech.geomesa.accumulo.data.tables
 
-import java.util.{Collection => JCollection, Date, Locale, Map => JMap}
+import java.util.{Collection => JCollection, Date, Locale}
 
 import com.google.common.collect.ImmutableSortedSet
 import com.typesafe.scalalogging.slf4j.Logging
@@ -21,8 +21,8 @@ import org.calrissian.mango.types.{LexiTypeEncoders, SimpleTypeEncoders, TypeEnc
 import org.joda.time.format.ISODateTimeFormat
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.stats.IndexCoverage
 import org.opengis.feature.`type`.AttributeDescriptor
@@ -47,7 +47,7 @@ object AttributeTable extends GeoMesaTable with Logging {
     if (indexedAttributes.isEmpty) {
       None
     } else {
-      val rowIdPrefix = org.locationtech.geomesa.accumulo.index.getTableSharingPrefix(sft)
+      val rowIdPrefix = sft.getTableSharingPrefix
 
       val indexesOfIndexedAttributes = indexedAttributes.map { a => sft.indexOf(a.getName) }
       val attributesToIdx = indexedAttributes.zip(indexesOfIndexedAttributes)
@@ -61,7 +61,7 @@ object AttributeTable extends GeoMesaTable with Logging {
     if (indexedAttributes.isEmpty) {
       None
     } else {
-      val rowIdPrefix = org.locationtech.geomesa.accumulo.index.getTableSharingPrefix(sft)
+      val rowIdPrefix = sft.getTableSharingPrefix
 
       val indexesOfIndexedAttributes = indexedAttributes.map { a => sft.indexOf(a.getName)}
       val attributesToIdx = indexedAttributes.zip(indexesOfIndexedAttributes)
@@ -242,7 +242,7 @@ object AttributeTable extends GeoMesaTable with Logging {
     tableOps.setProperty(table, Property.TABLE_SPLIT_THRESHOLD.getKey, "128M")
     val indexedAttrs = SimpleFeatureTypes.getSecondaryIndexedAttributes(featureType)
     if (indexedAttrs.nonEmpty) {
-      val prefix = index.getTableSharingPrefix(featureType)
+      val prefix = featureType.getTableSharingPrefix
       val prefixFn = AttributeTable.getAttributeIndexRowPrefix(prefix, _: AttributeDescriptor)
       val names = indexedAttrs.map(prefixFn).map(new Text(_))
       val splits = ImmutableSortedSet.copyOf(names.toArray)

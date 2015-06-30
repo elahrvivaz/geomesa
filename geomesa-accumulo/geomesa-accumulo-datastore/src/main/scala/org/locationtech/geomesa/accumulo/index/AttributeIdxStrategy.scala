@@ -29,6 +29,7 @@ import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.filter.FilterHelper._
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.stats.IndexCoverage.IndexCoverage
 import org.locationtech.geomesa.utils.stats.{Cardinality, IndexCoverage}
 import org.opengis.feature.simple.SimpleFeatureType
@@ -110,7 +111,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with Loggin
 
         // function to join the attribute index scan results to the record table
         // since the row id of the record table is in the CF just grab that
-        val prefix = getTableSharingPrefix(sft)
+        val prefix = sft.getTableSharingPrefix
         val joinFunction: JoinFunction =
           (kv) => new AccRange(RecordTable.getRowKey(prefix, kv.getKey.getColumnQualifier.toString))
 
@@ -253,7 +254,7 @@ object AttributeIdxStrategy extends StrategyProvider {
         AttributeTable.convertType(value, actualBinding, expectedBinding)
       }
 
-    val rowIdPrefix = org.locationtech.geomesa.accumulo.index.getTableSharingPrefix(sft)
+    val rowIdPrefix = sft.getTableSharingPrefix
     // grab the first encoded row - right now there will only ever be a single item in the seq
     // eventually we may support searching a whole collection at once
     val rowWithValue = AttributeTable.getAttributeIndexRows(rowIdPrefix, descriptor, typedValue).headOption
@@ -397,12 +398,12 @@ object AttributeIdxStrategy extends StrategyProvider {
     new AccRange(lowerBound(sft, prop), false, upperBound(sft, prop), false)
 
   private def lowerBound(sft: SimpleFeatureType, prop: String): Text = {
-    val rowIdPrefix = getTableSharingPrefix(sft)
+    val rowIdPrefix = sft.getTableSharingPrefix
     new Text(AttributeTable.getAttributeIndexRowPrefix(rowIdPrefix, sft.getDescriptor(prop)))
   }
 
   private def upperBound(sft: SimpleFeatureType, prop: String): Text = {
-    val rowIdPrefix = getTableSharingPrefix(sft)
+    val rowIdPrefix = sft.getTableSharingPrefix
     val end = new Text(AttributeTable.getAttributeIndexRowPrefix(rowIdPrefix, sft.getDescriptor(prop)))
     AccRange.followingPrefix(end)
   }

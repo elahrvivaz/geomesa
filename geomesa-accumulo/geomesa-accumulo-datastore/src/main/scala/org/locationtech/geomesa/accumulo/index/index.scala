@@ -33,10 +33,6 @@ package object index {
   val MIN_DATE = new DateTime(0, 1, 1, 0, 0, 0, DateTimeZone.forID("UTC"))
   val MAX_DATE = new DateTime(9999, 12, 31, 23, 59, 59, DateTimeZone.forID("UTC"))
 
-  def getTableSharingPrefix(sft: SimpleFeatureType): String =
-    if(sft.isTableSharing) s"${sft.getTypeName}~"
-    else                     ""
-
   /**
    * Get the transforms set in the query
    */

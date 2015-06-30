@@ -32,22 +32,19 @@ trait TestWithDataStore {
 
   // we use class name to prevent spillage between unit tests in the mock connector
   val sftName = getClass.getSimpleName
-  lazy val sft = {
-    val sft = SimpleFeatureTypes.createType(sftName, spec)
-    sft.setDtgField(dtgField)
-    sft
-  }
 
   lazy val connector = new MockInstance("mycloud").getConnector("user", new PasswordToken("password"))
 
-  lazy val ds = {
+  lazy val (ds, sft) = {
+    val sft = SimpleFeatureTypes.createType(sftName, spec)
+    sft.setDtgField(dtgField)
     val ds = DataStoreFinder.getDataStore(Map(
       "connector" -> connector,
       "caching"   -> false,
       // note the table needs to be different to prevent testing errors
       "tableName" -> sftName).asJava).asInstanceOf[AccumuloDataStore]
     ds.createSchema(sft)
-    ds
+    (ds, ds.getSchema(sftName)) // reload the sft from the ds to ensure all user data is set properly
   }
 
   lazy val fs = ds.getFeatureSource(sftName).asInstanceOf[AccumuloFeatureStore]

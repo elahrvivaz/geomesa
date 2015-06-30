@@ -7,9 +7,7 @@
 *************************************************************************/
 
 package org.locationtech.geomesa.jobs.index
-
 import com.twitter.scalding._
-import org.apache.accumulo.core.data.{Range => AcRange}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.io.Text
 import org.geotools.data.DataStoreFinder
@@ -23,6 +21,7 @@ import org.locationtech.geomesa.jobs.GeoMesaBaseJob
 import org.locationtech.geomesa.jobs.scalding.ConnectionParams._
 import org.locationtech.geomesa.jobs.scalding._
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.stats.IndexCoverage
 import org.locationtech.geomesa.utils.stats.IndexCoverage.IndexCoverage
@@ -48,7 +47,7 @@ class AttributeIndexJob(args: Args) extends GeoMesaBaseJob(args) {
   // non-serializable resources - need to be lazy and transient so they are available to each mapper
   @transient lazy val ds = DataStoreFinder.getDataStore(dsParams.asJava).asInstanceOf[AccumuloDataStore]
   @transient lazy val sft = ds.getSchema(feature)
-  @transient lazy val prefix = org.locationtech.geomesa.accumulo.index.getTableSharingPrefix(sft)
+  @transient lazy val prefix = sft.getTableSharingPrefix
   @transient lazy val encoding = ds.getFeatureEncoding(sft)
   @transient lazy val featureEncoder = SimpleFeatureSerializers(sft, encoding)
   @transient lazy val indexValueEncoder = IndexValueEncoder(sft, ds.getGeomesaVersion(sft))

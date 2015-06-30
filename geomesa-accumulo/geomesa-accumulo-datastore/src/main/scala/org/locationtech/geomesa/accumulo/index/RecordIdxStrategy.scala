@@ -15,8 +15,9 @@ import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.data.tables.RecordTable
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.Strategy._
-import org.locationtech.geomesa.accumulo.iterators.{BinAggregatingIterator, IteratorTrigger}
+import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
 import org.locationtech.geomesa.filter._
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.{Filter, Id}
 
@@ -47,7 +48,7 @@ class RecordIdxStrategy(val filter: QueryFilter) extends Strategy with Logging {
     val sft = queryPlanner.sft
     val acc = queryPlanner.acc
     val featureEncoding = queryPlanner.featureEncoding
-    val prefix = getTableSharingPrefix(sft)
+    val prefix = sft.getTableSharingPrefix
 
     val ranges = if (filter.primary.forall(_ == Filter.INCLUDE)) {
       // allow for full table scans - we use the record index for queries that can't be satisfied elsewhere
