@@ -9,13 +9,11 @@ import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
 import org.joda.time.Weeks
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
-import org.locationtech.geomesa.accumulo.index
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.QueryPlanners.FeatureFunction
-import org.locationtech.geomesa.accumulo.iterators.{BinAggregatingIterator, Z3DensityIterator, Z3Iterator}
+import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.Z3SFC
 import org.locationtech.geomesa.filter._
-import org.locationtech.geomesa.iterators.{KryoLazyFilterTransformIterator, LazyFilterTransformIterator}
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeatureType
 
@@ -91,15 +89,14 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       (Seq(iter), Z3DensityIterator.kvsToFeatures(), Z3Table.FULL_CF)
     } else {
       val transforms = for {
-        tdef <- index.getTransformDefinition(hints)
-        tsft <- index.getTransformSchema(hints)
+        tdef <- hints.getTransformDefinition
+        tsft <- hints.getTransformSchema
       } yield { (tdef, tsft) }
       output(s"Transforms: $transforms")
 
       val iters = (ecql, transforms) match {
         case (None, None) => Seq.empty
-        case _ =>
-          Seq(LazyFilterTransformIterator.configure[KryoLazyFilterTransformIterator](sft, ecql, transforms, fp))
+        case _ => Seq(KryoLazyFilterTransformIterator.configure(sft, ecql, transforms, fp))
       }
       (iters, Z3Table.adaptZ3KryoIterator(hints.getReturnSft), Z3Table.FULL_CF)
     }

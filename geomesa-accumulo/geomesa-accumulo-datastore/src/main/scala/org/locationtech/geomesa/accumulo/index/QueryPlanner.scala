@@ -136,7 +136,7 @@ case class QueryPlanner(sft: SimpleFeatureType,
     val (queryPlans, numClauses) = profile({
       val strategies = QueryStrategyDecider.chooseStrategies(sft, query, hints, requested, version)
       output(s"Strategy count: ${strategies.length}")
-      output(s"Transforms: ${getTransformDefinition(query).getOrElse("None")}")
+      output(s"Transforms: ${query.getHints.getTransformDefinition.getOrElse("None")}")
       val plans = strategies.flatMap { strategy =>
         output(s"Strategy: ${strategy.getClass.getCanonicalName}")
         output(s"Filter: ${strategy.filter.filterString}")
@@ -161,10 +161,12 @@ case class QueryPlanner(sft: SimpleFeatureType,
   }
 
   // This function decodes/transforms that Iterator of Accumulo Key-Values into an Iterator of SimpleFeatures
-  def defaultKVsToFeatures(hints: Hints): FeatureFunction = {
+  def defaultKVsToFeatures(hints: Hints): FeatureFunction = kvsToFeatures(hints.getReturnSft)
+
+  // This function decodes/transforms that Iterator of Accumulo Key-Values into an Iterator of SimpleFeatures
+  def kvsToFeatures(sft: SimpleFeatureType): FeatureFunction = {
     // Perform a projecting decode of the simple feature
-    val returnSft = hints.getReturnSft
-    val deserializer = SimpleFeatureDeserializers(returnSft, featureEncoding)
+    val deserializer = SimpleFeatureDeserializers(sft, featureEncoding)
     (kv: Entry[Key, Value]) => {
       val sf = deserializer.deserialize(kv.getValue.get)
       applyVisibility(sf, kv.getKey)
@@ -320,7 +322,7 @@ object QueryPlanner {
       val spec = MapAggregatingIterator.projectedSFTDef(mapAggregationAttribute, baseSft)
       SimpleFeatureTypes.createType(baseSft.getTypeName, spec)
     } else {
-      getTransformSchema(query).getOrElse(baseSft)
+      query.getHints.getTransformSchema.getOrElse(baseSft)
     }
     query.getHints.put(RETURN_SFT_KEY, sft)
     sft

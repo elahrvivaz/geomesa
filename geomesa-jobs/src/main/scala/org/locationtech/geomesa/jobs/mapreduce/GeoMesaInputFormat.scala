@@ -23,6 +23,7 @@ import org.apache.hadoop.mapreduce._
 import org.geotools.data.{DataStoreFinder, Query}
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloDataStoreFactory}
+import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.stats.QueryStatTransform
@@ -125,7 +126,7 @@ object GeoMesaInputFormat extends Logging {
     if (query.getFilter != Filter.INCLUDE) {
       GeoMesaConfigurator.setFilter(conf, ECQL.toCQL(query.getFilter))
     }
-    getTransformSchema(query).foreach(GeoMesaConfigurator.setTransformSchema(conf, _))
+    query.getHints.getTransformSchema.foreach(GeoMesaConfigurator.setTransformSchema(conf, _))
   }
 }
 

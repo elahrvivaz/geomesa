@@ -10,6 +10,7 @@ package org.locationtech.geomesa.accumulo.index
 
 import org.geotools.data.Query
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes._
@@ -30,7 +31,7 @@ class IndexPackageObjectTest extends Specification {
       val query = new Query(sftName, Filter.INCLUDE, Array("name", "helloName=strConcat('hello', name)", "geom"))
       QueryPlanner.setQueryTransforms(query, origSFT)
 
-      val transform = getTransformSchema(query)
+      val transform = query.getHints.getTransformSchema
       transform must beSome
       SimpleFeatureTypes.encodeType(transform.get) mustEqual
           s"name:String,*geom:Point:srid=4326:$OPT_INDEX=full:index-value=true,helloName:String"

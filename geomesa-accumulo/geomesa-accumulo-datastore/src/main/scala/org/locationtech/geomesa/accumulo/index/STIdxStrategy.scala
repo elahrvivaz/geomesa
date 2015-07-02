@@ -180,7 +180,7 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     configureVersion(cfg, version)
     if (transformsCoverFilter) {
       // apply the transform directly to the index iterator
-      getTransformSchema(hints).foreach(testType => configureFeatureType(cfg, testType))
+      hints.getTransformSchema.foreach(testType => configureFeatureType(cfg, testType))
     } else {
       // we need to evaluate the original feature before transforming
       // transforms are applied afterwards

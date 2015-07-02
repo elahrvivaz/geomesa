@@ -33,27 +33,6 @@ package object index {
   val MIN_DATE = new DateTime(0, 1, 1, 0, 0, 0, DateTimeZone.forID("UTC"))
   val MAX_DATE = new DateTime(9999, 12, 31, 23, 59, 59, DateTimeZone.forID("UTC"))
 
-  /**
-   * Get the transforms set in the query
-   */
-  def getTransformDefinition(query: Query): Option[String] = getTransformDefinition(query.getHints)
-
-  /**
-   * Get the transforms set in the query
-   */
-  def getTransformDefinition(hints: Hints): Option[String] = Option(hints.get(TRANSFORMS).asInstanceOf[String])
-
-  /**
-   * Get the transform schema set in the query
-   */
-  def getTransformSchema(query: Query): Option[SimpleFeatureType] = getTransformSchema(query.getHints)
-
-  /**
-   * Get the transform schema set in the query hints
-   */
-  def getTransformSchema(hints: Hints): Option[SimpleFeatureType] =
-    Option(hints.get(TRANSFORM_SCHEMA).asInstanceOf[SimpleFeatureType])
-
   val spec = "geom:Geometry:srid=4326,dtg:Date,dtg_end_time:Date"
   val indexSFT = SimpleFeatureTypes.createType("geomesa-idx", spec)
 
@@ -102,6 +81,11 @@ package object index {
       def getDensityWeight: Option[String] = Option(hints.get(DENSITY_WEIGHT).asInstanceOf[String])
       def isTemporalDensityQuery: Boolean = hints.containsKey(TEMPORAL_DENSITY_KEY)
       def isMapAggregatingQuery: Boolean = hints.containsKey(MAP_AGGREGATION_KEY)
+      def getTransformDefinition: Option[String] = Option(hints.get(TRANSFORMS).asInstanceOf[String])
+      def getTransformSchema: Option[SimpleFeatureType] =
+        Option(hints.get(TRANSFORM_SCHEMA).asInstanceOf[SimpleFeatureType])
+      def getTransform: Option[(String, SimpleFeatureType)] =
+        hints.getTransformDefinition.flatMap(d => hints.getTransformSchema.map((d, _)))
     }
   }
 

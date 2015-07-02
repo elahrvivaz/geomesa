@@ -21,7 +21,7 @@ import org.apache.accumulo.core.client.security.tokens.AuthenticationToken
 import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.commons.codec.binary.Hex
 import org.apache.curator.framework.CuratorFrameworkFactory
-import org.apache.curator.framework.recipes.locks.{InterProcessLock, InterProcessSemaphoreMutex}
+import org.apache.curator.framework.recipes.locks.InterProcessSemaphoreMutex
 import org.apache.curator.retry.ExponentialBackoffRetry
 import org.geotools.data._
 import org.geotools.data.simple.SimpleFeatureSource
@@ -73,8 +73,7 @@ class AccumuloDataStore(val connector: Connector,
                         val queryThreadsConfig: Option[Int] = None,
                         val recordThreadsConfig: Option[Int] = None,
                         val writeThreadsConfig: Option[Int] = None,
-                        val cachingConfig: Boolean = false,
-                        val featureEncoding: SerializationType = DEFAULT_ENCODING)
+                        val cachingConfig: Boolean = false)
     extends AbstractDataStore(true) with AccumuloConnectorCreator with StrategyHintsProvider with Logging {
 
   // having at least as many shards as tservers provides optimal parallelism in queries
@@ -170,17 +169,22 @@ class AccumuloDataStore(val connector: Connector,
     val featureName = getFeatureName(sft)
     metadata.insert(featureName, attributeMap)
 
-    // write a schema ID out - ensure that it is unique in this catalog
-    // IMPORTANT: this method needs to stay inside a zookeeper distributed locking block
-    val existingSchemaIds = getTypeNames.flatMap(metadata.readNoCache(_, SCHEMA_ID_KEY).map(_.toInt))
-    val schemaId = if (existingSchemaIds.isEmpty) 0 else existingSchemaIds.max + 1
-    metadata.insert(featureName, SCHEMA_ID_KEY, schemaId.toString)
-
     // write out a visibilities protected entry that we can use to validate that a user can see
     // data in this store
     if (!writeVisibilities.isEmpty) {
       metadata.insert(featureName, VISIBILITIES_CHECK_KEY, writeVisibilities, writeVisibilities)
     }
+
+    // write a schema ID out - ensure that it is unique in this catalog
+    // IMPORTANT: this method needs to stay inside a zookeeper distributed locking block
+    var schemaId = 1
+    val existingSchemaIds =
+      getTypeNames.flatMap(metadata.readNoCache(_, SCHEMA_ID_KEY).map(_.getBytes("UTF-8").head.toInt))
+    while (existingSchemaIds.contains(schemaId)) { schemaId += 1 }
+    // We use a single byte for the row prefix to save space - if we exceed the single byte limit then
+    // our ranges would start to overlap and we'd get errors
+    require(schemaId <= Byte.MaxValue, s"No more than ${Byte.MaxValue} schemas may share a single catalog table")
+    metadata.insert(featureName, SCHEMA_ID_KEY, new String(Array(schemaId.asInstanceOf[Byte]), "UTF-8"))
   }
 
   /**
@@ -336,7 +340,7 @@ class AccumuloDataStore(val connector: Connector,
           val spatioTemporalSchema = computeSpatioTemporalSchema(featureType)
           checkSchemaRequirements(featureType, spatioTemporalSchema)
           createTablesForType(featureType)
-          writeMetadata(featureType, featureEncoding, spatioTemporalSchema)
+          writeMetadata(featureType, SerializationType.KRYO, spatioTemporalSchema)
         }
       } finally {
         lock.release()
@@ -845,7 +849,7 @@ class AccumuloDataStore(val connector: Connector,
     Math.min(MAX_QUERY_THREADS, Math.max(MIN_QUERY_THREADS, numShards))
   }
 
-  override def getSuggestedAttributeThreads(sft: SimpleFeatureType): Int = 1
+  override def getSuggestedAttributeThreads(sft: SimpleFeatureType): Int = queryThreadsConfig.getOrElse(8)
 
   override def getSuggestedRecordThreads(sft: SimpleFeatureType): Int = recordScanThreads
 
@@ -876,37 +880,31 @@ class AccumuloDataStore(val connector: Connector,
    * Gets and acquires a distributed lock for all accumulo data stores sharing this catalog table.
    * Make sure that you 'release' the lock in a finally block.
    */
-  private def acquireDistributedLock(): InterProcessLock = {
+  private def acquireDistributedLock(): Releasable = {
     if (connector.isInstanceOf[MockConnector]) {
       // for mock connections use a jvm-level lock
       val lock = mockLocks.synchronized(mockLocks.getOrElseUpdate(catalogTable, new Lock))
       lock.acquire()
-      new InterProcessLock {
-        override def acquire(): Unit = lock.acquire()
-        override def acquire(l: Long, timeUnit: TimeUnit): Boolean = { lock.acquire(); true }
-        override def isAcquiredInThisProcess: Boolean = ??? // not supported - but we don't use it
+      new Releasable {
         override def release(): Unit = lock.release()
       }
     } else {
-      val curatorFramework = {
+      val curatorClient = {
         val zoos = connector.getInstance().getZooKeepers
         val backoff = new ExponentialBackoffRetry(1000, 3)
         CuratorFrameworkFactory.newClient(zoos, backoff)
       }
       // unique path per catalog table
       val lockPath =  s"org.locationtech.geomesa.accumulo.ds.$catalogTable"
-      val lock = new InterProcessSemaphoreMutex(curatorFramework, lockPath)
+      val lock = new InterProcessSemaphoreMutex(curatorClient, lockPath)
       if (!lock.acquire(10000, TimeUnit.MILLISECONDS)) {
         throw new RuntimeException(s"Could not acquire distributed lock at $lockPath")
       }
       // delegate lock that will close the curator client upon release
-      new InterProcessLock {
-        override def acquire(): Unit = lock.acquire()
-        override def acquire(l: Long, timeUnit: TimeUnit): Boolean = lock.acquire(l, timeUnit)
-        override def isAcquiredInThisProcess: Boolean = lock.isAcquiredInThisProcess
+      new Releasable {
         override def release(): Unit = {
           lock.release()
-          curatorFramework.close()
+          curatorClient.close()
         }
       }
     }
@@ -916,6 +914,10 @@ class AccumuloDataStore(val connector: Connector,
 object AccumuloDataStore {
 
   private lazy val mockLocks = scala.collection.mutable.Map.empty[String, Lock]
+
+  trait Releasable {
+    def release(): Unit
+  }
 
   /**
    * Format record table name for Accumulo...table name is stored in metadata for other usage

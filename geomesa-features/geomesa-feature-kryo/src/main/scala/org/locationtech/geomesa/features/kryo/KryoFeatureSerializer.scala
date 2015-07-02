@@ -107,6 +107,7 @@ class KryoFeatureSerializer(sft: SimpleFeatureType, val options: SerializationOp
       return (legacySerializer.read(bytes), input)
     }
     val limit = input.readInt() // read the start of the offsets - we'll stop reading when we hit this
+
     val id = input.readString()
     val attributes = Array.ofDim[AnyRef](numAttributes)
     var i = 0

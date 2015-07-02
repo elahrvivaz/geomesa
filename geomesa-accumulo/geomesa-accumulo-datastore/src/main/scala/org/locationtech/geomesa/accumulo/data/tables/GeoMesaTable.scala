@@ -45,9 +45,8 @@ trait GeoMesaTable {
    * Deletes all features from the table
    */
   def deleteFeaturesForType(sft: SimpleFeatureType, bd: BatchDeleter): Unit = {
-    val prefix = sft.getTableSharingPrefix
-    val range = new AccRange(new Text(prefix), true, AccRange.followingPrefix(new Text(prefix)), false)
-    bd.setRanges(Seq(range))
+    val prefix = new Text(sft.getTableSharingPrefix)
+    bd.setRanges(Seq(new AccRange(prefix, true, AccRange.followingPrefix(prefix), false)))
     bd.delete()
   }
 
@@ -60,7 +59,7 @@ object GeoMesaTable {
     val version = acc.getGeomesaVersion(sft)
     val rec  = (RecordTable, acc.getRecordTable(sft))
     val st   = (SpatioTemporalTable, acc.getSpatioTemporalTable(sft))
-    val attr = (AttributeTable, acc.getAttributeTable(sft))
+    val attr = (if (version < 6) AttributeTableV5 else AttributeTable, acc.getAttributeTable(sft))
     val tables = if (version < 5) {
       Seq(rec, st, attr)
     } else {

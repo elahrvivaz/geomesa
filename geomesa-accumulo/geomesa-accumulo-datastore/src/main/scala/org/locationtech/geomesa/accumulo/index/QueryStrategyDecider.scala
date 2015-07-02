@@ -31,7 +31,13 @@ object QueryStrategyDecider {
     Array[QueryStrategyDecider](null) ++ (1 to CURRENT_SCHEMA_VERSION).map(QueryStrategyDecider.apply)
 
   def apply(version: Int): QueryStrategyDecider = {
-    if (version <= 4) new QueryStrategyDeciderV4 else new QueryStrategyDeciderV5
+    if (version < 5) {
+      new QueryStrategyDeciderV4
+    } else if (version == 5) {
+      new QueryStrategyDeciderV5
+    } else {
+      new QueryStrategyDeciderV6
+    }
   }
 
   def chooseStrategies(sft: SimpleFeatureType,
@@ -43,7 +49,7 @@ object QueryStrategyDecider {
   }
 }
 
-class QueryStrategyDeciderV5 extends QueryStrategyDecider {
+class QueryStrategyDeciderV6 extends QueryStrategyDecider {
 
   /**
    * Scans the filter and identify the type of predicates present, then picks a strategy based on cost.
@@ -96,26 +102,29 @@ class QueryStrategyDeciderV5 extends QueryStrategyDecider {
         options.head
       } else {
         // choose the best option based on cost
-        options.sortBy { filterPlan =>
-          filterPlan.filters.map { filter =>
-            filter.strategy match {
-              case StrategyType.Z3 => Z3IdxStrategy.getCost(filter, sft, hints)
-              case StrategyType.ST => STIdxStrategy.getCost(filter, sft, hints)
-              case StrategyType.RECORD => RecordIdxStrategy.getCost(filter, sft, hints)
-              case StrategyType.ATTRIBUTE => AttributeIdxStrategy.getCost(filter, sft, hints)
-              case _ => throw new IllegalStateException(s"Unknown query plan requested: ${filter.strategy}")
-            }
-          }.sum
-        }.head
+        options.sortBy(o => o.filters.map(getCost(_, sft, hints)).sum).head
       }
       filterPlan.filters.map(createStrategy)
     }
   }
 
   /**
+   * Gets the estimated cost of running a particular strategy
+   */
+  def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints): Int = {
+    filter.strategy match {
+      case StrategyType.Z3        => Z3IdxStrategy.getCost(filter, sft, hints)
+      case StrategyType.ST        => STIdxStrategy.getCost(filter, sft, hints)
+      case StrategyType.RECORD    => RecordIdxStrategy.getCost(filter, sft, hints)
+      case StrategyType.ATTRIBUTE => AttributeIdxStrategy.getCost(filter, sft, hints)
+      case _ => throw new IllegalStateException(s"Unknown query plan requested: ${filter.strategy}")
+    }
+  }
+
+  /**
    * Mapping from strategy type enum to concrete implementation class
    */
-  private def createStrategy(filter: QueryFilter): Strategy = {
+  def createStrategy(filter: QueryFilter): Strategy = {
     filter.strategy match {
       case StrategyType.Z3        => new Z3IdxStrategy(filter)
       case StrategyType.ST        => new STIdxStrategy(filter)
@@ -128,6 +137,27 @@ class QueryStrategyDeciderV5 extends QueryStrategyDecider {
   def supportsZ3(sft: SimpleFeatureType): Boolean = Z3Table.supports(sft)
 }
 
+@deprecated
+class QueryStrategyDeciderV5 extends QueryStrategyDeciderV6 {
+
+  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints): Int = {
+    if (filter.strategy == StrategyType.ATTRIBUTE) {
+      AttributeIdxStrategyV5.getCost(filter, sft, hints)
+    } else {
+      super.getCost(filter, sft, hints)
+    }
+  }
+
+  override def createStrategy(filter: QueryFilter): Strategy = {
+    if (filter.strategy == StrategyType.ATTRIBUTE) {
+      new AttributeIdxStrategyV5(filter)
+    } else {
+      super.createStrategy(filter)
+    }
+  }
+}
+
+@deprecated
 class QueryStrategyDeciderV4 extends QueryStrategyDeciderV5 {
   // version 4 does not ever support z3
   override def supportsZ3(sft: SimpleFeatureType): Boolean = false

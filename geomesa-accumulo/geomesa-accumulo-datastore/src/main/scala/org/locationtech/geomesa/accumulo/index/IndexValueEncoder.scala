@@ -92,8 +92,9 @@ import scala.collection.JavaConversions._
    * @param sft
    * @return
    */
-  protected[index] def getIndexSft(sft: SimpleFeatureType) = {
+  def getIndexSft(sft: SimpleFeatureType) = {
     val builder = new SimpleFeatureTypeBuilder()
+    builder.setNamespaceURI(null: String)
     builder.setName(sft.getTypeName + "--index")
     builder.setAttributes(getIndexValueAttributes(sft))
     builder.setDefaultGeometry(sft.getGeometryDescriptor.getLocalName)

@@ -37,7 +37,6 @@ import scala.collection.mutable
 class AttributeIndexJobTest extends Specification {
 
   val tableName = "AttributeIndexJobTest"
-
   val params = Map(
     "instanceId"        -> "mycloud",
     "zookeepers"        -> "zoo1,zoo2,zoo3",
@@ -75,16 +74,14 @@ class AttributeIndexJobTest extends Specification {
     val job = new AttributeIndexJob(arguments)
     job.run must beTrue
 
-    val descriptor = sft.getDescriptor("name")
-    descriptor.setIndexCoverage(IndexCoverage.JOIN)
-    val attrList = Seq((descriptor, sft.indexOf(descriptor.getName)))
-    val prefix = sft.getTableSharingPrefix
     val indexValueEncoder = IndexValueEncoder(sft, ds.getGeomesaVersion(sft))
     val encoder = SimpleFeatureSerializers(sft, ds.getFeatureEncoding(sft))
 
+    sft.getDescriptor("name").setIndexCoverage(IndexCoverage.JOIN)
+    val writer = AttributeTable.writer(sft).get
     val expectedMutations = feats.flatMap { sf =>
       val toWrite = new FeatureToWrite(sf, ds.writeVisibilities, encoder, indexValueEncoder)
-      AttributeTable.getAttributeIndexMutations(toWrite, attrList, prefix)
+      writer(toWrite)
     }
 
     val jobMutations = output.map(_.getObject(1).asInstanceOf[Mutation])

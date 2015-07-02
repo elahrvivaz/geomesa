@@ -70,7 +70,7 @@ class RecordIdxStrategy(val filter: QueryFilter) extends Strategy with Logging {
       }
     }
 
-    val iters = if (filter.secondary.isDefined || getTransformSchema(hints).isDefined) {
+    val iters = if (filter.secondary.isDefined || hints.getTransformSchema.isDefined) {
       Seq(configureRecordTableIterator(sft, featureEncoding, filter.secondary, hints))
     } else {
       Seq.empty

@@ -14,6 +14,7 @@ import java.util.{Date, TimeZone}
 import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.data.{Range => AccRange}
 import org.apache.accumulo.core.security.Authorizations
+import org.apache.hadoop.io.Text
 import org.geotools.data._
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.text.cql2.CQLException
@@ -27,7 +28,6 @@ import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
 import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.function.Convert2ViewerFunction
-import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
@@ -88,11 +88,10 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
 
   "AttributeIndexStrategy" should {
     "print values" in {
-      skipped("used for debugging")
+//      skipped("used for debugging")
       val scanner = connector.createScanner(ds.getAttributeTable(sftName), new Authorizations())
-      val prefix = AttributeTable.getAttributeIndexRowPrefix(sft.getTableSharingPrefix,
-        sft.getDescriptor("fingers"))
-      scanner.setRange(AccRange.prefix(prefix))
+      val prefix = AttributeTable.getAttributeIndexRowPrefix(sft, sft.indexOf("fingers"))
+      scanner.setRange(AccRange.prefix(new Text(prefix)))
       scanner.asScala.foreach(println)
       println()
       success
@@ -111,6 +110,7 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       import BinAggregatingIterator.BIN_ATTRIBUTE_INDEX
       val query = new Query(sftName, ECQL.toFilter("count>=2"))
       query.getHints.put(BIN_TRACK_KEY, "name")
+      println(explain(query))
       val results = queryPlanner.runQuery(query, Some(StrategyType.ATTRIBUTE)).map(_.getAttribute(BIN_ATTRIBUTE_INDEX)).toSeq
       forall(results)(_ must beAnInstanceOf[Array[Byte]])
       val bins = results.flatMap(_.asInstanceOf[Array[Byte]].grouped(16).map(Convert2ViewerFunction.decode))
