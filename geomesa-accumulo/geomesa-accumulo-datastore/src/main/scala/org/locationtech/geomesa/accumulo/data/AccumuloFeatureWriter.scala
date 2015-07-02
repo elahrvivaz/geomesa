@@ -93,7 +93,7 @@ abstract class AccumuloFeatureWriter(sft: SimpleFeatureType,
    *  Return a String representing nextId - we use a partially time based UUID so we get some data locality,
    *  but partially random to ensure uniqueness across multiple ingest nodes.
    */
-  protected def nextFeatureId = TimeSortedUuidGenerator.createUuid()
+  protected def nextFeatureId = TimeSortedUuidGenerator.createUuid().toString
 
   protected val builder = ScalaSimpleFeatureFactory.featureBuilder(sft)
 

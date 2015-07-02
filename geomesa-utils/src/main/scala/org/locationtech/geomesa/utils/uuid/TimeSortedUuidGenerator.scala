@@ -13,59 +13,66 @@ import java.util.UUID
 
 import org.locationtech.geomesa.utils.cache.SoftThreadLocal
 
+/**
+ * UUID generator that creates UUIDs that sort by creation time (useful for accumulo).
+ *
+ * Uses variant 2 (IETF) and version 4 (for random UUIDs, although it's not totally random).
+ * See https://en.wikipedia.org/wiki/Universally_unique_identifier#Variants_and_versions
+ *
+ * Using a version 1 (time based) UUID doesn't ensure uniqueness when running in different processes on
+ * the same machine (at least not without some complicated distributed locking), as MAC address
+ * (or IP address) is the unique factor.
+ */
 object TimeSortedUuidGenerator {
 
   private val r = new SecureRandom()
-  private val timeBytes   = new SoftThreadLocal[Array[Byte]]
-  private val randomBytes = new SoftThreadLocal[Array[Byte]]
+  private val byteCache = new SoftThreadLocal[Array[Byte]]
 
   /**
    * Creates a UUID where the first 16 bytes are based on the current time and the second 16 bytes are
-   * based on a random number. This should provide good uniqueness along with sorting by date
-   * (useful for accumulo).
+   * based on a random number. This should provide uniqueness along with sorting by date.
+   *
+   * Doesn't support negative time values.
    */
-  def createUuid(time: Long = System.currentTimeMillis()): String = {
-    val mostSigBits = bytesToLong(timePart(time))
-    val leastSigBits = bytesToLong(randomPart())
-    new UUID(mostSigBits, leastSigBits).toString
+  def createUuid(time: Long = System.currentTimeMillis()): UUID = {
+    // get a reusable byte array
+    val bytes = byteCache.getOrElseUpdate(Array.ofDim[Byte](8))
+    val mostSigBits = timeBytes(time, bytes)
+    val leastSigBits = randomBytes(bytes)
+    new UUID(mostSigBits, leastSigBits)
   }
 
   /**
    * Creates the time based part of the uuid.
    */
-  private def timePart(time: Long): Array[Byte] = {
-    // get a reusable byte array
-    val bytes = timeBytes.getOrElseUpdate(Array.ofDim[Byte](8))
-
+  private def timeBytes(time: Long, array: Array[Byte]): Long = {
     // write the time in a sorted fashion
     // we drop the 4 most significant bits as we need 4 bits extra for the version
-    bytes(0) = (time >> 52).asInstanceOf[Byte]
-    bytes(1) = (time >> 44).asInstanceOf[Byte]
-    bytes(2) = (time >> 36).asInstanceOf[Byte]
-    bytes(3) = (time >> 28).asInstanceOf[Byte]
-    bytes(4) = (time >> 20).asInstanceOf[Byte]
-    bytes(5) = (time >> 12).asInstanceOf[Byte]
-    bytes(6) = ((time >> 8) & 0x0f).asInstanceOf[Byte]  // the 0x0f clears the version bits
-    bytes(7) = time.asInstanceOf[Byte]
+    // this shouldn't matter as we use sys time, so we don't need to worry about negative numbers
+    array(0) = (time >> 52).asInstanceOf[Byte]
+    array(1) = (time >> 44).asInstanceOf[Byte]
+    array(2) = (time >> 36).asInstanceOf[Byte]
+    array(3) = (time >> 28).asInstanceOf[Byte]
+    array(4) = (time >> 20).asInstanceOf[Byte]
+    array(5) = (time >> 12).asInstanceOf[Byte]
+    array(6) = ((time >> 8) & 0x0f).asInstanceOf[Byte]  // the 0x0f clears the version bits
+    array(7) = time.asInstanceOf[Byte]
 
     // set the version number for the UUID
-    bytes(6) = (bytes(6) | 0x40).asInstanceOf[Byte] // set to version 4 (designates a random uuid)
-
-    bytes
+    array(6) = (array(6) | 0x40).asInstanceOf[Byte] // set to version 4 (designates a random uuid)
+    bytesToLong(array)
   }
 
   /**
    * Creates the random part of the uuid.
    */
-  private def randomPart(): Array[Byte] = {
-    // get a reusable byte array
-    val bytes = randomBytes.getOrElseUpdate(Array.ofDim[Byte](8))
+  private def randomBytes(array: Array[Byte]): Long = {
     // set the random bytes
-    r.nextBytes(bytes)
+    r.nextBytes(array)
     // set the variant number for the UUID
-    bytes(0) = (bytes(0) & 0x3f).asInstanceOf[Byte] // clear variant
-    bytes(0) = (bytes(0) | 0x80).asInstanceOf[Byte] // set to IETF variant
-    bytes
+    array(0) = (array(0) & 0x3f).asInstanceOf[Byte] // clear variant
+    array(0) = (array(0) | 0x80).asInstanceOf[Byte] // set to IETF variant
+    bytesToLong(array)
   }
 
   /**

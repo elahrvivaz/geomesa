@@ -20,14 +20,15 @@ class TimeSortedUuidGeneratorTest extends Specification {
 
   "TimeSortedUuidGenerator" should {
     "create uuids with correct formats" >> {
-      val id = TimeSortedUuidGenerator.createUuid(time)
+      val id = TimeSortedUuidGenerator.createUuid(time).toString
       id.substring(0, 18) mustEqual "000014e4-05ce-4ac3"
       val uuid = UUID.fromString(id)
       uuid.version() mustEqual 4
       uuid.variant() mustEqual 2
     }
     "create uuids with time as the msb" >> {
-      val ids = Seq(time - 1, time, time + 1, time + 1000).map(TimeSortedUuidGenerator.createUuid)
+      val ids = Seq(time - 1, time, time + 1, time + 1000)
+          .map(TimeSortedUuidGenerator.createUuid).map(_.toString)
       ids.sorted mustEqual ids
     }
   }
