@@ -19,7 +19,6 @@ import org.apache.accumulo.core.client.admin.TimeType
 import org.apache.accumulo.core.client.mock.MockConnector
 import org.apache.accumulo.core.client.security.tokens.AuthenticationToken
 import org.apache.accumulo.core.data.{Key, Value}
-import org.apache.commons.codec.binary.Hex
 import org.apache.curator.framework.CuratorFrameworkFactory
 import org.apache.curator.framework.recipes.locks.InterProcessSemaphoreMutex
 import org.apache.curator.retry.ExponentialBackoffRetry
@@ -138,15 +137,13 @@ class AccumuloDataStore(val connector: Connector,
 
     // compute the metadata values
     val attributesValue = SimpleFeatureTypes.encodeType(sft)
-    // inspect, warn and set SF_PROPERTY_START_TIME if appropriate
-    TemporalIndexCheck.validateDtgField(sft)
-    val dtgValue: Option[String] = sft.getDtgField
+    val dtgValue: Option[String]    = sft.getDtgField
     val featureEncodingValue        = /*_*/fe.toString/*_*/
-    val z3TableValue                = formatZ3TableName(catalogTable, sft)
-    val spatioTemporalIdxTableValue = formatSpatioTemporalIdxTableName(catalogTable, sft)
-    val attrIdxTableValue           = formatAttrIdxTableName(catalogTable, sft)
-    val recordTableValue            = formatRecordTableName(catalogTable, sft)
-    val queriesTableValue           = formatQueriesTableName(catalogTable, sft)
+    val z3TableValue                = Z3Table.formatTableName(catalogTable, sft)
+    val spatioTemporalIdxTableValue = SpatioTemporalTable.formatTableName(catalogTable, sft)
+    val attrIdxTableValue           = AttributeTable.formatTableName(catalogTable, sft)
+    val recordTableValue            = RecordTable.formatTableName(catalogTable, sft)
+    val queriesTableValue           = formatQueriesTableName(catalogTable)
     val tableSharingValue           = sft.isTableSharing.toString
     val dataStoreVersion            = CURRENT_SCHEMA_VERSION.toString
 
@@ -257,29 +254,28 @@ class AccumuloDataStore(val connector: Connector,
 
   /**
    * Read Queries table name from store metadata
-   * @param featureType
-   * @return
    */
   def getQueriesTableName(featureType: SimpleFeatureType): String =
-    Try(metadata.readRequired(featureType.getTypeName, QUERIES_TABLE_KEY)) match {
+    getQueriesTableName(featureType.getTypeName)
+
+  /**
+   * Read Queries table name from store metadata
+   */
+  def getQueriesTableName(featureName: String): String =
+    Try(metadata.readRequired(featureName, QUERIES_TABLE_KEY)) match {
       case Success(queriesTableName) => queriesTableName
       // For backwards compatibility with existing tables that do not have queries table metadata
       case Failure(t) if t.getMessage.contains("Unable to find required metadata property") =>
-        writeAndReturnMissingQueryTableMetadata(featureType)
+        writeAndReturnMissingQueryTableMetadata(featureName)
       case Failure(t) => throw t
     }
 
   /**
    * Here just to write missing query metadata (for backwards compatibility with preexisting data).
-   * @param sft
    */
-  private[this] def writeAndReturnMissingQueryTableMetadata(sft: SimpleFeatureType): String = {
-    val featureName = getFeatureName(sft)
-
-    val queriesTableValue = formatQueriesTableName(catalogTable, sft)
-
+  private[this] def writeAndReturnMissingQueryTableMetadata(featureName: String): String = {
+    val queriesTableValue = formatQueriesTableName(catalogTable)
     metadata.insert(featureName, QUERIES_TABLE_KEY, queriesTableValue)
-
     queriesTableValue
   }
 
@@ -293,18 +289,14 @@ class AccumuloDataStore(val connector: Connector,
     IndexSchema.maxShard(indexSchemaFmt)
   }
 
-  def createTablesForType(featureType: SimpleFeatureType) {
-    val z3Table                = formatZ3TableName(catalogTable, featureType)
-    val spatioTemporalIdxTable = formatSpatioTemporalIdxTableName(catalogTable, featureType)
-    val attributeIndexTable    = formatAttrIdxTableName(catalogTable, featureType)
-    val recordTable            = formatRecordTableName(catalogTable, featureType)
-
-    List(z3Table, spatioTemporalIdxTable, attributeIndexTable, recordTable).foreach(ensureTableExists)
-
-    Z3Table.configureTable(featureType, z3Table, tableOps)
-    SpatioTemporalTable.configureTable(featureType, spatioTemporalIdxTable, tableOps)
-    RecordTable.configureTable(featureType, recordTable, tableOps)
-    AttributeTable.configureTable(featureType, attributeIndexTable, tableOps)
+  def createTablesForType(sft: SimpleFeatureType) {
+    Seq(Z3Table, SpatioTemporalTable, AttributeTable, RecordTable).foreach { table =>
+      if (table.supports(sft)) {
+        val tableName = table.formatTableName(catalogTable, sft)
+        ensureTableExists(tableName)
+        table.configureTable(sft, tableName, tableOps)
+      }
+    }
   }
 
   private def ensureTableExists(table: String) =
@@ -329,23 +321,25 @@ class AccumuloDataStore(val connector: Connector,
    * If the schema already exists, log a message and continue without error.
    * This method uses distributed locking to ensure a schema is only created once.
    *
-   * @param featureType
+   * @param sft
    */
-  override def createSchema(featureType: SimpleFeatureType) = {
-    if (getSchema(featureType.getTypeName) == null) {
+  override def createSchema(sft: SimpleFeatureType) = {
+    if (getSchema(sft.getTypeName) == null) {
       val lock = acquireDistributedLock()
       try {
         // check a second time now that we have the lock
-        if (getSchema(featureType.getTypeName) == null) {
-          val spatioTemporalSchema = computeSpatioTemporalSchema(featureType)
-          checkSchemaRequirements(featureType, spatioTemporalSchema)
-          createTablesForType(featureType)
-          writeMetadata(featureType, SerializationType.KRYO, spatioTemporalSchema)
+        if (getSchema(sft.getTypeName) == null) {
+          // inspect, warn and set SF_PROPERTY_START_TIME if appropriate
+          // do this before anything else so appropriate tables will be created
+          TemporalIndexCheck.validateDtgField(sft)
+          val spatioTemporalSchema = computeSpatioTemporalSchema(sft)
+          checkSchemaRequirements(sft, spatioTemporalSchema)
+          createTablesForType(sft)
+          writeMetadata(sft, SerializationType.KRYO, spatioTemporalSchema)
         }
       } finally {
         lock.release()
       }
-    }
   }
 
   // This function enforces the shared ST schema requirements.
@@ -419,23 +413,14 @@ class AccumuloDataStore(val connector: Connector,
 
   // NB: We are *not* currently deleting the query table and/or query information.
   private def deleteStandAloneTables(sft: SimpleFeatureType) =
-    Seq(
-      getSpatioTemporalTable(sft),
-      getAttributeTable(sft),
-      getRecordTable(sft)
-    ).filter(tableOps.exists).foreach(tableOps.delete)
+    GeoMesaTable.getTableNames(sft, this).filter(tableOps.exists).foreach(tableOps.delete)
 
   /**
    * Delete everything (all tables) associated with this datastore (index tables and catalog table)
+   * NB: We are *not* currently deleting the query table and/or query information.
    */
   def delete() = {
-    val indexTables =
-      getTypeNames.flatMap { t =>
-        Seq(getSpatioTemporalTable(t),
-            getAttributeTable(t),
-            getRecordTable(t))
-        }.distinct
-
+    val indexTables = getTypeNames.map(getSchema).flatMap(GeoMesaTable.getTableNames(_, this)).distinct
     // Delete index tables first then catalog table in case of error
     indexTables.filter(tableOps.exists).foreach(tableOps.delete)
     tableOps.delete(catalogTable)
@@ -920,107 +905,12 @@ object AccumuloDataStore {
   }
 
   /**
-   * Format record table name for Accumulo...table name is stored in metadata for other usage
-   * and provide compatibility moving forward if table names change
-   * @param catalogTable
-   * @param featureType
-   * @return
-   */
-  def formatRecordTableName(catalogTable: String, featureType: SimpleFeatureType) =
-    formatTableName(catalogTable, featureType, RecordTable.suffix)
-
-  /**
-   * Format spatio-temoral index table name for Accumulo...table name is stored in metadata for other usage
-   * and provide compatibility moving forward if table names change
-   * @param catalogTable
-   * @param featureType
-   * @return
-   */
-  def formatSpatioTemporalIdxTableName(catalogTable: String, featureType: SimpleFeatureType) =
-    formatTableName(catalogTable, featureType, SpatioTemporalTable.suffix)
-
-  def formatZ3TableName(catalogTable: String, featureType: SimpleFeatureType) =
-    formatTableName(catalogTable, featureType.getTypeName, Z3Table.suffix)
-
-  /**
-   * Format attribute index table name for Accumulo...table name is stored in metadata for other usage
-   * and provide compatibility moving forward if table names change
-   * @param catalogTable
-   * @param featureType
-   * @return
-   */
-  def formatAttrIdxTableName(catalogTable: String, featureType: SimpleFeatureType) =
-    formatTableName(catalogTable, featureType, AttributeTable.suffix)
-
-  /**
    * Format queries table name for Accumulo...table name is stored in metadata for other usage
    * and provide compatibility moving forward if table names change
    * @param catalogTable
-   * @param featureType
    * @return
    */
-  def formatQueriesTableName(catalogTable: String, featureType: SimpleFeatureType): String =
-    s"${catalogTable}_queries"
-
-  // only alphanumeric is safe
-  val SAFE_FEATURE_NAME_PATTERN = "^[a-zA-Z0-9]+$"
-
-  /**
-   * Format a table name with a namespace. Non alpha-numeric characters present in
-   * featureType names will be underscore hex encoded (e.g. _2a) including multibyte
-   * UTF8 characters (e.g. _2a_f3_8c) to make them safe for accumulo table names
-   * but still human readable.
-   */
-  def formatTableName(catalogTable: String, featureType: SimpleFeatureType, suffix: String): String =
-    if (featureType.isTableSharing)
-      formatTableName(catalogTable, suffix)
-    else
-      formatTableName(catalogTable, featureType.getTypeName, suffix)
-
-  /**
-   * Format a table name for the shared tables
-   */
-  def formatTableName(catalogTable: String, suffix: String): String =
-    s"${catalogTable}_$suffix"
-
-  /**
-   * Format a table name with a namespace. Non alpha-numeric characters present in
-   * featureType names will be underscore hex encoded (e.g. _2a) including multibyte
-   * UTF8 characters (e.g. _2a_f3_8c) to make them safe for accumulo table names
-   * but still human readable.
-   */
-  def formatTableName(catalogTable: String, typeName: String, suffix: String): String = {
-    val safeTypeName: String =
-      if(typeName.matches(SAFE_FEATURE_NAME_PATTERN)){
-        typeName
-      } else {
-        hexEncodeNonAlphaNumeric(typeName)
-      }
-
-    List(catalogTable, safeTypeName, suffix).mkString("_")
-  }
-
-  val alphaNumeric = ('a' to 'z') ++ ('A' to 'Z') ++ ('0' to '9')
-
-  /**
-   * Encode non-alphanumeric characters in a string with
-   * underscore plus hex digits representing the bytes. Note
-   * that multibyte characters will be represented with multiple
-   * underscores and bytes...e.g. _8a_2f_3b
-   */
-  def hexEncodeNonAlphaNumeric(input: String): String = {
-    val sb = new StringBuilder
-    input.toCharArray.foreach { c =>
-      if (alphaNumeric.contains(c)) {
-        sb.append(c)
-      } else {
-        val encoded =
-          Hex.encodeHex(c.toString.getBytes("UTF8")).grouped(2)
-            .map{ arr => "_" + arr(0) + arr(1) }.mkString.toLowerCase
-        sb.append(encoded)
-      }
-    }
-    sb.toString()
-  }
+  def formatQueriesTableName(catalogTable: String): String =
+    GeoMesaTable.concatenateNameParts(catalogTable, "queries")
 }
 
