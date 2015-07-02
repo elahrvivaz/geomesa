@@ -16,11 +16,10 @@ import org.apache.accumulo.core.data
 import org.apache.accumulo.core.data.Key
 import org.apache.accumulo.core.file.keyfunctor.ColumnFamilyFunctor
 import org.apache.hadoop.io.Text
-import org.locationtech.geomesa.accumulo
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
 import org.locationtech.geomesa.accumulo.index.{IndexSchema, _}
-import org.opengis.feature.simple.SimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.collection.JavaConversions._
 
@@ -36,14 +35,14 @@ object SpatioTemporalTable extends GeoMesaTable with Logging {
 
   override val suffix: String = "st_idx"
 
-  override def writer(sft: SimpleFeatureType): Option[FeatureToMutations] = {
+  override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val stEncoder = IndexSchema.buildKeyEncoder(sft, sft.getStIndexSchema)
-    Some((toWrite: FeatureToWrite) => stEncoder.encode(toWrite))
+    (toWrite: FeatureToWrite) => stEncoder.encode(toWrite)
   }
 
-  override def remover(sft: SimpleFeatureType): Option[FeatureToMutations] = {
+  override def remover(sft: SimpleFeatureType): FeatureToMutations = {
     val stEncoder = IndexSchema.buildKeyEncoder(sft, sft.getStIndexSchema)
-    Some((toWrite: FeatureToWrite) => stEncoder.encode(toWrite, delete = true))
+    (toWrite: FeatureToWrite) => stEncoder.encode(toWrite, delete = true)
   }
 
   // index rows have an index flag as part of the schema

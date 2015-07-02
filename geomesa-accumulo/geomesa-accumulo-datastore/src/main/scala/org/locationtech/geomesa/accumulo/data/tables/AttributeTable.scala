@@ -41,9 +41,9 @@ object AttributeTable extends GeoMesaTable with Logging {
   private val UTF8 = Charset.forName("UTF-8")
   private val NULLBYTE = "\u0000".getBytes(UTF8)
 
-  private val typeRegistry = LexiTypeEncoders.LEXI_TYPES
+  private val typeRegistry   = LexiTypeEncoders.LEXI_TYPES
   private val simpleEncoders = SimpleTypeEncoders.SIMPLE_TYPES.getAllEncoders
-  private val dateFormat = ISODateTimeFormat.dateTime()
+  private val dateFormat     = ISODateTimeFormat.dateTime()
 
   private type TryEncoder = Try[(TypeEncoder[Any, String], TypeEncoder[_, String])]
 
@@ -52,60 +52,43 @@ object AttributeTable extends GeoMesaTable with Logging {
 
   override val suffix: String = "attr_idx"
 
-  override def writer(sft: SimpleFeatureType): Option[FeatureToMutations] = mutator(sft, delete = false)
+  override def writer(sft: SimpleFeatureType): FeatureToMutations = mutator(sft, delete = false)
 
-  override def remover(sft: SimpleFeatureType): Option[FeatureToMutations] = mutator(sft, delete = true)
+  override def remover(sft: SimpleFeatureType): FeatureToMutations = mutator(sft, delete = true)
 
-  private def mutator(sft: SimpleFeatureType, delete: Boolean): Option[FeatureToMutations] = {
+  private def mutator(sft: SimpleFeatureType, delete: Boolean): FeatureToMutations = {
     val indexedAttributes = SimpleFeatureTypes.getSecondaryIndexedAttributes(sft)
-    if (indexedAttributes.isEmpty) {
-      None
-    } else {
-      val prefixBytes = sft.getTableSharingPrefix.getBytes(UTF8)
-      val indexesOfIndexedAttributes = indexedAttributes.map(a => sft.indexOf(a.getName))
-      val attributesToIdx = indexedAttributes.zip(indexesOfIndexedAttributes)
+    val indexesOfIndexedAttributes = indexedAttributes.map(a => sft.indexOf(a.getName))
+    val attributesToIdx = indexedAttributes.zip(indexesOfIndexedAttributes)
+    val prefixBytes = sft.getTableSharingPrefix.getBytes(UTF8)
 
-      sft.getDtgIndex match {
-        case None =>
-          Some((toWrite: FeatureToWrite) => getMutations(toWrite, attributesToIdx, prefixBytes, delete))
-        case Some(dtg) =>
-          Some((toWrite: FeatureToWrite) =>
-            getMutationsWithDate(toWrite, dtg, attributesToIdx, prefixBytes, delete))
-      }
+    sft.getDtgIndex match {
+      case None =>
+        (toWrite: FeatureToWrite) => {
+          val idBytes = toWrite.feature.getID.getBytes(UTF8)
+          getMutations(toWrite, attributesToIdx, prefixBytes, idBytes, delete)
+        }
+      case Some(dtgIndex) =>
+        (toWrite: FeatureToWrite) => {
+          val dtg = toWrite.feature.getAttribute(dtgIndex).asInstanceOf[Date]
+          val time = if (dtg == null) System.currentTimeMillis() else dtg.getTime
+          val timeBytes = timeToBytes(time)
+          val idBytes = toWrite.feature.getID.getBytes(UTF8)
+          getMutations(toWrite, attributesToIdx, prefixBytes, timeBytes ++ idBytes, delete)
+        }
     }
   }
 
   /**
-   * Gets mutations for the attribute index table
+   * Rows in the attribute table have the following layout:
+   *
+   * - 1 byte identifying the sft (OPTIONAL - only if table is shared)
+   * - 2 bytes storing the index of the attribute in the sft
+   * - n bytes storing the lexicoded attribute value
+   * - NULLBYTE as a separator
+   * - 12 bytes storing the dtg of the feature (OPTIONAL - only if the sft has a dtg field)
+   * - n bytes storing the feature ID
    */
-  def getMutations(toWrite: FeatureToWrite,
-                   indexedAttributes: Seq[(AttributeDescriptor, Int)],
-                   prefix: Array[Byte],
-                   delete: Boolean = false): Seq[Mutation] = {
-    getMutations(toWrite, indexedAttributes, prefix, toWrite.feature.getID.getBytes(UTF8), delete)
-  }
-
-  /**
-   * Gets mutations for the attribute index table
-   */
-  def getMutationsWithDate(toWrite: FeatureToWrite,
-                           dtgIndex: Int,
-                           indexedAttributes: Seq[(AttributeDescriptor, Int)],
-                           prefix: Array[Byte],
-                           delete: Boolean = false): Seq[Mutation] = {
-    val dtg = toWrite.feature.getAttribute(dtgIndex).asInstanceOf[Date]
-    val time = if (dtg == null) System.currentTimeMillis() else dtg.getTime
-    val timeBytes = timeToBytes(time)
-    val idBytes = toWrite.feature.getID.getBytes(UTF8)
-    getMutations(toWrite, indexedAttributes, prefix, timeBytes ++ idBytes, delete)
-  }
-  // TODO document
-  // 1 byte identifying sft
-  // 2 bytes for attribute index
-  // n bytes for attribute value
-  // NULLBYTE
-  // optional 12 bytes for time
-  // remaining bytes for ID
   private def getMutations(toWrite: FeatureToWrite,
                            indexedAttributes: Seq[(AttributeDescriptor, Int)],
                            prefix: Array[Byte],
@@ -115,7 +98,15 @@ object AttributeTable extends GeoMesaTable with Logging {
       val indexBytes = indexToBytes(idx)
       val attributes = encode(toWrite.feature.getAttribute(idx), descriptor)
       val mutations = attributes.map { attribute =>
-        new Mutation(prefix ++ indexBytes ++ attribute.getBytes(UTF8) ++ NULLBYTE ++ suffix)
+        val bytes = attribute.getBytes(UTF8)
+        val parts = Seq(prefix, indexBytes, bytes, NULLBYTE, suffix)
+        val buffer = Array.ofDim[Byte](parts.map(_.length).sum)
+        var i = 0
+        parts.foreach { part =>
+          System.arraycopy(part, 0, buffer, i, part.length)
+          i += part.length
+        }
+        new Mutation(buffer)
       }
       if (delete) {
         mutations.foreach(_.putDelete(EMPTY_TEXT, EMPTY_TEXT, toWrite.columnVisibility))
@@ -137,35 +128,33 @@ object AttributeTable extends GeoMesaTable with Logging {
   def timeToBytes(t: Long) = typeRegistry.encode(t).substring(0, 12).getBytes(UTF8)
 
   /**
-   * Gets a prefix for an attribute row - useful for ranges over a particular attribute
+   * Gets a prefix for an attribute row - this includes the sft and the attribute index only
    */
-  def getAttributeIndexRowPrefix(sft: SimpleFeatureType, i: Int): Array[Byte] =
+  def getRowPrefix(sft: SimpleFeatureType, i: Int): Array[Byte] =
     sft.getTableSharingPrefix.getBytes(UTF8) ++ indexToBytes(i)
 
   /**
-   * Gets a full row for the given value, needed for creating query ranges. Less optimized version of
-   * logic from getMutations. Also doesn't include time or feature id (see getRowWithTime)
+   * Gets a full row (minus the feature ID) for the given value, needed for creating query ranges.
+   * Less optimized version of logic from getMutations.
    */
-  def getAttributeIndexRow(sft: SimpleFeatureType, i: Int, value: Any): Option[Array[Byte]] = {
-    val prefix = getAttributeIndexRowPrefix(sft, i)
-    encode(value, sft.getDescriptor(i)).headOption.map(prefix ++ _.getBytes(UTF8) ++ NULLBYTE)
+  def getRow(sft: SimpleFeatureType, i: Int, value: Any, time: Option[Long]): Option[Array[Byte]] = {
+    val prefix = getRowPrefix(sft, i)
+    val suffix = time.map(NULLBYTE ++ timeToBytes(_)).getOrElse(NULLBYTE)
+    encode(value, sft.getDescriptor(i)).headOption.map(prefix ++ _.getBytes(UTF8) ++ suffix)
   }
-
-  /**
-   * Adds the time to the row, which can be retrieved from getAttributeIndexRow. Less optimized version of
-   * logic from getMutations.
-   */
-  def getRowWithTime(row: Array[Byte], time: Long): Array[Byte] = row ++ timeToBytes(time)
 
   /**
    * Decodes an attribute value out of row string
    */
-  def decodeAttributeIndexRow(sft: SimpleFeatureType, i: Int, row: Array[Byte]): Try[Any] = Try {
+  def decodeRow(sft: SimpleFeatureType, i: Int, row: Array[Byte]): Try[Any] = Try {
     val from = if (sft.isTableSharing) 3 else 2
     val encodedValue = row.slice(from, row.indexOf(NULLBYTE(0), from + 1))
     decode(new String(encodedValue, UTF8), sft.getDescriptor(i))
   }
 
+  /**
+   * Gets the feature ID from the row key
+   */
   def getIdFromRow(sft: SimpleFeatureType): (Array[Byte]) => String = {
     val from = if (sft.isTableSharing) 4 else 3
     sft.getDtgField match {
@@ -262,7 +251,7 @@ object AttributeTable extends GeoMesaTable with Logging {
     val indexedAttrs = SimpleFeatureTypes.getSecondaryIndexedAttributes(featureType)
     if (indexedAttrs.nonEmpty) {
       val indices = indexedAttrs.map(d => featureType.indexOf(d.getLocalName))
-      val splits = indices.map(i => new Text(getAttributeIndexRowPrefix(featureType, i)))
+      val splits = indices.map(i => new Text(getRowPrefix(featureType, i)))
       tableOps.addSplits(table, ImmutableSortedSet.copyOf(splits.toArray))
     }
   }

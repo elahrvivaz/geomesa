@@ -57,7 +57,7 @@ class AttributeIndexJob(args: Args) extends GeoMesaBaseJob(args) {
     sft
   }
   @transient lazy val writer =
-    if (sft.getSchemaVersion < 6) AttributeTableV5.writer(sft).get else AttributeTable.writer(sft).get
+    if (sft.getSchemaVersion < 6) AttributeTableV5.writer(sft) else AttributeTable.writer(sft)
   @transient lazy val encoding = ds.getFeatureEncoding(sft)
   @transient lazy val featureEncoder = SimpleFeatureSerializers(sft, encoding)
   @transient lazy val indexValueEncoder = IndexValueEncoder(sft, ds.getGeomesaVersion(sft))

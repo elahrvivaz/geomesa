@@ -37,32 +37,20 @@ object AttributeTableV5 extends GeoMesaTable with Logging {
 
   override val suffix: String = "attr_idx"
 
-  override def writer(sft: SimpleFeatureType): Option[FeatureToMutations] = {
+  override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val indexedAttributes = SimpleFeatureTypes.getSecondaryIndexedAttributes(sft)
-    if (indexedAttributes.isEmpty) {
-      None
-    } else {
-      val rowIdPrefix = sft.getTableSharingPrefix
-
-      val indexesOfIndexedAttributes = indexedAttributes.map { a => sft.indexOf(a.getName) }
-      val attributesToIdx = indexedAttributes.zip(indexesOfIndexedAttributes)
-
-      Some((toWrite: FeatureToWrite) => getAttributeIndexMutations(toWrite, attributesToIdx, rowIdPrefix))
-    }
+    val indexesOfIndexedAttributes = indexedAttributes.map { a => sft.indexOf(a.getName) }
+    val attributesToIdx = indexedAttributes.zip(indexesOfIndexedAttributes)
+    val rowIdPrefix = sft.getTableSharingPrefix
+    (toWrite: FeatureToWrite) => getAttributeIndexMutations(toWrite, attributesToIdx, rowIdPrefix)
   }
 
-  override def remover(sft: SimpleFeatureType): Option[FeatureToMutations] = {
+  override def remover(sft: SimpleFeatureType): FeatureToMutations = {
     val indexedAttributes = SimpleFeatureTypes.getSecondaryIndexedAttributes(sft)
-    if (indexedAttributes.isEmpty) {
-      None
-    } else {
-      val rowIdPrefix = sft.getTableSharingPrefix
-
-      val indexesOfIndexedAttributes = indexedAttributes.map { a => sft.indexOf(a.getName)}
-      val attributesToIdx = indexedAttributes.zip(indexesOfIndexedAttributes)
-
-      Some((toWrite: FeatureToWrite) => getAttributeIndexMutations(toWrite, attributesToIdx, rowIdPrefix, delete = true))
-    }
+    val indexesOfIndexedAttributes = indexedAttributes.map { a => sft.indexOf(a.getName)}
+    val attributesToIdx = indexedAttributes.zip(indexesOfIndexedAttributes)
+    val rowIdPrefix = sft.getTableSharingPrefix
+    (toWrite: FeatureToWrite) => getAttributeIndexMutations(toWrite, attributesToIdx, rowIdPrefix, delete = true)
   }
 
   private val NULLBYTE = "\u0000"

@@ -34,45 +34,47 @@ class AttributeTableTest extends Specification with TestWithDataStore {
   "AttributeTable" should {
 
     "encode mutations for attribute index" in {
-      val descriptors = sft.getAttributeDescriptors.zipWithIndex
-
       val feature = AvroSimpleFeatureFactory.buildAvroFeature(sft, List(), "id1")
       val geom = WKTUtils.read("POINT(45.0 49.0)")
       feature.setDefaultGeometry(geom)
       feature.setAttribute("name","fred")
       feature.setAttribute("age",50.asInstanceOf[Any])
-      feature.getUserData()(Hints.USE_PROVIDED_FID) = java.lang.Boolean.TRUE
 
       val indexValueEncoder = IndexValueEncoder(sft, CURRENT_SCHEMA_VERSION)
       val featureEncoder = SimpleFeatureSerializers(sft, DEFAULT_ENCODING)
 
       val toWrite = new FeatureToWrite(feature, "", featureEncoder, indexValueEncoder)
-      val mutations = AttributeTable.getMutations(toWrite, descriptors, Array.empty)
-      mutations.size mustEqual descriptors.length - 1 // for null date
+      val mutations = AttributeTable.writer(sft)(toWrite)
+      mutations.size mustEqual 2 // for null date
       mutations.map(_.getUpdates.size()) must contain(beEqualTo(1)).foreach
       mutations.map(_.getUpdates.get(0).isDeleted) must contain(beEqualTo(false)).foreach
     }
-// TODO test with date
+
     "encode mutations for delete attribute index" in {
-      val descriptors = sft.getAttributeDescriptors.zipWithIndex
+      val descriptors = sft.getAttributeDescriptors
 
       val feature = AvroSimpleFeatureFactory.buildAvroFeature(sft, List(), "id1")
       val geom = WKTUtils.read("POINT(45.0 49.0)")
       feature.setDefaultGeometry(geom)
       feature.setAttribute("name","fred")
       feature.setAttribute("age",50.asInstanceOf[Any])
-      feature.getUserData()(Hints.USE_PROVIDED_FID) = java.lang.Boolean.TRUE
 
       val toWrite = new FeatureToWrite(feature, "", null, null)
-      val mutations = AttributeTable.getMutations(toWrite, descriptors, Array.empty, delete = true)
-      mutations.size mustEqual descriptors.length - 1 // for null date
+      val mutations = AttributeTable.remover(sft)(toWrite)
+      mutations.size mustEqual 2 // for null date
       mutations.map(_.getUpdates.size()) must contain(beEqualTo(1)).foreach
       mutations.map(_.getUpdates.get(0).isDeleted) must contain(beEqualTo(true)).foreach
     }
 
     "decode attribute index rows" in {
-      val row = AttributeTable.getAttributeIndexRow(sft, sft.indexOf("age"), 23).get
-      val decoded = AttributeTable.decodeAttributeIndexRow(sft, sft.indexOf("age"), row)
+      val row = AttributeTable.getRow(sft, sft.indexOf("age"), 23, None).get
+      val decoded = AttributeTable.decodeRow(sft, sft.indexOf("age"), row)
+      decoded must beASuccessfulTry(23)
+    }
+
+    "decode attribute index rows with dates" in {
+      val row = AttributeTable.getRow(sft, sft.indexOf("age"), 23, Some(1435598908099L)).get
+      val decoded = AttributeTable.decodeRow(sft, sft.indexOf("age"), row)
       decoded must beASuccessfulTry(23)
     }
   }

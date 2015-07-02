@@ -22,7 +22,6 @@ import org.apache.accumulo.core.data.{Key, Mutation, Range => aRange, Value}
 import org.apache.hadoop.io.Text
 import org.joda.time.{DateTime, Seconds, Weeks}
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
-import org.locationtech.geomesa.accumulo.index
 import org.locationtech.geomesa.accumulo.index.QueryPlanners._
 import org.locationtech.geomesa.curve.Z3SFC
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
@@ -59,7 +58,7 @@ object Z3Table extends GeoMesaTable {
   override def formatTableName(prefix: String, sft: SimpleFeatureType): String =
     GeoMesaTable.formatSoloTableName(prefix, suffix, sft)
 
-  override def writer(sft: SimpleFeatureType): Option[FeatureToMutations] = {
+  override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
     val writer = new KryoFeatureSerializer(sft)
     val binWriter: (FeatureToWrite, Mutation) => Unit = sft.getBinTrackId match {
@@ -79,7 +78,7 @@ object Z3Table extends GeoMesaTable {
         }
       case _ => (fw: FeatureToWrite, m: Mutation) => {}
     }
-    val fn = (fw: FeatureToWrite) => {
+    (fw: FeatureToWrite) => {
       val mutation = new Mutation(getRowKey(fw, dtgIndex))
       // TODO if we know we're using kryo we don't need to reserialize
       val payload = new Value(writer.serialize(fw.feature))
@@ -87,18 +86,16 @@ object Z3Table extends GeoMesaTable {
       mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, payload)
       Seq(mutation)
     }
-    Some(fn)
   }
 
-  override def remover(sft: SimpleFeatureType): Option[FeatureToMutations] = {
+  override def remover(sft: SimpleFeatureType): FeatureToMutations = {
     val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
-    val fn = (fw: FeatureToWrite) => {
+    (fw: FeatureToWrite) => {
       val mutation = new Mutation(getRowKey(fw, dtgIndex))
       mutation.putDelete(BIN_CF, EMPTY_TEXT, fw.columnVisibility)
       mutation.putDelete(FULL_CF, EMPTY_TEXT, fw.columnVisibility)
       Seq(mutation)
     }
-    Some(fn)
   }
 
   override def deleteFeaturesForType(sft: SimpleFeatureType, bd: BatchDeleter): Unit = {

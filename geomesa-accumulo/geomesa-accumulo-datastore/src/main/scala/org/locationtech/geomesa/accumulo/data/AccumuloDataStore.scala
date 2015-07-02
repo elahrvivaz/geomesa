@@ -179,7 +179,8 @@ class AccumuloDataStore(val connector: Connector,
     while (existingSchemaIds.contains(schemaId)) { schemaId += 1 }
     // We use a single byte for the row prefix to save space - if we exceed the single byte limit then
     // our ranges would start to overlap and we'd get errors
-    require(schemaId <= Byte.MaxValue, s"No more than ${Byte.MaxValue} schemas may share a single catalog table")
+    require(schemaId <= Byte.MaxValue,
+      s"No more than ${Byte.MaxValue} schemas may share a single catalog table")
     metadata.insert(featureName, SCHEMA_ID_KEY, new String(Array(schemaId.asInstanceOf[Byte]), "UTF-8"))
   }
 
@@ -377,16 +378,15 @@ class AccumuloDataStore(val connector: Connector,
     val lock = acquireDistributedLock()
     try {
       if (metadata.read(featureName, ST_IDX_TABLE_KEY).nonEmpty) {
-        val featureType = getSchema(featureName)
-
-        if (featureType.isTableSharing) {
-          deleteSharedTables(featureType)
-        } else {
-          deleteStandAloneTables(featureType)
+        Option(getSchema(featureName)).foreach { sft =>
+          if (sft.isTableSharing) {
+            deleteSharedTables(sft)
+          } else {
+            deleteStandAloneTables(sft)
+          }
+          metadata.delete(featureName, numThreads)
+          metadata.expireCache(featureName)
         }
-
-        metadata.delete(featureName, numThreads)
-        metadata.expireCache(featureName)
       } else {
         // TODO: Apply the SpatioTemporalTable.deleteFeaturesFromTable here?
         // https://geomesa.atlassian.net/browse/GEOMESA-360

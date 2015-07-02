@@ -41,12 +41,12 @@ trait GeoMesaTable {
   /**
    * Creates a function to write a feature to the table
    */
-  def writer(sft: SimpleFeatureType): Option[FeatureToMutations]
+  def writer(sft: SimpleFeatureType): FeatureToMutations
 
   /**
    * Creates a function to delete a feature to the table
    */
-  def remover(sft: SimpleFeatureType): Option[FeatureToMutations]
+  def remover(sft: SimpleFeatureType): FeatureToMutations
 
   /**
    * Deletes all features from the table

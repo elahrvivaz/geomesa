@@ -16,6 +16,6 @@ package object geomesa {
   // 3 == skipped for integration
   // 4 == kryo encoded index values
   // 5 == z3 index
-  // 6 == attribute batch scans
+  // 6 == attribute indices with dates
   val CURRENT_SCHEMA_VERSION = 6
 }

@@ -210,11 +210,8 @@ object AttributeIdxStrategy extends StrategyProvider {
     }
 
     // if the value resulted in a valid row, use that, otherwise use the prefix row
-    // append the time if requested and the row was valid
-    val bytes = AttributeTable.getAttributeIndexRow(sft, prop, typedValue) match {
-      case None      => AttributeTable.getAttributeIndexRowPrefix(sft, prop)
-      case Some(row) => time.map(AttributeTable.getRowWithTime(row, _)).getOrElse(row)
-    }
+    val bytes = AttributeTable.getRow(sft, prop, typedValue, time)
+        .getOrElse(AttributeTable.getRowPrefix(sft, prop))
     new Text(bytes)
   }
 
@@ -387,11 +384,11 @@ object AttributeIdxStrategy extends StrategyProvider {
 
   // lower bound for all values of the attribute, exclusive
   private def lowerBound(sft: SimpleFeatureType, prop: Int): Text =
-    new Text(AttributeTable.getAttributeIndexRowPrefix(sft, prop))
+    new Text(AttributeTable.getRowPrefix(sft, prop))
 
   // upper bound for all values of the attribute, exclusive
   private def upperBound(sft: SimpleFeatureType, prop: Int): Text = {
-    val end = new Text(AttributeTable.getAttributeIndexRowPrefix(sft, prop))
+    val end = new Text(AttributeTable.getRowPrefix(sft, prop))
     AccRange.followingPrefix(end)
   }
 }

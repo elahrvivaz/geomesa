@@ -28,24 +28,22 @@ object RecordTable extends GeoMesaTable {
 
   override val suffix: String = "records"
 
-  override def writer(sft: SimpleFeatureType): Option[FeatureToMutations] = {
+  override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val rowIdPrefix = sft.getTableSharingPrefix
-    val fn = (toWrite: FeatureToWrite) => {
+    (toWrite: FeatureToWrite) => {
       val m = new Mutation(getRowKey(rowIdPrefix, toWrite.feature.getID))
       m.put(SFT_CF, EMPTY_COLQ, toWrite.columnVisibility, toWrite.dataValue)
       Seq(m)
     }
-    Some(fn)
   }
 
-  override def remover(sft: SimpleFeatureType): Option[FeatureToMutations] = {
+  override def remover(sft: SimpleFeatureType): FeatureToMutations = {
     val rowIdPrefix = sft.getTableSharingPrefix
-    val fn = (toWrite: FeatureToWrite) => {
+    (toWrite: FeatureToWrite) => {
       val m = new Mutation(getRowKey(rowIdPrefix, toWrite.feature.getID))
       m.putDelete(SFT_CF, EMPTY_COLQ, toWrite.columnVisibility)
       Seq(m)
     }
-    Some(fn)
   }
 
   def getRowKey(rowIdPrefix: String, id: String): String = rowIdPrefix + id

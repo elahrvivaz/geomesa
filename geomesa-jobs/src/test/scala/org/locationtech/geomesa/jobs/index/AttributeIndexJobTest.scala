@@ -81,7 +81,7 @@ class AttributeIndexJobTest extends Specification {
     val encoder = SimpleFeatureSerializers(sft, ds.getFeatureEncoding(sft))
 
     sft.getDescriptor("name").setIndexCoverage(IndexCoverage.JOIN)
-    val writer = AttributeTable.writer(sft).get
+    val writer = AttributeTable.writer(sft)
     val expectedMutations = feats.flatMap { sf =>
       val toWrite = new FeatureToWrite(sf, ds.writeVisibilities, encoder, indexValueEncoder)
       writer(toWrite)
