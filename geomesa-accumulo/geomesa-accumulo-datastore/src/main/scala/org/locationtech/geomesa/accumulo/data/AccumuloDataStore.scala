@@ -10,15 +10,14 @@
 package org.locationtech.geomesa.accumulo.data
 
 import java.io.IOException
+import java.util.NoSuchElementException
 import java.util.concurrent.TimeUnit
-import java.util.{Map => JMap, NoSuchElementException}
 
 import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.accumulo.core.client._
 import org.apache.accumulo.core.client.admin.TimeType
 import org.apache.accumulo.core.client.mock.MockConnector
 import org.apache.accumulo.core.client.security.tokens.AuthenticationToken
-import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.curator.framework.CuratorFrameworkFactory
 import org.apache.curator.framework.recipes.locks.InterProcessSemaphoreMutex
 import org.apache.curator.retry.ExponentialBackoffRetry
@@ -212,8 +211,6 @@ class AccumuloDataStore(val connector: Connector,
     AttributeTable.configureTable(sft, table, tableOps)
   }
 
-  type KVEntry = JMap.Entry[Key,Value]
-
   /**
    * Read Record table name from store metadata
    */
@@ -340,6 +337,7 @@ class AccumuloDataStore(val connector: Connector,
       } finally {
         lock.release()
       }
+    }
   }
 
   // This function enforces the shared ST schema requirements.

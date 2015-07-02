@@ -88,7 +88,7 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
 
   "AttributeIndexStrategy" should {
     "print values" in {
-//      skipped("used for debugging")
+      skipped("used for debugging")
       val scanner = connector.createScanner(ds.getAttributeTable(sftName), new Authorizations())
       val prefix = AttributeTable.getAttributeIndexRowPrefix(sft, sft.indexOf("fingers"))
       scanner.setRange(AccRange.prefix(new Text(prefix)))

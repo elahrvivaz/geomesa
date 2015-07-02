@@ -13,7 +13,6 @@ import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.data.{Range => AccRange}
 import org.apache.commons.codec.binary.Hex
 import org.apache.hadoop.io.Text
-import org.locationtech.geomesa.accumulo
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter._
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -91,7 +90,7 @@ object GeoMesaTable {
    * but still human readable.
    */
   protected[tables] def formatTableName(prefix: String, suffix: String, sft: SimpleFeatureType): String =
-    if (accumulo.index.getTableSharing(sft)) {
+    if (sft.isTableSharing) {
       formatSharedTableName(prefix, suffix)
     } else {
       formatSoloTableName(prefix, suffix, sft)
