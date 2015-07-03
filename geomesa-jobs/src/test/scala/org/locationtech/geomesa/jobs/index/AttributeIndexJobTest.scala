@@ -77,7 +77,7 @@ class AttributeIndexJobTest extends Specification {
     val job = new AttributeIndexJob(arguments)
     job.run must beTrue
 
-    val indexValueEncoder = IndexValueEncoder(sft, ds.getGeomesaVersion(sft))
+    val indexValueEncoder = IndexValueEncoder(sft)
     val encoder = SimpleFeatureSerializers(sft, ds.getFeatureEncoding(sft))
 
     sft.getDescriptor("name").setIndexCoverage(IndexCoverage.JOIN)

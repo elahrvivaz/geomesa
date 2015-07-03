@@ -16,6 +16,7 @@ import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.accumulo.GEOMESA_ITERATORS_IS_DENSITY_TYPE
+import org.locationtech.geomesa.accumulo.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
 import org.locationtech.geomesa.accumulo.index.Strategy._
@@ -35,7 +36,7 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
 
     val sft             = queryPlanner.sft
     val acc             = queryPlanner.acc
-    val version         = queryPlanner.version
+    val version         = sft.getSchemaVersion
     val schema          = queryPlanner.stSchema
     val featureEncoding = queryPlanner.featureEncoding
     val keyPlanner      = IndexSchema.buildKeyPlanner(schema)
@@ -125,8 +126,8 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     // set up row ranges and regular expression filter
     val qp = planQuery(keyPlanningFilter, useIndexEntries, output, keyPlanner, cfPlanner)
 
-    val table = acc.getSpatioTemporalTable(sft)
-    val numThreads = acc.getSuggestedSpatioTemporalThreads(sft)
+    val table = acc.getTableName(sft.getTypeName, SpatioTemporalTable)
+    val numThreads = acc.getSuggestedThreads(sft.getTypeName, SpatioTemporalTable)
     val hasDupes = STIdxStrategy.mayContainDuplicates(hints, sft)
     val res = qp.copy(table = table, iterators = iterators, kvsToFeatures = kvsToFeatures,
       numThreads = numThreads, hasDuplicates = hasDupes)

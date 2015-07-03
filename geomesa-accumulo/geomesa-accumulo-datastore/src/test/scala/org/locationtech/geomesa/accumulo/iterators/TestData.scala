@@ -99,7 +99,7 @@ object TestData extends Logging {
   lazy val featureType: SimpleFeatureType = getFeatureType()
 
   lazy val featureEncoder = SimpleFeatureSerializers(getFeatureType(), SerializationType.AVRO)
-  lazy val indexValueEncoder = IndexValueEncoder(featureType, CURRENT_SCHEMA_VERSION)
+  lazy val indexValueEncoder = IndexValueEncoder(featureType)
 
   lazy val indexEncoder = IndexSchema.buildKeyEncoder(featureType, schemaEncoding)
 

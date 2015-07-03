@@ -65,8 +65,8 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with Loggin
     val attributeName = descriptor.getLocalName
     val hasDupes = descriptor.isMultiValued
 
-    val attributeTable = acc.getAttributeTable(sft)
-    val attributeThreads = acc.getSuggestedAttributeThreads(sft)
+    val attributeTable = acc.getTableName(sft.getTypeName, AttributeTable)
+    val attributeThreads = acc.getSuggestedThreads(sft.getTypeName, AttributeTable)
     val priority = FILTERING_ITER_PRIORITY
 
     // query against the attribute table
@@ -151,9 +151,9 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with Loggin
     val joinFunction: JoinFunction =
       (kv) => new AccRange(RecordTable.getRowKey(prefix, getIdFromRow(kv.getKey.getRow.getBytes)))
 
-    val recordTable = queryPlanner.acc.getRecordTable(sft)
+    val recordTable = queryPlanner.acc.getTableName(sft.getTypeName, RecordTable)
+    val recordThreads = queryPlanner.acc.getSuggestedThreads(sft.getTypeName, RecordTable)
     val recordRanges = Seq(new AccRange()) // this will get overwritten in the join method
-    val recordThreads = queryPlanner.acc.getSuggestedRecordThreads(sft)
     val joinQuery = BatchScanPlan(recordTable, recordRanges, recordIterators, Seq.empty,
       kvsToFeatures, recordThreads, hasDupes)
 
@@ -313,6 +313,7 @@ object AttributeIdxStrategy extends StrategyProvider {
         } else {
           literal
         }
+        // can't use dates, as we are doing a prefix range
         // the row includes a NULL terminator byte - strip that off
         val prefix = new Text(getEncodedAttrIdxRow(sft, idx, value, None).getBytes.dropRight(1))
         (idx, AccRange.prefix(prefix))

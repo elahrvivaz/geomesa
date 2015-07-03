@@ -57,7 +57,7 @@ class AttributeIdxStrategyV5(val filter: QueryFilter) extends Strategy with Logg
     val sft = queryPlanner.sft
     val acc = queryPlanner.acc
     val encoding = queryPlanner.featureEncoding
-    val version = acc.getGeomesaVersion(sft)
+    val version = sft.getSchemaVersion
     val hasDupes = sft.getDescriptor(attributeName).isMultiValued
 
     val attributeIterators = scala.collection.mutable.ArrayBuffer.empty[IteratorSetting]
@@ -94,7 +94,7 @@ class AttributeIdxStrategyV5(val filter: QueryFilter) extends Strategy with Logg
         }
 
         // there won't be any non-date/time-filters if the index only iterator has been selected
-        val table = acc.getAttributeTable(sft)
+        val table = acc.getTableName(sft.getTypeName, AttributeTableV5)
         ranges.map(ScanPlan(table, _, attributeIterators.toSeq, Seq.empty, kvsToFeatures, hasDupes))
 
       case RecordJoinIterator =>
@@ -116,14 +116,14 @@ class AttributeIdxStrategyV5(val filter: QueryFilter) extends Strategy with Logg
         val joinFunction: JoinFunction =
           (kv) => new AccRange(RecordTable.getRowKey(prefix, kv.getKey.getColumnQualifier.toString))
 
-        val recordTable = acc.getRecordTable(sft)
+        val recordTable = acc.getTableName(sft.getTypeName, RecordTable)
+        val recordThreads = acc.getSuggestedThreads(sft.getTypeName, RecordTable)
         val recordRanges = Seq(new AccRange()) // this will get overwritten in the join method
-        val recordThreads = acc.getSuggestedRecordThreads(sft)
         val joinQuery = BatchScanPlan(recordTable, recordRanges, recordIterators.toSeq, Seq.empty,
           kvsToFeatures, recordThreads, hasDupes)
 
-        val attrTable = acc.getAttributeTable(sft)
-        val attrThreads = acc.getSuggestedAttributeThreads(sft)
+        val attrTable = acc.getTableName(sft.getTypeName, AttributeTableV5)
+        val attrThreads = acc.getSuggestedThreads(sft.getTypeName, AttributeTableV5)
         val attrIters = attributeIterators.toSeq
         Seq(JoinPlan(attrTable, ranges, attrIters, Seq.empty, attrThreads, hasDupes, joinFunction, joinQuery))
     }

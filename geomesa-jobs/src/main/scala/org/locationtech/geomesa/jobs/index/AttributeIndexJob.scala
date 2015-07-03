@@ -60,7 +60,7 @@ class AttributeIndexJob(args: Args) extends GeoMesaBaseJob(args) {
     if (sft.getSchemaVersion < 6) AttributeTableV5.writer(sft) else AttributeTable.writer(sft)
   @transient lazy val encoding = ds.getFeatureEncoding(sft)
   @transient lazy val featureEncoder = SimpleFeatureSerializers(sft, encoding)
-  @transient lazy val indexValueEncoder = IndexValueEncoder(sft, ds.getGeomesaVersion(sft))
+  @transient lazy val indexValueEncoder = IndexValueEncoder(sft)
   @transient lazy val visibilities = ds.writeVisibilities
 
   // validation
@@ -71,7 +71,7 @@ class AttributeIndexJob(args: Args) extends GeoMesaBaseJob(args) {
   }
 
   val output = {
-    val attributeTable = ds.getAttributeTable(feature)
+    val attributeTable = ds.getTableName(feature, AttributeTable)
     val instance = dsParams(instanceIdParam.getName)
     val zoos = dsParams(zookeepersParam.getName)
     val user = dsParams(userParam.getName)
@@ -88,6 +88,8 @@ class AttributeIndexJob(args: Args) extends GeoMesaBaseJob(args) {
     // schedule a table compaction to clean up the table
     ds.connector.tableOperations().compact(output.table, null, null, true, false)
     // update the metadata
+    // reload the sft, as we nulled out the index flags earlier
+    val sft = ds.getSchema(feature)
     def wasIndexed(ad: AttributeDescriptor) = attributes.contains(ad.getLocalName)
     sft.getAttributeDescriptors.filter(wasIndexed).foreach(_.setIndexCoverage(coverage))
     val updatedSpec = SimpleFeatureTypes.encodeType(sft)

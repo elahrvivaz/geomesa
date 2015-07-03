@@ -13,7 +13,6 @@ import org.apache.accumulo.core.data.Key
 import org.apache.hadoop.io.Text
 import org.joda.time.{DateTime, DateTimeZone}
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToWrite
 import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
@@ -34,7 +33,7 @@ class IndexSchemaTest extends Specification {
   customType.setDtgField("dt_start")
   val dummyEncoder = SimpleFeatureSerializers(dummyType, SerializationType.AVRO)
   val customEncoder = SimpleFeatureSerializers(customType, SerializationType.AVRO)
-  val dummyIndexValueEncoder = IndexValueEncoder(dummyType, CURRENT_SCHEMA_VERSION)
+  val dummyIndexValueEncoder = IndexValueEncoder(dummyType)
 
   "SpatioTemporalIndexSchemaTest" should {
     "parse a valid string" in {

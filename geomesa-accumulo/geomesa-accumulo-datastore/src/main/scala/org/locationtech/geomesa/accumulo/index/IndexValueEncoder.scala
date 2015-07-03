@@ -14,16 +14,15 @@ import java.util.{Date, UUID}
 import com.vividsolutions.jts.geom.Geometry
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder
 import org.geotools.filter.identity.FeatureIdImpl
-import org.locationtech.geomesa.accumulo.index
 import org.locationtech.geomesa.features.kryo.{KryoFeatureSerializer, ProjectingKryoFeatureDeserializer}
 import org.locationtech.geomesa.features.serialization.CacheKeyGenerator
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, SimpleFeatureDeserializer, SimpleFeatureSerializer}
 import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.text.WKBUtils
 import org.opengis.feature.`type`.AttributeDescriptor
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
-import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-import scala.collection.JavaConversions._
+
 import scala.collection.mutable
 
 /**
@@ -60,21 +59,21 @@ object IndexValueEncoder {
 
   import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 
-import scala.collection.JavaConversions._
+  import scala.collection.JavaConversions._
 
   private val cache = new SoftThreadLocalCache[String, (SimpleFeatureType, Seq[String])]()
 
-  def apply(sft: SimpleFeatureType, version: Int): IndexValueEncoder = apply(sft, None, version)
+  def apply(sft: SimpleFeatureType): IndexValueEncoder = apply(sft, None)
 
-  def apply(sft: SimpleFeatureType, transform: SimpleFeatureType, version: Int): IndexValueEncoder =
-    apply(sft, Some(transform), version)
+  def apply(sft: SimpleFeatureType, transform: SimpleFeatureType): IndexValueEncoder =
+    apply(sft, Some(transform))
 
-  def apply(sft: SimpleFeatureType, transform: Option[SimpleFeatureType], version: Int): IndexValueEncoder = {
+  def apply(sft: SimpleFeatureType, transform: Option[SimpleFeatureType]): IndexValueEncoder = {
     val key = CacheKeyGenerator.cacheKeyForSFT(sft)
     val (indexSft, attributes) = cache.getOrElseUpdate(key, (getIndexSft(sft), getIndexValueFields(sft)))
     val copyFunction = getCopyFunction(sft, indexSft)
 
-    if (version < 4) { // kryo encoding introduced in version 4
+    if (sft.getSchemaVersion < 4) { // kryo encoding introduced in version 4
       OldIndexValueEncoder(sft, transform.getOrElse(indexSft))
     } else {
       val encoder = new KryoFeatureSerializer(indexSft)

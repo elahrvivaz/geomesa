@@ -60,13 +60,13 @@ class Z3IdxStrategyTest extends Specification with TestWithDataStore {
 
   implicit val ff = CommonFactoryFinder.getFilterFactory2
   val strategy = StrategyType.Z3
-  val queryPlanner = new QueryPlanner(sft, SerializationType.KRYO, null, ds, NoOpHints, CURRENT_SCHEMA_VERSION)
+  val queryPlanner = new QueryPlanner(sft, SerializationType.KRYO, null, ds, NoOpHints)
   val output = ExplainNull
 
   "Z3IdxStrategy" should {
     "print values" in {
       skipped("used for debugging")
-      val scanner = connector.createScanner(ds.getZ3Table(sftName), new Authorizations())
+      val scanner = connector.createScanner(ds.getTableName(sftName, Z3Table), new Authorizations())
       scanner.foreach(e => println(e.getKey.getRow.getBytes.toSeq))
       println()
       success

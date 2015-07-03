@@ -13,8 +13,8 @@ import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.data.{Range => AccRange}
 import org.apache.commons.codec.binary.Hex
 import org.apache.hadoop.io.Text
+import org.locationtech.geomesa.accumulo.data.AccumuloConnectorCreator
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter._
-import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeatureType
 
@@ -62,22 +62,11 @@ trait GeoMesaTable {
 
 object GeoMesaTable {
 
-  def getTablesAndNames(sft: SimpleFeatureType, acc: AccumuloConnectorCreator): Seq[(GeoMesaTable, String)] = {
-    val version = acc.getGeomesaVersion(sft)
-    val rec  = (RecordTable, acc.getRecordTable(sft))
-    val st   = (SpatioTemporalTable, acc.getSpatioTemporalTable(sft))
-    val attr = (if (version < 6) AttributeTableV5 else AttributeTable, acc.getAttributeTable(sft))
-    val tables = if (version < 5) {
-      Seq(rec, st, attr)
-    } else {
-      val z3 = (Z3Table, acc.getZ3Table(sft))
-      Seq(rec, z3, st, attr)
-    }
-    tables.filter(_._1.supports(sft))
-  }
+  def getTables(sft: SimpleFeatureType): Seq[GeoMesaTable] =
+    Seq(RecordTable, SpatioTemporalTable, AttributeTableV5, AttributeTable, Z3Table).filter(_.supports(sft))
 
   def getTableNames(sft: SimpleFeatureType, acc: AccumuloConnectorCreator): Seq[String] =
-    getTablesAndNames(sft, acc).map(_._2)
+    getTables(sft).map(acc.getTableName(sft.getTypeName, _))
 
   // only alphanumeric is safe
   private val SAFE_FEATURE_NAME_PATTERN = "^[a-zA-Z0-9]+$"

@@ -71,7 +71,7 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
   addFeatures(features)
 
   val queryPlanner = new QueryPlanner(sft, ds.getFeatureEncoding(sft), ds.getIndexSchemaFmt(sftName), ds,
-    ds.strategyHints(sft), ds.getGeomesaVersion(sft))
+    ds.strategyHints(sft))
 
   def execute(filter: String): List[String] = {
     val query = new Query(sftName, ECQL.toFilter(filter))
@@ -82,7 +82,7 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
   "AttributeIndexStrategy" should {
     "print values" in {
       skipped("used for debugging")
-      val scanner = connector.createScanner(ds.getAttributeTable(sftName), new Authorizations())
+      val scanner = connector.createScanner(ds.getTableName(sftName, AttributeTable), new Authorizations())
       val prefix = AttributeTable.getRowPrefix(sft, sft.indexOf("fingers"))
       scanner.setRange(AccRange.prefix(new Text(prefix)))
       scanner.asScala.foreach(println)

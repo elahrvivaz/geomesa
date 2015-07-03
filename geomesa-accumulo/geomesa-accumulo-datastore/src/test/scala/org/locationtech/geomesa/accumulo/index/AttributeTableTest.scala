@@ -40,7 +40,7 @@ class AttributeTableTest extends Specification with TestWithDataStore {
       feature.setAttribute("name","fred")
       feature.setAttribute("age",50.asInstanceOf[Any])
 
-      val indexValueEncoder = IndexValueEncoder(sft, CURRENT_SCHEMA_VERSION)
+      val indexValueEncoder = IndexValueEncoder(sft)
       val featureEncoder = SimpleFeatureSerializers(sft, DEFAULT_ENCODING)
 
       val toWrite = new FeatureToWrite(feature, "", featureEncoder, indexValueEncoder)

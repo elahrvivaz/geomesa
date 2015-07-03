@@ -51,14 +51,13 @@ case class QueryPlanner(sft: SimpleFeatureType,
                         featureEncoding: SerializationType,
                         stSchema: String,
                         acc: AccumuloConnectorCreator,
-                        hints: StrategyHints,
-                        version: Int) extends ExplainingLogging with IndexFilterHelpers with MethodProfiling {
+                        hints: StrategyHints) extends ExplainingLogging with IndexFilterHelpers with MethodProfiling {
 
   import org.locationtech.geomesa.accumulo.index.QueryPlanner._
 
   val featureEncoder = SimpleFeatureSerializers(sft, featureEncoding)
   val featureDecoder = SimpleFeatureDeserializers(sft, featureEncoding)
-  val indexValueEncoder = IndexValueEncoder(sft, version)
+  val indexValueEncoder = IndexValueEncoder(sft)
 
   /**
    * Plan the query, but don't execute it - used for m/r jobs and explain query
@@ -134,7 +133,7 @@ case class QueryPlanner(sft: SimpleFeatureType,
 
     implicit val timings = new TimingsImpl
     val (queryPlans, numClauses) = profile({
-      val strategies = QueryStrategyDecider.chooseStrategies(sft, query, hints, requested, version)
+      val strategies = QueryStrategyDecider.chooseStrategies(sft, query, hints, requested)
       output(s"Strategy count: ${strategies.length}")
       output(s"Transforms: ${query.getHints.getTransformDefinition.getOrElse("None")}")
       val plans = strategies.flatMap { strategy =>

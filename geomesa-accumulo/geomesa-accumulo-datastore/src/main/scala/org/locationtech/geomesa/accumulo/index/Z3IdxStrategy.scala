@@ -108,8 +108,8 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       (iters, Z3Table.adaptZ3KryoIterator(hints.getReturnSft), Z3Table.FULL_CF)
     }
 
-    val z3table = acc.getZ3Table(sft)
-    val numThreads = acc.getSuggestedZ3Threads(sft)
+    val z3table = acc.getTableName(sft.getTypeName, Z3Table)
+    val numThreads = acc.getSuggestedThreads(sft.getTypeName, Z3Table)
 
     // setup Z3 iterator
     val env = geometryToCover.getEnvelopeInternal

@@ -92,8 +92,7 @@ object GeoMesaInputFormat extends Logging {
       val featureEncoding = ds.getFeatureEncoding(sft)
       val indexSchema = ds.getIndexSchemaFmt(featureTypeName)
       val hints = ds.strategyHints(sft)
-      val version = ds.getGeomesaVersion(sft)
-      val queryPlanner = new QueryPlanner(sft, featureEncoding, indexSchema, ds, hints, version)
+      val queryPlanner = new QueryPlanner(sft, featureEncoding, indexSchema, ds, hints)
       val qps = queryPlanner.planQuery(query, Some(StrategyType.ST), ExplainNull)
       if (qps.length > 1) {
         logger.error("The query being executed requires multiple scans, which is not currently " +

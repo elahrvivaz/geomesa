@@ -120,7 +120,7 @@ class GeoMesaRecordWriter(params: Map[String, String], delegate: RecordWriter[Te
     })
 
     val encoder = encoderCache.getOrElseUpdate(sftName, SimpleFeatureSerializers(sft, ds.getFeatureEncoding(sft)))
-    val ive = indexEncoderCache.getOrElseUpdate(sftName, IndexValueEncoder(sft, ds.getGeomesaVersion(sft)))
+    val ive = indexEncoderCache.getOrElseUpdate(sftName, IndexValueEncoder(sft))
     val featureToWrite = new FeatureToWrite(value, ds.writeVisibilities, encoder, ive)
 
     writers.foreach { case (table, featureToMutations) =>

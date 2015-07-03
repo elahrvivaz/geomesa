@@ -32,7 +32,7 @@ import org.geotools.geometry.jts.JTSFactoryFinder
 import org.geotools.referencing.CRS
 import org.joda.time.DateTime
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.data.tables.{RecordTable, AttributeTable, SpatioTemporalTable, GeoMesaTable}
+import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
 import org.locationtech.geomesa.accumulo.index._
@@ -182,7 +182,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       val sft = SimpleFeatureTypes.createType("customsplit", spec)
       sft.setTableSharing(false)
       ds.createSchema(sft)
-      val recTable = ds.getRecordTable(sft)
+      val recTable = ds.getTableName(sft.getTypeName, RecordTable)
       val splits = ds.connector.tableOperations().listSplits(recTable)
       splits.size() mustEqual 100
       splits.head mustEqual new Text("00")
@@ -200,7 +200,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
         val dst = DataStoreFinder.getDataStore(params).asInstanceOf[AccumuloDataStore]
         val qpt = dst.getQueryPlan(query)
         qpt must haveSize(1)
-        qpt.head.table mustEqual dst.getZ3Table(sftName)
+        qpt.head.table mustEqual dst.getTableName(sftName, Z3Table)
         qpt.head.numThreads mustEqual numThreads
       }
 
@@ -209,7 +209,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       // check default
       val qpt = ds.getQueryPlan(query)
       qpt must haveSize(1)
-      qpt.head.table mustEqual ds.getZ3Table(sftName)
+      qpt.head.table mustEqual ds.getTableName(sftName, Z3Table)
       qpt.head.numThreads mustEqual 8
     }
 
@@ -555,7 +555,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       val query = new Query(sftName, ECQL.toFilter("BBOX(geom,40,40,50,50)"))
       query.getHints.put(BIN_TRACK_KEY, "name")
       val queryPlanner = new QueryPlanner(sft, ds.getFeatureEncoding(sft),
-        ds.getIndexSchemaFmt(sftName), ds, ds.strategyHints(sft), ds.getGeomesaVersion(sft))
+        ds.getIndexSchemaFmt(sftName), ds, ds.strategyHints(sft))
       val results = queryPlanner.runQuery(query, Some(StrategyType.ST)).map(_.getAttribute(BIN_ATTRIBUTE_INDEX)).toSeq
       forall(results)(_ must beAnInstanceOf[Array[Byte]])
       val bins = results.flatMap(_.asInstanceOf[Array[Byte]].grouped(16).map(Convert2ViewerFunction.decode))

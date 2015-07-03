@@ -14,6 +14,7 @@ import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
@@ -43,9 +44,8 @@ object QueryStrategyDecider {
   def chooseStrategies(sft: SimpleFeatureType,
                        query: Query,
                        hints: StrategyHints,
-                       requested: Option[StrategyType],
-                       version: Int): Seq[Strategy] = {
-    strategies(version).chooseStrategies(sft, query, hints, requested)
+                       requested: Option[StrategyType]): Seq[Strategy] = {
+    strategies(sft.getSchemaVersion).chooseStrategies(sft, query, hints, requested)
   }
 }
 
