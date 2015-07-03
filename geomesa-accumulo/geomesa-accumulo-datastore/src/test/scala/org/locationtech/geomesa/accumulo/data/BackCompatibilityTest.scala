@@ -14,6 +14,7 @@ import org.geotools.factory.Hints
 import org.geotools.feature.DefaultFeatureCollection
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.accumulo.TestWithDataStore
 import org.locationtech.geomesa.features.ScalaSimpleFeatureFactory
 import org.locationtech.geomesa.utils.geotools.Conversions._
@@ -79,27 +80,19 @@ class BackCompatibilityTest extends Specification with TestWithDataStore {
 
     queries.foreach { case (q, results) =>
       val filter = ECQL.toFilter(q)
-      doQuery(fs, new Query(sftName, filter)) mustEqual(results)
+      doQuery(fs, new Query(sftName, filter)) mustEqual results
       transforms.foreach { t =>
-        doQuery(fs, new Query(sftName, filter, t)) mustEqual(results)
+        doQuery(fs, new Query(sftName, filter, t)) mustEqual results
       }
     }
   }
 
   "GeoMesa" should {
-    "support back compatibility to version 2" >> {
-      runVersionTest(2)
-      success
-    }
-
-    "support back compatibility to version 3" >> {
-      runVersionTest(3)
-      success
-    }
-
-    "support back compatibility to version 4" >> {
-      runVersionTest(4)
-      success
+    (2 to CURRENT_SCHEMA_VERSION).foreach { version =>
+      s"support back compatibility to version $version" >> {
+        runVersionTest(version)
+        success
+      }
     }
   }
 
