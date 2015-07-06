@@ -178,8 +178,8 @@ object FilterHelper {
       case during: During =>
         val p = during.getExpression2.evaluate(null, classOf[Period])
         // during is exclusive bounds - round to the second
-        val start = p.getBeginning.getPosition.getDate.getTime + 1000
-        val end = p.getEnding.getPosition.getDate.getTime - 1000
+        val start = p.getBeginning.getPosition.getDate.getTime + 1000L
+        val end = p.getEnding.getPosition.getDate.getTime - 1000L
         new Interval(start, end)
       case between: PropertyIsBetween =>
         val start = between.getLowerBoundary.evaluate(null, classOf[Date])

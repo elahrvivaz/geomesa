@@ -119,7 +119,7 @@ class FilterHelperTest extends Specification with Mockito with Logging {
         val filter = during(start, end)
 
         val extractedInterval = extractDT(Seq(filter))
-        val expectedInterval = new Interval(start, end)
+        val expectedInterval = new Interval(start.plusSeconds(1), end.minusSeconds(1))
         logger.debug(s"Extracted interval $extractedInterval from filter ${ECQL.toCQL(filter)}")
         extractedInterval must equalTo(expectedInterval)
       }
@@ -152,12 +152,14 @@ class FilterHelperTest extends Specification with Mockito with Logging {
         val extractedMixed1Interval = extractDT(mixedFilters1)
         val extractedMixed2Interval = extractDT(mixedFilters2)
 
-        val expectedInterval = interval(t1).overlap(interval(t2))
+        val duringT1 = (t1._1.plusSeconds(1), t1._2.minusSeconds(1))
+        val duringT2 = (t2._1.plusSeconds(1), t2._2.minusSeconds(1))
+
         logger.debug(s"Extracted interval $extractedBetweenInterval from filters ${betweenFilters.map(ECQL.toCQL)}")
-        extractedBetweenInterval must equalTo(expectedInterval)
-        extractedDuringInterval must equalTo(expectedInterval)
-        extractedMixed1Interval must equalTo(expectedInterval)
-        extractedMixed2Interval must equalTo(expectedInterval)
+        extractedBetweenInterval mustEqual interval(t1).overlap(interval(t2))
+        extractedDuringInterval mustEqual interval(duringT1).overlap(interval(duringT2))
+        extractedMixed1Interval mustEqual interval(duringT1).overlap(interval(t2))
+        extractedMixed2Interval mustEqual interval(t1).overlap(interval(duringT2))
       }
     }
 
@@ -172,6 +174,7 @@ class FilterHelperTest extends Specification with Mockito with Logging {
         val betweenFilter = between(dtPair)
         val duringFilter = during(dtPair)
         val pairInterval = interval(dtPair)
+        val duringInterval = interval((dtPair._1.plusSeconds(1), dtPair._2.minusSeconds(1)))
 
         val afterAndBetween = extractDT(Seq(afterDtFilter, betweenFilter))
         val afterAndBetweenInterval = afterDtInterval.overlap(pairInterval)
@@ -182,11 +185,11 @@ class FilterHelperTest extends Specification with Mockito with Logging {
         beforeAndBetween must equalTo(beforeAndBetweenInterval)
 
         val afterAndDuring = extractDT(Seq(afterDtFilter, duringFilter))
-        val afterAndDuringInterval = afterDtInterval.overlap(pairInterval)
+        val afterAndDuringInterval = afterDtInterval.overlap(duringInterval)
         afterAndDuring must equalTo(afterAndDuringInterval)
 
         val beforeAndDuring = extractDT(Seq(beforeDtFilter, duringFilter))
-        val beforeAndDuringInterval = beforeDtInterval.overlap(pairInterval)
+        val beforeAndDuringInterval = beforeDtInterval.overlap(duringInterval)
         beforeAndDuring must equalTo(beforeAndDuringInterval)
       }
     }
