@@ -8,23 +8,17 @@
 
 package org.locationtech.geomesa.accumulo.index
 
-import org.geotools.factory.Hints
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.accumulo.TestWithDataStore
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToWrite
 import org.locationtech.geomesa.accumulo.data.DEFAULT_ENCODING
 import org.locationtech.geomesa.accumulo.data.tables.AttributeTable
 import org.locationtech.geomesa.features.SimpleFeatureSerializers
 import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
-import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes._
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
-
-import scala.collection.JavaConversions._
 
 @RunWith(classOf[JUnitRunner])
 class AttributeTableTest extends Specification with TestWithDataStore {

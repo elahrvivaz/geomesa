@@ -115,10 +115,13 @@ case class QueryPlanner(sft: SimpleFeatureType,
   private def getQueryPlans(query: Query,
                             requested: Option[StrategyType],
                             output: ExplainerOutputType): (Seq[QueryPlan], Int) = {
-    output(s"Planning ${ExplainerOutputType.toString(query)}")
-    requested.foreach(r => output(s"STRATEGY FORCED TO $r"))
+    output(s"Planning '${query.getTypeName}' ${filterToString(query.getFilter)}")
+    output(s"Hints: Density ${query.getHints.isDensityQuery}, BIN ${query.getHints.isBinQuery}")
+    output(s"Sort: ${Option(query.getSortBy).filter(_.nonEmpty).map(_.mkString(", ")).getOrElse("none")}")
+    output(s"Transforms: ${query.getHints.getTransformDefinition.getOrElse("None")}")
 
     configureQuery(query, sft) // configure the query - set hints that we'll need later on
+
     if (query.getHints.isDensityQuery) { // add the bbox from the density query to the filter
       val env = query.getHints.getDensityEnvelope.get.asInstanceOf[ReferencedEnvelope]
       val bbox = ff.bbox(ff.property(sft.getGeometryDescriptor.getLocalName), env)
@@ -133,19 +136,18 @@ case class QueryPlanner(sft: SimpleFeatureType,
 
     implicit val timings = new TimingsImpl
     val (queryPlans, numClauses) = profile({
-      val strategies = QueryStrategyDecider.chooseStrategies(sft, query, hints, requested)
-      output(s"Strategy count: ${strategies.length}")
-      output(s"Transforms: ${query.getHints.getTransformDefinition.getOrElse("None")}")
+      val strategies = QueryStrategyDecider.chooseStrategies(sft, query, hints, requested, output)
       val plans = strategies.flatMap { strategy =>
-        output(s"Strategy: ${strategy.getClass.getCanonicalName}")
-        output(s"Filter: ${strategy.filter.filterString}")
+        output(s"Strategy: ${strategy.getClass.getSimpleName}")
+        output(s"Filter: ${strategy.filter}")
         val plans = strategy.getQueryPlans(this, query.getHints, output)
         plans.foreach(outputPlan(_, output))
         plans
       }
       (plans, strategies.length)
     }, "plan")
-    output(s"Query planning took ${timings.time("plan")}ms for $numClauses distinct queries.")
+    output(s"Query planning took ${timings.time("plan")}ms for $numClauses " +
+        s"distinct quer${if (numClauses == 1) "y" else "ies"}.")
     (queryPlans, numClauses)
   }
 
@@ -154,7 +156,10 @@ case class QueryPlanner(sft: SimpleFeatureType,
     output(s"${joinPrefix}Table: ${plan.table}")
     output(s"${joinPrefix}Column Families${if (plan.columnFamilies.isEmpty) ": all"
       else s" (${plan.columnFamilies.size}): ${plan.columnFamilies.take(20)}"} ")
-    output(s"${joinPrefix}Ranges (${plan.ranges.size}): ${plan.ranges.take(5).mkString(", ")}")
+    output(s"${joinPrefix}Ranges (${plan.ranges.size}): ${plan.ranges.take(5)
+        .map(r => (r.getStartKey.getRow, r.getEndKey.getRow))
+        .map(k => s"[${Key.toPrintableString(k._1.getBytes, 0, k._1.getLength, k._1.getLength)}" +
+        s" ${Key.toPrintableString(k._2.getBytes, 0, k._2.getLength, k._2.getLength)}]").mkString(", ")}")
     output(s"${joinPrefix}Iterators (${plan.iterators.size}): ${plan.iterators.mkString("[", "],[", "]")}")
     plan.join.foreach(j => outputPlan(j._2, output, "Join "))
   }

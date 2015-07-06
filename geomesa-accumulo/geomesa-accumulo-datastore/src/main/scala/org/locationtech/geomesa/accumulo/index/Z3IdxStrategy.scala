@@ -40,7 +40,15 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
 
     val dtgField = sft.getDtgField
 
-    val (geomFilters, temporalFilters) = filter.primary.partition(isSpatialFilter)
+    val (geomFilters, temporalFilters) = {
+      val (g, t) = filter.primary.partition(isSpatialFilter)
+      if (g.isEmpty) {
+        // allow for date only queries - if no geom, use whole world
+        (Seq(ff.bbox(sft.getGeomField, -180, -90, 180, 90, "EPSG:4326")), t)
+      } else {
+        (g, t)
+      }
+    }
     val ecql = filter.secondary
 
     output(s"Geometry filters: ${filtersToString(geomFilters)}")
@@ -177,5 +185,6 @@ object Z3IdxStrategy extends StrategyProvider {
    *
    * Eventually cost will be computed based on dynamic metadata and the query.
    */
-  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) = 200
+  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) =
+    if (filter.primary.length > 1) 200 else 400
 }

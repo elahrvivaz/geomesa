@@ -22,7 +22,8 @@ trait QueryStrategyDecider {
   def chooseStrategies(sft: SimpleFeatureType,
                        query: Query,
                        hints: StrategyHints,
-                       requested: Option[StrategyType]): Seq[Strategy]
+                       requested: Option[StrategyType],
+                       ouptput: ExplainerOutputType): Seq[Strategy]
 }
 
 object QueryStrategyDecider {
@@ -44,8 +45,9 @@ object QueryStrategyDecider {
   def chooseStrategies(sft: SimpleFeatureType,
                        query: Query,
                        hints: StrategyHints,
-                       requested: Option[StrategyType]): Seq[Strategy] = {
-    strategies(sft.getSchemaVersion).chooseStrategies(sft, query, hints, requested)
+                       requested: Option[StrategyType],
+                       output: ExplainerOutputType = ExplainNull): Seq[Strategy] = {
+    strategies(sft.getSchemaVersion).chooseStrategies(sft, query, hints, requested, output)
   }
 }
 
@@ -73,7 +75,8 @@ class QueryStrategyDeciderV6 extends QueryStrategyDecider {
   override def chooseStrategies(sft: SimpleFeatureType,
                                 query: Query,
                                 hints: StrategyHints,
-                                requested: Option[StrategyType]): Seq[Strategy] = {
+                                requested: Option[StrategyType],
+                                output: ExplainerOutputType): Seq[Strategy] = {
 
     // get the various options that we could potentially use
     val options = new QueryFilterSplitter(sft, supportsZ3(sft)).getQueryOptions(query.getFilter)
@@ -81,28 +84,37 @@ class QueryStrategyDeciderV6 extends QueryStrategyDecider {
     if (requested.isDefined) {
       // see if one of the normal plans matches the requested type - if not, force it
       val strategy = requested.get
-      options.find(_.filters.forall(_.strategy == strategy)) match {
+      val forced = options.find(_.filters.forall(_.strategy == strategy)) match {
         case Some(plan) => plan.filters.map(createStrategy)
         case None => Seq(createStrategy(QueryFilter(strategy, Seq(Filter.INCLUDE), Some(query.getFilter))))
       }
+      output(s"Strategy forced to $forced")
+      forced
     } else if (options.isEmpty) {
+      output(s"No strategies found")
       Seq.empty // corresponds to filter.exclude
     } else {
       val filterPlan = if (query.getHints.isDensityQuery) {
         // TODO GEOMESA-322 use other strategies with density iterator
         val st = options.find(_.filters.forall(q => q.strategy == StrategyType.Z3 ||
             q.strategy == StrategyType.ST))
-        st.getOrElse {
+        val density = st.getOrElse {
           val fallback = if (query.getFilter == Filter.INCLUDE) None else Some(query.getFilter)
           FilterPlan(Seq(QueryFilter(StrategyType.ST, Seq(Filter.INCLUDE), fallback)))
         }
-
+        output(s"Strategy for density query: $density")
+        density
       } else if (options.length == 1) {
         // only a single option, so don't bother with cost
+        output(s"Strategy: ${options.head}")
         options.head
       } else {
         // choose the best option based on cost
-        options.sortBy(o => o.filters.map(getCost(_, sft, hints)).sum).head
+        val costs = options.map(o => (o, o.filters.map(getCost(_, sft, hints)).sum)).sortBy(_._2)
+        val cheapest = costs.head
+        output(s"Strategy selected: ${cheapest._1}(Cost ${cheapest._2})")
+        output(s"Strategies not used (${costs.size - 1}): ${costs.drop(1).map(c => s"${c._1}(Cost ${c._2})").mkString(", ")}")
+        cheapest._1
       }
       filterPlan.filters.map(createStrategy)
     }

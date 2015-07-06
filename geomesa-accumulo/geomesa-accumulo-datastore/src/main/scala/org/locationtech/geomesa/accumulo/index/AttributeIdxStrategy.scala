@@ -170,10 +170,10 @@ object AttributeIdxStrategy extends StrategyProvider {
   override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) = {
     val cost = filter.primary.flatMap(getAttributeProperty).map { p =>
       val descriptor = sft.getDescriptor(p.name)
-      val multiplier = if (descriptor.getIndexCoverage() == IndexCoverage.JOIN) 2 else 1
+      val multiplier = if (descriptor.getIndexCoverage() == IndexCoverage.JOIN) 10 else 1
       hints.cardinality(descriptor) match {
         case Cardinality.HIGH    => 1 * multiplier
-        case Cardinality.UNKNOWN => 999 * multiplier
+        case Cardinality.UNKNOWN => 101 * multiplier
         case Cardinality.LOW     => Int.MaxValue
       }
     }.sum

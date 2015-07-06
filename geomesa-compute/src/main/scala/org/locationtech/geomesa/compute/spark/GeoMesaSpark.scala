@@ -27,9 +27,9 @@ import org.geotools.factory.CommonFactoryFinder
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
-import org.locationtech.geomesa.accumulo.stats.QueryStatTransform
 import org.locationtech.geomesa.features.SimpleFeatureSerializers
 import org.locationtech.geomesa.features.kryo.serialization.SimpleFeatureSerializer
+import org.locationtech.geomesa.filter.filterToString
 import org.locationtech.geomesa.jobs.GeoMesaConfigurator
 import org.locationtech.geomesa.jobs.mapreduce.GeoMesaInputFormat
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -75,7 +75,7 @@ object GeoMesaSpark extends Logging {
     if (qps.length > 1) {
       logger.error("The query being executed requires multiple scans, which is not currently " +
           "supported by geomesa. Your result set will be partially incomplete. This is most likely due to " +
-          s"an OR clause in your query. Query: ${QueryStatTransform.filterToString(query.getFilter)}")
+          s"an OR clause in your query. Query: ${filterToString(query.getFilter)}")
     }
     val qp = qps.head
 
