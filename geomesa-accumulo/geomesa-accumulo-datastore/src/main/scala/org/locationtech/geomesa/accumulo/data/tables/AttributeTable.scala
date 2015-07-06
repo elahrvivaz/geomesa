@@ -17,7 +17,7 @@ import com.google.common.primitives.Bytes
 import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
-import org.apache.accumulo.core.data.Mutation
+import org.apache.accumulo.core.data.{Mutation, Range => AccRange}
 import org.apache.hadoop.io.Text
 import org.calrissian.mango.types.{LexiTypeEncoders, SimpleTypeEncoders, TypeEncoder}
 import org.joda.time.format.ISODateTimeFormat
@@ -126,15 +126,76 @@ object AttributeTable extends GeoMesaTable with Logging {
   def getRowPrefix(sft: SimpleFeatureType, i: Int): Array[Byte] =
     Bytes.concat(sft.getTableSharingPrefix.getBytes(UTF8), indexToBytes(i))
 
-  /**
-   * Gets a full row (minus the feature ID) for the given value, needed for creating query ranges.
-   * Less optimized version of logic from getMutations.
-   */
-  def getRow(sft: SimpleFeatureType, i: Int, value: Any, time: Option[Long]): Option[Array[Byte]] = {
-    val prefix = getRowPrefix(sft, i)
-    val suffix = time.map(t => Bytes.concat(NULLBYTE, timeToBytes(t))).getOrElse(NULLBYTE)
-    encode(value, sft.getDescriptor(i)).headOption.map(v => Bytes.concat(prefix, v.getBytes(UTF8), suffix))
+  // equals range
+  def equals(sft: SimpleFeatureType, i: Int, value: Any, times: Option[(Long, Long)]): AccRange = {
+    val start = lower(sft, i, value, inclusive = true, times.map(_._1))
+    val end = upper(sft, i, value, inclusive = true, times.map(_._2))
+    new AccRange(start, true, end, false)
   }
+
+  // less than range
+  def lt(sft: SimpleFeatureType, i: Int, value: Any, time: Option[Long]): AccRange =
+    new AccRange(lowerBound(sft, i), true, upper(sft, i, value, inclusive = false, time), false)
+
+  // less than or equal to range
+  def lte(sft: SimpleFeatureType, i: Int, value: Any, time: Option[Long]): AccRange =
+    new AccRange(lowerBound(sft, i), true, upper(sft, i, value, inclusive = true, time), false)
+
+  // greater than range
+  def gt(sft: SimpleFeatureType, i: Int, value: Any, time: Option[Long]): AccRange =
+    new AccRange(lower(sft, i, value, inclusive = false, time), true, upperBound(sft, i), false)
+
+  // greater than or equal to range
+  def gte(sft: SimpleFeatureType, i: Int, value: Any, time: Option[Long]): AccRange =
+    new AccRange(lower(sft, i, value, inclusive = true, time), true, upperBound(sft, i), false)
+
+  // between range
+  def between(sft: SimpleFeatureType, i: Int, values: (Any, Any), inclusive: Boolean, times: Option[(Long, Long)]): AccRange = {
+    val start = lower(sft, i, values._1, inclusive, times.map(_._1))
+    val end = upper(sft, i, values._2, inclusive, times.map(_._2))
+    new AccRange(start, true, end, false)
+  }
+
+  // prefix range - doesn't account for times
+  def prefix(sft: SimpleFeatureType, i: Int, value: Any): AccRange = {
+    val prefix = getRowPrefix(sft, i)
+    val encoded = encode(getTypedValue(sft, i, value), sft.getDescriptor(i)).headOption
+    val encodedBytes = encoded.map(_.getBytes(UTF8)).getOrElse(Array.empty)
+    AccRange.prefix(new Text(Bytes.concat(prefix, encodedBytes)))
+  }
+
+  // all values for this attribute
+  def all(sft: SimpleFeatureType, i: Int): AccRange =
+    new AccRange(lowerBound(sft, i), true, upperBound(sft, i), false)
+
+  // gets a lower bound for a range (inclusive)
+  private def lower(sft: SimpleFeatureType, i: Int, value: Any, inclusive: Boolean, time: Option[Long]): Text =
+    row(sft, i, value, !inclusive, time)
+
+  // gets an upper bound for a range (exclusive)
+  private def upper(sft: SimpleFeatureType, i: Int, value: Any, inclusive: Boolean, time: Option[Long]): Text =
+    row(sft, i, value, inclusive, time)
+
+  // gets a row for use in a range
+  private def row(sft: SimpleFeatureType, i: Int, value: Any, following: Boolean, time: Option[Long]): Text = {
+    val prefix = getRowPrefix(sft, i)
+    val timeBytes = time.map(timeToBytes).getOrElse(Array.empty)
+    val encoded = encode(getTypedValue(sft, i, value), sft.getDescriptor(i)).headOption
+    val encodedBytes = encoded.map(_.getBytes(UTF8)).getOrElse(Array.empty)
+    if (following) {
+      val row = AccRange.followingPrefix(new Text(Bytes.concat(prefix, encodedBytes)))
+      new Text(Bytes.concat(row.getBytes, NULLBYTE, timeBytes))
+    } else {
+      new Text(Bytes.concat(prefix, encodedBytes, NULLBYTE, timeBytes))
+    }
+  }
+
+  // lower bound for all values of the attribute, inclusive
+  private def lowerBound(sft: SimpleFeatureType, i: Int): Text = new Text(AttributeTable.getRowPrefix(sft, i))
+
+  // upper bound for all values of the attribute, exclusive
+  private def upperBound(sft: SimpleFeatureType, i: Int): Text =
+    AccRange.followingPrefix(new Text(AttributeTable.getRowPrefix(sft, i)))
 
   /**
    * Decodes an attribute value out of row string
@@ -235,6 +296,36 @@ object AttributeTable extends GeoMesaTable with Logging {
         logger.warn(s"Error converting type for '$value' from ${current.getSimpleName} to " +
           s"${desired.getSimpleName}: ${e.toString}")
         value
+    }
+  }
+
+  /**
+   * Gets a value that can used to compute a range for an attribute query.
+   * The attribute index encodes the type of the attribute as part of the row. This checks for
+   * query literals that don't match the expected type and tries to convert them.
+   */
+  def getTypedValue(sft: SimpleFeatureType, prop: Int, value: Any): Any = {
+    val descriptor = sft.getDescriptor(prop)
+    // the class type as defined in the SFT
+    val expectedBinding = descriptor.getType.getBinding
+    // the class type of the literal pulled from the query
+    val actualBinding = value.getClass
+    if (expectedBinding == actualBinding) {
+      value
+    } else if (descriptor.isCollection) {
+      // we need to encode with the collection type
+      descriptor.getCollectionType() match {
+        case Some(collectionType) if collectionType == actualBinding => Seq(value).asJava
+        case Some(collectionType) if collectionType != actualBinding =>
+          Seq(AttributeTable.convertType(value, actualBinding, collectionType)).asJava
+      }
+    } else if (descriptor.isMap) {
+      // TODO GEOMESA-454 - support querying against map attributes
+      Map.empty.asJava
+    } else {
+      // type mismatch, encoding won't work b/c value is wrong class
+      // try to convert to the appropriate class
+      AttributeTable.convertType(value, actualBinding, expectedBinding)
     }
   }
 

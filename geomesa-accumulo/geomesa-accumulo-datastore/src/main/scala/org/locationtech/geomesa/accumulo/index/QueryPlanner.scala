@@ -11,7 +11,7 @@ package org.locationtech.geomesa.accumulo.index
 import java.util.Map.Entry
 
 import com.vividsolutions.jts.geom.Geometry
-import org.apache.accumulo.core.data.{Key, Value}
+import org.apache.accumulo.core.data.{Key, Value, Range => AccRange}
 import org.geotools.data.Query
 import org.geotools.factory.Hints
 import org.geotools.feature.AttributeTypeBuilder
@@ -156,13 +156,21 @@ case class QueryPlanner(sft: SimpleFeatureType,
     output(s"${joinPrefix}Table: ${plan.table}")
     output(s"${joinPrefix}Column Families${if (plan.columnFamilies.isEmpty) ": all"
       else s" (${plan.columnFamilies.size}): ${plan.columnFamilies.take(20)}"} ")
-    output(s"${joinPrefix}Ranges (${plan.ranges.size}): ${plan.ranges.take(5)
-        .map(r => (r.getStartKey.getRow, r.getEndKey.getRow))
-        .map(k => s"[${Key.toPrintableString(k._1.getBytes, 0, k._1.getLength, k._1.getLength)}" +
-        s" ${Key.toPrintableString(k._2.getBytes, 0, k._2.getLength, k._2.getLength)}]").mkString(", ")}")
+    output(s"${joinPrefix}Ranges (${plan.ranges.size}): ${plan.ranges.take(5).map(rangeToString).mkString(", ")}")
     output(s"${joinPrefix}Iterators (${plan.iterators.size}): ${plan.iterators.mkString("[", "],[", "]")}")
     plan.join.foreach(j => outputPlan(j._2, output, "Join "))
   }
+
+  private def rangeToString(r: AccRange): String = {
+    val a = if (r.isStartKeyInclusive) "[" else "("
+    val z = if (r.isEndKeyInclusive) "]" else ")"
+    val start = if (r.isInfiniteStartKey) "-inf" else keyToString(r.getStartKey)
+    val stop = if (r.isInfiniteStopKey) "+inf" else keyToString(r.getEndKey)
+    s"$a$start,$stop$z"
+  }
+
+  private def keyToString(k: Key): String =
+    Key.toPrintableString(k.getRow.getBytes, 0, k.getLength, k.getLength)
 
   // This function decodes/transforms that Iterator of Accumulo Key-Values into an Iterator of SimpleFeatures
   def defaultKVsToFeatures(hints: Hints): FeatureFunction = kvsToFeatures(hints.getReturnSft)

@@ -690,11 +690,11 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       createSchema(sftName)
       val query = new Query(sftName, Filter.INCLUDE)
       val fr = ds.getFeatureReader(sftName)
-      fr must not beNull;
+      fr must not beNull
       val out = new ExplainString
       ds.explainQuery(new Query(sftName, Filter.INCLUDE), out)
       val explain = out.toString()
-      explain must startWith(s"Planning Query")
+      explain must startWith(s"Planning '$sftName'")
     }
 
     "allow secondary attribute indexes" in {

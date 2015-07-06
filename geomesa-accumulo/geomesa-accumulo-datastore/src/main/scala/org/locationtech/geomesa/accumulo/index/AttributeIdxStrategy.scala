@@ -12,7 +12,6 @@ import java.util.Date
 
 import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.accumulo.core.data.{Range => AccRange}
-import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
 import org.geotools.temporal.`object`.DefaultPeriod
 import org.locationtech.geomesa.accumulo.data.tables.{AttributeTable, RecordTable}
@@ -31,7 +30,6 @@ import org.opengis.filter.temporal.{After, Before, During, TEquals}
 import org.opengis.filter.{Filter, PropertyIsEqualTo, PropertyIsLike, _}
 
 import scala.collection.JavaConversions._
-import scala.collection.JavaConverters._
 
 class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with Logging {
 
@@ -181,41 +179,6 @@ object AttributeIdxStrategy extends StrategyProvider {
   }
 
   /**
-   * Gets a row key that can used as a range for an attribute query.
-   * The attribute index encodes the type of the attribute as part of the row. This checks for
-   * query literals that don't match the expected type and tries to convert them.
-   */
-  def getEncodedAttrIdxRow(sft: SimpleFeatureType, prop: Int, value: Any, time: Option[Long]): Text = {
-    val descriptor = sft.getDescriptor(prop)
-    // the class type as defined in the SFT
-    val expectedBinding = descriptor.getType.getBinding
-    // the class type of the literal pulled from the query
-    val actualBinding = value.getClass
-    val typedValue = if (expectedBinding == actualBinding) {
-      value
-    } else if (descriptor.isCollection) {
-      // we need to encode with the collection type
-      descriptor.getCollectionType() match {
-        case Some(collectionType) if collectionType == actualBinding => Seq(value).asJava
-        case Some(collectionType) if collectionType != actualBinding =>
-          Seq(AttributeTable.convertType(value, actualBinding, collectionType)).asJava
-      }
-    } else if (descriptor.isMap) {
-      // TODO GEOMESA-454 - support querying against map attributes
-      Map.empty.asJava
-    } else {
-      // type mismatch, encoding won't work b/c value is wrong class
-      // try to convert to the appropriate class
-      AttributeTable.convertType(value, actualBinding, expectedBinding)
-    }
-
-    // if the value resulted in a valid row, use that, otherwise use the prefix row
-    val bytes = AttributeTable.getRow(sft, prop, typedValue, time)
-        .getOrElse(AttributeTable.getRowPrefix(sft, prop))
-    new Text(bytes)
-  }
-
-  /**
    * Gets the property name from the filter and a range that covers the filter in the attribute table.
    * Note that if the filter is not a valid attribute filter this method will throw an exception.
    */
@@ -227,42 +190,42 @@ object AttributeIdxStrategy extends StrategyProvider {
         val prop = sft.indexOf(f.getExpression.asInstanceOf[PropertyName].getPropertyName)
         val lower = f.getLowerBoundary.asInstanceOf[Literal].getValue
         val upper = f.getUpperBoundary.asInstanceOf[Literal].getValue
-        (prop, inclusiveRange(sft, prop, lower, upper, dates))
+        (prop, AttributeTable.between(sft, prop, (lower, upper), inclusive = true, dates))
 
       case f: PropertyIsGreaterThan =>
         val prop = checkOrderUnsafe(f.getExpression1, f.getExpression2)
         val idx = sft.indexOf(prop.name)
         if (prop.flipped) {
-          (idx, ltRange(sft, idx, prop.literal.getValue, dates.map(_._2)))
+          (idx, AttributeTable.lt(sft, idx, prop.literal.getValue, dates.map(_._2)))
         } else {
-          (idx, gtRange(sft, idx, prop.literal.getValue, dates.map(_._1)))
+          (idx, AttributeTable.gt(sft, idx, prop.literal.getValue, dates.map(_._1)))
         }
 
       case f: PropertyIsGreaterThanOrEqualTo =>
         val prop = checkOrderUnsafe(f.getExpression1, f.getExpression2)
         val idx = sft.indexOf(prop.name)
         if (prop.flipped) {
-          (idx, lteRange(sft, idx, prop.literal.getValue, dates.map(_._2)))
+          (idx, AttributeTable.lte(sft, idx, prop.literal.getValue, dates.map(_._2)))
         } else {
-          (idx, gteRange(sft, idx, prop.literal.getValue, dates.map(_._1)))
+          (idx, AttributeTable.gte(sft, idx, prop.literal.getValue, dates.map(_._1)))
         }
 
       case f: PropertyIsLessThan =>
         val prop = checkOrderUnsafe(f.getExpression1, f.getExpression2)
         val idx = sft.indexOf(prop.name)
         if (prop.flipped) {
-          (idx, gtRange(sft, idx, prop.literal.getValue, dates.map(_._1)))
+          (idx, AttributeTable.gt(sft, idx, prop.literal.getValue, dates.map(_._1)))
         } else {
-          (idx, ltRange(sft, idx, prop.literal.getValue, dates.map(_._2)))
+          (idx, AttributeTable.lt(sft, idx, prop.literal.getValue, dates.map(_._2)))
         }
 
       case f: PropertyIsLessThanOrEqualTo =>
         val prop = checkOrderUnsafe(f.getExpression1, f.getExpression2)
         val idx = sft.indexOf(prop.name)
         if (prop.flipped) {
-          (idx, gteRange(sft, idx, prop.literal.getValue, dates.map(_._1)))
+          (idx, AttributeTable.gte(sft, idx, prop.literal.getValue, dates.map(_._1)))
         } else {
-          (idx, lteRange(sft, idx, prop.literal.getValue, dates.map(_._2)))
+          (idx, AttributeTable.lte(sft, idx, prop.literal.getValue, dates.map(_._2)))
         }
 
       case f: Before =>
@@ -270,9 +233,9 @@ object AttributeIdxStrategy extends StrategyProvider {
         val idx = sft.indexOf(prop.name)
         val lit = prop.literal.evaluate(null, classOf[Date])
         if (prop.flipped) {
-          (idx, gtRange(sft, idx, lit, dates.map(_._1)))
+          (idx, AttributeTable.gt(sft, idx, lit, dates.map(_._1)))
         } else {
-          (idx, ltRange(sft, idx, lit, dates.map(_._2)))
+          (idx, AttributeTable.lt(sft, idx, lit, dates.map(_._2)))
         }
 
       case f: After =>
@@ -280,28 +243,29 @@ object AttributeIdxStrategy extends StrategyProvider {
         val idx = sft.indexOf(prop.name)
         val lit = prop.literal.evaluate(null, classOf[Date])
         if (prop.flipped) {
-          (idx, ltRange(sft, idx, lit, dates.map(_._2)))
+          (idx, AttributeTable.lt(sft, idx, lit, dates.map(_._2)))
         } else {
-          (idx, gtRange(sft, idx, lit, dates.map(_._1)))
+          (idx, AttributeTable.gt(sft, idx, lit, dates.map(_._1)))
         }
 
       case f: During =>
         val prop = checkOrderUnsafe(f.getExpression1, f.getExpression2)
         val idx = sft.indexOf(prop.name)
         val during = prop.literal.getValue.asInstanceOf[DefaultPeriod]
-        val lower = during.getBeginning.getPosition.getDate
-        val upper = during.getEnding.getPosition.getDate
-        (idx, inclusiveRange(sft, idx, lower, upper, dates))
+        // during is exclusive - offset by 1 second each and use inclusive range
+        val lower = during.getBeginning.getPosition.getDate.getTime
+        val upper = during.getEnding.getPosition.getDate.getTime
+        (idx, AttributeTable.between(sft, idx, (lower, upper), inclusive = false, dates))
 
       case f: PropertyIsEqualTo =>
         val prop = checkOrderUnsafe(f.getExpression1, f.getExpression2)
         val idx = sft.indexOf(prop.name)
-        (idx, inclusiveRange(sft, idx, prop.literal.getValue, prop.literal.getValue, dates))
+        (idx, AttributeTable.equals(sft, idx, prop.literal.getValue, dates))
 
       case f: TEquals =>
         val prop = checkOrderUnsafe(f.getExpression1, f.getExpression2)
         val idx = sft.indexOf(prop.name)
-        (idx, inclusiveRange(sft, idx, prop.literal.getValue, prop.literal.getValue, dates))
+        (idx, AttributeTable.equals(sft, idx, prop.literal.getValue, dates))
 
       case f: PropertyIsLike =>
         val prop = f.getExpression.asInstanceOf[PropertyName].getPropertyName
@@ -313,83 +277,17 @@ object AttributeIdxStrategy extends StrategyProvider {
         } else {
           literal
         }
-        // can't use dates, as we are doing a prefix range
-        // the row includes a NULL terminator byte - strip that off
-        val prefix = new Text(getEncodedAttrIdxRow(sft, idx, value, None).getBytes.dropRight(1))
-        (idx, AccRange.prefix(prefix))
+        (idx, AttributeTable.prefix(sft, idx, value))
 
       case n: Not =>
         val f = n.getFilter.asInstanceOf[PropertyIsNull] // this should have been verified in getStrategy
         val prop = f.getExpression.asInstanceOf[PropertyName].getPropertyName
         val idx = sft.indexOf(prop)
-        (idx, allRange(sft, idx))
+        (idx, AttributeTable.all(sft, idx))
 
       case _ =>
         val msg = s"Unhandled filter type in attribute strategy: ${filter.getClass.getName}"
         throw new RuntimeException(msg)
     }
-  }
-
-  // greater than
-  private def gtRange(sft: SimpleFeatureType, prop: Int, lit: AnyRef, date: Option[Long]): AccRange = {
-    val start = AccRange.followingPrefix(new Text(getEncodedAttrIdxRow(sft, prop, lit, date)))
-    val end = upperBound(sft, prop)
-    new AccRange(start, true, end, false)
-  }
-
-  // greater than or equal to
-  private def gteRange(sft: SimpleFeatureType, prop: Int, lit: AnyRef, date: Option[Long]): AccRange = {
-    val start = new Text(getEncodedAttrIdxRow(sft, prop, lit, date))
-    val end = upperBound(sft, prop)
-    new AccRange(start, true, end, false)
-  }
-
-  // less than
-  private def ltRange(sft: SimpleFeatureType, prop: Int, lit: AnyRef, date: Option[Long]): AccRange = {
-    val start = lowerBound(sft, prop)
-    val end = new Text(getEncodedAttrIdxRow(sft, prop, lit, date))
-    new AccRange(start, false, end, false)
-  }
-
-  // less than or equal to
-  private def lteRange(sft: SimpleFeatureType, prop: Int, lit: AnyRef, date: Option[Long]): AccRange = {
-    val start = lowerBound(sft, prop)
-    val end = AccRange.followingPrefix(new Text(getEncodedAttrIdxRow(sft, prop, lit, date)))
-    new AccRange(start, false, end, false)
-  }
-
-  // [lower, upper]
-  private def inclusiveRange(sft: SimpleFeatureType,
-                             prop: Int,
-                             lower: AnyRef, upper: AnyRef,
-                             dates: Option[(Long, Long)]): AccRange = {
-    val start = getEncodedAttrIdxRow(sft, prop, lower, dates.map(_._1))
-    val end = AccRange.followingPrefix(getEncodedAttrIdxRow(sft, prop, upper, dates.map(_._2)))
-    new AccRange(start, true, end, false)
-  }
-
-  // equals
-  private def eqRange(sft: SimpleFeatureType, prop: Int, lit: AnyRef, dates: Option[(Long, Long)]): AccRange = {
-    if (dates.isEmpty) {
-      val start = getEncodedAttrIdxRow(sft, prop, lit, None)
-      val end = AccRange.followingPrefix(start)
-      new AccRange(start, true, end, false)
-    } else {
-      inclusiveRange(sft, prop, lit, lit, dates)
-    }
-  }
-
-  // range for all values of the attribute
-  private def allRange(sft: SimpleFeatureType, prop: Int): AccRange =
-    new AccRange(lowerBound(sft, prop), false, upperBound(sft, prop), false)
-
-  // lower bound for all values of the attribute, exclusive
-  private def lowerBound(sft: SimpleFeatureType, prop: Int): Text =
-    new Text(AttributeTable.getRowPrefix(sft, prop))
-
-  // upper bound for all values of the attribute, exclusive
-  private def upperBound(sft: SimpleFeatureType, prop: Int): Text = {
-    val end = new Text(AttributeTable.getRowPrefix(sft, prop))
-    AccRange.followingPrefix(end)
   }
 }

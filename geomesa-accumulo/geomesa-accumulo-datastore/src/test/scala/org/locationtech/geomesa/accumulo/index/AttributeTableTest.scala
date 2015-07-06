@@ -59,18 +59,6 @@ class AttributeTableTest extends Specification with TestWithDataStore {
       mutations.map(_.getUpdates.size()) must contain(beEqualTo(1)).foreach
       mutations.map(_.getUpdates.get(0).isDeleted) must contain(beEqualTo(true)).foreach
     }
-
-    "decode attribute index rows" in {
-      val row = AttributeTable.getRow(sft, sft.indexOf("age"), 23, None).get
-      val decoded = AttributeTable.decodeRow(sft, sft.indexOf("age"), row)
-      decoded must beASuccessfulTry(23)
-    }
-
-    "decode attribute index rows with dates" in {
-      val row = AttributeTable.getRow(sft, sft.indexOf("age"), 23, Some(1435598908099L)).get
-      val decoded = AttributeTable.decodeRow(sft, sft.indexOf("age"), row)
-      decoded must beASuccessfulTry(23)
-    }
   }
 
 }

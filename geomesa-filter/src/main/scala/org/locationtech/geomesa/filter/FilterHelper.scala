@@ -177,9 +177,10 @@ object FilterHelper {
     def extractInterval(dtfn: String): Filter => Interval = {
       case during: During =>
         val p = during.getExpression2.evaluate(null, classOf[Period])
-        val start = p.getBeginning.getPosition.getDate
-        val end = p.getEnding.getPosition.getDate
-        new Interval(start.getTime, end.getTime)
+        // during is exclusive bounds - round to the second
+        val start = p.getBeginning.getPosition.getDate.getTime + 1000
+        val end = p.getEnding.getPosition.getDate.getTime - 1000
+        new Interval(start, end)
       case between: PropertyIsBetween =>
         val start = between.getLowerBoundary.evaluate(null, classOf[Date])
         val end = between.getUpperBoundary.evaluate(null, classOf[Date])
