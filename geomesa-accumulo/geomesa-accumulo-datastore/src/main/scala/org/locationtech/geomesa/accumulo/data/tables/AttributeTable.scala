@@ -13,6 +13,7 @@ import java.nio.charset.Charset
 import java.util.{Collection => JCollection, Date, Locale}
 
 import com.google.common.collect.ImmutableSortedSet
+import com.google.common.primitives.Bytes
 import com.typesafe.scalalogging.slf4j.Logging
 import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
@@ -74,7 +75,7 @@ object AttributeTable extends GeoMesaTable with Logging {
           val time = if (dtg == null) System.currentTimeMillis() else dtg.getTime
           val timeBytes = timeToBytes(time)
           val idBytes = toWrite.feature.getID.getBytes(UTF8)
-          getMutations(toWrite, attributesToIdx, prefixBytes, timeBytes ++ idBytes, delete)
+          getMutations(toWrite, attributesToIdx, prefixBytes, Bytes.concat(timeBytes, idBytes), delete)
         }
     }
   }
@@ -98,15 +99,7 @@ object AttributeTable extends GeoMesaTable with Logging {
       val indexBytes = indexToBytes(idx)
       val attributes = encode(toWrite.feature.getAttribute(idx), descriptor)
       val mutations = attributes.map { attribute =>
-        val bytes = attribute.getBytes(UTF8)
-        val parts = Seq(prefix, indexBytes, bytes, NULLBYTE, suffix)
-        val buffer = Array.ofDim[Byte](parts.map(_.length).sum)
-        var i = 0
-        parts.foreach { part =>
-          System.arraycopy(part, 0, buffer, i, part.length)
-          i += part.length
-        }
-        new Mutation(buffer)
+        new Mutation(Bytes.concat(prefix, indexBytes, attribute.getBytes(UTF8), NULLBYTE, suffix))
       }
       if (delete) {
         mutations.foreach(_.putDelete(EMPTY_TEXT, EMPTY_TEXT, toWrite.columnVisibility))
@@ -131,7 +124,7 @@ object AttributeTable extends GeoMesaTable with Logging {
    * Gets a prefix for an attribute row - this includes the sft and the attribute index only
    */
   def getRowPrefix(sft: SimpleFeatureType, i: Int): Array[Byte] =
-    sft.getTableSharingPrefix.getBytes(UTF8) ++ indexToBytes(i)
+    Bytes.concat(sft.getTableSharingPrefix.getBytes(UTF8), indexToBytes(i))
 
   /**
    * Gets a full row (minus the feature ID) for the given value, needed for creating query ranges.
@@ -139,8 +132,8 @@ object AttributeTable extends GeoMesaTable with Logging {
    */
   def getRow(sft: SimpleFeatureType, i: Int, value: Any, time: Option[Long]): Option[Array[Byte]] = {
     val prefix = getRowPrefix(sft, i)
-    val suffix = time.map(NULLBYTE ++ timeToBytes(_)).getOrElse(NULLBYTE)
-    encode(value, sft.getDescriptor(i)).headOption.map(prefix ++ _.getBytes(UTF8) ++ suffix)
+    val suffix = time.map(t => Bytes.concat(NULLBYTE, timeToBytes(t))).getOrElse(NULLBYTE)
+    encode(value, sft.getDescriptor(i)).headOption.map(v => Bytes.concat(prefix, v.getBytes(UTF8), suffix))
   }
 
   /**
