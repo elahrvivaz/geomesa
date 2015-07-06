@@ -12,9 +12,7 @@ import com.typesafe.scalalogging.slf4j.Logging
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
-import org.locationtech.geomesa.accumulo.stats.QueryStatTransform
 import org.locationtech.geomesa.filter._
-import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.{And, Filter, Id, Or}
 
@@ -89,14 +87,15 @@ class QueryFilterSplitter(sft: SimpleFeatureType, includeZ3: Boolean) extends Lo
     val (spatial, temporal, attribute, dateAttribute, others) = partitionFilters(validFilters)
 
     // z3 and spatio-temporal
-    if (spatial.nonEmpty) {
+    if (includeZ3 && temporal.nonEmpty) {
+      // z3 works pretty well for temporal only queries - we add a whole world bbox later
       val primary = spatial ++ temporal
       val secondary = andOption(attribute ++ others)
-      if (includeZ3 && temporal.nonEmpty) {
-        options.append(FilterPlan(Seq(QueryFilter(StrategyType.Z3, primary, secondary))))
-      } else {
-        options.append(FilterPlan(Seq(QueryFilter(StrategyType.ST, primary, secondary))))
-      }
+      options.append(FilterPlan(Seq(QueryFilter(StrategyType.Z3, primary, secondary))))
+    } else if (spatial.nonEmpty) {
+      val primary = spatial ++ temporal
+      val secondary = andOption(attribute ++ others)
+      options.append(FilterPlan(Seq(QueryFilter(StrategyType.ST, primary, secondary))))
     }
 
     // ids
