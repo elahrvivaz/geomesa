@@ -34,7 +34,7 @@ class BackCompatibilityTest extends Specification with TestWithDataStore {
       |*geom:Point:srid=4326
     """.stripMargin
 
-  def getTestFeatures() = {
+  def getTestFeatures = {
     (0 until 10).map { i =>
       val name = s"name$i"
       val age = java.lang.Integer.valueOf(10 + i)
@@ -71,7 +71,7 @@ class BackCompatibilityTest extends Specification with TestWithDataStore {
     val fs = ds.getFeatureSource(sftName).asInstanceOf[AccumuloFeatureStore]
 
     val featureCollection = new DefaultFeatureCollection(sftName, sft)
-    getTestFeatures().foreach { f =>
+    getTestFeatures.foreach { f =>
       f.getUserData.put(Hints.USE_PROVIDED_FID, java.lang.Boolean.TRUE)
       featureCollection.add(f)
     }
@@ -88,7 +88,7 @@ class BackCompatibilityTest extends Specification with TestWithDataStore {
   }
 
   "GeoMesa" should {
-    (2 until CURRENT_SCHEMA_VERSION).foreach { version =>
+    (2 to CURRENT_SCHEMA_VERSION).foreach { version =>
       s"support back compatibility to version $version" >> {
         runVersionTest(version)
         success

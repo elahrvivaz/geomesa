@@ -128,9 +128,13 @@ object AttributeTable extends GeoMesaTable with Logging {
 
   // equals range
   def equals(sft: SimpleFeatureType, i: Int, value: Any, times: Option[(Long, Long)]): AccRange = {
-    val start = lower(sft, i, value, inclusive = true, times.map(_._1))
-    val end = upper(sft, i, value, inclusive = true, times.map(_._2))
-    new AccRange(start, true, end, false)
+    times match {
+      case None => AccRange.prefix(row(sft, i, value, following = false, None))
+      case Some((sTime, eTime)) =>
+        val start = row(sft, i, value, following = false, Some(sTime))
+        val end = row(sft, i, value, following = false, Some(eTime))
+        new AccRange(start, true, end, true)
+    }
   }
 
   // less than range

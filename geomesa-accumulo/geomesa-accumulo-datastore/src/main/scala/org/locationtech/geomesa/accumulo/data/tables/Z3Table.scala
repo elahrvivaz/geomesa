@@ -62,7 +62,6 @@ object Z3Table extends GeoMesaTable {
 
   override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
-    val writer = new KryoFeatureSerializer(sft)
     val binWriter: (FeatureToWrite, Mutation) => Unit = sft.getBinTrackId match {
       case Some(trackId) =>
         val geomIndex = sft.getGeomIndex
@@ -80,14 +79,25 @@ object Z3Table extends GeoMesaTable {
         }
       case _ => (fw: FeatureToWrite, m: Mutation) => {}
     }
-    (fw: FeatureToWrite) => {
-      val mutation = new Mutation(getRowKey(fw, dtgIndex))
-      // TODO if we know we're using kryo we don't need to reserialize
-      val payload = new Value(writer.serialize(fw.feature))
-      binWriter(fw, mutation)
-      mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, payload)
-      Seq(mutation)
+    if (sft.getSchemaVersion > 5) {
+      // we know the data is kryo serialized in version 6+
+      (fw: FeatureToWrite) => {
+        val mutation = new Mutation(getRowKey(fw, dtgIndex))
+        binWriter(fw, mutation)
+        mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, fw.dataValue)
+        Seq(mutation)
+      }
+    } else {
+      val writer = new KryoFeatureSerializer(sft)
+      (fw: FeatureToWrite) => {
+        val mutation = new Mutation(getRowKey(fw, dtgIndex))
+        val payload = new Value(writer.serialize(fw.feature))
+        binWriter(fw, mutation)
+        mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, payload)
+        Seq(mutation)
+      }
     }
+
   }
 
   override def remover(sft: SimpleFeatureType): FeatureToMutations = {

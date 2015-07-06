@@ -89,15 +89,14 @@ class QueryFilterSplitter(sft: SimpleFeatureType, includeZ3: Boolean) extends Lo
     val (spatial, temporal, attribute, dateAttribute, others) = partitionFilters(validFilters)
 
     // z3 and spatio-temporal
-    if (includeZ3 && temporal.nonEmpty) {
-      // z3 works pretty well for temporal only queries - we add a whole world bbox later
+    if (spatial.nonEmpty) {
       val primary = spatial ++ temporal
       val secondary = andOption(attribute ++ others)
-      options.append(FilterPlan(Seq(QueryFilter(StrategyType.Z3, primary, secondary))))
-    } else if (spatial.nonEmpty) {
-      val primary = spatial ++ temporal
-      val secondary = andOption(attribute ++ others)
-      options.append(FilterPlan(Seq(QueryFilter(StrategyType.ST, primary, secondary))))
+      if (includeZ3 && temporal.nonEmpty) {
+        options.append(FilterPlan(Seq(QueryFilter(StrategyType.Z3, primary, secondary))))
+      } else {
+        options.append(FilterPlan(Seq(QueryFilter(StrategyType.ST, primary, secondary))))
+      }
     }
 
     // ids

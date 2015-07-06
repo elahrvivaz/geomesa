@@ -166,7 +166,7 @@ case class QueryPlanner(sft: SimpleFeatureType,
     val z = if (r.isEndKeyInclusive) "]" else ")"
     val start = if (r.isInfiniteStartKey) "-inf" else keyToString(r.getStartKey)
     val stop = if (r.isInfiniteStopKey) "+inf" else keyToString(r.getEndKey)
-    s"$a$start,$stop$z"
+    s"$a$start :: $stop$z"
   }
 
   private def keyToString(k: Key): String =
