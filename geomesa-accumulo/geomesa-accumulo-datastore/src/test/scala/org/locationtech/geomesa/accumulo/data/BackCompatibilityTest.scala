@@ -28,7 +28,7 @@ class BackCompatibilityTest extends Specification with TestWithDataStore {
 
   override def spec =
     """
-      |name:String:index=true,
+      |name:String:index=true:cardinality=high,
       |age:Int,
       |dtg:Date,
       |*geom:Point:srid=4326
@@ -88,7 +88,7 @@ class BackCompatibilityTest extends Specification with TestWithDataStore {
   }
 
   "GeoMesa" should {
-    (2 to CURRENT_SCHEMA_VERSION).foreach { version =>
+    (2 until CURRENT_SCHEMA_VERSION).foreach { version =>
       s"support back compatibility to version $version" >> {
         runVersionTest(version)
         success

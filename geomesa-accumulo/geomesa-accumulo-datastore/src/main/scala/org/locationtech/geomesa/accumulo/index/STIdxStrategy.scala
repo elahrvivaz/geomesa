@@ -67,7 +67,7 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       case seq: Seq[Geometry] => new GeometryCollection(geomsToCover.toArray, geomsToCover.head.getFactory)
     }
 
-    val temporal = extractTemporal(dtgField)(temporalFilters)
+    val temporal = extractInterval(temporalFilters, dtgField)
     val interval = netInterval(temporal)
     val geometryToCover = netGeom(collectionToCover)
 

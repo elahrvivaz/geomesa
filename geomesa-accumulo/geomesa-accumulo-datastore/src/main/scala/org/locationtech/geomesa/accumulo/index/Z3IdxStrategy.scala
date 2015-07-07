@@ -66,7 +66,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       case seq: Seq[Geometry] => new GeometryCollection(geomsToCover.toArray, geomsToCover.head.getFactory)
     }
 
-    val interval = netInterval(extractTemporal(dtgField)(temporalFilters))
+    val interval = extractInterval(temporalFilters, dtgField, offsetDuring = true)
     val geometryToCover = netGeom(collectionToCover)
 
     output(s"GeomsToCover: $geometryToCover")
