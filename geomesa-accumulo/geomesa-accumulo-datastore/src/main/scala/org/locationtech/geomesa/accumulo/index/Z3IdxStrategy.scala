@@ -10,14 +10,12 @@ package org.locationtech.geomesa.accumulo.index
 import com.google.common.primitives.{Bytes, Longs, Shorts}
 import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom.{Geometry, GeometryCollection}
-import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.Range
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
 import org.joda.time.Weeks
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
-import org.locationtech.geomesa.accumulo.index.QueryPlanners.FeatureFunction
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.Z3SFC
 import org.locationtech.geomesa.filter._
@@ -28,8 +26,6 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
 
   import FilterHelper._
   import Z3IdxStrategy._
-
-  val Z3_CURVE = new Z3SFC
 
   /**
    * Plans the query - strategy implementations need to define this
@@ -132,8 +128,8 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     val lt = Z3Table.secondsInCurrentWeek(interval.getStart, epochWeekStart)
     val ut = Z3Table.secondsInCurrentWeek(interval.getEnd, epochWeekEnd)
 
-    val lz = Z3_CURVE.index(lx, ly, lt).z
-    val uz = Z3_CURVE.index(ux, uy, ut).z
+    val lz = Z3SFC.index(lx, ly, lt).z
+    val uz = Z3SFC.index(ux, uy, ut).z
 
     // the z3 index breaks time into 1 week chunks, so create a range for each week in our range
     val (ranges, zMap) = if (weeks.length == 1) {
@@ -148,8 +144,8 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       val lastRanges = getRanges(Seq(last), (lx, ux), (ly, uy), (0, ut))
       val middleRanges = if (middle.isEmpty) Seq.empty else getRanges(middle, (lx, ux), (ly, uy), (0, tMax))
       val ranges = headRanges ++ middleRanges ++ lastRanges
-      val minz = Z3_CURVE.index(lx, ly, 0).z
-      val maxZ = Z3_CURVE.index(ux, uy, tMax).z
+      val minz = Z3SFC.index(lx, ly, 0).z
+      val maxZ = Z3SFC.index(ux, uy, tMax).z
       val map = Map(head.toShort -> (lz, maxZ), last.toShort -> (minz, uz)) ++
           middle.map(_.toShort -> (minz, maxZ)).toMap
       (ranges, map)
@@ -162,7 +158,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
 
   def getRanges(weeks: Seq[Int], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {
     val prefixes = weeks.map(w => Shorts.toByteArray(w.toShort))
-    Z3_CURVE.ranges(x, y, t).flatMap { case (s, e) =>
+    Z3SFC.ranges(x, y, t).flatMap { case (s, e) =>
       val startBytes = Longs.toByteArray(s)
       val endBytes = Longs.toByteArray(e)
       prefixes.map { prefix =>

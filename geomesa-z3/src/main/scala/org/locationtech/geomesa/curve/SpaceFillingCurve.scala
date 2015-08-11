@@ -8,24 +8,26 @@
 
 package org.locationtech.geomesa.curve
 
-trait SpaceFillingCurve[T] extends HasNormalizedLatLon {
+trait SpaceFillingCurve[T] {
   def index(x: Double, y: Double): T
   def invert(i: T): (Double, Double)
   def ranges(x: (Double, Double), y: (Double, Double)): Seq[(Long, Long)]
 }
 
-class Z2SFC extends SpaceFillingCurve[Z2] {
+object Z2SFC extends SpaceFillingCurve[Z2] {
 
-  override val xprec: Long = math.pow(2, 21).toLong - 1
-  override val yprec: Long = math.pow(2, 21).toLong - 1
+  private[curve] val xprec: Long = math.pow(2, 31).toLong - 1
+  private[curve] val yprec: Long = math.pow(2, 31).toLong - 1
 
-  override def index(x: Double, y: Double): Z2 =
-    Z2(lon.normalize(x), lat.normalize(y))
+  val lon = NormalizedLon(xprec)
+  val lat = NormalizedLat(yprec)
+
+  override def index(x: Double, y: Double): Z2 = Z2(lon.normalize(x), lat.normalize(y))
 
   override def ranges(x: (Double, Double), y: (Double, Double)): Seq[(Long, Long)] =
-    Z2.zranges(index(x._1, y._1), index(x._2, y._2))
+    ZRange.zranges(index(x._1, y._1), index(x._2, y._2))
 
-  override def invert(z: Z2): (Double, Double, Long) = {
+  override def invert(z: Z2): (Double, Double) = {
     val (x, y) = z.decode
     (lon.denormalize(x), lat.denormalize(y))
   }

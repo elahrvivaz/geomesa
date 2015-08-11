@@ -39,7 +39,6 @@ object Z3Table extends GeoMesaTable {
 
   val EPOCH = new DateTime(0) // min value we handle - 1970-01-01T00:00:00.000
   val EPOCH_END = EPOCH.plusSeconds(Int.MaxValue) // max value we can calculate - 2038-01-18T22:19:07.000
-  val SFC = new Z3SFC
   val FULL_CF = new Text("F")
   val BIN_CF = new Text("B")
   val EMPTY_BYTES = Array.empty[Byte]
@@ -122,7 +121,7 @@ object Z3Table extends GeoMesaTable {
     val weeks = epochWeeks(dtg)
     val prefix = Shorts.toByteArray(weeks.getWeeks.toShort)
     val secondsInWeek = secondsInCurrentWeek(dtg, weeks)
-    val z3 = SFC.index(x, y, secondsInWeek)
+    val z3 = Z3SFC.index(x, y, secondsInWeek)
     val z3idx = Longs.toByteArray(z3.z)
     Bytes.concat(prefix, z3idx)
   }

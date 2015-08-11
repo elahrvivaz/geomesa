@@ -13,7 +13,7 @@ trait NormalizedDimension {
   def max: Double
   def precision: Long
 
-  def normalize(x: Double): Int = math.ceil((x - min) / (max - min) * precision).toInt
+  def normalize(x: Double): Int = math.max(min, math.ceil((x - min) / (max - min) * precision)).toInt
   def denormalize(x: Double): Double = (x / precision) * (max - min) + min
 }
 
@@ -29,17 +29,4 @@ case class NormalizedLon(precision: Long) extends NormalizedDimension {
 
 case class NormalizedTime(precision: Long, max: Double) extends NormalizedDimension {
   override val min = 0.0
-}
-
-trait HasNormalizedLatLon {
-  def xprec: Long
-  def yprec: Long
-  val lon = NormalizedLon(xprec)
-  val lat = NormalizedLat(yprec)
-}
-
-trait HasNormalizedTime {
-  def tprec: Long
-  def tmax: Double
-  val time = NormalizedTime(tprec, max = tmax)
 }
