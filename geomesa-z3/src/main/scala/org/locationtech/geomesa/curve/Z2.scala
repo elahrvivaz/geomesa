@@ -7,6 +7,9 @@
  */
 package org.locationtech.geomesa.curve
 
+import com.vividsolutions.jts.geom.Geometry
+import org.locationtech.geomesa.curve.ZRange.ZPrefix
+
 class Z2(val z: Long) extends AnyVal with ZPoint[(Int, Int)] {
   override def dims = Z2.MAX_DIM
   override def bits = Z2.TOTAL_BITS
@@ -45,5 +48,12 @@ object Z2 {
     x = (x ^ (x >> 16)) & 0x0000ffff0000ffffL
     x = (x ^ (x >> 32)) & MAX_MASK
     x.toInt
+  }
+
+  def zBox(geom: Geometry): ZPrefix = {
+    val env = geom.getEnvelopeInternal
+    val ll = Z2SFC.index(env.getMinX, env.getMinY)
+    val ur = Z2SFC.index(env.getMaxX, env.getMaxY)
+    ZRange.longestCommonPrefix(ll.z, ur.z, TOTAL_BITS, MAX_DIM)
   }
 }

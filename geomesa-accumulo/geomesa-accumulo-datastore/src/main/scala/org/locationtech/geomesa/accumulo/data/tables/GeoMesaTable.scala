@@ -63,7 +63,7 @@ trait GeoMesaTable {
 object GeoMesaTable {
 
   def getTables(sft: SimpleFeatureType): Seq[GeoMesaTable] =
-    Seq(RecordTable, SpatioTemporalTable, AttributeTableV5, AttributeTable, Z3Table).filter(_.supports(sft))
+    Seq(RecordTable, SpatioTemporalTable, AttributeTableV5, AttributeTable, Z2Table, Z3Table).filter(_.supports(sft))
 
   def getTableNames(sft: SimpleFeatureType, acc: AccumuloConnectorCreator): Seq[String] =
     getTables(sft).map(acc.getTableName(sft.getTypeName, _))

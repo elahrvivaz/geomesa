@@ -7,6 +7,8 @@
  */
 package org.locationtech.geomesa.curve
 
+import com.vividsolutions.jts.geom.Geometry
+
 /**
  * Represents a cube in index space defined by min and max as two opposing points.
  * All operations refer to user space.
@@ -48,7 +50,7 @@ object ZRange {
     val bits = min.bits
     val dims = min.dims
 
-    val (commonPrefix, commonBits) = longestCommonPrefix(min.z, max.z, bits, dims)
+    val ZPrefix(commonPrefix, commonBits) = longestCommonPrefix(min.z, max.z, bits, dims)
 
     // base our recursion on the depth of the tree that we get 'for free' from the common prefix
     val maxRecurse = if (commonBits < 30) 7 else if (commonBits < 40) 6 else 5
@@ -98,12 +100,14 @@ object ZRange {
    *
    * @return (common prefix, number of bits in common)
    */
-  def longestCommonPrefix(lower: Long, upper: Long, bits: Int, dims: Int): (Long, Int) = {
+  def longestCommonPrefix(lower: Long, upper: Long, bits: Int, dims: Int): ZPrefix = {
     var bitShift = bits - dims
     while ((lower >>> bitShift) == (upper >>> bitShift) && bitShift > -1) {
       bitShift -= dims
     }
     bitShift += dims // increment back to the last valid value
-    (lower & (Long.MaxValue << bitShift), bits - bitShift)
+    ZPrefix(lower & (Long.MaxValue << bitShift), bits - bitShift)
   }
+
+  case class ZPrefix(prefix: Long, precision: Int) // precision in bits
 }
