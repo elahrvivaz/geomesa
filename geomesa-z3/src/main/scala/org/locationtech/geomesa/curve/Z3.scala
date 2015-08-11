@@ -9,7 +9,6 @@ package org.locationtech.geomesa.curve
 
 class Z3(val z: Long) extends AnyVal with ZPoint[(Int, Int, Int)] {
   override def dims = Z3.MAX_DIM
-  override def bits = Z3.TOTAL_BITS
   override def decode = (dim(0), dim(1), dim(2))
   override def dim(i: Int): Int = if (i == 0) Z3.combine(z) else Z3.combine(z >> i)
   override def toString = f"$z $decode"
@@ -20,7 +19,6 @@ object Z3 {
   final val MAX_DIM = 3
   final val MAX_BITS = 21
   final val MAX_MASK = 0x1fffffL
-  final val TOTAL_BITS = MAX_BITS * MAX_DIM
 
   def apply(zvalue: Long) = new Z3(zvalue)
   def apply(x: Int, y: Int, t: Int) = new Z3(split(x) | split(y) << 1 | split(t) << 2)

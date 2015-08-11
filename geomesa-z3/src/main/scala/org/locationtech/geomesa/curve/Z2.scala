@@ -12,7 +12,6 @@ import org.locationtech.geomesa.curve.ZRange.ZPrefix
 
 class Z2(val z: Long) extends AnyVal with ZPoint[(Int, Int)] {
   override def dims = Z2.MAX_DIM
-  override def bits = Z2.TOTAL_BITS
   override def decode = (dim(0), dim(1))
   override def dim(i: Int) = if (i == 0) Z2.combine(z) else Z2.combine(z >> i)
   override def toString = f"$z $decode"
@@ -21,15 +20,14 @@ class Z2(val z: Long) extends AnyVal with ZPoint[(Int, Int)] {
 object Z2 {
 
   final val MAX_DIM = 2
-  final val MAX_BITS = 31
-  final val MAX_MASK = 0x7fffffffL
-  final val TOTAL_BITS = MAX_BITS * MAX_DIM
+  final val MAX_BITS = 30
+  final val MAX_MASK = 0x3fffffffL
 
   def apply(z: Long) = new Z2(z)
   def apply(x: Int, y: Int): Z2 = new Z2(split(x) | split(y) << 1)
   def unapply(z: Z2): Option[(Int, Int)] = Some(z.decode)
 
-  /** insert 0 between every bit in value. Only first 31 bits can be considered. */
+  /** insert 0 between every bit in value. Only first 30 bits can be considered. */
   def split(value: Long): Long = {
     var x = value & MAX_MASK
     x = (x | x << 32) & 0x0000ffff0000ffffL
@@ -39,7 +37,7 @@ object Z2 {
     (x | x << 2)      & 0x1555555555555555L
   }
 
-  /** combine every second bit to form a value. Maximum value is 31 bits. */
+  /** combine every second bit to form a value. Maximum value is 30 bits. */
   def combine(z: Long): Int = {
     var x = z & 0x1555555555555555L
     x = (x ^ (x >>  2)) & 0x3333333333333333L
@@ -54,6 +52,6 @@ object Z2 {
     val env = geom.getEnvelopeInternal
     val ll = Z2SFC.index(env.getMinX, env.getMinY)
     val ur = Z2SFC.index(env.getMaxX, env.getMaxY)
-    ZRange.longestCommonPrefix(ll.z, ur.z, TOTAL_BITS, MAX_DIM)
+    ZRange.longestCommonPrefix(ll.z, ur.z, MAX_DIM)
   }
 }

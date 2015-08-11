@@ -12,13 +12,14 @@ import java.util.Date
 
 import com.google.common.base.Charsets
 import com.google.common.primitives.{Ints, Bytes, Longs}
-import com.vividsolutions.jts.geom.Point
+import com.vividsolutions.jts.geom.{Geometry, Point}
 import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
 import org.apache.accumulo.core.data.{Value, Mutation}
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToWrite, FeatureToMutations}
-import org.locationtech.geomesa.curve.Z2SFC
+import org.locationtech.geomesa.curve.ZRange.ZPrefix
+import org.locationtech.geomesa.curve.{Z2, Z2SFC}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.accumulo.data.EMPTY_TEXT
@@ -71,19 +72,11 @@ object Z2Table extends GeoMesaTable {
     }
   }
 
-  def getRowKeys(sf: SimpleFeature, dtgIndex: Option[Int]): Seq[Text] = {
-    sf.getDefaultGeometry match {
-      case p: Point => Seq(getPointRowKey(sf, dtgIndex))
-      case _        => getNonPointRowKeys(sf, dtgIndex)
-    }
-  }
-
   def getPointRowKey(sf: SimpleFeature, dtgIndex: Option[Int]): Text = {
     val tablePrefix = sf.getType.getTableSharingPrefix.getBytes(Charsets.UTF_8)
     val id = sf.getID.getBytes(Charsets.UTF_8)
     val shard = Array(math.abs(MurmurHash3.arrayHash(id) % 10).toByte)
     val pt = sf.getDefaultGeometry.asInstanceOf[Point]
-    val ptIndicator = Array(POINT_INDICATOR)
     val z2 = Longs.toByteArray(Z2SFC.index(pt.getX, pt.getY).z)
     val time = encodeTime(dtgIndex.map(sf.getAttribute(_).asInstanceOf[Date].getTime).getOrElse(System.currentTimeMillis))
     val row = Bytes.concat(tablePrefix, shard, z2.take(4), time, z2.drop(4), id)
@@ -91,7 +84,26 @@ object Z2Table extends GeoMesaTable {
   }
 
   def getNonPointRowKeys(sf: SimpleFeature, dtgIndex: Option[Int]): Seq[Text] = {
-
+    val tablePrefix = sf.getType.getTableSharingPrefix.getBytes(Charsets.UTF_8)
+    val id = sf.getID.getBytes(Charsets.UTF_8)
+    val shard = Array(math.abs(MurmurHash3.arrayHash(id) % 10).toByte)
+    val ZPrefix(zPrefix, bits) = Z2.zBox(sf.getDefaultGeometry.asInstanceOf[Geometry])
+    val z2 = Longs.toByteArray(zPrefix).take(4)
+    val z2s = if (bits > 32) {
+      // fits within the 4 byte z value - effectively a point
+      Seq(z2)
+    } else {
+      // flip the first 3 bits to indicate a non-point geom - these bits will always be 0 (unused) in the z2 value
+      // bits flipped indicate the precision of the z value - effectively a box
+      val threeBytes = Array((z2.head | 0x80).toByte) ++ z2.tail // first bit flipped
+      val twoBytes = Array((z2.head | 0xc0).toByte) ++ z2.tail.dropRight(1) ++ Array[Byte](0) // first two bits flipped
+      val oneByte = Array((z2.head | 0xa0).toByte) ++ z2.tail.dropRight(2) ++ Array[Byte](0, 0) // first, 3rd bit flipped
+      val zeroBytes = Array((z2.head | 0xe0).toByte) ++ Array[Byte](0, 0, 0) // first three bits flipped
+      Seq(threeBytes, twoBytes, oneByte, zeroBytes)
+    }
+    val time = encodeTime(dtgIndex.map(sf.getAttribute(_).asInstanceOf[Date].getTime).getOrElse(System.currentTimeMillis))
+    val rows = z2s.map(Bytes.concat(tablePrefix, shard, _, time, id))
+    rows.map(new Text(_))
   }
 
   // encode the time so that it sorts lexically

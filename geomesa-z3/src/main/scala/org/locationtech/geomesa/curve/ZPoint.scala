@@ -11,7 +11,6 @@ package org.locationtech.geomesa.curve
 trait ZPoint[T <: Product] extends Any {
   def z: Long
   def dims: Int
-  def bits: Int
   def dim(i: Int): Int
   def decode: T
 
