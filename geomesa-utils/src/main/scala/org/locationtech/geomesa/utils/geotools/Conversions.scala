@@ -231,6 +231,9 @@ object RichSimpleFeatureType {
     def getTableSharingPrefix: String = userData[String](SHARING_PREFIX_KEY).getOrElse("")
     def setTableSharingPrefix(prefix: String): Unit = sft.getUserData.put(SHARING_PREFIX_KEY, prefix)
 
+    def getEnabledTables: Option[String] = userData[String](SimpleFeatureTypes.ENABLED_INDEXES)
+    def setEnabledTables(tables: String): Unit = sft.getUserData.put(SimpleFeatureTypes.ENABLED_INDEXES, tables)
+
     def userData[T](key: AnyRef): Option[T] = Option(sft.getUserData.get(key).asInstanceOf[T])
   }
 }
