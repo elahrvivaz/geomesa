@@ -11,28 +11,27 @@ package org.locationtech.geomesa.accumulo.data.tables
 import java.util.Date
 
 import com.google.common.base.Charsets
-import com.google.common.primitives.{Ints, Bytes, Longs}
+import com.google.common.primitives.{Bytes, Longs}
 import com.vividsolutions.jts.geom.{Geometry, Point}
 import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
-import org.apache.accumulo.core.data.{Value, Mutation}
+import org.apache.accumulo.core.data.Mutation
 import org.apache.hadoop.io.Text
-import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToWrite, FeatureToMutations}
+import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
+import org.locationtech.geomesa.accumulo.data.EMPTY_TEXT
 import org.locationtech.geomesa.curve.ZRange.ZPrefix
 import org.locationtech.geomesa.curve.{Z2, Z2SFC}
-import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-import org.locationtech.geomesa.accumulo.data.EMPTY_TEXT
+import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.util.hashing.MurmurHash3
 
 object Z2Table extends GeoMesaTable {
 
   val FULL_CF = new Text("F")
-  val EMPTY_BYTES = Array.empty[Byte]
-  val EMPTY_VALUE = new Value(EMPTY_BYTES)
-  val SHARDS = (0 until 10).map(_.toByte).toArray
+  val SHARDS: Array[Byte] = (0 until 10).map(_.toByte).toArray
   val POINT_INDICATOR = 0.toByte
+  private val NON_POINT_LO: Array[Byte] = Array.fill(4)(0)
 
   override def supports(sft: SimpleFeatureType): Boolean = sft.getSchemaVersion > 6
 
@@ -48,9 +47,9 @@ object Z2Table extends GeoMesaTable {
       }
     } else {
       (fw: FeatureToWrite) => {
-        val mutations = getNonPointRowKeys(fw.feature, dtgIndex).map(new Mutation(_))
-        mutations.foreach(_.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, fw.dataValue))
-        mutations
+        val mutation = new Mutation(getNonPointRowKey(fw.feature, dtgIndex))
+        mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, fw.dataValue)
+        Seq(mutation)
       }
     }
   }
@@ -65,49 +64,62 @@ object Z2Table extends GeoMesaTable {
       }
     } else {
       (fw: FeatureToWrite) => {
-        val mutations = getNonPointRowKeys(fw.feature, dtgIndex).map(new Mutation(_))
-        mutations.foreach(_.putDelete(FULL_CF, EMPTY_TEXT, fw.columnVisibility))
-        mutations
+        val mutation = new Mutation(getNonPointRowKey(fw.feature, dtgIndex))
+        mutation.putDelete(FULL_CF, EMPTY_TEXT, fw.columnVisibility)
+        Seq(mutation)
       }
     }
   }
 
   def getPointRowKey(sf: SimpleFeature, dtgIndex: Option[Int]): Text = {
+    val pt = sf.getDefaultGeometry.asInstanceOf[Point]
+    val z2 = Longs.toByteArray(Z2SFC.index(pt.getX, pt.getY).z)
+    getRowKey(sf, dtgIndex, z2.take(4), z2.drop(4))
+  }
+
+  def getNonPointRowKey(sf: SimpleFeature, dtgIndex: Option[Int]): Text = {
+    sf.getDefaultGeometry match {
+      case p: Point => getPointRowKey(sf, dtgIndex)
+      case g: Geometry =>
+        val ZPrefix(zPrefix, bits) = Z2.zBox(g)
+        val z2 = Longs.toByteArray(zPrefix).take(4)
+        // flip the first 3 bits to indicate a non-point geom
+        // these bits will always be 0 (unused) in the z2 value
+        // bits flipped indicate the precision of the z value - creates a box
+        val z2withPrecision: Array[Byte] = if (bits > 32) {
+          // no bits flipped - all 4 bytes are used
+          z2
+        } else if (bits > 24) {
+          // first bit flipped, last byte zeroed
+          Array((z2.head | 0x80).toByte) ++ z2.tail.take(2) ++ Array[Byte](0)
+        } else if (bits > 16) {
+          // first two bits flipped, last 2 bytes zeroed
+          Array((z2.head | 0xc0).toByte) ++ z2.tail.take(1) ++ Array[Byte](0, 0)
+        } else if (bits > 8) {
+          // first, 3rd bit flipped, last 3 bytes zeroed
+          Array((z2.head | 0xa0).toByte) ++ Array[Byte](0, 0, 0)
+        } else {
+          // first three bits flipped, everything else zeroed
+          Array[Byte](0xe0.toByte, 0, 0, 0)
+        }
+        getRowKey(sf, dtgIndex, z2withPrecision, NON_POINT_LO)
+    }
+  }
+
+  private def getRowKey(sf: SimpleFeature, dtgIndex: Option[Int], zByteHi: Array[Byte], zByteLo: Array[Byte]): Text = {
     val tablePrefix = sf.getType.getTableSharingPrefix.getBytes(Charsets.UTF_8)
     val id = sf.getID.getBytes(Charsets.UTF_8)
     val shard = Array(math.abs(MurmurHash3.arrayHash(id) % 10).toByte)
     val pt = sf.getDefaultGeometry.asInstanceOf[Point]
-    val z2 = Longs.toByteArray(Z2SFC.index(pt.getX, pt.getY).z)
-    val time = encodeTime(dtgIndex.map(sf.getAttribute(_).asInstanceOf[Date].getTime).getOrElse(System.currentTimeMillis))
-    val row = Bytes.concat(tablePrefix, shard, z2.take(4), time, z2.drop(4), id)
+    val time = encodeTime(dtgIndex.map(sf.getAttribute(_).asInstanceOf[Date].getTime))
+    val row = Bytes.concat(tablePrefix, shard, zByteHi, time, zByteLo, id)
     new Text(row)
   }
 
-  def getNonPointRowKeys(sf: SimpleFeature, dtgIndex: Option[Int]): Seq[Text] = {
-    val tablePrefix = sf.getType.getTableSharingPrefix.getBytes(Charsets.UTF_8)
-    val id = sf.getID.getBytes(Charsets.UTF_8)
-    val shard = Array(math.abs(MurmurHash3.arrayHash(id) % 10).toByte)
-    val ZPrefix(zPrefix, bits) = Z2.zBox(sf.getDefaultGeometry.asInstanceOf[Geometry])
-    val z2 = Longs.toByteArray(zPrefix).take(4)
-    val z2s = if (bits > 32) {
-      // fits within the 4 byte z value - effectively a point
-      Seq(z2)
-    } else {
-      // flip the first 3 bits to indicate a non-point geom - these bits will always be 0 (unused) in the z2 value
-      // bits flipped indicate the precision of the z value - effectively a box
-      val threeBytes = Array((z2.head | 0x80).toByte) ++ z2.tail // first bit flipped
-      val twoBytes = Array((z2.head | 0xc0).toByte) ++ z2.tail.dropRight(1) ++ Array[Byte](0) // first two bits flipped
-      val oneByte = Array((z2.head | 0xa0).toByte) ++ z2.tail.dropRight(2) ++ Array[Byte](0, 0) // first, 3rd bit flipped
-      val zeroBytes = Array((z2.head | 0xe0).toByte) ++ Array[Byte](0, 0, 0) // first three bits flipped
-      Seq(threeBytes, twoBytes, oneByte, zeroBytes)
-    }
-    val time = encodeTime(dtgIndex.map(sf.getAttribute(_).asInstanceOf[Date].getTime).getOrElse(System.currentTimeMillis))
-    val rows = z2s.map(Bytes.concat(tablePrefix, shard, _, time, id))
-    rows.map(new Text(_))
-  }
-
   // encode the time so that it sorts lexically
-  def encodeTime(time: Long): Array[Byte] = Longs.toByteArray(time ^ Long.MinValue)
+  def encodeTime(time: Long): Array[Byte] = Longs.toByteArray(time ^ Long.MinValue).take(6)
+
+  def encodeTime(time: Option[Long]): Array[Byte] = encodeTime(time.getOrElse(System.currentTimeMillis()))
 
   override def configureTable(sft: SimpleFeatureType, table: String, tableOps: TableOperations): Unit = {
     tableOps.setProperty(table, Property.TABLE_SPLIT_THRESHOLD.getKey, "128M")

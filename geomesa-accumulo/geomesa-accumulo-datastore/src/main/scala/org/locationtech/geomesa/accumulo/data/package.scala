@@ -44,6 +44,7 @@ package object data {
   val ST_IDX_TABLE_KEY       = "tables.idx.st.name"
   val ATTR_IDX_TABLE_KEY     = "tables.idx.attr.name"
   val RECORD_TABLE_KEY       = "tables.record.name"
+  val Z2_TABLE_KEY           = "tables.z2.name"
   val Z3_TABLE_KEY           = "tables.z3.name"
   val QUERIES_TABLE_KEY      = "tables.queries.name"
   val SHARED_TABLES_KEY      = "tables.sharing"

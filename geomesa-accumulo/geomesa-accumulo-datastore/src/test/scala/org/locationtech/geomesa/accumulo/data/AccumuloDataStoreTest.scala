@@ -651,7 +651,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       val sft = SimpleFeatureTypes.createType(catalog, "name:String:index=true,dtg:Date,*geom:Point:srid=4326")
       ds.createSchema(sft)
       val tables = GeoMesaTable.getTableNames(sft, ds) ++ Seq(catalog)
-      tables must haveSize(5)
+      tables must haveSize(6)
       connector.tableOperations().list().toSeq must containAllOf(tables)
       ds.delete()
       connector.tableOperations().list().toSeq must not(containAnyOf(tables))

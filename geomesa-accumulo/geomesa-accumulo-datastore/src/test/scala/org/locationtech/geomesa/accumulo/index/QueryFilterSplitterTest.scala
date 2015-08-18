@@ -154,7 +154,7 @@ class QueryFilterSplitterTest extends Specification {
         val options = splitter.getQueryOptions(filter)
         options must haveLength(1)
         options.head.filters must haveLength(1)
-        options.head.filters.head.strategy mustEqual StrategyType.ST
+        options.head.filters.head.strategy mustEqual StrategyType.Z2
         options.head.filters.head.primary mustEqual Seq(filter)
         options.head.filters.head.secondary must beNone
       }
@@ -210,7 +210,7 @@ class QueryFilterSplitterTest extends Specification {
         val options = splitter.getQueryOptions(filter)
         options must haveLength(1)
         options.head.filters must haveLength(1)
-        options.head.filters.head.strategy mustEqual StrategyType.ST
+        options.head.filters.head.strategy mustEqual StrategyType.Z2
         options.head.filters.head.primary mustEqual Seq(geom, geom2).map(f)
         options.head.filters.head.secondary must beNone
       }
@@ -309,7 +309,7 @@ class QueryFilterSplitterTest extends Specification {
         z3 must beSome
         z3.get.primary mustEqual Seq(dtg).map(f)
         z3.get.secondary must beNone
-        val st = options.head.filters.find(_.strategy == StrategyType.ST)
+        val st = options.head.filters.find(_.strategy == StrategyType.Z2)
         st must beSome
         st.get.primary mustEqual Seq(f(geom))
         st.get.secondary must beNone
@@ -319,7 +319,7 @@ class QueryFilterSplitterTest extends Specification {
         val options = splitter.getQueryOptions(filter)
         options must haveLength(1)
         options.head.filters must haveLength(2)
-        forall(options.head.filters)(_.strategy mustEqual StrategyType.ST)
+        forall(options.head.filters)(_.strategy mustEqual StrategyType.Z2)
         options.head.filters.map(_.primary) must containTheSameElementsAs(Seq(Seq(f(geom)), Seq(f(geom2))))
         forall(options.head.filters)(_.secondary must beNone)
       }
@@ -328,8 +328,8 @@ class QueryFilterSplitterTest extends Specification {
         val options = splitter.getQueryOptions(filter)
         options must haveLength(1)
         options.head.filters must haveLength(2)
-        options.head.filters.map(_.strategy) must containTheSameElementsAs(Seq(StrategyType.ST, StrategyType.ATTRIBUTE))
-        options.head.filters.find(_.strategy == StrategyType.ST).get.primary mustEqual Seq(f(geom))
+        options.head.filters.map(_.strategy) must containTheSameElementsAs(Seq(StrategyType.Z2, StrategyType.ATTRIBUTE))
+        options.head.filters.find(_.strategy == StrategyType.Z2).get.primary mustEqual Seq(f(geom))
         options.head.filters.find(_.strategy == StrategyType.ATTRIBUTE).get.primary mustEqual Seq(f(indexedAttr))
         forall(options.head.filters)(_.secondary must beNone)
       }
@@ -348,7 +348,7 @@ class QueryFilterSplitterTest extends Specification {
           val options = splitter.getQueryOptions(filter)
           options must haveLength(1)
           options.head.filters must haveLength(1)
-          options.head.filters.head.strategy mustEqual StrategyType.ST
+          options.head.filters.head.strategy mustEqual StrategyType.Z2
           options.head.filters.head.primary mustEqual Seq(f(geomOverlap))
           options.head.filters.head.secondary must beNone
         }.pendingUntilFixed("not implemented")
@@ -388,7 +388,7 @@ class QueryFilterSplitterTest extends Specification {
         options must haveLength(1)
         options.head.filters must haveLength(3)
         options.head.filters.map(_.strategy) must
-            containTheSameElementsAs(Seq(StrategyType.Z3, StrategyType.ST, StrategyType.ATTRIBUTE))
+            containTheSameElementsAs(Seq(StrategyType.Z3, StrategyType.Z2, StrategyType.ATTRIBUTE))
         options.head.filters.map(_.primary) must
             containTheSameElementsAs(Seq(Seq(f(geom)), Seq(f(dtg)), Seq(f(indexedAttr))))
         forall(options.head.filters)(_.secondary must beNone)

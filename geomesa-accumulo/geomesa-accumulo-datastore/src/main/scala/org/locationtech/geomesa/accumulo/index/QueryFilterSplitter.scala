@@ -96,10 +96,10 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends Logging {
       val primary = spatial ++ temporal
       val secondary = andOption(attribute ++ others)
       options.append(FilterPlan(Seq(QueryFilter(StrategyType.Z3, primary, secondary))))
-    } else if (supported.contains(SpatioTemporalTable) && spatial.nonEmpty) {
+    } else if (spatial.nonEmpty && (supported.contains(SpatioTemporalTable) || supported.contains(Z2Table))) {
       val primary = spatial ++ temporal
       val secondary = andOption(attribute ++ others)
-      options.append(FilterPlan(Seq(QueryFilter(StrategyType.ST, primary, secondary))))
+      options.append(FilterPlan(Seq(QueryFilter(StrategyType.Z2, primary, secondary))))
     }
 
     // ids

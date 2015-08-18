@@ -139,6 +139,7 @@ class AccumuloDataStore(val connector: Connector,
     val attributesValue             = SimpleFeatureTypes.encodeType(sft)
     val dtgValue: Option[String]    = sft.getDtgField // this will have already been checked and set
     val featureEncodingValue        = /*_*/fe.toString/*_*/
+    val z2TableValue                = Z2Table.formatTableName(catalogTable, sft)
     val z3TableValue                = Z3Table.formatTableName(catalogTable, sft)
     val spatioTemporalIdxTableValue = SpatioTemporalTable.formatTableName(catalogTable, sft)
     val attrIdxTableValue           = AttributeTable.formatTableName(catalogTable, sft)
@@ -155,15 +156,18 @@ class AccumuloDataStore(val connector: Connector,
         SCHEMA_KEY            -> spatioTemporalSchemaValue,
         FEATURE_ENCODING_KEY  -> featureEncodingValue,
         VISIBILITIES_KEY      -> writeVisibilities,
+        Z2_TABLE_KEY          -> z2TableValue,
         Z3_TABLE_KEY          -> z3TableValue,
         ST_IDX_TABLE_KEY      -> spatioTemporalIdxTableValue,
         ATTR_IDX_TABLE_KEY    -> attrIdxTableValue,
         RECORD_TABLE_KEY      -> recordTableValue,
         QUERIES_TABLE_KEY     -> queriesTableValue,
         SHARED_TABLES_KEY     -> tableSharingValue,
-        TABLES_ENABLED_KEY    -> enabledTablesValue,
         VERSION_KEY           -> dataStoreVersion
-      ) ++ (if (dtgValue.isDefined) Map(DTGFIELD_KEY -> dtgValue.get) else Map.empty)
+      ) ++ {
+        dtgValue.map(d => DTGFIELD_KEY -> d) ++
+        sft.getEnabledTables.map(t => TABLES_ENABLED_KEY -> t)
+      }.toMap
 
     val featureName = sft.getTypeName
     metadata.insert(featureName, attributeMap)
@@ -775,6 +779,7 @@ class AccumuloDataStore(val connector: Connector,
   override def getTableName(featureName: String, table: GeoMesaTable): String = {
     val key = table match {
       case RecordTable         => RECORD_TABLE_KEY
+      case Z2Table             => Z2_TABLE_KEY
       case Z3Table             => Z3_TABLE_KEY
       case AttributeTable      => ATTR_IDX_TABLE_KEY
       case AttributeTableV5    => ATTR_IDX_TABLE_KEY
@@ -787,6 +792,7 @@ class AccumuloDataStore(val connector: Connector,
   override def getSuggestedThreads(featureName: String, table: GeoMesaTable): Int = {
     table match {
       case RecordTable         => recordScanThreads
+      case Z2Table             => queryThreadsConfig.getOrElse(8)
       case Z3Table             => queryThreadsConfig.getOrElse(8)
       case AttributeTable      => queryThreadsConfig.getOrElse(8)
       case AttributeTableV5    => 1

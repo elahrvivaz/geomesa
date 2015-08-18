@@ -47,7 +47,7 @@ object Strategy extends Logging {
   // enumeration of the various strategies we implement - don't forget to add new impls here
   object StrategyType extends Enumeration {
     type StrategyType = Value
-    val Z2, Z3, ST, RECORD, ATTRIBUTE = Value
+    val Z2, Z3, RECORD, ATTRIBUTE = Value
   }
 
   /**
