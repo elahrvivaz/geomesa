@@ -203,6 +203,7 @@ object RichSimpleFeatureType {
 
     def getGeomField: String = sft.getGeometryDescriptor.getLocalName
     def getGeomIndex: Int = sft.indexOf(sft.getGeometryDescriptor.getLocalName)
+    def isPoints: Boolean = sft.getGeometryDescriptor.getType.getBinding == classOf[Point]
 
     def getDtgField: Option[String] = userData[String](DEFAULT_DATE_KEY)
     def getDtgIndex: Option[Int] = getDtgField.map(sft.indexOf).filter(_ != -1)

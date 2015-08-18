@@ -14,7 +14,7 @@ import com.vividsolutions.jts.geom.{Geometry, GeometryCollection}
 import org.apache.accumulo.core.data.Range
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
-import org.locationtech.geomesa.accumulo.data.tables.{Z2Table, Z3Table}
+import org.locationtech.geomesa.accumulo.data.tables.Z2Table
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.{Z2SFC, Z3SFC}
@@ -60,9 +60,8 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     output(s"Interval:  $interval")
 
     val fp = FILTERING_ITER_PRIORITY
-// TODO apply filter
+
     val (iterators, kvsToFeatures, colFamily) = if (hints.isBinQuery) {
-      // TODO
       val trackId = hints.getBinTrackIdField
       val geom = hints.getBinGeomField
       val dtg = hints.getBinDtgField
@@ -74,34 +73,38 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
         if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, trackId, geom, dtg, label)) {
-          (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, batchSize, sort, fp)), Z3Table.BIN_CF)
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, allFilter, batchSize, sort, fp)), Z2Table.BIN_CF)
         } else {
-          val binDtg = dtg.getOrElse(dtgField.get) // dtgField is always defined if we're using z3
+          val binDtg = dtg.orElse(dtgField)
           val binGeom = geom.getOrElse(sft.getGeomField)
           val iter = BinAggregatingIterator.configureDynamic(sft, ecql, trackId, binGeom, binDtg, label,
             batchSize, sort, fp)
           (Seq(iter), Z2Table.FULL_CF)
         }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf)
-    } else if (hints.isDensityQuery) {
-      val envelope = hints.getDensityEnvelope.get
-      val (width, height) = hints.getDensityBounds.get
-      val weight = hints.getDensityWeight
-      // TODO allow for non point geoms in the iter
-      val iter = Z3DensityIterator.configure(sft, allFilter, envelope, width, height, weight, fp)
-      (Seq(iter), Z3DensityIterator.kvsToFeatures(), Z2Table.FULL_CF)
     } else {
-      val transforms = for {
-        tdef <- hints.getTransformDefinition
-        tsft <- hints.getTransformSchema
-      } yield { (tdef, tsft) }
+      val transforms =
+        for {tdef <- hints.getTransformDefinition; tsft <- hints.getTransformSchema} yield {(tdef, tsft)}
       output(s"Transforms: $transforms")
 
-      val iters = (allFilter, transforms) match {
-        case (None, None) => Seq.empty
-        case _ => Seq(KryoLazyFilterTransformIterator.configure(sft, allFilter, transforms, fp))
+      val (cfSft, cf) = if (IteratorTrigger.canUseIndexValues(sft, allFilter, transforms.map(_._2))) {
+        (transforms.get._2, Z2Table.MAP_CF)
+      } else {
+        (sft, Z2Table.FULL_CF)
       }
-      (iters, queryPlanner.defaultKVsToFeatures(hints), Z2Table.FULL_CF)
+      if (hints.isDensityQuery) {
+        val envelope = hints.getDensityEnvelope.get
+        val (width, height) = hints.getDensityBounds.get
+        val weight = hints.getDensityWeight
+        val iter = KryoLazyDensityIterator.configure(cfSft, allFilter, envelope, width, height, weight, fp)
+        (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), cf)
+      } else {
+        val iters = (allFilter, transforms) match {
+          case (None, None) => Seq.empty
+          case _ => Seq(KryoLazyFilterTransformIterator.configure(cfSft, allFilter, transforms, fp))
+        }
+        (iters, queryPlanner.defaultKVsToFeatures(hints), cf)
+      }
     }
 
     val table = acc.getTableName(sft.getTypeName, Z2Table)
@@ -118,18 +121,19 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     val ranges = Z2SFC.ranges((lx, ux), (ly, uy), 32).flatMap { case (lo, hi) =>
       val loBytes = Longs.toByteArray(lo).take(4)
       val hiBytes = Longs.toByteArray(hi).take(4)
-      Z2Table.SHARDS.map { s =>
-        val start = prefix ++ Seq(s) ++ loBytes ++ startTime
-        val end = prefix ++ Seq(s) ++ hiBytes ++ endTime
-        new Range(new Text(start), true, Range.followingPrefix(new Text(end)), false)
+      val pointRanges = Z2Table.SHARDS.map { s =>
+        val start = new Text(Bytes.concat(prefix, s, loBytes, startTime))
+        val end = new Text(Bytes.concat(prefix, s, hiBytes, endTime))
+        new Range(start, true, Range.followingPrefix(end), false)
+      }
+      if (sft.isPoints) {
+        pointRanges
+      } else {
+        pointRanges // TODO add 'dot' ranges
       }
     }
 
-    val hasDupes = false // TODO may contain dupes
-    if (hasDupes) {
-      // TODO add 'dot' ranges
-    }
-    BatchScanPlan(table, ranges, iterators, Seq(colFamily), kvsToFeatures, numThreads, hasDupes)
+    BatchScanPlan(table, ranges, iterators, Seq(colFamily), kvsToFeatures, numThreads, hasDuplicates = false)
   }
 
   def getRanges(weeks: Seq[Int], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {

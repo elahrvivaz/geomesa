@@ -88,7 +88,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
         if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, trackId, geom, dtg, label)) {
           (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, batchSize, sort, fp)), Z3Table.BIN_CF)
         } else {
-          val binDtg = dtg.getOrElse(dtgField.get) // dtgField is always defined if we're using z3
+          val binDtg = dtg.orElse(dtgField) // dtgField is always defined if we're using z3
           val binGeom = geom.getOrElse(sft.getGeomField)
           val iter = BinAggregatingIterator.configureDynamic(sft, ecql, trackId, binGeom, binDtg, label,
             batchSize, sort, fp)
@@ -99,8 +99,8 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       val envelope = hints.getDensityEnvelope.get
       val (width, height) = hints.getDensityBounds.get
       val weight = hints.getDensityWeight
-      val iter = Z3DensityIterator.configure(sft, ecql, envelope, width, height, weight, fp)
-      (Seq(iter), Z3DensityIterator.kvsToFeatures(), Z3Table.FULL_CF)
+      val iter = KryoLazyDensityIterator.configure(sft, ecql, envelope, width, height, weight, fp)
+      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z3Table.FULL_CF)
     } else {
       val transforms = for {
         tdef <- hints.getTransformDefinition

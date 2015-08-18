@@ -27,7 +27,6 @@ import org.locationtech.geomesa.accumulo.index.QueryPlanners._
 import org.locationtech.geomesa.curve.Z3SFC
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.features.nio.{AttributeAccessor, LazySimpleFeature}
-import org.locationtech.geomesa.filter.function.{BasicValues, Convert2ViewerFunction}
 import org.locationtech.geomesa.utils.geotools.Conversions._
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.`type`.GeometryDescriptor
@@ -62,28 +61,11 @@ object Z3Table extends GeoMesaTable {
 
   override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
-    val binWriter: (FeatureToWrite, Mutation) => Unit = sft.getBinTrackId match {
-      case Some(trackId) =>
-        val geomIndex = sft.getGeomIndex
-        val trackIndex = sft.indexOf(trackId)
-        (fw: FeatureToWrite, m: Mutation) => {
-          val (lat, lon) = {
-            val geom = fw.feature.getAttribute(geomIndex).asInstanceOf[Point]
-            (geom.getY.toFloat, geom.getX.toFloat)
-          }
-          val dtg = fw.feature.getAttribute(dtgIndex).asInstanceOf[Date].getTime
-          val trackId = Option(fw.feature.getAttribute(trackIndex)).map(_.toString).getOrElse("")
-          val encoded = Convert2ViewerFunction.encodeToByteArray(BasicValues(lat, lon, dtg, trackId))
-          val value = new Value(encoded)
-          m.put(BIN_CF, EMPTY_TEXT, fw.columnVisibility, value)
-        }
-      case _ => (fw: FeatureToWrite, m: Mutation) => {}
-    }
     if (sft.getSchemaVersion > 5) {
       // we know the data is kryo serialized in version 6+
       (fw: FeatureToWrite) => {
         val mutation = new Mutation(getRowKey(fw, dtgIndex))
-        binWriter(fw, mutation)
+        fw.binValue.foreach(v => mutation.put(BIN_CF, EMPTY_TEXT, fw.columnVisibility, v))
         mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, fw.dataValue)
         Seq(mutation)
       }
@@ -93,7 +75,7 @@ object Z3Table extends GeoMesaTable {
       (fw: FeatureToWrite) => {
         val mutation = new Mutation(getRowKey(fw, dtgIndex))
         val payload = new Value(writer.serialize(fw.feature))
-        binWriter(fw, mutation)
+        fw.binValue.foreach(v => mutation.put(BIN_CF, EMPTY_TEXT, fw.columnVisibility, v))
         mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, payload)
         Seq(mutation)
       }

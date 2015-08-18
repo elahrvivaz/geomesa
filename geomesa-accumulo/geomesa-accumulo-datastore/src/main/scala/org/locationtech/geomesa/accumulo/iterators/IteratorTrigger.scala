@@ -216,6 +216,5 @@ object IteratorTrigger extends Logging {
    */
   def supportsFilter(sft: SimpleFeatureType, filter: Filter): Boolean =
     DataUtilities.attributeNames(filter).forall(sft.indexOf(_) != -1)
-
 }
 

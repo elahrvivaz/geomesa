@@ -33,7 +33,7 @@ import scala.collection.JavaConverters._
  * Iterator that expands the z3 density iterator by adding support for non-kryo serialization types and
  * non-point geoms.
  */
-class DensityIterator extends Z3DensityIterator with Logging {
+class DensityIterator extends KryoLazyDensityIterator with Logging {
 
   override def init(src: SortedKeyValueIterator[Key, Value],
                     jOptions: jMap[String, String],
@@ -135,6 +135,6 @@ object DensityIterator extends Logging {
     val is = new IteratorSetting(priority, "density-iter", classOf[DensityIterator])
     Strategy.configureFeatureEncoding(is, serializationType)
     is.addOption(DEFAULT_SCHEMA_NAME, schema)
-    Z3DensityIterator.configure(is, sft, filter, envelope, gridWidth, gridHeight, weightAttribute)
+    KryoLazyDensityIterator.configure(is, sft, filter, envelope, gridWidth, gridHeight, weightAttribute)
   }
 }

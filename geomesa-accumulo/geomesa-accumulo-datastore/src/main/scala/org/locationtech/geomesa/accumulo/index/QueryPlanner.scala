@@ -231,8 +231,8 @@ object QueryPlanner {
    * @param sft
    * @return
    */
-  def setQueryTransforms(query: Query, sft: SimpleFeatureType) =
-    if (query.getProperties != null && !query.getProperties.isEmpty) {
+  def setQueryTransforms(query: Query, sft: SimpleFeatureType) = {
+    val transforms = if (query.getProperties != null && !query.getProperties.isEmpty) {
       val (transformProps, regularProps) = query.getPropertyNames.partition(_.contains('='))
       val convertedRegularProps = regularProps.map { p => s"$p=$p" }
       val allTransforms = convertedRegularProps ++ transformProps
@@ -243,13 +243,21 @@ object QueryPlanner {
       } else {
         Seq(s"$geomName=$geomName")
       }
-      val transforms = (allTransforms ++ geomTransform).mkString(";")
+      Some((allTransforms ++ geomTransform).mkString(";"))
+    } else if (query.getHints.isDensityQuery) {
+      val attributes = Seq(sft.getGeometryDescriptor.getLocalName) ++ query.getHints.getDensityWeight
+      Some(attributes.mkString(";"))
+    } else {
+      None
+    }
+    transforms.foreach { transforms =>
       val transformDefs = TransformProcess.toDefinition(transforms)
       val derivedSchema = computeSchema(sft, transformDefs.asScala)
       query.setProperties(Query.ALL_PROPERTIES)
       query.getHints.put(TRANSFORMS, transforms)
       query.getHints.put(TRANSFORM_SCHEMA, derivedSchema)
     }
+  }
 
   private def computeSchema(origSFT: SimpleFeatureType, transforms: Seq[Definition]): SimpleFeatureType = {
     val attributes: Seq[AttributeDescriptor] = transforms.map { definition =>
@@ -328,7 +336,7 @@ object QueryPlanner {
     val sft = if (query.getHints.isBinQuery) {
       BinAggregatingIterator.BIN_SFT
     } else if (query.getHints.isDensityQuery) {
-      Z3DensityIterator.DENSITY_SFT
+      KryoLazyDensityIterator.DENSITY_SFT
     } else if (query.getHints.containsKey(TEMPORAL_DENSITY_KEY)) {
       TemporalDensityIterator.createFeatureType(baseSft)
     } else if (query.getHints.containsKey(MAP_AGGREGATION_KEY)) {

@@ -102,7 +102,7 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
 
       val iter =
         DensityIterator.configure(sft, featureEncoding, schema, filter, envelope, width, height, weight, p)
-      (Seq(iter), Z3DensityIterator.kvsToFeatures(), false)
+      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), false)
     } else {
       val iteratorConfig = IteratorTrigger.chooseIterator(filter.filter, ecql, hints, sft)
       val stiiIterCfg = getSTIIIterCfg(iteratorConfig, hints, sft, ofilter, ecql, featureEncoding, version)

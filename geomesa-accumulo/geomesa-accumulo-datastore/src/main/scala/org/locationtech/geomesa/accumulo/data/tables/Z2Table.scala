@@ -24,13 +24,18 @@ import org.locationtech.geomesa.curve.{Z2, Z2SFC}
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
+import scala.collection.JavaConverters._
 import scala.util.hashing.MurmurHash3
 
 object Z2Table extends GeoMesaTable {
 
-  val FULL_CF = new Text("F")
-  val SHARDS: Array[Byte] = (0 until 10).map(_.toByte).toArray
+  val FULL_CF = new Text("f")
+  val BIN_CF  = new Text("b")
+  val MAP_CF  = new Text("m")
+
+  val SHARDS: Array[Array[Byte]] = Array.iterate(Array(0.toByte), 10)(i => Array(i.head))
   val POINT_INDICATOR = 0.toByte
+
   private val NON_POINT_LO: Array[Byte] = Array.fill(4)(0)
 
   override def supports(sft: SimpleFeatureType): Boolean = sft.getSchemaVersion > 6
@@ -39,35 +44,33 @@ object Z2Table extends GeoMesaTable {
 
   override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val dtgIndex = sft.getDtgIndex
-    if (sft.getGeometryDescriptor.getType.getBinding == classOf[Point]) {
-      (fw: FeatureToWrite) => {
-        val mutation = new Mutation(getPointRowKey(fw.feature, dtgIndex))
-        mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, fw.dataValue)
-        Seq(mutation)
-      }
+    val getRow: (SimpleFeature) => Text = if (sft.isPoints) {
+      (sf) => getPointRowKey(sf, dtgIndex)
     } else {
-      (fw: FeatureToWrite) => {
-        val mutation = new Mutation(getNonPointRowKey(fw.feature, dtgIndex))
-        mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, fw.dataValue)
-        Seq(mutation)
-      }
+      (sf) => getNonPointRowKey(sf, dtgIndex)
+    }
+    (fw: FeatureToWrite) => {
+      val mutation = new Mutation(getRow(fw.feature))
+      mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, fw.dataValue)
+      mutation.put(MAP_CF, EMPTY_TEXT, fw.columnVisibility, fw.indexValue)
+      fw.binValue.foreach(v => mutation.put(BIN_CF, EMPTY_TEXT, fw.columnVisibility, v))
+      Seq(mutation)
     }
   }
 
   override def remover(sft: SimpleFeatureType): FeatureToMutations = {
     val dtgIndex = sft.getDtgIndex
-    if (sft.getGeometryDescriptor.getType.getBinding == classOf[Point]) {
-      (fw: FeatureToWrite) => {
-        val mutation = new Mutation(getPointRowKey(fw.feature, dtgIndex))
-        mutation.putDelete(FULL_CF, EMPTY_TEXT, fw.columnVisibility)
-        Seq(mutation)
-      }
+    val getRow: (SimpleFeature) => Text = if (sft.isPoints) {
+      (sf) => getPointRowKey(sf, dtgIndex)
     } else {
-      (fw: FeatureToWrite) => {
-        val mutation = new Mutation(getNonPointRowKey(fw.feature, dtgIndex))
-        mutation.putDelete(FULL_CF, EMPTY_TEXT, fw.columnVisibility)
-        Seq(mutation)
-      }
+      (sf) => getNonPointRowKey(sf, dtgIndex)
+    }
+    (fw: FeatureToWrite) => {
+      val mutation = new Mutation(getRow(fw.feature))
+      mutation.putDelete(FULL_CF, EMPTY_TEXT, fw.columnVisibility)
+      mutation.putDelete(MAP_CF, EMPTY_TEXT, fw.columnVisibility)
+      mutation.putDelete(BIN_CF, EMPTY_TEXT, fw.columnVisibility)
+      Seq(mutation)
     }
   }
 
@@ -125,5 +128,8 @@ object Z2Table extends GeoMesaTable {
     tableOps.setProperty(table, Property.TABLE_SPLIT_THRESHOLD.getKey, "128M")
     tableOps.setProperty(table, Property.TABLE_BLOOM_ENABLED.getKey, "true")
     tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
+
+    val localityGroups = Seq(FULL_CF, BIN_CF, MAP_CF).map(t => t.toString -> Set(t).asJava).toMap.asJava
+    tableOps.setLocalityGroups(table, localityGroups)
   }
 }

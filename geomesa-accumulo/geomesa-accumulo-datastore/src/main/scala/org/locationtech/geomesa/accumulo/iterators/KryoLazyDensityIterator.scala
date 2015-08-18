@@ -35,9 +35,9 @@ import scala.collection.mutable
 /**
  * Density iterator - only works on kryo-encoded point geometries
  */
-class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging {
+class KryoLazyDensityIterator extends SortedKeyValueIterator[Key, Value] with Logging {
 
-  import Z3DensityIterator._
+  import KryoLazyDensityIterator._
 
   var sft: SimpleFeatureType = null
   var source: SortedKeyValueIterator[Key, Value] = null
@@ -67,7 +67,7 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
     this.source = src.deepCopy(env)
     val options = jOptions.asScala
 
-    sft = SimpleFeatureTypes.createType("test", options(SFT_OPT))
+    sft = SimpleFeatureTypes.createType("", options(SFT_OPT))
     filter = options.get(CQL_OPT).map(FastFilterFactory.toFilter).orNull
     geomIndex = sft.getGeomIndex
 
@@ -90,19 +90,23 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
     }.getOrElse((sf: SimpleFeature) => 1.0)
 
     val reusableSf = new KryoFeatureSerializer(sft).getReusableFeature
-    handleValue = if (filter == null) {
-      () => {
-        reusableSf.setBuffer(source.getTopValue.get())
-        topKey = source.getTopKey
-        writePoint(reusableSf, weightFn(reusableSf))
-      }
+    val writeGeom = if (sft.isPoints) {
+      () => writePoint(reusableSf, weightFn(reusableSf))
     } else {
-      () => {
-        reusableSf.setBuffer(source.getTopValue.get())
-        if (filter.evaluate(reusableSf)) {
-          topKey = source.getTopKey
-          writePoint(reusableSf, weightFn(reusableSf))
-        }
+      () => reusableSf.getDefaultGeometry match {
+        case g: Point           => writePointToResult(g, weightFn(reusableSf))
+        case g: MultiPoint      => writeMultiPoint(g, weightFn(reusableSf))
+        case g: LineString      => writeLineString(g, weightFn(reusableSf))
+        case g: MultiLineString => writeMultiLineString(g, weightFn(reusableSf))
+        case g: MultiPolygon    => writeMultiPolygon(g, weightFn(reusableSf))
+        case g: Geometry        => writePointToResult(g.getCentroid, weightFn(reusableSf))
+      }
+    }
+    handleValue = () => {
+      reusableSf.setBuffer(source.getTopValue.get())
+      if (filter == null || filter.evaluate(reusableSf)) {
+        topKey = source.getTopKey
+        writeGeom()
       }
     }
   }
@@ -142,7 +146,7 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
         // only re-create topValue if it was nulled out
         topValue = new Value()
       }
-      topValue.set(Z3DensityIterator.encodeResult(result))
+      topValue.set(KryoLazyDensityIterator.encodeResult(result))
     }
   }
 
@@ -176,6 +180,33 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
   private def writePoint(sf: KryoBufferSimpleFeature, weight: Double): Unit =
     writePointToResult(sf.getAttribute(geomIndex).asInstanceOf[Point], weight)
 
+
+  def writeMultiPoint(geom: MultiPoint, weight: Double): Unit = {
+    (0 until geom.getNumGeometries).foreach { i =>
+      writePointToResult(geom.getGeometryN(i).asInstanceOf[Point], weight / geom.getNumGeometries)
+    }
+  }
+
+  /** take in a line string and seed in points between each window of two points
+    * take the set of the resulting points to remove duplicate endpoints */
+  def writeLineString(geom: LineString, weight: Double): Unit = {
+    val points = geom.getCoordinates.sliding(2)
+    val cells = points.flatMap { case Array(p0, p1) => gridSnap.generateLineCoordSet(p0, p1) }.toSet
+    cells.foreach(writePointToResult(_, weight / cells.size))
+  }
+
+  def writeMultiLineString(geom: MultiLineString, weight: Double): Unit = {
+    (0 until geom.getNumGeometries).foreach { i =>
+      writeLineString(geom.getGeometryN(i).asInstanceOf[LineString], weight / geom.getNumGeometries)
+    }
+  }
+
+  def writeMultiPolygon(geom: MultiPolygon, weight: Double): Unit = {
+    (0 until geom.getNumGeometries).foreach { i =>
+      writePointToResult(geom.getGeometryN(i).getCentroid, weight / geom.getNumGeometries)
+    }
+  }
+
   protected[iterators] def writePointToResult(pt: Point, weight: Double): Unit =
     writeSnappedPoint((gridSnap.i(pt.getX), gridSnap.j(pt.getY)), weight)
 
@@ -188,18 +219,18 @@ class Z3DensityIterator extends SortedKeyValueIterator[Key, Value] with Logging 
   override def deepCopy(env: IteratorEnvironment): SortedKeyValueIterator[Key, Value] = ???
 }
 
-object Z3DensityIterator extends Logging {
+object KryoLazyDensityIterator extends Logging {
 
   // need to be lazy to avoid class loading issues before init is called
   lazy val DENSITY_SFT = SimpleFeatureTypes.createType("density", "result:String,*geom:Point:srid=4326")
   private lazy val zeroPoint = WKTUtils.read("POINT(0 0)")
 
   // configuration keys
-  private val SFT_OPT        = "sft"
-  private val CQL_OPT        = "cql"
-  private val ENVELOPE_OPT   = "envelope"
-  private val GRID_OPT       = "grid"
-  private val WEIGHT_OPT     = "weight"
+  private val SFT_OPT      = "sft"
+  private val CQL_OPT      = "cql"
+  private val ENVELOPE_OPT = "envelope"
+  private val GRID_OPT     = "grid"
+  private val WEIGHT_OPT   = "weight"
 
   /**
    * Creates an iterator config for the z3 density iterator
@@ -211,7 +242,7 @@ object Z3DensityIterator extends Logging {
                 gridHeight: Int,
                 weightAttribute: Option[String],
                 priority: Int): IteratorSetting = {
-    configure(new IteratorSetting(priority, "z3-density-iter", classOf[Z3DensityIterator]),
+    configure(new IteratorSetting(priority, "density-iter", classOf[KryoLazyDensityIterator]),
       sft, filter, envelope, gridWidth, gridHeight, weightAttribute)
   }
 
