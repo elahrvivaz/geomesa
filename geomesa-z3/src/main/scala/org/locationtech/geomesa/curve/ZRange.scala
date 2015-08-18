@@ -44,24 +44,24 @@ object ZRange {
    * Recurse down the oct-tree and report all z-ranges which are contained
    * in the cube defined by the min and max points
    */
-  def zranges[T <: Product](min: ZPoint[T], max: ZPoint[T]): Seq[(Long, Long)] = {
+  def zranges[T <: Product](min: ZPoint[T], max: ZPoint[T], precision: Int = 64): Seq[(Long, Long)] = {
     val dims = min.dims
 
     val ZPrefix(commonPrefix, commonBits) = longestCommonPrefix(min.z, max.z, dims)
 
-    // base our recursion on the depth of the tree that we get 'for free' from the common prefix
-    val maxRecurse = if (commonBits < 32) 7 else if (commonBits < 42) 6 else 5
-
     val searchRange = ZRange(min, max)
     var mq = new MergeQueue // stores our results
 
+    // base our recursion on the depth of the tree that we get 'for free' from the common prefix
+    val maxRecurse = if (commonBits < 32) 7 else if (commonBits < 42) 6 else 5
 
     def zranges(prefix: Long, offset: Int, oct: Long, level: Int): Unit = {
       val min: Long = prefix | (oct << offset) // QR + 000...
       val max: Long = min | (1L << offset) - 1 // QR + 111...
-      val octRange = ZRange(ZPoint.apply(min, dims).asInstanceOf[ZPoint[T]], ZPoint.apply(max, dims).asInstanceOf[ZPoint[T]])
+      val octRange = ZRange(ZPoint.apply(min, dims).asInstanceOf[ZPoint[T]],
+          ZPoint.apply(max, dims).asInstanceOf[ZPoint[T]])
 
-      if (searchRange.contains(octRange)) {
+      if (searchRange.contains(octRange) || offset < 64 - precision) {
         // whole range matches, happy day
         mq += (octRange.min.z, octRange.max.z)
       } else if (searchRange.overlaps(octRange)) {

@@ -30,21 +30,21 @@ object Z2 {
   /** insert 0 between every bit in value. Only first 30 bits can be considered. */
   def split(value: Long): Long = {
     var x = value & MAX_MASK
-    x = (x | x << 32) & 0x0000ffff0000ffffL
-    x = (x | x << 16) & 0x00ff00ff00ff00ffL
-    x = (x | x << 8)  & 0x0f0f0f0f0f0f0f0fL
-    x = (x | x << 4)  & 0x3333333333333333L
-    (x | x << 2)      & 0x1555555555555555L
+    x = (x | x << 16) & 0x00003fff0000ffffL
+    x = (x | x << 8)  & 0x003f00ff00ff00ffL
+    x = (x | x << 4)  & 0x030f0f0f0f0f0f0fL
+    x = (x | x << 2)  & 0x0333333333333333L
+    (x | x << 1)      & 0x0555555555555555L
   }
 
   /** combine every second bit to form a value. Maximum value is 30 bits. */
   def combine(z: Long): Int = {
-    var x = z & 0x1555555555555555L
-    x = (x ^ (x >>  2)) & 0x3333333333333333L
-    x = (x ^ (x >>  4)) & 0x0f0f0f0f0f0f0f0fL
-    x = (x ^ (x >>  8)) & 0x00ff00ff00ff00ffL
-    x = (x ^ (x >> 16)) & 0x0000ffff0000ffffL
-    x = (x ^ (x >> 32)) & MAX_MASK
+    var x = z & 0x0555555555555555L
+    x = (x ^ (x >>  1)) & 0x0333333333333333L
+    x = (x ^ (x >>  2)) & 0x030f0f0f0f0f0f0fL
+    x = (x ^ (x >>  4)) & 0x003f00ff00ff00ffL
+    x = (x ^ (x >>  8)) & 0x00003fff0000ffffL
+    x = (x ^ (x >> 16)) & MAX_MASK
     x.toInt
   }
 
