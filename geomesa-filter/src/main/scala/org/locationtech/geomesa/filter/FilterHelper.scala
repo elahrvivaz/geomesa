@@ -11,6 +11,7 @@ package org.locationtech.geomesa.filter
 import java.util.Date
 
 import com.vividsolutions.jts.geom.{Geometry, MultiPolygon, Polygon}
+import org.geotools.filter.visitor.DuplicatingFilterVisitor
 import org.joda.time.{DateTime, DateTimeZone, Interval}
 import org.locationtech.geomesa.utils.filters.Typeclasses.BinaryFilter
 import org.locationtech.geomesa.utils.geohash.GeohashUtils
@@ -28,16 +29,8 @@ import scala.collection.JavaConversions._
 
 object FilterHelper {
   // Let's handle special cases with topological filters.
-  def updateTopologicalFilters(filter: Filter, featureType: SimpleFeatureType) = {
-    filter match {
-      case dw: DWithin    => rewriteDwithin(dw)
-      case op: BBOX       => visitBBOX(op, featureType)
-      case op: Within     => visitBinarySpatialOp(op, featureType)
-      case op: Intersects => visitBinarySpatialOp(op, featureType)
-      case op: Overlaps   => visitBinarySpatialOp(op, featureType)
-      case _ => filter
-    }
-  }
+  def updateTopologicalFilters(filter: Filter, sft: SimpleFeatureType): Filter =
+    filter.accept(new SafeTopologicalFilterVisitor(sft), null).asInstanceOf[Filter]
 
   def visitBinarySpatialOp(op: BinarySpatialOperator, featureType: SimpleFeatureType): Filter = {
     val e1 = op.getExpression1.asInstanceOf[PropertyName]
@@ -317,6 +310,14 @@ object FilterHelper {
       case b: And => b.getChildren.toSeq.flatMap(decomposeAnd)
       case f: Filter => Seq(f)
     }
+  }
+
+  class SafeTopologicalFilterVisitor(sft: SimpleFeatureType) extends DuplicatingFilterVisitor {
+    override def visit(dw: DWithin, data: AnyRef) = rewriteDwithin(dw)
+    override def visit(op: BBOX, data: AnyRef) = visitBBOX(op, sft)
+    override def visit(op: Within, data: AnyRef) = visitBinarySpatialOp(op, sft)
+    override def visit(op: Intersects, data: AnyRef) = visitBinarySpatialOp(op, sft)
+    override def visit(op: Overlaps, data: AnyRef) = visitBinarySpatialOp(op, sft)
   }
 }
 

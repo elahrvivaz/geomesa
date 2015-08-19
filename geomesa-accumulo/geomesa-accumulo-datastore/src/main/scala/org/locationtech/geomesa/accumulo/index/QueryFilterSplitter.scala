@@ -10,6 +10,7 @@ package org.locationtech.geomesa.accumulo.index
 
 import com.typesafe.scalalogging.slf4j.Logging
 import org.geotools.filter.text.ecql.ECQL
+import org.geotools.filter.visitor.DuplicatingFilterVisitor
 import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
@@ -58,8 +59,9 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends Logging {
    *
    */
   def getQueryOptions(filter: Filter): Seq[FilterPlan] = {
-    // TODO we want to run a filter visitor to replace the spatial queries before re-writing in dnf
-    rewriteFilterInDNF(filter) match {
+    // handle IDL, null (default) geom names, etc
+    val safeFilter = FilterHelper.updateTopologicalFilters(filter, sft)
+    rewriteFilterInDNF(safeFilter) match {
       case o: Or  => getOrQueryOptions(o)
       case f      => getAndQueryOptions(f)
     }
@@ -202,13 +204,10 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends Logging {
    * of a filter in the 'temporal' filter list.
    */
   private def partitionFilters(filters: Seq[Filter]) = {
-    val (unsafeSpatial, nonSpatial)   = partitionPrimarySpatials(filters, sft)
+    val (spatial, nonSpatial)   = partitionPrimarySpatials(filters, sft)
     val (temporal, nonSpatioTemporal) = partitionPrimaryTemporals(nonSpatial, sft)
     val (attribute, others)           = partitionIndexedAttributes(nonSpatioTemporal, sft)
     val dateAttribute                 = partitionIndexedAttributes(temporal, sft)._1
-
-    // handle IDL, null geoms, etc here
-    val spatial = unsafeSpatial.map(FilterHelper.updateTopologicalFilters(_, sft))
 
     (spatial, temporal, attribute, dateAttribute, others)
   }

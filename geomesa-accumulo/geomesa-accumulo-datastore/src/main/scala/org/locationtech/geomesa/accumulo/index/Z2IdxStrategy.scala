@@ -17,7 +17,8 @@ import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.data.tables.Z2Table
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.iterators._
-import org.locationtech.geomesa.curve.{Z2SFC, Z3SFC}
+import org.locationtech.geomesa.curve.ZRange.ZPrefix
+import org.locationtech.geomesa.curve.{Z2, Z2SFC, Z3SFC}
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeatureType
@@ -122,15 +123,42 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       val loBytes = Longs.toByteArray(lo).take(4)
       val hiBytes = Longs.toByteArray(hi).take(4)
       val pointRanges = Z2Table.SHARDS.map { s =>
-        val start = new Text(Bytes.concat(prefix, s, loBytes, startTime))
-        val end = new Text(Bytes.concat(prefix, s, hiBytes, endTime))
-        new Range(start, true, Range.followingPrefix(end), false)
+        val start = Bytes.concat(prefix, s, loBytes, startTime)
+        val end = Bytes.concat(prefix, s, hiBytes, endTime)
+        new Range(new Text(start), true, Range.followingPrefix(new Text(end)), false)
       }
-      if (sft.isPoints) {
-        pointRanges
-      } else {
-        pointRanges // TODO add 'dot' ranges
+      def nonPointRanges = {
+        val ZPrefix(zPrefix, bits) = Z2.zBox(Z2(lo), Z2(hi))
+        val z2 = Longs.toByteArray(zPrefix).take(4)
+        // flip the first 3 bits to indicate a non-point geom
+        // these bits will always be 0 (unused) in the z2 value
+        // bits flipped indicate the precision of the z value - creates a box
+        val oneDot = if (bits > 32) { None } else {
+          // first bit flipped, last byte zeroed
+          Some(Array((z2.head | 0x80).toByte) ++ z2.tail.take(2) ++ Array[Byte](0))
+        }
+        val twoDots = if (bits > 24) { None } else {
+          // first two bits flipped, last 2 bytes zeroed
+          Some(Array((z2.head | 0xc0).toByte) ++ z2.tail.take(1) ++ Array[Byte](0, 0))
+        }
+        val threeDots = if (bits > 16) { None } else {
+          // first, 3rd bit flipped, last 3 bytes zeroed
+          Some(Array((z2.head | 0xa0).toByte) ++ Array[Byte](0, 0, 0))
+        }
+        val fourDots = if (bits > 8) { None } else {
+          // first three bits flipped, everything else zeroed
+          Some(Array[Byte](0xe0.toByte, 0, 0, 0))
+        }
+        (oneDot ++ twoDots ++ threeDots ++ fourDots).flatMap { zBytes =>
+          Z2Table.SHARDS.map { s =>
+            val row = Bytes.concat(prefix, s, zBytes)
+            val start = Bytes.concat(row, startTime)
+            val end = Bytes.concat(row, endTime)
+            new Range(new Text(start), true, Range.followingPrefix(new Text(end)), false)
+          }
+        }
       }
+      if (sft.isPoints) pointRanges else pointRanges ++ nonPointRanges
     }
 
     BatchScanPlan(table, ranges, iterators, Seq(colFamily), kvsToFeatures, numThreads, hasDuplicates = false)

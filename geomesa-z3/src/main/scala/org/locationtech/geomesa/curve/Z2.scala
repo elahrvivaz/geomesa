@@ -54,4 +54,6 @@ object Z2 {
     val ur = Z2SFC.index(env.getMaxX, env.getMaxY)
     ZRange.longestCommonPrefix(ll.z, ur.z, MAX_DIM)
   }
+
+  def zBox(ll: Z2, ur: Z2): ZPrefix = ZRange.longestCommonPrefix(ll.z, ur.z, MAX_DIM)
 }
