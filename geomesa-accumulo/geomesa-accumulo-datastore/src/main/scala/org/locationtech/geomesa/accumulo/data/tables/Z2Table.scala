@@ -113,8 +113,7 @@ object Z2Table extends GeoMesaTable {
     val tablePrefix = sf.getType.getTableSharingPrefix.getBytes(Charsets.UTF_8)
     val id = sf.getID.getBytes(Charsets.UTF_8)
     val shard = Array(math.abs(MurmurHash3.arrayHash(id) % 10).toByte)
-    val pt = sf.getDefaultGeometry.asInstanceOf[Point]
-    val time = encodeTime(dtgIndex.map(sf.getAttribute(_).asInstanceOf[Date].getTime))
+    val time = encodeTime(dtgIndex.flatMap(i => Option(sf.getAttribute(i).asInstanceOf[Date]).map(_.getTime)))
     val row = Bytes.concat(tablePrefix, shard, zByteHi, time, zByteLo, id)
     new Text(row)
   }

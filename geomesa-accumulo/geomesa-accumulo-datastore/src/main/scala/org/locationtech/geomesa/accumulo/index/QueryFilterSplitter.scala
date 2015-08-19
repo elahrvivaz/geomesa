@@ -58,6 +58,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends Logging {
    *
    */
   def getQueryOptions(filter: Filter): Seq[FilterPlan] = {
+    // TODO we want to run a filter visitor to replace the spatial queries before re-writing in dnf
     rewriteFilterInDNF(filter) match {
       case o: Or  => getOrQueryOptions(o)
       case f      => getAndQueryOptions(f)
@@ -201,10 +202,13 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends Logging {
    * of a filter in the 'temporal' filter list.
    */
   private def partitionFilters(filters: Seq[Filter]) = {
-    val (spatial, nonSpatial)         = partitionPrimarySpatials(filters, sft)
+    val (unsafeSpatial, nonSpatial)   = partitionPrimarySpatials(filters, sft)
     val (temporal, nonSpatioTemporal) = partitionPrimaryTemporals(nonSpatial, sft)
     val (attribute, others)           = partitionIndexedAttributes(nonSpatioTemporal, sft)
     val dateAttribute                 = partitionIndexedAttributes(temporal, sft)._1
+
+    // handle IDL, null geoms, etc here
+    val spatial = unsafeSpatial.map(FilterHelper.updateTopologicalFilters(_, sft))
 
     (spatial, temporal, attribute, dateAttribute, others)
   }

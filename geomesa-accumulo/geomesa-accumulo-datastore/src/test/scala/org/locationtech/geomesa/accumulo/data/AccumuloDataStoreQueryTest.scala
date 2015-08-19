@@ -113,20 +113,6 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
       val queryNull = new Query(sft.getTypeName, filterNull)
       val queryEmpty = new Query(sft.getTypeName, filterEmpty)
 
-      val explainNull = {
-        val o = new ExplainString
-        ds.explainQuery(queryNull, o)
-        o.toString()
-      }
-      val explainEmpty = {
-        val o = new ExplainString
-        ds.explainQuery(queryEmpty, o)
-        o.toString()
-      }
-
-      explainNull must contain("Geometry filters: BBOX(null, 40.0,44.0,50.0,54.0)")
-      explainEmpty must contain("Geometry filters: BBOX(, 40.0,44.0,50.0,54.0)")
-
       val featuresNull = ds.getFeatureSource(sft.getTypeName).getFeatures(queryNull).features.toSeq.map(_.getID)
       val featuresEmpty = ds.getFeatureSource(sft.getTypeName).getFeatures(queryEmpty).features.toSeq.map(_.getID)
 

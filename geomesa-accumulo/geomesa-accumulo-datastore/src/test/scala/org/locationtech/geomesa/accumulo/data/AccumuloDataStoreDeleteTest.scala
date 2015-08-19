@@ -149,7 +149,7 @@ class AccumuloDataStoreDeleteTest extends Specification with TestWithDataStore {
         val c = ds.connector
 
         // tests that tables exist before being deleted
-        c.tableOperations().exists(s"${table}_${sftName}_st_idx") must beTrue
+        c.tableOperations().exists(s"${table}_${sftName}_z2") must beTrue
         c.tableOperations().exists(s"${table}_${sftName}_records") must beTrue
         c.tableOperations().exists(s"${table}_${sftName}_attr_idx") must beTrue
 
@@ -162,7 +162,7 @@ class AccumuloDataStoreDeleteTest extends Specification with TestWithDataStore {
         ds.removeSchema(sftName)
 
         //tables should be deleted now (for stand-alone tables only)
-        c.tableOperations().exists(s"${table}_${sftName}_st_idx") must beFalse
+        c.tableOperations().exists(s"${table}_${sftName}_z2") must beFalse
         c.tableOperations().exists(s"${table}_${sftName}_records") must beFalse
         c.tableOperations().exists(s"${table}_${sftName}_attr_idx") must beFalse
 
@@ -212,10 +212,10 @@ class AccumuloDataStoreDeleteTest extends Specification with TestWithDataStore {
         val c = ds.connector
 
         //tests that tables exist before being deleted
-        c.tableOperations().exists(s"${table}_${sftName}_st_idx") must beTrue
+        c.tableOperations().exists(s"${table}_${sftName}_z2") must beTrue
         c.tableOperations().exists(s"${table}_${sftName}_records") must beTrue
         c.tableOperations().exists(s"${table}_${sftName}_attr_idx") must beTrue
-        c.tableOperations().exists(s"${table}_${sftName2}_st_idx") must beTrue
+        c.tableOperations().exists(s"${table}_${sftName2}_z2") must beTrue
         c.tableOperations().exists(s"${table}_${sftName2}_records") must beTrue
         c.tableOperations().exists(s"${table}_${sftName2}_attr_idx") must beTrue
 
@@ -233,11 +233,11 @@ class AccumuloDataStoreDeleteTest extends Specification with TestWithDataStore {
         ds.removeSchema(sftName)
 
         //these tables should be deleted now
-        c.tableOperations().exists(s"${table}_${sftName}_st_idx") must beFalse
+        c.tableOperations().exists(s"${table}_${sftName}_z2") must beFalse
         c.tableOperations().exists(s"${table}_${sftName}_records") must beFalse
         c.tableOperations().exists(s"${table}_${sftName}_attr_idx") must beFalse
         //but these tables should still exist since sftName2 wasn't deleted
-        c.tableOperations().exists(s"${table}_${sftName2}_st_idx") must beTrue
+        c.tableOperations().exists(s"${table}_${sftName2}_z2") must beTrue
         c.tableOperations().exists(s"${table}_${sftName2}_records") must beTrue
         c.tableOperations().exists(s"${table}_${sftName2}_attr_idx") must beTrue
 
@@ -274,7 +274,7 @@ class AccumuloDataStoreDeleteTest extends Specification with TestWithDataStore {
 
         // tests that tables exist before being deleted
         c.tableOperations().exists(s"${table}") must beTrue
-        c.tableOperations().exists(s"${table}_st_idx") must beTrue
+        c.tableOperations().exists(s"${table}_z2") must beTrue
         c.tableOperations().exists(s"${table}_records") must beTrue
         c.tableOperations().exists(s"${table}_attr_idx") must beTrue
         c.tableOperations().exists(s"${table}_${sftName}_z3") must beTrue
@@ -289,7 +289,7 @@ class AccumuloDataStoreDeleteTest extends Specification with TestWithDataStore {
 
         //z3 table must be gone
         c.tableOperations().exists(s"${table}") must beTrue
-        c.tableOperations().exists(s"${table}_st_idx") must beTrue
+        c.tableOperations().exists(s"${table}_z2") must beTrue
         c.tableOperations().exists(s"${table}_records") must beTrue
         c.tableOperations().exists(s"${table}_attr_idx") must beTrue
         c.tableOperations().exists(s"${table}_${sftName}_z3") must beFalse
