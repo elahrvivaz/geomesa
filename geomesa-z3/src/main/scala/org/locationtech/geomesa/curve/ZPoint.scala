@@ -8,24 +8,23 @@
 
 package org.locationtech.geomesa.curve
 
-trait ZPoint[T <: Product] extends Any {
+trait ZN {
+  def dims: Int
+  def bits: Int
+  def maxValue: Long
+  def apply(z: Long): ZPoint
+  def apply(dims: Int*): ZPoint
+}
+
+object ZN {
+  def apply(dims: Int) = if (dims == 2) Z2 else if (dims == 3) Z3 else throw new NotImplementedError()
+}
+
+trait ZPoint extends Any {
   def z: Long
   def dims: Int
   def dim(i: Int): Int
-  def decode: T
-
+  def decode: Product
   def bitsToString = f"(${z.toBinaryString.toLong}%016d)" +
       s"(${(0 until dims).map(dim).map(_.toBinaryString.toLong).map(_.formatted("%08d")).mkString(",")})"
-}
-
-object ZPoint {
-  def apply(z: Long, dims: Int): ZPoint[_] = {
-    if (dims == 2) {
-      new Z2(z)
-    } else if (dims == 3) {
-      new Z3(z)
-    } else {
-      throw new NotImplementedError()
-    }
-  }
 }

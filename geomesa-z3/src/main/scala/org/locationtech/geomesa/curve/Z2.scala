@@ -10,26 +10,25 @@ package org.locationtech.geomesa.curve
 import com.vividsolutions.jts.geom.Geometry
 import org.locationtech.geomesa.curve.ZRange.ZPrefix
 
-class Z2(val z: Long) extends AnyVal with ZPoint[(Int, Int)] {
-  override def dims = Z2.MAX_DIM
-  override def decode = (dim(0), dim(1))
+class Z2(val z: Long) extends AnyVal with ZPoint {
+  override def dims = Z2.dims
   override def dim(i: Int) = if (i == 0) Z2.combine(z) else Z2.combine(z >> i)
+  override def decode = (dim(0), dim(1))
   override def toString = f"$z $decode"
 }
 
-object Z2 {
+object Z2 extends ZN {
 
-  final val MAX_DIM = 2
-  final val MAX_BITS = 30
-  final val MAX_MASK = 0x3fffffffL
+  override final val dims = 2
+  override final val bits = 60
+  override final val maxValue = 0x3fffffffL
 
-  def apply(z: Long) = new Z2(z)
-  def apply(x: Int, y: Int): Z2 = new Z2(split(x) | split(y) << 1)
-  def unapply(z: Z2): Option[(Int, Int)] = Some(z.decode)
+  override def apply(z: Long) = new Z2(z)
+  override def apply(dims: Int*) = new Z2(split(dims.head) | split(dims(1)) << 1)
 
   /** insert 0 between every bit in value. Only first 30 bits can be considered. */
   def split(value: Long): Long = {
-    var x = value & MAX_MASK
+    var x = value & maxValue
     x = (x | x << 16) & 0x00003fff0000ffffL
     x = (x | x << 8)  & 0x003f00ff00ff00ffL
     x = (x | x << 4)  & 0x030f0f0f0f0f0f0fL
@@ -44,7 +43,7 @@ object Z2 {
     x = (x ^ (x >>  2)) & 0x030f0f0f0f0f0f0fL
     x = (x ^ (x >>  4)) & 0x003f00ff00ff00ffL
     x = (x ^ (x >>  8)) & 0x00003fff0000ffffL
-    x = (x ^ (x >> 16)) & MAX_MASK
+    x = (x ^ (x >> 16)) & maxValue
     x.toInt
   }
 
@@ -52,8 +51,8 @@ object Z2 {
     val env = geom.getEnvelopeInternal
     val ll = Z2SFC.index(env.getMinX, env.getMinY)
     val ur = Z2SFC.index(env.getMaxX, env.getMaxY)
-    ZRange.longestCommonPrefix(ll.z, ur.z, MAX_DIM)
+    ZRange.longestCommonPrefix(ll.z, ur.z, dims, bits)
   }
 
-  def zBox(ll: Z2, ur: Z2): ZPrefix = ZRange.longestCommonPrefix(ll.z, ur.z, MAX_DIM)
+  def zBox(ll: Z2, ur: Z2): ZPrefix = ZRange.longestCommonPrefix(ll.z, ur.z, dims, bits)
 }

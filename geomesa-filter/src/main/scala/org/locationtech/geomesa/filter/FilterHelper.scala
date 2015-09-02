@@ -12,7 +12,7 @@ import java.util.Date
 
 import com.vividsolutions.jts.geom.{Geometry, MultiPolygon, Polygon}
 import org.joda.time.{DateTime, DateTimeZone, Interval}
-import org.locationtech.geomesa.filter.visitor.SafeTopologicalFilterVisitor
+import org.locationtech.geomesa.filter.visitor.SafeTopologicalFilterVisitorImpl
 import org.locationtech.geomesa.utils.filters.Typeclasses.BinaryFilter
 import org.locationtech.geomesa.utils.geohash.GeohashUtils
 import org.locationtech.geomesa.utils.geohash.GeohashUtils._
@@ -29,8 +29,8 @@ import scala.collection.JavaConversions._
 
 object FilterHelper {
   // Let's handle special cases with topological filters.
-  def updateTopologicalFilters(filter: Filter, schema: SimpleFeatureType): Filter =
-    filter.accept(new SafeTopologicalFilterVisitor { val sft = schema }, null).asInstanceOf[Filter]
+  def updateTopologicalFilters(filter: Filter, sft: SimpleFeatureType): Filter =
+    filter.accept(new SafeTopologicalFilterVisitorImpl(sft), null).asInstanceOf[Filter]
 
   def visitBinarySpatialOp(op: BinarySpatialOperator, featureType: SimpleFeatureType): Filter = {
     val e1 = op.getExpression1.asInstanceOf[PropertyName]

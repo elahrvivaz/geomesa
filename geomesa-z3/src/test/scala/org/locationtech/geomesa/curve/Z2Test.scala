@@ -18,7 +18,7 @@ import scala.util.Random
 class Z2Test extends Specification {
 
   val rand = new Random(-574)
-  val maxInt = Math.pow(2, Z2.MAX_BITS - 1).toInt
+  val maxInt = Z2SFC.xprec.toInt
   def nextDim() = rand.nextInt(maxInt)
 
   def padTo(s: String) = (new String(Array.fill(63)('0')) + s).takeRight(63)
@@ -28,30 +28,26 @@ class Z2Test extends Specification {
     "apply and unapply" >> {
       val (x, y) = (nextDim(), nextDim())
       val z = Z2(x, y)
-      z match { case Z2(zx, zy) =>
-        zx mustEqual x
-        zy mustEqual y
-      }
+      val (zx, zy) = z.decode
+      zx mustEqual x
+      zy mustEqual y
     }
 
     "apply and unapply min values" >> {
       val (x, y) = (0, 0)
       val z = Z2(x, y)
-      z match {
-        case Z2(zx, zy) =>
-          zx mustEqual x
-          zy mustEqual y
-      }
+      val (zx, zy) = z.decode
+      zx mustEqual x
+      zy mustEqual y
     }
 
     "apply and unapply max values" >> {
       val Z2curve = Z2SFC
       val (x, y) = (Z2curve.xprec, Z2curve.yprec)
       val z = Z2(x.toInt, y.toInt)
-      z match { case Z2(zx, zy) =>
-        zx mustEqual x
-        zy mustEqual y
-      }
+      val (zx, zy) = z.decode
+      zx mustEqual x
+      zy mustEqual y
     }
 
     "split" >> {

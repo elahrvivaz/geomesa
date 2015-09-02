@@ -30,7 +30,7 @@ object Z3SFC extends SpaceTimeFillingCurve[Z3] {
     Z3(lon.normalize(x), lat.normalize(y), time.normalize(t))
 
   override def ranges(x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[(Long, Long)] =
-    ZRange.zranges(index(x._1, y._1, t._1), index(x._2, y._2, t._2))
+    ZRange.zranges(index(x._1, y._1, t._1), index(x._2, y._2, t._2), Z3)
 
   override def invert(z: Z3): (Double, Double, Long) = {
     val (x, y, t) = z.decode

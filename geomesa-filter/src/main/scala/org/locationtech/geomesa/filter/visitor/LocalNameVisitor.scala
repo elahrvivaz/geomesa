@@ -32,3 +32,5 @@ trait LocalNameVisitor extends DuplicatingFilterVisitor {
     }
   }
 }
+
+class LocalNameVisitorImpl(val sft: SimpleFeatureType) extends LocalNameVisitor

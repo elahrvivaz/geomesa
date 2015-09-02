@@ -25,7 +25,7 @@ object Z2SFC extends SpaceFillingCurve[Z2] {
   override def index(x: Double, y: Double): Z2 = Z2(lon.normalize(x), lat.normalize(y))
 
   override def ranges(x: (Double, Double), y: (Double, Double), precision: Int = 64): Seq[(Long, Long)] =
-    ZRange.zranges(index(x._1, y._1), index(x._2, y._2), precision)
+    ZRange.zranges(index(x._1, y._1), index(x._2, y._2), Z2, precision)
 
   override def invert(z: Z2): (Double, Double) = {
     val (x, y) = z.decode

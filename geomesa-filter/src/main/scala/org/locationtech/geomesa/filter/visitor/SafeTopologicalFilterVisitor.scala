@@ -23,3 +23,5 @@ trait SafeTopologicalFilterVisitor extends DuplicatingFilterVisitor {
   override def visit(op: Intersects, data: AnyRef) = FilterHelper.visitBinarySpatialOp(op, sft)
   override def visit(op: Overlaps, data: AnyRef) = FilterHelper.visitBinarySpatialOp(op, sft)
 }
+
+class SafeTopologicalFilterVisitorImpl(val sft: SimpleFeatureType) extends SafeTopologicalFilterVisitor
