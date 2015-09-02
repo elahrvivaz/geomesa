@@ -11,7 +11,6 @@ package org.locationtech.geomesa.filter
 import java.util.Date
 
 import com.vividsolutions.jts.geom.{Geometry, MultiPolygon, Polygon}
-import org.geotools.filter.visitor.DuplicatingFilterVisitor
 import org.joda.time.{DateTime, DateTimeZone, Interval}
 import org.locationtech.geomesa.filter.visitor.SafeTopologicalFilterVisitor
 import org.locationtech.geomesa.utils.filters.Typeclasses.BinaryFilter
