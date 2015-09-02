@@ -124,6 +124,7 @@ class AccumuloDataStoreTransformsTest extends Specification with TestWithMultipl
       val sft = createNewSchema(spec2)
       val sftName = sft.getTypeName
       addFeatures(sft, createFeature2(sft, "v1"))
+      ok
 
       "across multiple fields" >> {
         val query = new Query(sftName, Filter.INCLUDE,
@@ -169,6 +170,7 @@ class AccumuloDataStoreTransformsTest extends Specification with TestWithMultipl
 
         // Let's read out what we wrote.
         val features = ds.getFeatureSource(sftName).getFeatures(query).features
+
         "return the data" >> {
           features.hasNext must beTrue
         }
@@ -198,6 +200,7 @@ class AccumuloDataStoreTransformsTest extends Specification with TestWithMultipl
           sf
         }
       })
+      ok
 
       "with out of order attributes" >> {
         val query = new Query(sftName, ECQL.toFilter("bbox(geom,49,49,60,60)"), Array("geom", "dtg", "label"))

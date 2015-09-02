@@ -42,12 +42,8 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     output(s"Geometry filters: ${filtersToString(geomFilters)}")
     output(s"Temporal filters: ${filtersToString(temporalFilters)}")
 
-    val tweakedGeomFilters = geomFilters.map(updateTopologicalFilters(_, sft))
-
-    output(s"Tweaked geom filters are $tweakedGeomFilters")
-
     // standardize the two key query arguments:  polygon and date-range
-    val geomsToCover = tweakedGeomFilters.flatMap(decomposeToGeometry)
+    val geomsToCover = geomFilters.flatMap(decomposeToGeometry)
 
     val collectionToCover: Geometry = geomsToCover match {
       case Nil => null
@@ -78,7 +74,7 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
         } else {
           val binDtg = dtg.orElse(dtgField)
           val binGeom = geom.getOrElse(sft.getGeomField)
-          val iter = BinAggregatingIterator.configureDynamic(sft, ecql, trackId, binGeom, binDtg, label,
+          val iter = BinAggregatingIterator.configureDynamic(sft, allFilter, trackId, binGeom, binDtg, label,
             batchSize, sort, fp)
           (Seq(iter), Z2Table.FULL_CF)
         }
@@ -89,7 +85,7 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       output(s"Transforms: $transforms")
 
       val (cfSft, cf) = if (IteratorTrigger.canUseIndexValues(sft, allFilter, transforms.map(_._2))) {
-        (transforms.get._2, Z2Table.MAP_CF)
+        (IndexValueEncoder.getIndexSft(sft), Z2Table.MAP_CF) // TODO cache this
       } else {
         (sft, Z2Table.FULL_CF)
       }

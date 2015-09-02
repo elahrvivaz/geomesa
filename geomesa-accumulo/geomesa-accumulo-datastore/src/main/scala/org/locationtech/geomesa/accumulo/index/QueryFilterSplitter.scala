@@ -10,7 +10,6 @@ package org.locationtech.geomesa.accumulo.index
 
 import com.typesafe.scalalogging.slf4j.Logging
 import org.geotools.filter.text.ecql.ECQL
-import org.geotools.filter.visitor.DuplicatingFilterVisitor
 import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
@@ -59,9 +58,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends Logging {
    *
    */
   def getQueryOptions(filter: Filter): Seq[FilterPlan] = {
-    // handle IDL, null (default) geom names, etc
-    val safeFilter = FilterHelper.updateTopologicalFilters(filter, sft)
-    rewriteFilterInDNF(safeFilter) match {
+    rewriteFilterInDNF(filter) match {
       case o: Or  => getOrQueryOptions(o)
       case f      => getAndQueryOptions(f)
     }

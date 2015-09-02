@@ -32,7 +32,7 @@ import org.locationtech.geomesa.accumulo.util.{CloseableIterator, SelfClosingIte
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features._
 import org.locationtech.geomesa.filter._
-import org.locationtech.geomesa.filter.visitor.LocalNameVisitor
+import org.locationtech.geomesa.filter.visitor.QueryPlanFilterVisitor
 import org.locationtech.geomesa.security.SecurityUtils
 import org.locationtech.geomesa.utils.cache.SoftThreadLocal
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -120,9 +120,11 @@ case class QueryPlanner(sft: SimpleFeatureType,
                             requested: Option[StrategyType],
                             output: ExplainerOutputType): Seq[QueryPlan] = {
 
+    output(s"Planning '${query.getTypeName}' ${filterToString(query.getFilter)}")
+
     configureQuery(query, sft) // configure the query - set hints that we'll need later on
 
-    output(s"Planning '${query.getTypeName}' ${filterToString(query.getFilter)}")
+    output(s"Modified filter: ${filterToString(query.getFilter)}")
     output(s"Hints: density ${query.getHints.isDensityQuery}, bin ${query.getHints.isBinQuery}")
     output(s"Sort: ${Option(query.getSortBy).filter(_.nonEmpty).map(_.mkString(", ")).getOrElse("none")}")
     output(s"Transforms: ${query.getHints.getTransformDefinition.getOrElse("None")}")
@@ -231,7 +233,7 @@ object QueryPlanner extends Logging {
     QueryPlanner.handleGeoServerParams(query)
     // update the filter to remove namespaces and handle null property names
     if (query.getFilter != null && query.getFilter != Filter.INCLUDE) {
-      query.setFilter(query.getFilter.accept(new LocalNameVisitor(sft), null).asInstanceOf[Filter])
+      query.setFilter(query.getFilter.accept(new QueryPlanFilterVisitor(sft), null).asInstanceOf[Filter])
     }
   }
 

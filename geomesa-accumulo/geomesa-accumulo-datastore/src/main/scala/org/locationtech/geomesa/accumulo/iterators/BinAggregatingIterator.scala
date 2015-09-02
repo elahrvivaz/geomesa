@@ -114,19 +114,11 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
         } else {
           if (labelIndex == -1) writeGeometry else writeGeometryWithLabel
         }
-      handleValue = if (filter == null) {
-        () => {
-          reusableSf.setBuffer(source.getTopValue.get())
+      handleValue = () => {
+        reusableSf.setBuffer(source.getTopValue.get())
+        if (filter == null || filter.evaluate(reusableSf)) {
           topKey = source.getTopKey
           writeBin(reusableSf)
-        }
-      } else {
-        () => {
-          reusableSf.setBuffer(source.getTopValue.get())
-          if (filter.evaluate(reusableSf)) {
-            topKey = source.getTopKey
-            writeBin(reusableSf)
-          }
         }
       }
     }

@@ -65,7 +65,7 @@ class Z2IdxStrategyTest extends Specification with TestWithDataStore {
   val queryPlanner = new QueryPlanner(sft, SerializationType.KRYO, null, ds, NoOpHints)
   val output = ExplainNull
 
-  "Z3IdxStrategy" should {
+  "Z2IdxStrategy" should {
     "print values" in {
       skipped("used for debugging")
       ds.connector.createScanner(ds.getTableName(sftName, Z2Table), new Authorizations()).foreach { r =>

@@ -492,7 +492,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       }
       val iter = explain.split("\n").find(_.startsWith("Iterators"))
       iter must beSome
-      iter.get must not contain(classOf[KryoLazyFilterTransformIterator].getCanonicalName)
+      iter.get must not contain "cql"
     }
 
     "create key plan that does not use STII when given something larger than the Whole World bbox" in {

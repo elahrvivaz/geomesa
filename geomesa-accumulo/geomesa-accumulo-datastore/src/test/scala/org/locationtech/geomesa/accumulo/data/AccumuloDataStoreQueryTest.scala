@@ -136,7 +136,7 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
       val sft = createNewSchema("name:String,geom:Point:srid=4326,dtg:Date")
 
       val randVal: (Double, Double) => Double = {
-        val r = new Random(System.nanoTime())
+        val r = new Random(-9757)
         (low, high) => {
           (r.nextDouble() * (high - low)) + low
         }
@@ -256,13 +256,10 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
 
       val query = new Query(sft.getTypeName, ECQL.toFilter("BBOX(geom,40,40,50,50)"))
       query.getHints.put(BIN_TRACK_KEY, "name")
-      val queryPlanner = new QueryPlanner(sft, ds.getFeatureEncoding(sft),
-        ds.getIndexSchemaFmt(sft.getTypeName), ds, ds.strategyHints(sft))
-      val results = queryPlanner.runQuery(query, Some(StrategyType.Z2)).map(_.getAttribute(BIN_ATTRIBUTE_INDEX)).toSeq
-      forall(results)(_ must beAnInstanceOf[Array[Byte]])
-      val bins = results.flatMap(_.asInstanceOf[Array[Byte]].grouped(16).map(Convert2ViewerFunction.decode))
-      bins must haveSize(2)
-      bins.map(_.trackId) must containAllOf(Seq("name1", "name2").map(_.hashCode.toString))
+      query.getHints.put(BIN_BATCH_SIZE_KEY, 1000)
+      val results = ds.getFeatureSource(sft.getTypeName).getFeatures(query).features().map(_.getAttribute(BIN_ATTRIBUTE_INDEX))
+      val bins = results.flatMap(_.asInstanceOf[Array[Byte]].grouped(16).map(Convert2ViewerFunction.decode)).toSeq
+      bins.map(_.trackId) must containTheSameElementsAs(Seq("name1", "name2").map(_.hashCode.toString))
     }
 
     "kill queries after a configurable timeout" in {
@@ -311,8 +308,8 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
       expectStrategy("AttributeIdxStrategy")
 
       query.getHints.remove(QUERY_STRATEGY_KEY)
-      viewParams.put("STRATEGY", "ST")
-      expectStrategy("STIdxStrategy")
+      viewParams.put("STRATEGY", "Z2")
+      expectStrategy("Z2IdxStrategy")
 
       success
     }
