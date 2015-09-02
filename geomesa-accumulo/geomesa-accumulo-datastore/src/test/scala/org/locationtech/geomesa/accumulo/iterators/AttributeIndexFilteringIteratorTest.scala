@@ -119,7 +119,7 @@ class AttributeIndexFilteringIteratorTest extends Specification with TestWithDat
       val filter = ff.and(ECQL.toFilter("name = 'b'"), ECQL.toFilter("BBOX(geom, 30, 30, 50, 50)"))
       val query = new Query(sftName, filter, Array("geom"))
       QueryStrategyDecider.chooseStrategies(sft, query, hints, None).head must
-          beAnInstanceOf[STIdxStrategy]
+          beAnInstanceOf[Z2IdxStrategy]
 
       val features = fs.getFeatures(query)
 

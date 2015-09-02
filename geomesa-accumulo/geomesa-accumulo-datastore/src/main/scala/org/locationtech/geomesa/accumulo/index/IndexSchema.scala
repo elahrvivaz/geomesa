@@ -327,6 +327,7 @@ object IndexSchema extends RegexParsers with Logging {
  *
  * @param separator
  */
+@deprecated("custom index schemas are no longer supported")
 class IndexSchemaBuilder(separator: String) {
 
   import org.locationtech.geomesa.accumulo.index.IndexSchema._

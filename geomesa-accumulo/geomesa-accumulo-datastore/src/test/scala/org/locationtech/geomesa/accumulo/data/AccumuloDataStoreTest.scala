@@ -45,53 +45,10 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
     "create a store" in {
       ds must not beNull
     }
-    "create a schema" in {
+    "create and retrieve a schema" in {
       val sftName = "createSchemaTest"
       val sft = createSchema(sftName)
       ds.getSchema(sftName) mustEqual sft
-    }
-    "create and retrieve a schema with a custom IndexSchema" in {
-      val sftName = "schematestCustomSchema"
-      val indexSchema =
-        new IndexSchemaBuilder("~")
-          .randomNumber(3)
-          .indexOrDataFlag()
-          .constant(sftName)
-          .geoHash(0, 3)
-          .date("yyyyMMdd")
-          .nextPart()
-          .geoHash(3, 2)
-          .nextPart()
-          .id()
-          .build()
-      val sft = SimpleFeatureTypes.createType(sftName, defaultSchema)
-      sft.setDtgField("dtg")
-      sft.setStIndexSchema(indexSchema)
-      ds.createSchema(sft)
-
-      val retrievedSft = ds.getSchema(sftName)
-
-      retrievedSft must equalTo(sft)
-      retrievedSft.getDtgField must beSome("dtg")
-      retrievedSft.getStIndexSchema mustEqual indexSchema
-      retrievedSft.getStIndexSchema mustEqual indexSchema
-    }
-    "create and retrieve a schema without a custom IndexSchema" in {
-      val sftName = "schematestDefaultSchema"
-      val sft = SimpleFeatureTypes.createType(sftName, defaultSchema)
-      sft.setDtgField("dtg")
-
-      val mockMaxShards = ds.DEFAULT_MAX_SHARD
-      val indexSchema = ds.computeSpatioTemporalSchema(sft)
-
-      ds.createSchema(sft)
-
-      val retrievedSft = ds.getSchema(sftName)
-
-      mockMaxShards mustEqual 0
-      retrievedSft mustEqual sft
-      retrievedSft.getDtgField must beSome("dtg")
-      retrievedSft.getStIndexSchema mustEqual indexSchema
     }
     "return NULL when a feature name does not exist" in {
       ds.getSchema("testTypeThatDoesNotExist") must beNull
@@ -559,7 +516,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       val features = SelfClosingIterator(ds.getFeatureSource(sftName1).getFeatures(query).features).toList
       features.size mustEqual 1
       features.head.getID mustEqual "fid-sft1"
-    }.pendingUntilFixed("date queries before 1970 are not supported")
+    }
 
     "transform index value data correctly" in {
       val sftName = "indexValueTransform"

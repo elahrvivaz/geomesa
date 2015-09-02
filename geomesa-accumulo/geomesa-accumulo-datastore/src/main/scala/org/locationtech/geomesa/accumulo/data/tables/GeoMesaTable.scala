@@ -63,7 +63,7 @@ trait GeoMesaTable {
 object GeoMesaTable {
 
   val allTables: Seq[GeoMesaTable] =
-    Seq(RecordTable, SpatioTemporalTable, AttributeTableV5, AttributeTable, Z2Table, Z3Table)
+    Seq(RecordTable, Z2Table, Z3Table, AttributeTable, SpatioTemporalTable, AttributeTableV5)
 
   def getTables(sft: SimpleFeatureType): Seq[GeoMesaTable] = {
     val enabled = sft.getEnabledTables.map(_.split(",").toSeq).getOrElse(AvailableTables.AllTables)

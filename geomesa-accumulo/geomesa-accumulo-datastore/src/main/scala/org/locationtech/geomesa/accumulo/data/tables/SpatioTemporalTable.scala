@@ -23,6 +23,7 @@ import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.collection.JavaConversions._
 
+@deprecated("use z2")
 object SpatioTemporalTable extends GeoMesaTable with Logging {
 
   val INDEX_FLAG = "0"
