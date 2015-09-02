@@ -33,7 +33,7 @@ object Z2Table extends GeoMesaTable {
   val BIN_CF  = new Text("b")
   val MAP_CF  = new Text("m")
 
-  val SHARDS: Array[Array[Byte]] = Array.iterate(Array(0.toByte), 10)(i => Array(i.head))
+  val SHARDS: Seq[Array[Byte]] = (0 until 10).map(i => Array(i.toByte))
   val POINT_INDICATOR = 0.toByte
 
   private val NON_POINT_LO: Array[Byte] = Array.fill(4)(0)
@@ -122,6 +122,22 @@ object Z2Table extends GeoMesaTable {
   def encodeTime(time: Long): Array[Byte] = Longs.toByteArray(time ^ Long.MinValue).take(6)
 
   def encodeTime(time: Option[Long]): Array[Byte] = encodeTime(time.getOrElse(System.currentTimeMillis()))
+
+  def decodeRow(sft: SimpleFeatureType, row: Array[Byte]): Unit = {
+    val prefixLength = sft.getTableSharingPrefix.getBytes(Charsets.UTF_8).length
+    val prefix = new String(row.slice(0, prefixLength), Charsets.UTF_8)
+    val shard = row(prefixLength)
+    val zhi = row.slice(prefixLength + 1, prefixLength + 5)
+    val time = Longs.fromByteArray(row.slice(prefixLength + 5, prefixLength + 11) ++ Array(0.toByte, 0.toByte)) ^ Long.MinValue
+    val zlo = row.slice(prefixLength + 11, prefixLength + 15)
+    val id = new String(row.slice(prefixLength + 15, row.length), Charsets.UTF_8)
+    val z = Z2(Longs.fromByteArray(zhi ++ zlo))
+    println(s"prefix: $prefix")
+    println(s"shard: $shard")
+    println(s"time: ${new Date(time)}")
+    println(s"z: $z ${Z2SFC.invert(z)}")
+    println(s"id: $id")
+  }
 
   override def configureTable(sft: SimpleFeatureType, table: String, tableOps: TableOperations): Unit = {
     tableOps.setProperty(table, Property.TABLE_SPLIT_THRESHOLD.getKey, "128M")

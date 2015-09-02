@@ -8,8 +8,6 @@
 
 package org.locationtech.geomesa.accumulo.data
 
-import java.text.SimpleDateFormat
-
 import com.vividsolutions.jts.geom.Coordinate
 import org.geotools.data._
 import org.geotools.factory.{CommonFactoryFinder, Hints}
@@ -302,8 +300,8 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
       query.getHints.put(QUERY_STRATEGY_KEY, StrategyType.ATTRIBUTE)
       expectStrategy("AttributeIdxStrategy")
 
-      query.getHints.put(QUERY_STRATEGY_KEY, StrategyType.ST)
-      expectStrategy("STIdxStrategy")
+      query.getHints.put(QUERY_STRATEGY_KEY, StrategyType.Z2)
+      expectStrategy("Z2IdxStrategy")
 
       val viewParams =  new java.util.HashMap[String, String]
       query.getHints.put(Hints.VIRTUAL_TABLE_PARAMETERS, viewParams)

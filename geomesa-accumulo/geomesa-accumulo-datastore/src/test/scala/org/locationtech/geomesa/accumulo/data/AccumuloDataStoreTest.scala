@@ -25,7 +25,7 @@ import org.joda.time.DateTime
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index._
-import org.locationtech.geomesa.accumulo.iterators.IndexIterator
+import org.locationtech.geomesa.accumulo.iterators.{KryoLazyFilterTransformIterator, IndexIterator}
 import org.locationtech.geomesa.accumulo.util.{CloseableIterator, SelfClosingIterator}
 import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -271,7 +271,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       val c = ds.connector
 
       c.tableOperations().exists(defaultTable) must beTrue
-      c.tableOperations().exists(s"${defaultTable}_${encodedSFT}_st_idx") must beTrue
+      c.tableOperations().exists(s"${defaultTable}_${encodedSFT}_z2") must beTrue
       c.tableOperations().exists(s"${defaultTable}_${encodedSFT}_records") must beTrue
       c.tableOperations().exists(s"${defaultTable}_${encodedSFT}_attr_idx") must beTrue
     }
@@ -387,7 +387,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       ds.cachingConfig must beFalse
     }
 
-    "Allow extra attributes in the STIDX entries" in {
+    "Query with projection to date/geom/attribute" in {
       val sftName = "StidxExtraAttributeTest"
       val spec =
         s"name:String:$OPT_INDEX_VALUE=true,dtg:Date:$OPT_INDEX_VALUE=true,*geom:Point:srid=4326,attr2:String"
@@ -404,7 +404,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
         sf
       }
 
-      val baseTime = features(0).getAttribute("dtg").asInstanceOf[Date].getTime
+      val baseTime = features.head.getAttribute("dtg").asInstanceOf[Date].getTime
 
       val fs = ds.getFeatureSource(sftName).asInstanceOf[AccumuloFeatureStore]
       fs.addFeatures(new ListFeatureCollection(sft, features))
@@ -412,14 +412,6 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       val query = new Query(sftName, ECQL.toFilter("BBOX(geom, 40.0, 40.0, 50.0, 50.0)"),
         Array("geom", "dtg", "name"))
       val reader = ds.getFeatureReader(sftName, query)
-
-      // verify that the IndexIterator is getting used with the extra field
-      val explain = {
-        val out = new ExplainString
-        ds.explainQuery(query, out)
-        out.toString()
-      }
-      explain must contain(classOf[IndexIterator].getName)
 
       val read = SelfClosingIterator(reader).toList
 
@@ -434,7 +426,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       success
     }
 
-    "Use IndexIterator when projecting to date/geom" in {
+    "Query with projection to date/geom" in {
       val sftName = "StidxExtraAttributeTest2"
       val spec =
         s"name:String:$OPT_INDEX_VALUE=true,dtg:Date:$OPT_INDEX_VALUE=true,*geom:Point:srid=4326,attr2:String"
@@ -460,14 +452,6 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
         Array("geom", "dtg"))
       val reader = ds.getFeatureReader(sftName, query)
 
-      // verify that the IndexIterator is getting used
-      val explain = {
-        val out = new ExplainString
-        ds.explainQuery(query, out)
-        out.toString()
-      }
-      explain must contain(classOf[IndexIterator].getName)
-
       val read = SelfClosingIterator(reader).toList
 
       // verify that all the attributes came back
@@ -483,7 +467,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
 
     "create key plan that uses STII Filter with bbox" in {
       val sftName = "explainLargeBBOXTest1"
-      val sft1 = createSchema(sftName)
+      createSchema(sftName)
       val filter = CQL.toFilter("bbox(geom, -100, -45, 100, 45)")
       val query = new Query(sftName, filter, Array("geom"))
       val explain = {
@@ -491,13 +475,14 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
         ds.explainQuery(query, o)
         o.toString()
       }
-      ds.removeSchema(sftName)
-      explain must contain("STII Filter: [ geom bbox POLYGON ((-100 -45, -100 45, 100 45, 100 -45, -100 -45)) ]")
+      val iter = explain.split("\n").find(_.startsWith("Iterators"))
+      iter must beSome
+      iter.get must contain(classOf[KryoLazyFilterTransformIterator].getCanonicalName)
     }
 
     "create key plan that does not use STII when given the Whole World bbox" in {
       val sftName = "explainLargeBBOXTest2"
-      val sft2 = createSchema(sftName)
+      createSchema(sftName)
       val filter = CQL.toFilter("bbox(geom, -180, -90, 180, 90)")
       val query = new Query(sftName, filter, Array("geom"))
       val explain = {
@@ -505,8 +490,9 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
         ds.explainQuery(query, o)
         o.toString()
       }
-      ds.removeSchema(sftName)
-      explain.split("\n").filter(_.startsWith("Filter:")).toSeq mustEqual Seq("Filter: RECORD[INCLUDE][None]")
+      val iter = explain.split("\n").find(_.startsWith("Iterators"))
+      iter must beSome
+      iter.get must not contain(classOf[KryoLazyFilterTransformIterator].getCanonicalName)
     }
 
     "create key plan that does not use STII when given something larger than the Whole World bbox" in {
@@ -573,14 +559,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       val features = SelfClosingIterator(ds.getFeatureSource(sftName1).getFeatures(query).features).toList
       features.size mustEqual 1
       features.head.getID mustEqual "fid-sft1"
-
-      val explain = {
-        val o = new ExplainString
-        ds.explainQuery(query, o)
-        o.toString()
-      }
-      explain must not contain "GeoHashKeyPlanner: KeyInvalid"
-    }
+    }.pendingUntilFixed("date queries before 1970 are not supported")
 
     "transform index value data correctly" in {
       val sftName = "indexValueTransform"
@@ -651,7 +630,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       val sft = SimpleFeatureTypes.createType(catalog, "name:String:index=true,dtg:Date,*geom:Point:srid=4326")
       ds.createSchema(sft)
       val tables = GeoMesaTable.getTableNames(sft, ds) ++ Seq(catalog)
-      tables must haveSize(6)
+      tables must haveSize(5)
       connector.tableOperations().list().toSeq must containAllOf(tables)
       ds.delete()
       connector.tableOperations().list().toSeq must not(containAnyOf(tables))

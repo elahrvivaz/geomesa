@@ -71,7 +71,7 @@ trait AccumuloDataStoreDefaults {
     val sft = SimpleFeatureTypes.createType(sftName, spec)
     dateField.foreach(sft.setDtgField)
     dataStore.createSchema(sft)
-    sft
+    dataStore.getSchema(sftName)
   }
 
   /**
