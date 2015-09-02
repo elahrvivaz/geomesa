@@ -201,7 +201,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends Logging {
    * of a filter in the 'temporal' filter list.
    */
   private def partitionFilters(filters: Seq[Filter]) = {
-    val (spatial, nonSpatial)   = partitionPrimarySpatials(filters, sft)
+    val (spatial, nonSpatial)         = partitionPrimarySpatials(filters, sft)
     val (temporal, nonSpatioTemporal) = partitionPrimaryTemporals(nonSpatial, sft)
     val (attribute, others)           = partitionIndexedAttributes(nonSpatioTemporal, sft)
     val dateAttribute                 = partitionIndexedAttributes(temporal, sft)._1
