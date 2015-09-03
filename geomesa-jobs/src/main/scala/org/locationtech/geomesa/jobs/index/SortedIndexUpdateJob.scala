@@ -35,7 +35,7 @@ class SortedIndexUpdateJob(args: Args) extends GeoMesaBaseJob(args) {
   // non-serializable resources - need to be lazy and transient so they are available to each mapper
   @transient lazy val ds = DataStoreFinder.getDataStore(dsParams.asJava).asInstanceOf[AccumuloDataStore]
   @transient lazy val sft = ds.getSchema(feature)
-  @transient lazy val indexSchemaFmt = s"%~#s%2#r%${sft.getTypeName}#cstr%0,3#gh%yyyyMMddHH#d::%~#s%3,2#gh::%~#s%#id"
+  @transient lazy val indexSchemaFmt = s"%~#s%20#r%#i%${sft.getTypeName}#cstr%0,3#gh%yyyyMMddHH#d::%~#s%3,2#gh::%~#s%#id"
   @transient lazy val encoding = ds.getFeatureEncoding(sft)
   @transient lazy val featureEncoder = SimpleFeatureSerializers(sft, encoding)
   // this won't use the new schema version, but anything less than version 4 is handled the same way
@@ -97,7 +97,7 @@ class SortedIndexUpdateJob(args: Args) extends GeoMesaBaseJob(args) {
     // schedule a table compaction to remove the deleted entries
     val ds = DataStoreFinder.getDataStore(dsParams.asJava).asInstanceOf[AccumuloDataStore]
     ds.connector.tableOperations().compact(output.table, null, null, true, false)
-    ds.setIndexSchemaFmt(feature, s"%~#s%2#r%${sft.getTypeName}#cstr%0,3#gh%yyyyMMddHH#d::%~#s%3,2#gh::%~#s%#id")
+    ds.setIndexSchemaFmt(feature, s"%~#s%20#r%#i%${sft.getTypeName}#cstr%0,3#gh%yyyyMMddHH#d::%~#s%3,2#gh::%~#s%#id")
     ds.setGeomesaVersion(feature, UPDATE_TO_VERSION)
   }
 }

@@ -80,9 +80,9 @@ class BackCompatibilityTest extends Specification with TestWithDataStore {
 
     queries.foreach { case (q, results) =>
       val filter = ECQL.toFilter(q)
-      doQuery(fs, new Query(sftName, filter)) mustEqual results
+      doQuery(fs, new Query(sftName, filter)) must containTheSameElementsAs(results)
       transforms.foreach { t =>
-        doQuery(fs, new Query(sftName, filter, t)) mustEqual results
+        doQuery(fs, new Query(sftName, filter, t)) must containTheSameElementsAs(results)
       }
     }
   }

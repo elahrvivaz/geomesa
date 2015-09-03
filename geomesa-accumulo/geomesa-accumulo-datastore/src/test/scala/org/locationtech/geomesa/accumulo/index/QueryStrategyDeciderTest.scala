@@ -69,7 +69,7 @@ class QueryStrategyDeciderTest extends Specification {
   def getRecordStrategy(filterString: String) =
     getStrategyT(filterString, ClassTag(classOf[RecordIdxStrategy]))
   def getStStrategy(filterString: String) =
-    getStrategyT(filterString, ClassTag(classOf[STIdxStrategy]))
+    getStrategyT(filterString, ClassTag(classOf[Z2IdxStrategy]))
   def getAttributeIdxStrategy(filterString: String) =
     getStrategyT(filterString, ClassTag(classOf[AttributeIdxStrategy]))
   def getZ3Strategy(filterString: String) =
@@ -353,8 +353,8 @@ class QueryStrategyDeciderTest extends Specification {
     "respect low cardinality attributes regardless of order" in {
       val attr = "low = 'test'"
       val geom = "BBOX(geom, -10,-10,10,10)"
-      getStrategy(s"$attr AND $geom") must beAnInstanceOf[STIdxStrategy]
-      getStrategy(s"$geom AND $attr") must beAnInstanceOf[STIdxStrategy]
+      getStStrategy(s"$attr AND $geom")
+      getStStrategy(s"$geom AND $attr")
     }
 
     "respect cardinality with multiple attributes" in {

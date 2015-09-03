@@ -474,8 +474,10 @@ class AccumuloDataStore(val connector: Connector,
       // this is used for back compatible testing
       val stTable = SpatioTemporalTable.formatTableName(catalogTable, getSchema(sft))
       metadata.insert(sft, ST_IDX_TABLE_KEY, stTable)
-      metadata.insert(sft,SCHEMA_KEY, s"%~#s%2#r%$sft#cstr%0,3#gh%yyyyMMddHH#d::%~#s%3,2#gh::%~#s%#id")
-      connector.tableOperations().create(stTable)
+      metadata.insert(sft,SCHEMA_KEY, s"%~#s%2#r%#i%$sft#cstr%0,3#gh%yyyyMMddHH#d::%~#s%3,2#gh::%~#s%#id")
+      if (!connector.tableOperations().exists(stTable)) {
+        connector.tableOperations().create(stTable)
+      }
     }
     metadata.insert(sft, VERSION_KEY, version.toString)
     metadata.expireCache(sft)
