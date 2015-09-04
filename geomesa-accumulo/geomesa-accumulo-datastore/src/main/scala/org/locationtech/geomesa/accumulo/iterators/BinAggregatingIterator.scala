@@ -283,6 +283,9 @@ object BinAggregatingIterator extends Logging {
   // need to be lazy to avoid class loading issues before init is called
   lazy val BIN_SFT = SimpleFeatureTypes.createType("bin", "bin:String,*geom:Point:srid=4326")
   val BIN_ATTRIBUTE_INDEX = 0 // index of 'bin' attribute in BIN_SFT
+
+  val DEFAULT_PRIORITY = 25
+
   private lazy val zeroPoint = WKTUtils.read("POINT(0 0)")
 
   // configuration keys
@@ -302,12 +305,15 @@ object BinAggregatingIterator extends Logging {
    */
   def configurePrecomputed(sft: SimpleFeatureType,
                            filter: Option[Filter],
-                           batchSize: Int,
-                           sort: Boolean,
-                           priority: Int): IteratorSetting = {
+                           hints: Hints,
+                           priority: Int = DEFAULT_PRIORITY): IteratorSetting = {
     sft.getBinTrackId match {
       case Some(trackId) =>
-        val is = configureDynamic(sft, filter, trackId, sft.getGeomField, sft.getDtgField, None, batchSize, sort, priority)
+        val geom = sft.getGeomField
+        val dtg = sft.getDtgField
+        val batch = hints.getBinBatchSize
+        val sort = hints.isBinSorting
+        val is = configureDynamic(sft, filter, trackId, geom, dtg, None, batch , sort, priority)
         is.addOption(BIN_CF_OPT, "true")
         is
       case None => throw new RuntimeException(s"No default trackId field found in SFT $sft")
@@ -342,9 +348,9 @@ object BinAggregatingIterator extends Logging {
    * Configure based on query hints
    */
   def configureDynamic(sft: SimpleFeatureType,
-                       hints: Hints,
                        filter: Option[Filter],
-                       priority: Int): IteratorSetting = {
+                       hints: Hints,
+                       priority: Int = DEFAULT_PRIORITY): IteratorSetting = {
     val trackId = hints.getBinTrackIdField
     val geom = hints.getBinGeomField.getOrElse(sft.getGeomField)
     val dtg = hints.getBinDtgField.orElse(sft.getDtgField)
@@ -358,15 +364,11 @@ object BinAggregatingIterator extends Logging {
   /**
    * Determines if the requested fields match the precomputed bin data
    */
-  def canUsePrecomputedBins(sft: SimpleFeatureType,
-                            trackId: String,
-                            geom: Option[String],
-                            dtg: Option[String],
-                            label: Option[String]): Boolean = {
-     sft.getBinTrackId.exists(_ == trackId) &&
-        geom.forall(_ == sft.getGeomField) &&
-        dtg == sft.getDtgField &&
-        label.isEmpty
+  def canUsePrecomputedBins(sft: SimpleFeatureType, hints: Hints): Boolean = {
+    sft.getBinTrackId.exists(_ == hints.getBinTrackIdField) &&
+        hints.getBinGeomField.forall(_ == sft.getGeomField) &&
+        hints.getBinDtgField == sft.getDtgField &&
+        hints.getBinLabelField.isEmpty
   }
 
   /**

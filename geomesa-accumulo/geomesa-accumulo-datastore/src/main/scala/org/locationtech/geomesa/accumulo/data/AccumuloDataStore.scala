@@ -608,7 +608,7 @@ class AccumuloDataStore(val connector: Connector,
       sft.setSchemaVersion(metadata.readRequired(featureName, VERSION_KEY).toInt)
       metadata.read(featureName, DTGFIELD_KEY).foreach(sft.setDtgField)
       metadata.read(featureName, SCHEMA_KEY).foreach(sft.setStIndexSchema)
-      metadata.read(featureName, TABLES_ENABLED_KEY).foreach(sft.setEnabledTables)
+      metadata.read(featureName, TABLES_ENABLED_KEY).filterNot(_.isEmpty).foreach(sft.setEnabledTables)
       // If no data is written, we default to 'false' in order to support old tables.
       if (metadata.read(featureName, SHARED_TABLES_KEY).exists(_.toBoolean)) {
         sft.setTableSharing(true)

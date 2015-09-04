@@ -9,22 +9,21 @@
 package org.locationtech.geomesa.accumulo.iterators
 
 import java.util.Map.Entry
-import java.util.{Collection => jCollection, Map => jMap}
+import java.util.{Map => jMap}
 
 import com.typesafe.scalalogging.slf4j.Logging
 import com.vividsolutions.jts.geom._
 import org.apache.accumulo.core.client.IteratorSetting
-import org.apache.accumulo.core.data.{Range => aRange, _}
+import org.apache.accumulo.core.data._
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
+import org.geotools.factory.Hints
 import org.geotools.filter.text.ecql.ECQL
 import org.geotools.util.Converters
 import org.locationtech.geomesa.accumulo.index.QueryPlanners._
 import org.locationtech.geomesa.features.ScalaSimpleFeature
-import org.locationtech.geomesa.features.kryo.{KryoBufferSimpleFeature, KryoFeatureSerializer}
-import org.locationtech.geomesa.filter.factory.FastFilterFactory
+import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-import org.locationtech.geomesa.utils.geotools.{GridSnap, SimpleFeatureTypes}
-import org.locationtech.geomesa.utils.text.WKTUtils
+import org.locationtech.geomesa.utils.geotools.{GeometryUtils, GridSnap, SimpleFeatureTypes}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 import org.opengis.filter.expression.Expression
@@ -33,15 +32,12 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 
 /**
- * Density iterator - only works on kryo-encoded point geometries
+ * Density iterator - only works on kryo-encoded geometries
  */
-class KryoLazyDensityIterator extends SortedKeyValueIterator[Key, Value] with Logging {
+class KryoLazyDensityIterator extends KryoLazyAggregatingIterator[(Int, Int), Double] with Logging {
 
   import KryoLazyDensityIterator._
 
-  var sft: SimpleFeatureType = null
-  var source: SortedKeyValueIterator[Key, Value] = null
-  var filter: Filter = null
   var geomIndex: Int = -1
 
   // we snap each point into a pixel and aggregate based on that
@@ -49,26 +45,15 @@ class KryoLazyDensityIterator extends SortedKeyValueIterator[Key, Value] with Lo
   var width: Int = -1
   var height: Int = -1
 
-  // map of our snapped points to accumulated weight
-  var result = mutable.Map.empty[(Int, Int), Double]
-
-  var topKey: Key = null
-  var topValue: Value = new Value()
-  var currentRange: aRange = null
-
-  var handleValue: () => Unit = null
-  var weightFn: (SimpleFeature) => Double = null
+  var writeGeom: (SimpleFeature, DensityResult) => Unit = null
 
   override def init(src: SortedKeyValueIterator[Key, Value],
                     jOptions: jMap[String, String],
                     env: IteratorEnvironment): Unit = {
-    IteratorClassLoader.initClassLoader(getClass)
+    super.init(src, jOptions, env)
 
-    this.source = src.deepCopy(env)
     val options = jOptions.asScala
 
-    sft = SimpleFeatureTypes.createType("", options(SFT_OPT))
-    filter = options.get(CQL_OPT).map(FastFilterFactory.toFilter).orNull
     geomIndex = sft.getGeomIndex
 
     val bounds = options(ENVELOPE_OPT).split(",").map(_.toDouble)
@@ -79,7 +64,7 @@ class KryoLazyDensityIterator extends SortedKeyValueIterator[Key, Value] with Lo
     gridSnap = new GridSnap(envelope, width, height)
 
     // function to get the weight from the feature - defaults to 1.0 unless an attribute is specified
-    weightFn = options.get(WEIGHT_OPT).map(sft.indexOf).map {
+    val weightFn: (SimpleFeature) => Double = options.get(WEIGHT_OPT).map(sft.indexOf).map {
       case i if i == -1 =>
         val expression = ECQL.toExpression(options(WEIGHT_OPT))
         getWeightFromExpression(_: SimpleFeature, expression)
@@ -89,66 +74,25 @@ class KryoLazyDensityIterator extends SortedKeyValueIterator[Key, Value] with Lo
         getWeightFromNonDouble(_: SimpleFeature, i)
     }.getOrElse((sf: SimpleFeature) => 1.0)
 
-    val reusableSf = new KryoFeatureSerializer(sft).getReusableFeature
-    val writeGeom = if (sft.isPoints) {
-      () => writePoint(reusableSf, weightFn(reusableSf))
+    writeGeom = if (sft.isPoints) {
+      (sf, result) => writePoint(sf, weightFn(sf), result)
     } else {
-      () => reusableSf.getDefaultGeometry match {
-        case g: Point           => writePointToResult(g, weightFn(reusableSf))
-        case g: MultiPoint      => writeMultiPoint(g, weightFn(reusableSf))
-        case g: LineString      => writeLineString(g, weightFn(reusableSf))
-        case g: MultiLineString => writeMultiLineString(g, weightFn(reusableSf))
-        case g: MultiPolygon    => writeMultiPolygon(g, weightFn(reusableSf))
-        case g: Geometry        => writePointToResult(g.getCentroid, weightFn(reusableSf))
-      }
-    }
-    handleValue = () => {
-      reusableSf.setBuffer(source.getTopValue.get())
-      if (filter == null || filter.evaluate(reusableSf)) {
-        topKey = source.getTopKey
-        writeGeom()
+      (sf, result) => sf.getDefaultGeometry match {
+        case g: Point           => writePointToResult(g, weightFn(sf), result)
+        case g: MultiPoint      => writeMultiPoint(g, weightFn(sf), result)
+        case g: LineString      => writeLineString(g, weightFn(sf), result)
+        case g: MultiLineString => writeMultiLineString(g, weightFn(sf), result)
+        case g: MultiPolygon    => writeMultiPolygon(g, weightFn(sf), result)
+        case g: Geometry        => writePointToResult(g.getCentroid, weightFn(sf), result)
       }
     }
   }
 
-  override def hasTop: Boolean = topKey != null
-  override def getTopKey: Key = topKey
-  override def getTopValue: Value = topValue
+  override def aggregateResult(sf: SimpleFeature, result: DensityResult): Unit =
+    writeGeom(sf, result)
 
-  override def seek(range: aRange, columnFamilies: jCollection[ByteSequence], inclusive: Boolean): Unit = {
-    currentRange = range
-    source.seek(range, columnFamilies, inclusive)
-    findTop()
-  }
-
-  override def next(): Unit = {
-    if (!source.hasTop) {
-      topKey = null
-      topValue = null
-    } else {
-      findTop()
-    }
-  }
-
-  def findTop(): Unit = {
-    result.clear()
-
-    while (source.hasTop && !currentRange.afterEndKey(source.getTopKey)) {
-      handleValue() // write the record to our aggregated results
-      source.next() // Advance the source iterator
-    }
-
-    if (result.isEmpty) {
-      topKey = null // hasTop will be false
-      topValue = null
-    } else {
-      if (topValue == null) {
-        // only re-create topValue if it was nulled out
-        topValue = new Value()
-      }
-      topValue.set(KryoLazyDensityIterator.encodeResult(result))
-    }
-  }
+  override def encodeResult(result: DensityResult): Array[Byte] =
+    KryoLazyDensityIterator.encodeResult(result)
 
   /**
    * Gets the weight for a feature from a double attribute
@@ -163,7 +107,9 @@ class KryoLazyDensityIterator extends SortedKeyValueIterator[Key, Value] with Lo
    */
   private def getWeightFromNonDouble(sf: SimpleFeature, i: Int): Double = {
     val d = sf.getAttribute(i)
-    if (d == null) 0.0 else Converters.convert(d, classOf[java.lang.Double])
+    if (d == null) { 0.0 } else {
+      Option(Converters.convert(d, classOf[java.lang.Double]).asInstanceOf[Double]).getOrElse(1.0)
+    }
   }
 
   /**
@@ -177,43 +123,46 @@ class KryoLazyDensityIterator extends SortedKeyValueIterator[Key, Value] with Lo
   /**
    * Writes a density record from a feature that has a point geometry
    */
-  private def writePoint(sf: KryoBufferSimpleFeature, weight: Double): Unit =
-    writePointToResult(sf.getAttribute(geomIndex).asInstanceOf[Point], weight)
+  def writePoint(sf: SimpleFeature, weight: Double, result: DensityResult): Unit =
+    writePointToResult(sf.getAttribute(geomIndex).asInstanceOf[Point], weight, result)
 
-
-  def writeMultiPoint(geom: MultiPoint, weight: Double): Unit = {
+  def writeMultiPoint(geom: MultiPoint, weight: Double, result: DensityResult): Unit = {
     (0 until geom.getNumGeometries).foreach { i =>
-      writePointToResult(geom.getGeometryN(i).asInstanceOf[Point], weight / geom.getNumGeometries)
+      writePointToResult(geom.getGeometryN(i).asInstanceOf[Point], weight / geom.getNumGeometries, result)
     }
   }
 
   /** take in a line string and seed in points between each window of two points
     * take the set of the resulting points to remove duplicate endpoints */
-  def writeLineString(geom: LineString, weight: Double): Unit = {
+  def writeLineString(geom: LineString, weight: Double, result: DensityResult): Unit = {
     val points = geom.getCoordinates.sliding(2)
     val cells = points.flatMap { case Array(p0, p1) => gridSnap.generateLineCoordSet(p0, p1) }.toSet
-    cells.foreach(writePointToResult(_, weight / cells.size))
+    cells.foreach(writePointToResult(_, weight / cells.size, result))
   }
 
-  def writeMultiLineString(geom: MultiLineString, weight: Double): Unit = {
+  def writeMultiLineString(geom: MultiLineString, weight: Double, result: DensityResult): Unit = {
     (0 until geom.getNumGeometries).foreach { i =>
-      writeLineString(geom.getGeometryN(i).asInstanceOf[LineString], weight / geom.getNumGeometries)
+      writeLineString(geom.getGeometryN(i).asInstanceOf[LineString], weight / geom.getNumGeometries, result)
     }
   }
 
-  def writeMultiPolygon(geom: MultiPolygon, weight: Double): Unit = {
+  def writePolygon(geom: Polygon, weight: Double, result: DensityResult): Unit = {
+    writePointToResult(geom.getCentroid, weight, result)
+  }
+
+  def writeMultiPolygon(geom: MultiPolygon, weight: Double, result: DensityResult): Unit = {
     (0 until geom.getNumGeometries).foreach { i =>
-      writePointToResult(geom.getGeometryN(i).getCentroid, weight / geom.getNumGeometries)
+      writePolygon(geom.getGeometryN(i).asInstanceOf[Polygon], weight / geom.getNumGeometries, result)
     }
   }
 
-  protected[iterators] def writePointToResult(pt: Point, weight: Double): Unit =
-    writeSnappedPoint((gridSnap.i(pt.getX), gridSnap.j(pt.getY)), weight)
+  protected[iterators] def writePointToResult(pt: Point, weight: Double, result: DensityResult): Unit =
+    writeSnappedPoint((gridSnap.i(pt.getX), gridSnap.j(pt.getY)), weight, result)
 
-  protected[iterators] def writePointToResult(pt: Coordinate, weight: Double): Unit =
-    writeSnappedPoint((gridSnap.i(pt.x), gridSnap.j(pt.y)), weight)
+  protected[iterators] def writePointToResult(pt: Coordinate, weight: Double, result: DensityResult): Unit =
+    writeSnappedPoint((gridSnap.i(pt.x), gridSnap.j(pt.y)), weight, result)
 
-  protected[iterators] def writeSnappedPoint(xy: (Int, Int), weight: Double): Unit =
+  protected[iterators] def writeSnappedPoint(xy: (Int, Int), weight: Double, result: DensityResult): Unit =
     result.update(xy, result.getOrElse(xy, 0.0) + weight)
 
   override def deepCopy(env: IteratorEnvironment): SortedKeyValueIterator[Key, Value] = ???
@@ -221,13 +170,16 @@ class KryoLazyDensityIterator extends SortedKeyValueIterator[Key, Value] with Lo
 
 object KryoLazyDensityIterator extends Logging {
 
+  import KryoLazyAggregatingIterator.{CQL_OPT, SFT_OPT}
+
+  type DensityResult = mutable.Map[(Int, Int), Double]
+
   // need to be lazy to avoid class loading issues before init is called
   lazy val DENSITY_SFT = SimpleFeatureTypes.createType("density", "result:String,*geom:Point:srid=4326")
-  private lazy val zeroPoint = WKTUtils.read("POINT(0 0)")
+
+  val DEFAULT_PRIORITY = 25
 
   // configuration keys
-  private val SFT_OPT      = "sft"
-  private val CQL_OPT      = "cql"
   private val ENVELOPE_OPT = "envelope"
   private val GRID_OPT     = "grid"
   private val WEIGHT_OPT   = "weight"
@@ -237,13 +189,14 @@ object KryoLazyDensityIterator extends Logging {
    */
   def configure(sft: SimpleFeatureType,
                 filter: Option[Filter],
-                envelope: Envelope,
-                gridWidth: Int,
-                gridHeight: Int,
-                weightAttribute: Option[String],
-                priority: Int): IteratorSetting = {
+                hints: Hints,
+                priority: Int = DEFAULT_PRIORITY): IteratorSetting = {
+    import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
+    val envelope = hints.getDensityEnvelope.get
+    val (width, height) = hints.getDensityBounds.get
+    val weight = hints.getDensityWeight
     configure(new IteratorSetting(priority, "density-iter", classOf[KryoLazyDensityIterator]),
-      sft, filter, envelope, gridWidth, gridHeight, weightAttribute)
+      sft, filter, envelope, width, height, weight)
   }
 
   protected[iterators] def configure(is: IteratorSetting,
@@ -267,7 +220,7 @@ object KryoLazyDensityIterator extends Logging {
    */
   def kvsToFeatures(): FeatureFunction = {
     val sf = new ScalaSimpleFeature("", DENSITY_SFT)
-    sf.setAttribute(1, zeroPoint)
+    sf.setAttribute(1, GeometryUtils.zeroPoint)
     (e: Entry[Key, Value]) => {
       // set the value directly in the array, as we don't support byte arrays as properties
       // TODO GEOMESA-823 support byte arrays natively

@@ -129,18 +129,6 @@ case class QueryPlanner(sft: SimpleFeatureType,
     output(s"Sort: ${Option(query.getSortBy).filter(_.nonEmpty).map(_.mkString(", ")).getOrElse("none")}")
     output(s"Transforms: ${query.getHints.getTransformDefinition.getOrElse("None")}")
 
-    if (query.getHints.isDensityQuery) { // add the bbox from the density query to the filter
-      val env = query.getHints.getDensityEnvelope.get.asInstanceOf[ReferencedEnvelope]
-      val bbox = ff.bbox(ff.property(sft.getGeometryDescriptor.getLocalName), env)
-      if (query.getFilter == Filter.INCLUDE) {
-        query.setFilter(bbox)
-      } else {
-        // add the bbox - try to not duplicate an existing bbox
-        val filter = andFilters((decomposeAnd(query.getFilter) ++ Seq(bbox)).distinct)
-        query.setFilter(filter)
-      }
-    }
-
     implicit val timings = new TimingsImpl
     val queryPlans = profile({
       val requestedStrategy = requested.orElse(query.getHints.getRequestedStrategy)
@@ -231,6 +219,20 @@ object QueryPlanner extends Logging {
     QueryPlanner.setReturnSft(query, sft)
     // handle any params passed in through geoserver
     QueryPlanner.handleGeoServerParams(query)
+
+    // add the bbox from the density query to the filter
+    if (query.getHints.isDensityQuery) {
+      val env = query.getHints.getDensityEnvelope.get.asInstanceOf[ReferencedEnvelope]
+      val bbox = ff.bbox(ff.property(sft.getGeometryDescriptor.getLocalName), env)
+      if (query.getFilter == Filter.INCLUDE) {
+        query.setFilter(bbox)
+      } else {
+        // add the bbox - try to not duplicate an existing bbox
+        val filter = andFilters((decomposeAnd(query.getFilter) ++ Seq(bbox)).distinct)
+        query.setFilter(filter)
+      }
+    }
+
     // update the filter to remove namespaces and handle null property names
     if (query.getFilter != null && query.getFilter != Filter.INCLUDE) {
       query.setFilter(query.getFilter.accept(new QueryPlanFilterVisitor(sft), null).asInstanceOf[Filter])
@@ -380,9 +382,9 @@ object QueryPlanner extends Logging {
       BinAggregatingIterator.BIN_SFT
     } else if (query.getHints.isDensityQuery) {
       KryoLazyDensityIterator.DENSITY_SFT
-    } else if (query.getHints.containsKey(TEMPORAL_DENSITY_KEY)) {
+    } else if (query.getHints.isTemporalDensityQuery) {
       TemporalDensityIterator.createFeatureType(baseSft)
-    } else if (query.getHints.containsKey(MAP_AGGREGATION_KEY)) {
+    } else if (query.getHints.isMapAggregatingQuery) {
       val mapAggregationAttribute = query.getHints.get(MAP_AGGREGATION_KEY).asInstanceOf[String]
       val spec = MapAggregatingIterator.projectedSFTDef(mapAggregationAttribute, baseSft)
       SimpleFeatureTypes.createType(baseSft.getTypeName, spec)

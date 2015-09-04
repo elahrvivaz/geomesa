@@ -59,23 +59,13 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     val fp = FILTERING_ITER_PRIORITY
 
     val (iterators, kvsToFeatures, colFamily) = if (hints.isBinQuery) {
-      val trackId = hints.getBinTrackIdField
-      val geom = hints.getBinGeomField
-      val dtg = hints.getBinDtgField
-      val label = hints.getBinLabelField
-
-      val batchSize = hints.getBinBatchSize
-      val sort = hints.isBinSorting
       // if possible, use the pre-computed values
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
-        if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, trackId, geom, dtg, label)) {
-          (Seq(BinAggregatingIterator.configurePrecomputed(sft, allFilter, batchSize, sort, fp)), Z2Table.BIN_CF)
+        if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, allFilter, hints)), Z2Table.BIN_CF)
         } else {
-          val binDtg = dtg.orElse(dtgField)
-          val binGeom = geom.getOrElse(sft.getGeomField)
-          val iter = BinAggregatingIterator.configureDynamic(sft, allFilter, trackId, binGeom, binDtg, label,
-            batchSize, sort, fp)
+          val iter = BinAggregatingIterator.configureDynamic(sft, allFilter, hints)
           (Seq(iter), Z2Table.FULL_CF)
         }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf)
@@ -90,11 +80,13 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
         (sft, Z2Table.FULL_CF)
       }
       if (hints.isDensityQuery) {
-        val envelope = hints.getDensityEnvelope.get
-        val (width, height) = hints.getDensityBounds.get
-        val weight = hints.getDensityWeight
-        val iter = KryoLazyDensityIterator.configure(cfSft, allFilter, envelope, width, height, weight, fp)
+        val iter = KryoLazyDensityIterator.configure(cfSft, allFilter, hints, fp)
         (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), cf)
+//      } else if (hints.isTemporalDensityQuery) {
+
+      } else if (hints.isMapAggregatingQuery) {
+        val iter = KryoLazyMapAggregatingIterator.configure(cfSft, allFilter, hints.mapAggregatingAttribute)
+        (Seq(iter), queryPlanner.defaultKVsToFeatures(hints), cf)
       } else {
         val iters = (allFilter, transforms) match {
           case (None, None) => Seq.empty

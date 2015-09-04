@@ -70,33 +70,22 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     val fp = FILTERING_ITER_PRIORITY
 
     val (iterators, kvsToFeatures, colFamily) = if (hints.isBinQuery) {
-      val trackId = hints.getBinTrackIdField
-      val geom = hints.getBinGeomField
-      val dtg = hints.getBinDtgField
-      val label = hints.getBinLabelField
-
-      val batchSize = hints.getBinBatchSize
-      val sort = hints.isBinSorting
-
       // if possible, use the pre-computed values
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
-        if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, trackId, geom, dtg, label)) {
-          (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, batchSize, sort, fp)), Z3Table.BIN_CF)
+        if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, hints)), Z3Table.BIN_CF)
         } else {
-          val binDtg = dtg.orElse(dtgField) // dtgField is always defined if we're using z3
-          val binGeom = geom.getOrElse(sft.getGeomField)
-          val iter = BinAggregatingIterator.configureDynamic(sft, ecql, trackId, binGeom, binDtg, label,
-            batchSize, sort, fp)
+          val iter = BinAggregatingIterator.configureDynamic(sft, ecql, hints)
           (Seq(iter), Z3Table.FULL_CF)
         }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf)
     } else if (hints.isDensityQuery) {
-      val envelope = hints.getDensityEnvelope.get
-      val (width, height) = hints.getDensityBounds.get
-      val weight = hints.getDensityWeight
-      val iter = KryoLazyDensityIterator.configure(sft, ecql, envelope, width, height, weight, fp)
+      val iter = KryoLazyDensityIterator.configure(sft, ecql, hints)
       (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z3Table.FULL_CF)
+    } else if (hints.isMapAggregatingQuery) {
+      val iter = KryoLazyMapAggregatingIterator.configure(sft, ecql, hints.mapAggregatingAttribute)
+      (Seq(iter), queryPlanner.defaultKVsToFeatures(hints), Z3Table.FULL_CF)
     } else {
       val transforms = for {
         tdef <- hints.getTransformDefinition

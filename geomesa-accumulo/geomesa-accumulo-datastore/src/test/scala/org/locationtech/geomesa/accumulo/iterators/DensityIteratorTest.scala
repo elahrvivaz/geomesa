@@ -150,7 +150,7 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
 
       val q = "(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -78.598118, 37.992204, -78.337364, 38.091238)"
       val density = getDensity(q)
-      density.map(_._3).sum must beGreaterThan(0.0)
+      density.map(_._3).sum must beCloseTo(15.0, 0.1)
     }
 
     "do density calc on a realistic multilinestring" in {
@@ -170,7 +170,7 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
 
       val q = "(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -78.511236, 38.019947, -78.485830, 38.030265)"
       val density = getDensity(q)
-      density.map(_._3).sum must beGreaterThan(0.0)
+      density.map(_._3).sum must beCloseTo(15.0, 0.1)
     }
 
     "do density calc on a realistic linestring" in {
@@ -190,7 +190,7 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
 
       val q = "(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -78.511236, 38.019947, -78.485830, 38.030265)"
       val density = getDensity(q)
-      density.map(_._3).sum must beGreaterThan(0.0)
+      density.map(_._3).sum must beCloseTo(15.0, 0.1)
     }
 
     "do density calc on a simplistic multi polygon" in {
@@ -210,7 +210,7 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
 
       val q = "(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, 0.0, 0.0, 10.0, 10.0)"
       val density = getDensity(q)
-      density.map(_._3).sum must beGreaterThan(12000.0)
+      density.map(_._3).sum must beCloseTo(15.0, 0.1)
     }
 
     "do density calc on a simplistic linestring" in {
@@ -230,7 +230,7 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
 
       val q = "(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, 0.0, 0.0, 10.0, 10.0)"
       val density = getDensity(q)
-      density.map(_._3).sum must beGreaterThan(0.0)
+      density.map(_._3).sum must beCloseTo(15.0, 0.1)
     }
   }
 }
