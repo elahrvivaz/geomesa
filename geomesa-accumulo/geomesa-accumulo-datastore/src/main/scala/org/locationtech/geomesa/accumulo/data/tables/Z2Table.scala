@@ -15,7 +15,8 @@ import com.google.common.primitives.{Bytes, Longs}
 import com.vividsolutions.jts.geom.{Geometry, Point}
 import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
-import org.apache.accumulo.core.data.Mutation
+import org.apache.accumulo.core.data.{Key, Mutation}
+import org.apache.commons.codec.binary.Hex
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
 import org.locationtech.geomesa.accumulo.data.EMPTY_TEXT
@@ -89,22 +90,23 @@ object Z2Table extends GeoMesaTable {
         // flip the first 3 bits to indicate a non-point geom
         // these bits will always be 0 (unused) in the z2 value
         // bits flipped indicate the precision of the z value - creates a box
-        val z2withPrecision: Array[Byte] = if (bits > 32) {
-          // no bits flipped - all 4 bytes are used
+        val z2withPrecision: Array[Byte] = if (bits > 31) {
+          // no bits flipped - all 4 bytes are used - essentially the same as a point
           z2
-        } else if (bits > 24) {
+        } else if (bits > 23) {
           // first bit flipped, last byte zeroed
-          Array((z2.head | 0x80).toByte) ++ z2.tail.take(2) ++ Array[Byte](0)
-        } else if (bits > 16) {
+          Array[Byte]((z2.head | 0x80).toByte, z2(1), z2(2), 0)
+        } else if (bits > 15) {
+          // second bit flipped, last 2 bytes zeroed
+          Array[Byte]((z2.head | 0x40).toByte, z2(1), 0, 0)
+        } else if (bits > 7) {
           // first two bits flipped, last 2 bytes zeroed
-          Array((z2.head | 0xc0).toByte) ++ z2.tail.take(1) ++ Array[Byte](0, 0)
-        } else if (bits > 8) {
-          // first, 3rd bit flipped, last 3 bytes zeroed
-          Array((z2.head | 0xa0).toByte) ++ Array[Byte](0, 0, 0)
+          Array[Byte]((z2.head | 0xc0).toByte, 0, 0, 0)
         } else {
-          // first three bits flipped, everything else zeroed
-          Array[Byte](0xe0.toByte, 0, 0, 0)
+          // third bit flipped, everything else zeroed - this is essentially the whole world
+          Array[Byte](0x20.toByte, 0, 0, 0)
         }
+        // TODO zboxes don't have much of a common prefix???
         getRowKey(sf, dtgIndex, z2withPrecision, NON_POINT_LO)
     }
   }
@@ -137,6 +139,13 @@ object Z2Table extends GeoMesaTable {
     println(s"time: ${new Date(time)}")
     println(s"z: $z ${Z2SFC.invert(z)}")
     println(s"id: $id")
+  }
+
+  def decodeZ(sft: SimpleFeatureType, row: Array[Byte]): (String, String) = {
+    val prefixLength = sft.getTableSharingPrefix.getBytes(Charsets.UTF_8).length
+    val zhi = row.slice(prefixLength + 1, prefixLength + 5)
+    val id = new String(row.slice(prefixLength + 15, row.length), Charsets.UTF_8)
+    (id, Hex.encodeHexString(zhi).grouped(2).mkString(":"))
   }
 
   override def configureTable(sft: SimpleFeatureType, table: String, tableOps: TableOperations): Unit = {

@@ -14,10 +14,14 @@ trait ZN {
   def maxValue: Long
   def apply(z: Long): ZPoint
   def apply(dims: Int*): ZPoint
+
+  // the number of child regions, e.g. for 2 dims it would be 00 01 10 11
+  lazy val subRegions = math.pow(2, dims).toInt
 }
 
 object ZN {
   def apply(dims: Int) = if (dims == 2) Z2 else if (dims == 3) Z3 else throw new NotImplementedError()
+  def toString(z: Long) = (Array.fill(64)("0") ++ z.toBinaryString).takeRight(64).mkString("")
 }
 
 trait ZPoint extends Any {

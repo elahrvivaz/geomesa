@@ -221,8 +221,11 @@ trait FilterTester extends Specification with TestWithDataStore with Logging {
     val query = new Query(sftName, filter)
     modifyQuery(query) // allow for tweaks in subclasses
     val queryCount = fs.getFeatures(query).size
-    logger.debug(s"\nFilter: ${ECQL.toCQL(filter)}\nFullData size: ${mediumDataFeatures.size}: " +
-      s"filter hits: $filterCount query hits: $queryCount")
+    if (queryCount != filterCount) {
+      println(s"\nFilter: ${ECQL.toCQL(filter)}\nFullData size: ${mediumDataFeatures.size}: " +
+          s"filter hits: $filterCount query hits: $queryCount")
+      println(mediumDataFeatures.filter(filter.evaluate).map(_.getDefaultGeometry).mkString("\n"))
+    }
     queryCount mustEqual filterCount
   }
 

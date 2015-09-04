@@ -82,6 +82,8 @@ class ZRangeTest extends Specification {
       forall(ranges) { r =>
         val ret = ZRange.zranges(r._1, r._2, Z3)
         ret.length must beGreaterThan(0)
+        val old = Z3Range.zranges(r._1, r._2)
+        ret.length mustEqual old.length
       }
     }
   }

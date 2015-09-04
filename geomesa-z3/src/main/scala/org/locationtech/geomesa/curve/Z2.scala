@@ -49,10 +49,8 @@ object Z2 extends ZN {
 
   def zBox(geom: Geometry): ZPrefix = {
     val env = geom.getEnvelopeInternal
-    val ll = Z2SFC.index(env.getMinX, env.getMinY)
-    val ur = Z2SFC.index(env.getMaxX, env.getMaxY)
-    ZRange.longestCommonPrefix(ll.z, ur.z, dims, bits)
+    zBox(Z2SFC.index(env.getMinX, env.getMinY), Z2SFC.index(env.getMaxX, env.getMaxY))
   }
 
-  def zBox(ll: Z2, ur: Z2): ZPrefix = ZRange.longestCommonPrefix(ll.z, ur.z, dims, bits)
+  def zBox(ll: Z2, ur: Z2): ZPrefix = ZRange.longestCommonPrefix(ll.z, ur.z, Z2)
 }

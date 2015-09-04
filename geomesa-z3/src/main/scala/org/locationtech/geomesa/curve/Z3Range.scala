@@ -55,7 +55,7 @@ object Z3Range {
     }
 
     // kick off recursion over the narrowed space
-    zranges(commonPrefix, 62 - commonBits, 0, 0)
+    zranges(commonPrefix, 63 - commonBits, 0, 0)
 
     // return our aggregated results
     mq.toSeq
@@ -67,12 +67,12 @@ object Z3Range {
    * @return (common prefix, number of bits in common)
    */
   def longestCommonPrefix3(lower: Long, upper: Long): (Long, Int) = {
-    var bitShift = 62 - 3
+    var bitShift = 63 - 3
     while ((lower >>> bitShift) == (upper >>> bitShift) && bitShift > -1) {
       bitShift -= 3
     }
     bitShift += 3 // increment back to the last valid value
-    (lower & (Long.MaxValue << bitShift), 62 - bitShift)
+    (lower & (Long.MaxValue << bitShift), 63 - bitShift)
   }
 
   /**

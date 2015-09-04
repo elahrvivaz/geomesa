@@ -105,7 +105,7 @@ class Z3IdxStrategyTest extends Specification with TestWithDataStore {
     "work with whole world filter" >> {
       val filter = "bbox(geom, -180, -90, 180, 90)" +
           " AND dtg between '2010-05-07T05:00:00.000Z' and '2010-05-07T08:00:00.000Z'"
-//      queryPlanner.planQuery(new Query(sftName, ECQL.toFilter(filter)), Some(strategy), ExplainPrintln)
+      queryPlanner.planQuery(new Query(sftName, ECQL.toFilter(filter)), Some(strategy), ExplainPrintln)
       val features = execute(filter)
       features must haveSize(4)
       features.map(_.getID.toInt) must containTheSameElementsAs(5 to 8)
