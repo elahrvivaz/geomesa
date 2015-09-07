@@ -14,8 +14,9 @@ import com.vividsolutions.jts.geom.{Geometry, GeometryCollection}
 import org.apache.accumulo.core.data.Range
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
+import org.joda.time.Interval
 import org.locationtech.geomesa.accumulo.data.tables.Z2Table
-import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
+import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.ZRange.ZPrefix
 import org.locationtech.geomesa.curve.{Z2, Z2SFC}
@@ -82,10 +83,11 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       if (hints.isDensityQuery) {
         val iter = KryoLazyDensityIterator.configure(cfSft, allFilter, hints, fp)
         (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), cf)
-//      } else if (hints.isTemporalDensityQuery) {
-
+      } else if (hints.isTemporalDensityQuery) {
+        val iter = KryoLazyTemporalDensityIterator.configure(cfSft, allFilter, hints)
+        (Seq(iter), queryPlanner.defaultKVsToFeatures(hints), cf)
       } else if (hints.isMapAggregatingQuery) {
-        val iter = KryoLazyMapAggregatingIterator.configure(cfSft, allFilter, hints.mapAggregatingAttribute)
+        val iter = KryoLazyMapAggregatingIterator.configure(cfSft, allFilter, hints)
         (Seq(iter), queryPlanner.defaultKVsToFeatures(hints), cf)
       } else {
         val iters = (allFilter, transforms) match {

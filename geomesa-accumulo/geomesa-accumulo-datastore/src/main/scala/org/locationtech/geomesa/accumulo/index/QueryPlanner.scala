@@ -48,6 +48,8 @@ import scala.collection.JavaConverters._
 import scala.reflect.ClassTag
 import scala.util.Try
 
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+
 /**
  * Executes a query against geomesa
  */
@@ -102,9 +104,9 @@ case class QueryPlanner(sft: SimpleFeatureType,
     }
 
     def reduce(iter: SFIter): SFIter = if (query.getHints.isTemporalDensityQuery) {
-      TemporalDensityIterator.reduceTemporalFeatures(iter, query)
+      KryoLazyTemporalDensityIterator.reduceTemporalFeatures(iter, query)
     } else if (query.getHints.isMapAggregatingQuery) {
-      MapAggregatingIterator.reduceMapAggregationFeatures(iter, query)
+      KryoLazyMapAggregatingIterator.reduceMapAggregationFeatures(iter, query)
     } else {
       iter
     }
@@ -383,10 +385,10 @@ object QueryPlanner extends Logging {
     } else if (query.getHints.isDensityQuery) {
       KryoLazyDensityIterator.DENSITY_SFT
     } else if (query.getHints.isTemporalDensityQuery) {
-      TemporalDensityIterator.createFeatureType(baseSft)
+      KryoLazyTemporalDensityIterator.createFeatureType(baseSft)
     } else if (query.getHints.isMapAggregatingQuery) {
       val mapAggregationAttribute = query.getHints.get(MAP_AGGREGATION_KEY).asInstanceOf[String]
-      val spec = MapAggregatingIterator.projectedSFTDef(mapAggregationAttribute, baseSft)
+      val spec = KryoLazyMapAggregatingIterator.createMapSft(baseSft, mapAggregationAttribute)
       SimpleFeatureTypes.createType(baseSft.getTypeName, spec)
     } else {
       query.getHints.getTransformSchema.getOrElse(baseSft)

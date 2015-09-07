@@ -15,6 +15,7 @@ import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.geotools.data.Query
+import org.geotools.factory.Hints
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanner.SFIter
@@ -72,8 +73,9 @@ object KryoLazyMapAggregatingIterator extends Logging {
    */
   def configure(sft: SimpleFeatureType,
                 filter: Option[Filter],
-                mapAttribute: String,
+                hints: Hints,
                 priority: Int = DEFAULT_PRIORITY): IteratorSetting = {
+    val mapAttribute = hints.mapAggregatingAttribute
     val is = new IteratorSetting(priority, "map-aggregate-iter", classOf[KryoLazyMapAggregatingIterator])
     is.addOption(SFT_OPT, SimpleFeatureTypes.encodeType(sft))
     is.addOption(MAP_ATTRIBUTE, mapAttribute)

@@ -31,9 +31,9 @@ import org.opengis.filter.Filter
 import scala.collection.JavaConverters._
 
 /**
- * Iterator that expands the z3 density iterator by adding support for non-kryo serialization types and
- * non-point geoms.
+ * Iterator that expands the z3 density iterator by adding support for non-kryo serialization types.
  */
+@deprecated
 class DensityIterator extends KryoLazyDensityIterator with Logging {
 
   var deserializer: SimpleFeatureDeserializer = null
@@ -84,6 +84,7 @@ class DensityIterator extends KryoLazyDensityIterator with Logging {
   }
 }
 
+@deprecated
 object DensityIterator extends Logging {
 
   /**

@@ -14,6 +14,7 @@ import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIt
 /**
  * Iterator for the record table. Applies transforms and ECQL filters.
  */
+@deprecated
 class RecordTableIterator
     extends GeomesaFilteringIterator
     with HasFeatureType

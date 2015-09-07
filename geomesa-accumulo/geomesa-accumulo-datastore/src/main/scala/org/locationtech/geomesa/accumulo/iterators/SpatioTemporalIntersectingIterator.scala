@@ -20,6 +20,7 @@ import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIt
  * The other trick to remember about iterators is that they essentially pre-fetch
  * data.  "hasNext" really means, "was there a next record that you already found".
  */
+@deprecated
 class SpatioTemporalIntersectingIterator
     extends GeomesaFilteringIterator
     with HasFeatureType
