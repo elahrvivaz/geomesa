@@ -15,6 +15,9 @@ trait ZN {
   def apply(z: Long): ZPoint
   def apply(dims: Int*): ZPoint
 
+  def split(value: Long): Long
+  def combine(z: Long): Int
+
   // the number of child regions, e.g. for 2 dims it would be 00 01 10 11
   lazy val subRegions = math.pow(2, dims).toInt
 }
