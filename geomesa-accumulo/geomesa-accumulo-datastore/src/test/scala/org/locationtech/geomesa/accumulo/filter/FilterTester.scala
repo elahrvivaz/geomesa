@@ -31,7 +31,7 @@ import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
-class AllPredicateTest extends Specification with FilterTester {
+class AllPredicateTest extends FilterTester {
   val filters = goodSpatialPredicates
   "all predicates" should {
     "filter correctly" in {

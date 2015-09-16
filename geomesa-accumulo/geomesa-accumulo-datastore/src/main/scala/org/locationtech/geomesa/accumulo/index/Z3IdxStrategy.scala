@@ -72,12 +72,12 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
 
     // If we have some sort of complicated geometry predicate,
     // we need to pass it through to be evaluated
-    val singleTweakedGeomFilter: Option[Filter]  = filterListAsAnd(tweakedGeomFilters).filter(isComplicatedSpatialFilter)
+    val appliedGeomFilter: Option[Filter]  = filterListAsAnd(geomFilters.filter(isComplicatedSpatialFilter))
 
-    val ecql: Option[Filter] = (singleTweakedGeomFilter, filter.secondary) match {
+    val ecql: Option[Filter] = (appliedGeomFilter, filter.secondary) match {
       case (None, fs)           => fs
       case (gf, None)           => gf
-      case (Some(gf), Some(fs)) => filterListAsAnd(Seq(gf, fs))
+      case (Some(gf), Some(fs)) => Some(ff.and(gf, fs))
     }
 
     val (iterators, kvsToFeatures, colFamily) = if (hints.isBinQuery) {
@@ -184,16 +184,5 @@ object Z3IdxStrategy extends StrategyProvider {
   override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) =
     if (filter.primary.length > 1) 200 else 400
 
-  def isComplicatedSpatialFilter(f: Filter): Boolean = {
-    f match {
-      case _: BBOX => false
-      case _: DWithin => true
-      case _: Contains => true
-      case _: Crosses => true
-      case _: Intersects => true
-      case _: Overlaps => true
-      case _: Within => true
-      case _ => false        // Beyond, Disjoint, DWithin, Equals, Touches
-    }
-  }
+  def isComplicatedSpatialFilter(f: Filter): Boolean = !f.isInstanceOf[BBOX]
 }

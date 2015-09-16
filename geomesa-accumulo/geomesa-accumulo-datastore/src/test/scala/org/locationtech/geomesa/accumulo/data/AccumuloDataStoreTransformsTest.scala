@@ -16,6 +16,7 @@ import org.geotools.factory.CommonFactoryFinder
 import org.geotools.filter.text.cql2.CQL
 import org.geotools.filter.text.ecql.ECQL
 import org.geotools.util.Converters
+import org.joda.time.{DateTimeZone, DateTime}
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
 import org.locationtech.geomesa.accumulo.util.{CloseableIterator, SelfClosingIterator}
