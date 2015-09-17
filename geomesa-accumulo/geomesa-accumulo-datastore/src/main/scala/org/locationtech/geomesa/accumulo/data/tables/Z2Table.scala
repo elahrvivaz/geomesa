@@ -15,7 +15,7 @@ import com.google.common.primitives.{Bytes, Longs}
 import com.vividsolutions.jts.geom.{Geometry, Point}
 import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
-import org.apache.accumulo.core.data.{Key, Mutation}
+import org.apache.accumulo.core.data.Mutation
 import org.apache.commons.codec.binary.Hex
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
@@ -23,6 +23,7 @@ import org.locationtech.geomesa.accumulo.data.EMPTY_TEXT
 import org.locationtech.geomesa.curve.ZRange.ZPrefix
 import org.locationtech.geomesa.curve.{Z2, Z2SFC}
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.collection.JavaConverters._
@@ -86,6 +87,12 @@ object Z2Table extends GeoMesaTable {
       case p: Point => getPointRowKey(sf, dtgIndex)
       case g: Geometry =>
         val ZPrefix(zPrefix, bits) = Z2.zBox(g)
+//val l = math.round(g.getEnvelopeInternal.getWidth)
+//val h = math.round(g.getEnvelopeInternal.getHeight)
+//
+//val decomposed = Z2.decompose(g)
+//println(s"Matched ${decomposed.map(_.precision).mkString(",")} bits for envelope $l x $h geometry ${WKTUtils.write(g)}")
+
         val z2 = Longs.toByteArray(zPrefix).take(4)
         // flip the first 3 bits to indicate a non-point geom
         // these bits will always be 0 (unused) in the z2 value

@@ -32,7 +32,7 @@ import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
 class AllPredicateTest extends FilterTester {
-  val filters = goodSpatialPredicates
+  val filters = goodSpatialPredicates.headOption.toSeq
   "all predicates" should {
     "filter correctly" in {
       runTest()
