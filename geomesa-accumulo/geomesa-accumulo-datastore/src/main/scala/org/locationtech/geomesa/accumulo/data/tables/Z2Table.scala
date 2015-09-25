@@ -23,7 +23,6 @@ import org.locationtech.geomesa.accumulo.data.EMPTY_TEXT
 import org.locationtech.geomesa.curve.ZRange.ZPrefix
 import org.locationtech.geomesa.curve.{Z2, Z2SFC}
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.collection.JavaConverters._

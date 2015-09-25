@@ -18,7 +18,6 @@ import org.apache.accumulo.core.client._
 import org.apache.accumulo.core.client.admin.TimeType
 import org.apache.accumulo.core.client.mock.MockConnector
 import org.apache.accumulo.core.client.security.tokens.AuthenticationToken
-import org.apache.accumulo.core.data.Key
 import org.apache.curator.framework.CuratorFrameworkFactory
 import org.apache.curator.framework.recipes.locks.InterProcessSemaphoreMutex
 import org.apache.curator.retry.ExponentialBackoffRetry

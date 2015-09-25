@@ -87,7 +87,6 @@ object Z2 extends ZN {
 
   private def decompose(ll: Z2, ur: Z2, g: Geometry, precision: Long): Seq[ZPrefix] = {
     val candidates = scala.collection.mutable.Queue((ll, ur))
-//    val candidates = scala.collection.mutable.Stack((ll, ur))
     val results = ArrayBuffer.empty[ZPrefix]
     while (candidates.nonEmpty) {
       val (ll, ur) = candidates.dequeue()
@@ -96,28 +95,31 @@ object Z2 extends ZN {
         results.append(prefix)
       } else {
 //        println(s"precision ${prefix.precision}")
-        val (lx, ly) = Z2SFC.invert(ll)
-        val (ux, uy) = Z2SFC.invert(ur)
-        val mx = (lx + ux) / 2
-        val my = (ly + uy) / 2
-        val children = Seq((lx, ly, mx, my), (mx, my, ux, uy), (mx, ly, ux, my), (lx, my, mx, uy))
-        val intersecting = children.filter { case (minx, miny, maxx, maxy) =>
-          val coords = Array[Coordinate](
-            new Coordinate(minx, miny),
-            new Coordinate(minx, maxy),
-            new Coordinate(maxx, maxy),
-            new Coordinate(maxx, miny),
-            new Coordinate(minx, miny)
-          )
-          val poly = gf.createPolygon(gf.createLinearRing(coords), null)
-          val res = g.intersects(poly)
+        val zn = Z2((ll.z + ur.z) / 2)
+
+//        val (lx, ly) = Z2SFC.invert(ll)
+//        val (ux, uy) = Z2SFC.invert(ur)
+//        val mx = (lx + ux) / 2
+//        val my = (ly + uy) / 2
+//        val children = Seq((lx, ly, mx, my), (mx, my, ux, uy), (mx, ly, ux, my), (lx, my, mx, uy))
+//        val intersecting = children.filter { case (minx, miny, maxx, maxy) =>
+//          val coords = Array[Coordinate](
+//            new Coordinate(minx, miny),
+//            new Coordinate(minx, maxy),
+//            new Coordinate(maxx, maxy),
+//            new Coordinate(maxx, miny),
+//            new Coordinate(minx, miny)
+//          )
+//          val poly = gf.createPolygon(gf.createLinearRing(coords), null)
+//          val res = g.intersects(poly)
 //          println(s"$res comparing ${poly.getEnvelopeInternal} to $g")
-          res
-        }
+//          res
+//        }
 //        println(s"adding ${intersecting.length} candidates")
-        intersecting.foreach { case (minx, miny, maxx, maxy) =>
-          candidates.enqueue((Z2SFC.index(minx, miny), Z2SFC.index(maxx, maxy)))
-        }
+//        intersecting.foreach { case (minx, miny, maxx, maxy) =>
+//          candidates.enqueue((Z2SFC.index(minx, miny), Z2SFC.index(maxx, maxy)))
+//        }
+        candidates.enqueue((ll, zn), (zn, ur))
       }
 //      println(s"results ${results.length} candidates: ${candidates.length}")
     }
