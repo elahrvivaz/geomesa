@@ -52,7 +52,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     output(s"Temporal filters: ${filtersToString(temporalFilters)}")
 
     // standardize the two key query arguments:  polygon and date-range
-    val geomsToCover = geomFilters.flatMap(decomposeToGeometry)
+    val geomsToCover = tryReduceGeometryFilter(geomFilters).flatMap(decomposeToGeometry)
 
     val collectionToCover: Geometry = geomsToCover match {
       case Nil => null
