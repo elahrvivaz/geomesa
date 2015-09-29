@@ -13,6 +13,7 @@ import java.util.Date
 import com.vividsolutions.jts.geom.Coordinate
 import org.apache.accumulo.core.client.mock.MockInstance
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
+import org.apache.accumulo.core.security.Authorizations
 import org.apache.commons.codec.binary.Hex
 import org.apache.hadoop.io.Text
 import org.geotools.data._
@@ -342,8 +343,40 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       val updated = reader.next()
       reader.hasNext must beFalse
       reader.close()
-      updated.getID mustEqual("2")
+      updated.getID mustEqual "2"
       updated.getAttribute("name") mustEqual "2-updated"
+    }
+
+    "Provide a feature remove implementation" in {
+      val sftName = "featureRemoveTest"
+      val sft = {
+        import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+        val sft = SimpleFeatureTypes.createType(sftName, "name:String:index=full,dtg:Date,*geom:Point:srid=4326")
+        sft.setTableSharing(false)
+        ds.createSchema(sft)
+        ds.getSchema(sftName)
+      }
+
+      val features = createTestFeatures(sft)
+      val fs = ds.getFeatureSource(sftName).asInstanceOf[AccumuloFeatureStore]
+      fs.addFeatures(new ListFeatureCollection(sft, features))
+
+      forall(GeoMesaTable.getTableNames(sft, ds)) { table =>
+        val scanner = ds.connector.createScanner(table, new Authorizations())
+        try { scanner.iterator().hasNext must beTrue } finally { scanner.close() }
+      }
+
+      val writer = ds.getFeatureWriter(sftName, Filter.INCLUDE, Transaction.AUTO_COMMIT)
+      while (writer.hasNext) {
+        writer.next()
+        writer.remove()
+      }
+      writer.close()
+
+      forall(GeoMesaTable.getTableNames(sft, ds)) { table =>
+        val scanner = ds.connector.createScanner(table, new Authorizations())
+        try { scanner.iterator().hasNext must beFalse } finally { scanner.close() }
+      }
     }
 
     "allow caching to be configured" in {
