@@ -101,9 +101,6 @@ object Conversions {
   }
 }
 
-
-
-
 object RichIterator {
   implicit class RichIterator[T](val iter: Iterator[T]) extends AnyVal {
     def head = iter.next()
@@ -196,6 +193,8 @@ object RichSimpleFeatureType {
   val TABLE_SHARING_KEY   = "geomesa.table.sharing"
   val SHARING_PREFIX_KEY  = "geomesa.table.sharing.prefix"
   val DEFAULT_DATE_KEY    = "geomesa.index.dtg"
+  val DATE_END_KEY        = "geomesa.index.dtg.end"
+  val DATE_TRACK_KEY      = "geomesa.index.dtg.track"
   val ST_INDEX_SCHEMA_KEY = "geomesa.index.st.schema"
 
   // in general we store everything as strings so that it's easy to pass to accumulo iterators
@@ -215,6 +214,28 @@ object RichSimpleFeatureType {
       sft.getUserData.put(DEFAULT_DATE_KEY, dtg)
     }
 
+    // TODO allow for specifying in sft string
+    def getDtgEndField: Option[String] = userData[String](DATE_END_KEY)
+    def getDtgEndIndex: Option[Int] = getDtgField.map(sft.indexOf).filter(_ != -1)
+    def setDtgEndField(dtg: String): Unit = {
+      val descriptor = sft.getDescriptor(dtg)
+      require(descriptor != null && descriptor.getType.getBinding == classOf[Date],
+        s"Invalid date field '$dtg' for schema $sft")
+      sft.getUserData.put(DATE_END_KEY, dtg)
+    }
+
+    // TODO allow for specifying in sft string
+    def getDtgTrackField: Option[String] = userData[String](DATE_TRACK_KEY)
+    def getDtgTrackIndex: Option[Int] = getDtgField.map(sft.indexOf).filter(_ != -1)
+    def setDtgTrackField(dtg: String): Unit = {
+      val descriptor = sft.getDescriptor(dtg)
+      require(descriptor != null &&
+          classOf[java.util.List[_]].isAssignableFrom(descriptor.getType.getBinding) &&
+          descriptor.getCollectionType().orNull == classOf[Date],
+          s"Invalid date track field '$dtg' for schema $sft")
+      sft.getUserData.put(DATE_TRACK_KEY, dtg)
+    }
+
     def getStIndexSchema: String = userData[String](ST_INDEX_SCHEMA_KEY).orNull
     def setStIndexSchema(schema: String): Unit = sft.getUserData.put(ST_INDEX_SCHEMA_KEY, schema)
 
@@ -223,6 +244,9 @@ object RichSimpleFeatureType {
     def getSchemaVersion: Int =
       userData[String](SCHEMA_VERSION_KEY).map(_.toInt).getOrElse(CURRENT_SCHEMA_VERSION)
     def setSchemaVersion(version: Int): Unit = sft.getUserData.put(SCHEMA_VERSION_KEY, version.toString)
+
+    def isPoints = sft.getGeometryDescriptor.getType.getBinding == classOf[Point]
+    def isLines = sft.getGeometryDescriptor.getType.getBinding == classOf[LineString]
 
     //  If no user data is specified when creating a new SFT, we should default to 'true'.
     def isTableSharing: Boolean = userData[String](TABLE_SHARING_KEY).map(_.toBoolean).getOrElse(true)

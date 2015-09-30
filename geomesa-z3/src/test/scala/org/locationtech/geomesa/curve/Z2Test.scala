@@ -15,63 +15,60 @@ import org.specs2.runner.JUnitRunner
 import scala.util.Random
 
 @RunWith(classOf[JUnitRunner])
-class Z3Test extends Specification {
+class Z2Test extends Specification {
 
   val rand = new Random(-574)
-  val maxInt = Z3SFC.xprec.toInt
+  val maxInt = Z2SFC.xprec.toInt
   def nextDim() = rand.nextInt(maxInt)
 
   def padTo(s: String) = (new String(Array.fill(63)('0')) + s).takeRight(63)
 
-  "Z3" should {
+  "Z2" should {
 
     "apply and unapply" >> {
-      val (x, y, t) = (nextDim(), nextDim(), nextDim())
-      val z = Z3(x, y, t)
-      val (zx, zy, zt) = z.decode
+      val (x, y) = (nextDim(), nextDim())
+      val z = Z2(x, y)
+      val (zx, zy) = z.decode
       zx mustEqual x
       zy mustEqual y
-      zt mustEqual t
     }
 
     "apply and unapply min values" >> {
-      val (x, y, t) = (0, 0, 0)
-      val z = Z3(x, y, t)
-      val (zx, zy, zt) = z.decode
+      val (x, y) = (0, 0)
+      val z = Z2(x, y)
+      val (zx, zy) = z.decode
       zx mustEqual x
       zy mustEqual y
-      zt mustEqual t
     }
 
     "apply and unapply max values" >> {
-      val z3curve = Z3SFC
-      val (x, y, t) = (z3curve.xprec, z3curve.yprec, z3curve.tprec)
-      val z = Z3(x.toInt, y.toInt, t.toInt)
-      val (zx, zy, zt) = z.decode
+      val Z2curve = Z2SFC
+      val (x, y) = (Z2curve.xprec, Z2curve.yprec)
+      val z = Z2(x.toInt, y.toInt)
+      val (zx, zy) = z.decode
       zx mustEqual x
       zy mustEqual y
-      zt mustEqual t
     }
 
     "split" >> {
       val splits = Seq(
-        0x00000000ffffffL,
+        0x0000003fffffffL,
         0x00000000000000L,
         0x00000000000001L,
         0x000000000c0f02L,
         0x00000000000802L
       ) ++ (0 until 10).map(_ => nextDim().toLong)
       splits.foreach { l =>
-        val expected = padTo(new String(l.toBinaryString.toCharArray.flatMap(c => s"00$c")))
-        padTo(Z3.split(l).toBinaryString) mustEqual expected
+        val expected = padTo(new String(l.toBinaryString.toCharArray.flatMap(c => s"0$c")))
+        padTo(Z2.split(l).toBinaryString) mustEqual expected
       }
       success
     }
 
     "split and combine" >> {
       val z = nextDim()
-      val split = Z3.split(z)
-      val combined = Z3.combine(split)
+      val split = Z2.split(z)
+      val combined = Z2.combine(split)
       combined.toInt mustEqual z
     }
   }

@@ -54,10 +54,10 @@ trait TestWithDataStore extends Specification {
   lazy val fs = ds.getFeatureSource(sftName).asInstanceOf[AccumuloFeatureStore]
 
   // after all tests, drop the tables we created to free up memory
-  override def map(fragments: => Fragments) = fragments ^ Step {
-    GeoMesaTable.getTableNames(sft, ds).foreach(connector.tableOperations().delete)
-    connector.tableOperations().delete(sftName)
-  }
+//  override def map(fragments: => Fragments) = fragments ^ Step {
+//    GeoMesaTable.getTableNames(sft, ds).foreach(connector.tableOperations().delete)
+//    connector.tableOperations().delete(sftName)
+//  }
 
   /**
    * Call to load the test features into the data store

@@ -7,7 +7,6 @@
 *************************************************************************/
 package org.locationtech.geomesa.accumulo.data.tables
 
-import java.nio.ByteBuffer
 import java.util.Date
 import java.util.Map.Entry
 
@@ -24,9 +23,9 @@ import org.joda.time.{DateTime, Seconds, Weeks}
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
 import org.locationtech.geomesa.accumulo.data.EMPTY_TEXT
 import org.locationtech.geomesa.accumulo.index.QueryPlanners._
-import org.locationtech.geomesa.curve.Z3SFC
+import org.locationtech.geomesa.curve.ZRange.ZPrefix
+import org.locationtech.geomesa.curve.{Z3, Z3SFC, ZRange}
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
-import org.locationtech.geomesa.features.nio.{AttributeAccessor, LazySimpleFeature}
 import org.locationtech.geomesa.filter.function.{BasicValues, Convert2ViewerFunction}
 import org.locationtech.geomesa.utils.geotools.Conversions._
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -34,12 +33,12 @@ import org.opengis.feature.`type`.GeometryDescriptor
 import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.collection.JavaConversions._
+import scala.collection.mutable.ArrayBuffer
 
 object Z3Table extends GeoMesaTable {
 
   val EPOCH = new DateTime(0) // min value we handle - 1970-01-01T00:00:00.000
   val EPOCH_END = EPOCH.plusSeconds(Int.MaxValue) // max value we can calculate - 2038-01-18T22:19:07.000
-  val SFC = new Z3SFC
   val FULL_CF = new Text("F")
   val BIN_CF = new Text("B")
   val EMPTY_BYTES = Array.empty[Byte]
@@ -51,9 +50,13 @@ object Z3Table extends GeoMesaTable {
   def epochWeeks(dtg: DateTime) = Weeks.weeksBetween(EPOCH, new DateTime(dtg))
 
   override def supports(sft: SimpleFeatureType): Boolean =
-    sft.getSchemaVersion > 4 &&
-      sft.getGeometryDescriptor.getType.getBinding == classOf[Point] &&
-      sft.getDtgField.isDefined
+    if (sft.getSchemaVersion > 6) {
+      sft.getDtgField.isDefined && (sft.isPoints || sft.isLines)
+    } else if (sft.getSchemaVersion > 4) {
+      sft.getDtgField.isDefined && sft.isPoints
+    } else {
+      false
+    }
 
   override val suffix: String = "z3"
 
@@ -69,6 +72,7 @@ object Z3Table extends GeoMesaTable {
         val trackIndex = sft.indexOf(trackId)
         (fw: FeatureToWrite, m: Mutation) => {
           val (lat, lon) = {
+            // TODO allow for lines
             val geom = fw.feature.getAttribute(geomIndex).asInstanceOf[Point]
             (geom.getY.toFloat, geom.getX.toFloat)
           }
@@ -80,23 +84,29 @@ object Z3Table extends GeoMesaTable {
         }
       case _ => (fw: FeatureToWrite, m: Mutation) => {}
     }
+    // TODO add support for date ranges with line strings
+    val getRowKeys: (FeatureToWrite, Int) => Seq[Array[Byte]] = if (sft.isPoints) getPointRowKey else getLineRowKeys
     if (sft.getSchemaVersion > 5) {
       // we know the data is kryo serialized in version 6+
       (fw: FeatureToWrite) => {
-        val mutation = new Mutation(getRowKey(fw, dtgIndex))
-        binWriter(fw, mutation)
-        mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, fw.dataValue)
-        Seq(mutation)
+        getRowKeys(fw, dtgIndex).map { row =>
+          val mutation = new Mutation(row)
+          binWriter(fw, mutation)
+          mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, fw.dataValue)
+          mutation
+        }
       }
     } else {
       // we always want to use kryo - reserialize the value to ensure it
       val writer = new KryoFeatureSerializer(sft)
       (fw: FeatureToWrite) => {
-        val mutation = new Mutation(getRowKey(fw, dtgIndex))
         val payload = new Value(writer.serialize(fw.feature))
-        binWriter(fw, mutation)
-        mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, payload)
-        Seq(mutation)
+        getRowKeys(fw, dtgIndex).map { row =>
+          val mutation = new Mutation(row)
+          binWriter(fw, mutation)
+          mutation.put(FULL_CF, EMPTY_TEXT, fw.columnVisibility, payload)
+          mutation
+        }
       }
     }
 
@@ -104,11 +114,14 @@ object Z3Table extends GeoMesaTable {
 
   override def remover(sft: SimpleFeatureType): FeatureToMutations = {
     val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
+    val getRowKeys: (FeatureToWrite, Int) => Seq[Array[Byte]] = if (sft.isPoints) getPointRowKey else getLineRowKeys
     (fw: FeatureToWrite) => {
-      val mutation = new Mutation(getRowKey(fw, dtgIndex))
-      mutation.putDelete(BIN_CF, EMPTY_TEXT, fw.columnVisibility)
-      mutation.putDelete(FULL_CF, EMPTY_TEXT, fw.columnVisibility)
-      Seq(mutation)
+      getRowKeys(fw, dtgIndex).map { row =>
+        val mutation = new Mutation(row)
+        mutation.putDelete(BIN_CF, EMPTY_TEXT, fw.columnVisibility)
+        mutation.putDelete(FULL_CF, EMPTY_TEXT, fw.columnVisibility)
+        mutation
+      }
     }
   }
 
@@ -118,16 +131,21 @@ object Z3Table extends GeoMesaTable {
   }
 
   def getRowPrefix(x: Double, y: Double, time: Long): Array[Byte] = {
-    val dtg = new DateTime(time)
-    val weeks = epochWeeks(dtg)
-    val prefix = Shorts.toByteArray(weeks.getWeeks.toShort)
-    val secondsInWeek = secondsInCurrentWeek(dtg, weeks)
-    val z3 = SFC.index(x, y, secondsInWeek)
-    val z3idx = Longs.toByteArray(z3.z)
+    val (z, week) = getRowZ(x, y, time)
+    val prefix = Shorts.toByteArray(week)
+    val z3idx = Longs.toByteArray(z)
     Bytes.concat(prefix, z3idx)
   }
 
-  private def getRowKey(ftw: FeatureToWrite, dtgIndex: Int): Array[Byte] = {
+  def getRowZ(x: Double, y: Double, time: Long): (Long, Short) = {
+    val dtg = new DateTime(time)
+    val weeks = epochWeeks(dtg)
+    val secondsInWeek = secondsInCurrentWeek(dtg, weeks)
+    val z3 = Z3SFC.index(x, y, secondsInWeek)
+    (z3.z, weeks.getWeeks.toShort)
+  }
+
+  private def getPointRowKey(ftw: FeatureToWrite, dtgIndex: Int): Seq[Array[Byte]] = {
     val geom = ftw.feature.point
     val x = geom.getX
     val y = geom.getY
@@ -135,19 +153,45 @@ object Z3Table extends GeoMesaTable {
     val time = if (dtg == null) System.currentTimeMillis() else dtg.getTime
     val prefix = getRowPrefix(x, y, time)
     val idBytes = ftw.feature.getID.getBytes(Charsets.UTF_8)
-    Bytes.concat(prefix, idBytes)
+    Seq(Bytes.concat(prefix, idBytes))
   }
 
-  def adaptZ3Iterator(sft: SimpleFeatureType): FeatureFunction = {
-    val accessors = AttributeAccessor.buildSimpleFeatureTypeAttributeAccessors(sft)
-    (e: Entry[Key, Value]) => {
-      val k = e.getKey
-      val row = k.getRow.getBytes
-      val idbytes = row.slice(10, Int.MaxValue)
-      val id = new String(idbytes)
-      new LazySimpleFeature(id, sft, accessors, ByteBuffer.wrap(e.getValue.get()))
-      // TODO visibility
+  private def getLineRowKeys(ftw: FeatureToWrite, dtgIndex: Int): Seq[Array[Byte]] = {
+    val idBytes = ftw.feature.getID.getBytes(Charsets.UTF_8)
+    val geom = ftw.feature.lineString
+    // TODO allow for date ranges - NOTE we'd have to consider tmin/tmax on a per-week basis
+    val dtg = ftw.feature.getAttribute(dtgIndex).asInstanceOf[Date]
+    val time = if (dtg == null) System.currentTimeMillis() else dtg.getTime
+    (0 until geom.getNumPoints).map(geom.getPointN).sliding(2).toSeq.flatMap { case Seq(one, two) =>
+      val (xmin, xmax) = minMax(one.getX, two.getX)
+      val (ymin, ymax) = minMax(one.getY, two.getY)
+      val (zmin, wmin) = getRowZ(xmin, ymin, time)
+      val (zmax, wmax) = getRowZ(xmax, ymax, time)
+      getZPrefixes(zmin, zmax).distinct.map { z =>
+        // TODO flip bit to allow for points and non-points
+        Bytes.concat(Shorts.toByteArray(wmin), Longs.toByteArray(z).take(3), idBytes)
+      }
     }
+  }
+
+  private def minMax(a: Double, b: Double): (Double, Double) = if (a < b) (a, b) else (b, a)
+
+  private def getZPrefixes(zmin: Long, zmax: Long): Seq[Long] = {
+    val in = scala.collection.mutable.Queue((zmin, zmax))
+    val out = ArrayBuffer.empty[Long]
+
+    while (in.nonEmpty) {
+      val (min, max) = in.dequeue()
+      val ZPrefix(zprefix, zbits) = ZRange.longestCommonPrefix(min, max, Z3)
+      if (zbits > 23) {
+        out.append(zprefix)
+      } else {
+        val (litmax, bigmin) = ZRange.zdivide(Z3((min + max) / 2), Z3(min), Z3(max), Z3)
+        in.enqueue((min, litmax.z), (bigmin.z, max))
+      }
+    }
+
+    out.toSeq
   }
 
   def adaptZ3KryoIterator(sft: SimpleFeatureType): FeatureFunction = {

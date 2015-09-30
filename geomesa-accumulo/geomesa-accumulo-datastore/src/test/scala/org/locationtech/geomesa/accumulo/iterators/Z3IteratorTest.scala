@@ -29,9 +29,8 @@ class Z3IteratorTest extends Specification {
     val (lx, ly, lt) = (-78.0, 38, 300)
     val (ux, uy, ut) = (-75.0, 40, 800)
 
-    val Z3Curve = new Z3SFC
-    val zmin = Z3Curve.index(lx, ly, lt)
-    val zmax = Z3Curve.index(ux, uy, ut)
+    val zmin = Z3SFC.index(lx, ly, lt)
+    val zmax = Z3SFC.index(ux, uy, ut)
 
     val srcIter = new SortedKeyValueIterator[Key, Value] {
       var key: Key = null
@@ -58,7 +57,7 @@ class Z3IteratorTest extends Specification {
     iter.init(srcIter, Map(Z3Iterator.zKey -> Z3Iterator.mapToString(zMap)), null)
 
     "keep in bounds values" >> {
-      val test1 = Z3Curve.index(-76.0, 38.5, 500)
+      val test1 = Z3SFC.index(-76.0, 38.5, 500)
       val prefix = Array[Byte](0, 0)
       val row = Bytes.concat(prefix, Longs.toByteArray(test1.z))
       srcIter.key = new Key(new Text(row))
@@ -67,7 +66,7 @@ class Z3IteratorTest extends Specification {
     }
 
     "drop out of bounds values" >> {
-      val test2 = Z3Curve.index(-70.0, 38.5, 500)
+      val test2 = Z3SFC.index(-70.0, 38.5, 500)
       val prefix = Array[Byte](0, 0)
       val row = Bytes.concat(prefix, Longs.toByteArray(test2.z))
       srcIter.key = new Key(new Text(row))
