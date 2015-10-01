@@ -16,13 +16,14 @@ import org.locationtech.geomesa.curve.Z3
 
 class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
 
-  import org.locationtech.geomesa.accumulo.iterators.Z3Iterator.{zKey, stringToMap}
+  import org.locationtech.geomesa.accumulo.iterators.Z3Iterator.{geomKey, zKey, stringToMap}
 
   var source: SortedKeyValueIterator[Key, Value] = null
 
   var zMap: String = null
   var zsByWeek: Array[(Int, Int, Int, Int, Int, Int)] = null
   var weekOffset: Short = -1
+  var isLines: Boolean = false
 
   var topKey: Key = null
   var topValue: Value = null
@@ -47,7 +48,11 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
     k.getRow(row)
     val bytes = row.getBytes
     val week = Shorts.fromBytes(bytes(0), bytes(1))
-    val keyZ = Longs.fromBytes(bytes(2), bytes(3), bytes(4), bytes(5), bytes(6), bytes(7), bytes(8), bytes(9))
+    val keyZ = if (isLines) {
+      Longs.fromBytes(bytes(2), bytes(3), bytes(4), 0, 0, 0, 0, 0)
+    } else {
+      Longs.fromBytes(bytes(2), bytes(3), bytes(4), bytes(5), bytes(6), bytes(7), bytes(8), bytes(9))
+    }
     val (x, y, t) = Z3(keyZ).decode
     val (xmin, ymin, tmin, xmax, ymax, tmax) = zsByWeek(week - weekOffset)
     x >= xmin && x <= xmax && y >= ymin && y <= ymax && t >= tmin && t <= tmax
@@ -72,6 +77,7 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
       val (x1, y1, t1) = Z3(ur).decode
       (x0, y0, t0, x1, y1, t1)
     }
+    isLines = options.get(geomKey).toBoolean
   }
 
   override def seek(range: AccRange, columnFamilies: java.util.Collection[ByteSequence], inclusive: Boolean): Unit = {
@@ -82,7 +88,7 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
   override def deepCopy(env: IteratorEnvironment): SortedKeyValueIterator[Key, Value] = {
     import scala.collection.JavaConversions._
     val iter = new Z3Iterator
-    iter.init(source, Map(zKey -> zMap), env)
+    iter.init(source, Map(zKey -> zMap, geomKey -> isLines.toString), env)
     iter
   }
 }
@@ -90,10 +96,12 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
 object Z3Iterator {
 
   val zKey = "z"
+  val geomKey = "g"
 
-  def configure(zRangesByWeek: Map[Short, (Long, Long)], priority: Int) = {
+  def configure(zRangesByWeek: Map[Short, (Long, Long)], isLines: Boolean, priority: Int) = {
     val is = new IteratorSetting(priority, "z3", classOf[Z3Iterator])
     is.addOption(zKey, mapToString(zRangesByWeek))
+    is.addOption(geomKey, isLines.toString)
     is
   }
 

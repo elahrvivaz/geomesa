@@ -12,7 +12,7 @@ import org.joda.time.Weeks
 trait SpaceTimeFillingCurve[T] {
   def index(x: Double, y: Double, t: Long): T
   def invert(i: T): (Double, Double, Long)
-  def ranges(x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[(Long, Long)]
+  def ranges(x: (Double, Double), y: (Double, Double), t: (Long, Long), precision: Int = 64): Seq[(Long, Long)]
 }
 
 object Z3SFC extends SpaceTimeFillingCurve[Z3] {
@@ -29,8 +29,11 @@ object Z3SFC extends SpaceTimeFillingCurve[Z3] {
   override def index(x: Double, y: Double, t: Long): Z3 =
     Z3(lon.normalize(x), lat.normalize(y), time.normalize(t))
 
-  override def ranges(x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[(Long, Long)] =
-    ZRange.zranges(index(x._1, y._1, t._1), index(x._2, y._2, t._2), Z3)
+  override def ranges(x: (Double, Double),
+                      y: (Double, Double),
+                      t: (Long, Long),
+                      precision: Int = 64): Seq[(Long, Long)] =
+    ZRange.zranges(index(x._1, y._1, t._1), index(x._2, y._2, t._2), Z3, precision)
 
   override def invert(z: Z3): (Double, Double, Long) = {
     val (x, y, t) = z.decode

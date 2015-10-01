@@ -54,7 +54,7 @@ class Z3IteratorTest extends Specification {
 
     val zMap = Map(0.toShort -> (zmin.z, zmax.z))
     val iter = new Z3Iterator
-    iter.init(srcIter, Map(Z3Iterator.zKey -> Z3Iterator.mapToString(zMap)), null)
+    iter.init(srcIter, Map(Z3Iterator.zKey -> Z3Iterator.mapToString(zMap), Z3Iterator.geomKey -> "false"), null)
 
     "keep in bounds values" >> {
       val test1 = Z3SFC.index(-76.0, 38.5, 500)

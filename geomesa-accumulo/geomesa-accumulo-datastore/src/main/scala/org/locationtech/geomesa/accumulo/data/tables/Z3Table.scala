@@ -113,6 +113,7 @@ object Z3Table extends GeoMesaTable {
   }
 
   override def remover(sft: SimpleFeatureType): FeatureToMutations = {
+    // TODO lines
     val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
     val getRowKeys: (FeatureToWrite, Int) => Seq[Array[Byte]] = if (sft.isPoints) getPointRowKey else getLineRowKeys
     (fw: FeatureToWrite) => {

@@ -142,6 +142,11 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     val lz = Z3SFC.index(lx, ly, lt).z
     val uz = Z3SFC.index(ux, uy, ut).z
 
+    val getRanges: (Seq[Int], (Double, Double), (Double, Double), (Long, Long)) => Seq[Range] =
+      if (sft.isPoints) getPointRanges else if (sft.isLines) getLineRanges else {
+        throw new IllegalStateException("Arbitrary geometries are not supported by Z3")
+      }
+
     // the z3 index breaks time into 1 week chunks, so create a range for each week in our range
     val (ranges, zMap) = if (weeks.length == 1) {
       val ranges = getRanges(weeks, (lx, ux), (ly, uy), (lt, ut))
@@ -162,16 +167,29 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       (ranges, map)
     }
 
-    val zIter = Z3Iterator.configure(zMap, Z3_ITER_PRIORITY)
+    val zIter = Z3Iterator.configure(zMap, sft.isLines, Z3_ITER_PRIORITY)
     val iters = Seq(zIter) ++ iterators
-    BatchScanPlan(z3table, ranges, iters, Seq(colFamily), kvsToFeatures, numThreads, hasDuplicates = false)
+    BatchScanPlan(z3table, ranges, iters, Seq(colFamily), kvsToFeatures, numThreads, hasDuplicates = sft.isLines)
   }
 
-  def getRanges(weeks: Seq[Int], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {
+  def getPointRanges(weeks: Seq[Int], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {
     val prefixes = weeks.map(w => Shorts.toByteArray(w.toShort))
     Z3SFC.ranges(x, y, t).flatMap { case (s, e) =>
       val startBytes = Longs.toByteArray(s)
       val endBytes = Longs.toByteArray(e)
+      prefixes.map { prefix =>
+        val start = new Text(Bytes.concat(prefix, startBytes))
+        val end = Range.followingPrefix(new Text(Bytes.concat(prefix, endBytes)))
+        new Range(start, true, end, false)
+      }
+    }
+  }
+
+  def getLineRanges(weeks: Seq[Int], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {
+    val prefixes = weeks.map(w => Shorts.toByteArray(w.toShort))
+    Z3SFC.ranges(x, y, t, 24).flatMap { case (s, e) =>
+      val startBytes = Longs.toByteArray(s).take(3)
+      val endBytes = Longs.toByteArray(e).take(3)
       prefixes.map { prefix =>
         val start = new Text(Bytes.concat(prefix, startBytes))
         val end = Range.followingPrefix(new Text(Bytes.concat(prefix, endBytes)))
