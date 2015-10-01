@@ -55,7 +55,7 @@ case class QueryPlanner(sft: SimpleFeatureType,
                         featureEncoding: SerializationType,
                         stSchema: String,
                         acc: AccumuloConnectorCreator,
-                        hints: StrategyHints) extends ExplainingLogging with MethodProfiling {
+                        strategyHints: StrategyHints) extends ExplainingLogging with MethodProfiling {
 
   import org.locationtech.geomesa.accumulo.index.QueryPlanner._
 
@@ -78,7 +78,8 @@ case class QueryPlanner(sft: SimpleFeatureType,
   def runQuery(query: Query, strategy: Option[StrategyType] = None): SFIter = {
     val plans = getQueryPlans(query, strategy, log)
     // don't deduplicate density queries, as they don't have dupes but re-use feature ids in the results
-    val dedupe = !query.getHints.isDensityQuery && (plans.length > 1 || plans.exists(_.hasDuplicates))
+    val dedupe = !query.getHints.isDensityQuery && !query.getHints.isTemporalDensityQuery &&
+        (plans.length > 1 || plans.exists(_.hasDuplicates))
     executePlans(query, plans, dedupe)
   }
 
@@ -102,9 +103,9 @@ case class QueryPlanner(sft: SimpleFeatureType,
     }
 
     def reduce(iter: SFIter): SFIter = if (query.getHints.isTemporalDensityQuery) {
-      TemporalDensityIterator.reduceTemporalFeatures(iter, query)
+      KryoLazyTemporalDensityIterator.reduceTemporalFeatures(iter, query)
     } else if (query.getHints.isMapAggregatingQuery) {
-      MapAggregatingIterator.reduceMapAggregationFeatures(iter, query)
+      KryoLazyMapAggregatingIterator.reduceMapAggregationFeatures(iter, query)
     } else {
       iter
     }
@@ -120,15 +121,20 @@ case class QueryPlanner(sft: SimpleFeatureType,
                             requested: Option[StrategyType],
                             output: ExplainerOutputType): Seq[QueryPlan] = {
 
+    output(s"Planning '${query.getTypeName}' ${filterToString(query.getFilter)}")
+
     configureQuery(query, sft) // configure the query - set hints that we'll need later on
 
-    output(s"Planning '${query.getTypeName}' ${filterToString(query.getFilter)}")
-    output(s"Hints: density ${query.getHints.isDensityQuery}, bin ${query.getHints.isBinQuery}")
-    output(s"Sort: ${Option(query.getSortBy).filter(_.nonEmpty).map(_.mkString(", ")).getOrElse("none")}")
-    output(s"Transforms: ${query.getHints.getTransformDefinition.getOrElse("None")}")
+    val hints = query.getHints
 
-    if (query.getHints.isDensityQuery) { // add the bbox from the density query to the filter
-      val env = query.getHints.getDensityEnvelope.get.asInstanceOf[ReferencedEnvelope]
+    output(s"Modified filter: ${filterToString(query.getFilter)}")
+    output(s"Hints: density[${hints.isDensityQuery}] bin[${hints.isBinQuery}] " +
+        s"temporal-density[${hints.isTemporalDensityQuery}] map-aggregate[${hints.isMapAggregatingQuery}]")
+    output(s"Sort: ${Option(query.getSortBy).filter(_.nonEmpty).map(_.mkString(", ")).getOrElse("none")}")
+    output(s"Transforms: ${hints.getTransformDefinition.getOrElse("None")}")
+
+    if (hints.isDensityQuery) { // add the bbox from the density query to the filter
+      val env = hints.getDensityEnvelope.get.asInstanceOf[ReferencedEnvelope]
       val bbox = ff.bbox(ff.property(sft.getGeometryDescriptor.getLocalName), env)
       if (query.getFilter == Filter.INCLUDE) {
         query.setFilter(bbox)
@@ -141,12 +147,12 @@ case class QueryPlanner(sft: SimpleFeatureType,
 
     implicit val timings = new TimingsImpl
     val queryPlans = profile({
-      val requestedStrategy = requested.orElse(query.getHints.getRequestedStrategy)
-      val strategies = QueryStrategyDecider.chooseStrategies(sft, query, hints, requestedStrategy, output)
+      val requestedStrategy = requested.orElse(hints.getRequestedStrategy)
+      val strategies = QueryStrategyDecider.chooseStrategies(sft, query, strategyHints, requestedStrategy, output)
       strategies.map { strategy =>
         output(s"Strategy: ${strategy.getClass.getSimpleName}")
         output(s"Filter: ${strategy.filter}")
-        val plan = strategy.getQueryPlan(this, query.getHints, output)
+        val plan = strategy.getQueryPlan(this, hints, output)
         outputPlan(plan, output)
         plan
       }
@@ -272,8 +278,8 @@ object QueryPlanner extends Logging {
    * @param sft
    * @return
    */
-  def setQueryTransforms(query: Query, sft: SimpleFeatureType) =
-    if (query.getProperties != null && !query.getProperties.isEmpty) {
+  def setQueryTransforms(query: Query, sft: SimpleFeatureType) = {
+    val transforms = if (query.getProperties != null && !query.getProperties.isEmpty) {
       val (transformProps, regularProps) = query.getPropertyNames.partition(_.contains('='))
       val convertedRegularProps = regularProps.map { p => s"$p=$p" }
       val allTransforms = convertedRegularProps ++ transformProps
@@ -284,13 +290,21 @@ object QueryPlanner extends Logging {
       } else {
         Seq(s"$geomName=$geomName")
       }
-      val transforms = (allTransforms ++ geomTransform).mkString(";")
+      Some((allTransforms ++ geomTransform).mkString(";"))
+    } else if (query.getHints.isDensityQuery) {
+      val attributes = Seq(sft.getGeometryDescriptor.getLocalName) ++ query.getHints.getDensityWeight
+      Some(attributes.mkString(";"))
+    } else {
+      None
+    }
+    transforms.foreach { transforms =>
       val transformDefs = TransformProcess.toDefinition(transforms)
       val derivedSchema = computeSchema(sft, transformDefs.asScala)
       query.setProperties(Query.ALL_PROPERTIES)
       query.getHints.put(TRANSFORMS, transforms)
       query.getHints.put(TRANSFORM_SCHEMA, derivedSchema)
     }
+  }
 
   private def computeSchema(origSFT: SimpleFeatureType, transforms: Seq[Definition]): SimpleFeatureType = {
     val attributes: Seq[AttributeDescriptor] = transforms.map { definition =>
@@ -369,12 +383,12 @@ object QueryPlanner extends Logging {
     val sft = if (query.getHints.isBinQuery) {
       BinAggregatingIterator.BIN_SFT
     } else if (query.getHints.isDensityQuery) {
-      Z3DensityIterator.DENSITY_SFT
-    } else if (query.getHints.containsKey(TEMPORAL_DENSITY_KEY)) {
-      TemporalDensityIterator.createFeatureType(baseSft)
-    } else if (query.getHints.containsKey(MAP_AGGREGATION_KEY)) {
+      KryoLazyDensityIterator.DENSITY_SFT
+    } else if (query.getHints.isTemporalDensityQuery) {
+      KryoLazyTemporalDensityIterator.createFeatureType(baseSft)
+    } else if (query.getHints.isMapAggregatingQuery) {
       val mapAggregationAttribute = query.getHints.get(MAP_AGGREGATION_KEY).asInstanceOf[String]
-      val spec = MapAggregatingIterator.projectedSFTDef(mapAggregationAttribute, baseSft)
+      val spec = KryoLazyMapAggregatingIterator.createMapSft(baseSft, mapAggregationAttribute)
       SimpleFeatureTypes.createType(baseSft.getTypeName, spec)
     } else {
       query.getHints.getTransformSchema.getOrElse(baseSft)

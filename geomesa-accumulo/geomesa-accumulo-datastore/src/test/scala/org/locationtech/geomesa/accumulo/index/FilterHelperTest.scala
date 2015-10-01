@@ -69,7 +69,10 @@ class FilterHelperTest extends Specification with Mockito with Logging {
   def afterInterval(dt: DateTime): Interval   = new Interval(dt, max)
   def beforeInterval(dt: DateTime): Interval  = new Interval(min, dt)
 
-  val extractDT: (Seq[Filter]) => Interval = extractInterval(_, Some(dtFieldName))
+  val extractDT: (Seq[Filter]) => Interval = (filters) => {
+    val (s, e) = extractInterval(filters, Some(dtFieldName))
+    new Interval(s, e)
+  }
 
   def extractDateTime(fs: String): Interval = {
     val filter = ECQL.toFilter(fs)

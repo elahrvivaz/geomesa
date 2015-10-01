@@ -232,8 +232,8 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends Logging {
    */
   private def isBounded(temporalFilters: Seq[Filter]): Boolean = {
     import FilterHelper._
-    val interval = extractInterval(temporalFilters, sft.getDtgField)
-    interval != null && interval.getStart != minDateTime && interval.getEnd != maxDateTime
+    val (start, end) = extractInterval(temporalFilters, sft.getDtgField)
+    start != minDateTime && end != maxDateTime
   }
 
   /**

@@ -114,19 +114,11 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
         } else {
           if (labelIndex == -1) writeGeometry else writeGeometryWithLabel
         }
-      handleValue = if (filter == null) {
-        () => {
-          reusableSf.setBuffer(source.getTopValue.get())
+      handleValue = () => {
+        reusableSf.setBuffer(source.getTopValue.get())
+        if (filter == null || filter.evaluate(reusableSf)) {
           topKey = source.getTopKey
           writeBin(reusableSf)
-        }
-      } else {
-        () => {
-          reusableSf.setBuffer(source.getTopValue.get())
-          if (filter.evaluate(reusableSf)) {
-            topKey = source.getTopKey
-            writeBin(reusableSf)
-          }
         }
       }
     }
@@ -193,7 +185,8 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
     } else {
       byteBuffer.putInt(track.hashCode())
     }
-    byteBuffer.putInt((sf.getDateAsLong(dtgIndex) / 1000).toInt)
+    val dtg = if (dtgIndex == -1) System.currentTimeMillis() else sf.getDateAsLong(dtgIndex)
+    byteBuffer.putInt((dtg / 1000).toInt)
     byteBuffer.putFloat(pt.getY.toFloat) // y is lat
     byteBuffer.putFloat(pt.getX.toFloat) // x is lon
     bytesWritten += 16
@@ -292,6 +285,8 @@ object BinAggregatingIterator extends Logging {
   val BIN_ATTRIBUTE_INDEX = 0 // index of 'bin' attribute in BIN_SFT
   private lazy val zeroPoint = WKTUtils.read("POINT(0 0)")
 
+  val DEFAULT_PRIORITY = 25
+
   // configuration keys
   private val SFT_OPT        = "sft"
   private val CQL_OPT        = "cql"
@@ -309,15 +304,19 @@ object BinAggregatingIterator extends Logging {
    */
   def configurePrecomputed(sft: SimpleFeatureType,
                            filter: Option[Filter],
-                           batchSize: Int,
-                           sort: Boolean,
-                           priority: Int): IteratorSetting = {
-    val config = for (trackId <- sft.getBinTrackId; dtg <- sft.getDtgField) yield {
-      val is = configureDynamic(sft, filter, trackId, sft.getGeomField, dtg, None, batchSize, sort, priority)
-      is.addOption(BIN_CF_OPT, "true")
-      is
+                           hints: Hints,
+                           priority: Int = DEFAULT_PRIORITY): IteratorSetting = {
+    sft.getBinTrackId match {
+      case Some(trackId) =>
+        val geom = sft.getGeomField
+        val dtg = sft.getDtgField
+        val batch = hints.getBinBatchSize
+        val sort = hints.isBinSorting
+        val is = configureDynamic(sft, filter, trackId, geom, dtg, None, batch , sort, priority)
+        is.addOption(BIN_CF_OPT, "true")
+        is
+      case None => throw new RuntimeException(s"No default trackId field found in SFT $sft")
     }
-    config.getOrElse(throw new RuntimeException(s"No default trackId or dtg field found in SFT $sft"))
   }
 
   /**
@@ -327,7 +326,7 @@ object BinAggregatingIterator extends Logging {
                        filter: Option[Filter],
                        trackId: String,
                        geom: String,
-                       dtg: String,
+                       dtg: Option[String],
                        label: Option[String],
                        batchSize: Int,
                        sort: Boolean,
@@ -338,7 +337,7 @@ object BinAggregatingIterator extends Logging {
     is.addOption(BATCH_SIZE_OPT, batchSize.toString)
     is.addOption(TRACK_OPT, sft.indexOf(trackId).toString)
     is.addOption(GEOM_OPT, sft.indexOf(geom).toString)
-    is.addOption(DATE_OPT, sft.indexOf(dtg).toString)
+    is.addOption(DATE_OPT, dtg.map(sft.indexOf).getOrElse(-1).toString)
     label.foreach(l => is.addOption(LABEL_OPT, sft.indexOf(l).toString))
     is.addOption(SORT_OPT, sort.toString)
     is
@@ -348,13 +347,12 @@ object BinAggregatingIterator extends Logging {
    * Configure based on query hints
    */
   def configureDynamic(sft: SimpleFeatureType,
-                       hints: Hints,
                        filter: Option[Filter],
-                       priority: Int): IteratorSetting = {
+                       hints: Hints,
+                       priority: Int = DEFAULT_PRIORITY): IteratorSetting = {
     val trackId = hints.getBinTrackIdField
     val geom = hints.getBinGeomField.getOrElse(sft.getGeomField)
     val dtg = hints.getBinDtgField.orElse(sft.getDtgField)
-        .getOrElse(throw new IllegalStateException("BIN queries require a date field in the schema"))
     val label = hints.getBinLabelField
     val batchSize = hints.getBinBatchSize
     val sort = hints.isBinSorting
@@ -365,15 +363,11 @@ object BinAggregatingIterator extends Logging {
   /**
    * Determines if the requested fields match the precomputed bin data
    */
-  def canUsePrecomputedBins(sft: SimpleFeatureType,
-                            trackId: String,
-                            geom: Option[String],
-                            dtg: Option[String],
-                            label: Option[String]): Boolean = {
-     sft.getBinTrackId.exists(_ == trackId) &&
-        geom.forall(_ == sft.getGeomField) &&
-        dtg == sft.getDtgField &&
-        label.isEmpty
+  def canUsePrecomputedBins(sft: SimpleFeatureType, hints: Hints): Boolean = {
+    sft.getBinTrackId.exists(_ == hints.getBinTrackIdField) &&
+        hints.getBinGeomField.forall(_ == sft.getGeomField) &&
+        hints.getBinDtgField == sft.getDtgField &&
+        hints.getBinLabelField.isEmpty
   }
 
   /**

@@ -50,7 +50,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with Loggin
         case f      => partitionPrimaryTemporals(Seq(f), queryPlanner.sft)
       }.getOrElse((Seq.empty, Seq.empty))
       val interval = extractInterval(dateFilters, queryPlanner.sft.getDtgField)
-      if (interval == everywhen) None else Some((interval.getStartMillis, interval.getEndMillis))
+      if (interval == everywhen) None else Some(interval)
     }
 
     val propsAndRanges = filter.primary.map(getPropertyAndRange(queryPlanner.sft, _, dates))
@@ -82,7 +82,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with Loggin
     if (hints.isBinQuery) {
       if (descriptor.getIndexCoverage() == IndexCoverage.FULL) {
         // can apply the bin aggregating iterator directly to the sft
-        val iters = Seq(BinAggregatingIterator.configureDynamic(sft, hints, filter.secondary, priority))
+        val iters = Seq(BinAggregatingIterator.configureDynamic(sft, filter.secondary, hints))
         val kvsToFeatures = BinAggregatingIterator.kvsToFeatures()
         BatchScanPlan(attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDupes)
       } else {
@@ -91,7 +91,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with Loggin
         if (indexSft.indexOf(hints.getBinTrackIdField) != -1 &&
             hints.getBinLabelField.forall(indexSft.indexOf(_) != -1) &&
             filter.secondary.forall(IteratorTrigger.supportsFilter(indexSft, _))) {
-          val iters = Seq(BinAggregatingIterator.configureDynamic(indexSft, hints, filter.secondary, priority))
+          val iters = Seq(BinAggregatingIterator.configureDynamic(indexSft, filter.secondary, hints))
           val kvsToFeatures = BinAggregatingIterator.kvsToFeatures()
           BatchScanPlan(attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDupes)
         } else {

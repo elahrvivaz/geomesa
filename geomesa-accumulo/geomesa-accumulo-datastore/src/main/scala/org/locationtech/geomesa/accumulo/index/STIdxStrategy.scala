@@ -15,6 +15,7 @@ import org.apache.accumulo.core.iterators.user.RegExFilter
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
 import org.geotools.filter.text.ecql.ECQL
+import org.joda.time.Interval
 import org.locationtech.geomesa.accumulo.GEOMESA_ITERATORS_IS_DENSITY_TYPE
 import org.locationtech.geomesa.accumulo.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.accumulo.index.QueryHints._
@@ -67,7 +68,8 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       case seq: Seq[Geometry] => new GeometryCollection(geomsToCover.toArray, geomsToCover.head.getFactory)
     }
 
-    val interval = extractInterval(temporalFilters, dtgField)
+    val (s, e) = extractInterval(temporalFilters, dtgField)
+    val interval = new Interval(s, e)
     val geometryToCover = netGeom(collectionToCover)
 
     val keyPlanningFilter = buildFilter(geometryToCover, interval)
@@ -102,7 +104,7 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
 
       val iter =
         DensityIterator.configure(sft, featureEncoding, schema, filter, envelope, width, height, weight, p)
-      (Seq(iter), Z3DensityIterator.kvsToFeatures(), false)
+      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), false)
     } else {
       val iteratorConfig = IteratorTrigger.chooseIterator(filter.filter, ecql, hints, sft)
       val stiiIterCfg = getSTIIIterCfg(iteratorConfig, hints, sft, ofilter, ecql, featureEncoding, version)

@@ -12,6 +12,8 @@ package org.locationtech.geomesa.accumulo.iterators
 import java.util.{Date, Properties}
 
 import com.vividsolutions.jts.geom.Envelope
+import org.apache.accumulo.core.data.Key
+import org.apache.accumulo.core.security.Authorizations
 import org.geotools.data.Query
 import org.geotools.filter.text.ecql.ECQL
 import org.geotools.filter.visitor.ExtractBoundsFilterVisitor
@@ -20,6 +22,7 @@ import org.geotools.referencing.crs.DefaultGeographicCRS
 import org.joda.time.{DateTime, DateTimeZone}
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithDataStore
+import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index.QueryHints
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.utils.geotools.Conversions._
@@ -49,7 +52,7 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
     q.getHints.put(QueryHints.DENSITY_BBOX_KEY, new ReferencedEnvelope(geom, DefaultGeographicCRS.WGS84))
     q.getHints.put(QueryHints.WIDTH_KEY, 500)
     q.getHints.put(QueryHints.HEIGHT_KEY, 500)
-    val decode = Z3DensityIterator.decodeResult(geom, 500, 500)
+    val decode = KryoLazyDensityIterator.decodeResult(geom, 500, 500)
     fs.getFeatures(q).features().flatMap(decode).toList
   }
 
@@ -150,7 +153,7 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
 
       val q = "(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -78.598118, 37.992204, -78.337364, 38.091238)"
       val density = getDensity(q)
-      density.map(_._3).sum must beGreaterThan(0.0)
+      density.map(_._3).sum must beCloseTo(15.0, 0.1)
     }
 
     "do density calc on a realistic multilinestring" in {
@@ -170,7 +173,7 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
 
       val q = "(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -78.511236, 38.019947, -78.485830, 38.030265)"
       val density = getDensity(q)
-      density.map(_._3).sum must beGreaterThan(0.0)
+      density.map(_._3).sum must beCloseTo(15.0, 0.1)
     }
 
     "do density calc on a realistic linestring" in {
@@ -190,7 +193,7 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
 
       val q = "(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, -78.511236, 38.019947, -78.485830, 38.030265)"
       val density = getDensity(q)
-      density.map(_._3).sum must beGreaterThan(0.0)
+      density.map(_._3).sum must beCloseTo(15.0, 0.1)
     }
 
     "do density calc on a simplistic multi polygon" in {
@@ -210,7 +213,7 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
 
       val q = "(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, 0.0, 0.0, 10.0, 10.0)"
       val density = getDensity(q)
-      density.map(_._3).sum must beGreaterThan(12000.0)
+      density.map(_._3).sum must beCloseTo(15.0, 0.1)
     }
 
     "do density calc on a simplistic linestring" in {
@@ -230,7 +233,7 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
 
       val q = "(dtg between '2012-01-01T18:00:00.000Z' AND '2012-01-01T23:00:00.000Z') and BBOX(geom, 0.0, 0.0, 10.0, 10.0)"
       val density = getDensity(q)
-      density.map(_._3).sum must beGreaterThan(0.0)
+      density.map(_._3).sum must beCloseTo(15.0, 0.1)
     }
   }
 }

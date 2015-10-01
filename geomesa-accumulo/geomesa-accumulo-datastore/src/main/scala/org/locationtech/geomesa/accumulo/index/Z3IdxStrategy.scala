@@ -13,7 +13,7 @@ import com.vividsolutions.jts.geom.{Geometry, GeometryCollection}
 import org.apache.accumulo.core.data.Range
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
-import org.joda.time.Weeks
+import org.joda.time.{DateTime, Weeks}
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.iterators._
@@ -96,22 +96,22 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       // if possible, use the pre-computed values
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
-        if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, trackId, geom, dtg, label)) {
-          (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, batchSize, sort, fp)), Z3Table.BIN_CF)
+        if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, hints)), Z3Table.BIN_CF)
         } else {
-          val binDtg = dtg.getOrElse(dtgField.get) // dtgField is always defined if we're using z3
-          val binGeom = geom.getOrElse(sft.getGeomField)
-          val iter = BinAggregatingIterator.configureDynamic(sft, ecql, trackId, binGeom, binDtg, label,
-            batchSize, sort, fp)
+          val iter = BinAggregatingIterator.configureDynamic(sft, ecql, hints)
           (Seq(iter), Z3Table.FULL_CF)
         }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf)
     } else if (hints.isDensityQuery) {
-      val envelope = hints.getDensityEnvelope.get
-      val (width, height) = hints.getDensityBounds.get
-      val weight = hints.getDensityWeight
-      val iter = Z3DensityIterator.configure(sft, ecql, envelope, width, height, weight, fp)
-      (Seq(iter), Z3DensityIterator.kvsToFeatures(), Z3Table.FULL_CF)
+      val iter = Z3DensityIterator.configure(sft, ecql, hints)
+      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z3Table.FULL_CF)
+    } else if (hints.isTemporalDensityQuery) {
+      val iter = KryoLazyTemporalDensityIterator.configure(sft, ecql, hints)
+      (Seq(iter), queryPlanner.defaultKVsToFeatures(hints), Z3Table.FULL_CF)
+    } else if (hints.isMapAggregatingQuery) {
+      val iter = KryoLazyMapAggregatingIterator.configure(sft, ecql, hints)
+      (Seq(iter), queryPlanner.defaultKVsToFeatures(hints), Z3Table.FULL_CF)
     } else {
       val transforms = for {
         tdef <- hints.getTransformDefinition
@@ -133,19 +133,19 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     val env = geometryToCover.getEnvelopeInternal
     val (lx, ly, ux, uy) = (env.getMinX, env.getMinY, env.getMaxX, env.getMaxY)
 
-    val epochWeekStart = Weeks.weeksBetween(Z3Table.EPOCH, interval.getStart)
-    val epochWeekEnd = Weeks.weeksBetween(Z3Table.EPOCH, interval.getEnd)
+    val intervalStart = new DateTime(interval._1)
+    val intervalEnd = new DateTime(interval._2)
+    val epochWeekStart = Weeks.weeksBetween(Z3Table.EPOCH, intervalStart)
+    val epochWeekEnd = Weeks.weeksBetween(Z3Table.EPOCH, intervalEnd)
     val weeks = scala.Range.inclusive(epochWeekStart.getWeeks, epochWeekEnd.getWeeks)
-    val lt = Z3Table.secondsInCurrentWeek(interval.getStart, epochWeekStart)
-    val ut = Z3Table.secondsInCurrentWeek(interval.getEnd, epochWeekEnd)
+    val lt = Z3Table.secondsInCurrentWeek(intervalStart, epochWeekStart)
+    val ut = Z3Table.secondsInCurrentWeek(intervalEnd, epochWeekEnd)
 
     val lz = Z3SFC.index(lx, ly, lt).z
     val uz = Z3SFC.index(ux, uy, ut).z
 
     val getRanges: (Seq[Int], (Double, Double), (Double, Double), (Long, Long)) => Seq[Range] =
-      if (sft.isPoints) getPointRanges else if (sft.isLines) getLineRanges else {
-        throw new IllegalStateException("Arbitrary geometries are not supported by Z3")
-      }
+      if (sft.isPoints) getPointRanges else getGeomRanges
 
     // the z3 index breaks time into 1 week chunks, so create a range for each week in our range
     val (ranges, zMap) = if (weeks.length == 1) {
@@ -167,9 +167,9 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       (ranges, map)
     }
 
-    val zIter = Z3Iterator.configure(zMap, sft.isLines, Z3_ITER_PRIORITY)
+    val zIter = Z3Iterator.configure(zMap, sft.isPoints, Z3_ITER_PRIORITY)
     val iters = Seq(zIter) ++ iterators
-    BatchScanPlan(z3table, ranges, iters, Seq(colFamily), kvsToFeatures, numThreads, hasDuplicates = sft.isLines)
+    BatchScanPlan(z3table, ranges, iters, Seq(colFamily), kvsToFeatures, numThreads, hasDuplicates = !sft.isPoints)
   }
 
   def getPointRanges(weeks: Seq[Int], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {
@@ -185,7 +185,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     }
   }
 
-  def getLineRanges(weeks: Seq[Int], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {
+  def getGeomRanges(weeks: Seq[Int], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {
     val prefixes = weeks.map(w => Shorts.toByteArray(w.toShort))
     Z3SFC.ranges(x, y, t, 24).flatMap { case (s, e) =>
       val startBytes = Longs.toByteArray(s).take(3)
