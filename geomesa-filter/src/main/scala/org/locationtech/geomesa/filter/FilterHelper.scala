@@ -13,7 +13,7 @@ import java.util.Date
 import com.vividsolutions.jts.geom.{Geometry, MultiPolygon, Polygon}
 import org.geotools.factory.CommonFactoryFinder
 import org.geotools.geometry.jts.{JTS, ReferencedEnvelope}
-import org.joda.time.{DateTime, DateTimeZone}
+import org.joda.time.{DateTime, DateTimeZone, Interval}
 import org.locationtech.geomesa.utils.filters.Typeclasses.BinaryFilter
 import org.locationtech.geomesa.utils.geohash.GeohashUtils
 import org.locationtech.geomesa.utils.geohash.GeohashUtils._
@@ -81,9 +81,9 @@ object FilterHelper {
     prop.map(_.literal.evaluate(null, classOf[Geometry])).exists(isWholeWorld)
   }
 
-  val minDateTime = new DateTime(0, 1, 1, 0, 0, 0, DateTimeZone.forID("UTC")).getMillis
-  val maxDateTime = new DateTime(9999, 12, 31, 23, 59, 59, DateTimeZone.forID("UTC")).getMillis
-  val everywhen = (minDateTime, maxDateTime)
+  val minDateTime = new DateTime(0, 1, 1, 0, 0, 0, DateTimeZone.UTC).getMillis
+  val maxDateTime = new DateTime(9999, 12, 31, 23, 59, 59, DateTimeZone.UTC).getMillis
+  val everywhen = new Interval(minDateTime, maxDateTime, DateTimeZone.UTC)
   val everywhere = WKTUtils.read("POLYGON((-180 -90, 0 -90, 180 -90, 180 90, 0 90, -180 90, -180 -90))").asInstanceOf[Polygon]
 
   def isWholeWorld[G <: Geometry](g: G): Boolean = g != null && g.union.covers(everywhere)
@@ -152,12 +152,14 @@ object FilterHelper {
   }
 
   // NB: This method assumes that the filters represent a collection of 'and'ed temporal filters.
-  def extractInterval(filters: Seq[Filter], dtField: Option[String], exclusive: Boolean = false): (Long, Long) = {
-    val interval = dtField match {
-      case Some(dtf) => filters.map(extractInterval(_, dtf, exclusive)).fold(everywhen)(overlap)
+  def extractInterval(filters: Seq[Filter], dtField: Option[String], exclusive: Boolean = false): Interval = {
+    dtField match {
       case None      => everywhen
+      case Some(dtf) =>
+        val intervals = filters.map(extractInterval(_, dtf, exclusive))
+        val (s, e) = intervals.fold((minDateTime, maxDateTime))(overlap)
+        if (s > e) null else new Interval(s, e, DateTimeZone.UTC)
     }
-    if (interval._1 > interval._2) (0, 0) else interval
   }
 
 

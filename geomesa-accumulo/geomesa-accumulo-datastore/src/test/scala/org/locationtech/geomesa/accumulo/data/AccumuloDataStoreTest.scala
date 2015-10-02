@@ -8,7 +8,8 @@
 
 package org.locationtech.geomesa.accumulo.data
 
-import java.util.Date
+import java.text.SimpleDateFormat
+import java.util.{TimeZone, Date}
 
 import com.vividsolutions.jts.geom.Coordinate
 import org.apache.accumulo.core.client.mock.MockInstance
@@ -587,9 +588,12 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
       val sft = createSchema(sftName, "trackId:String:index-value=true,label:String:index-value=true," +
           "extraValue:String,score:Double:index-value=true,dtg:Date,geom:Point:srid=4326")
 
+      val df = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss")
+      df.setTimeZone(TimeZone.getTimeZone("UTC"))
+
       (0 until 5).foreach { i =>
         val attrs = List(s"trk$i", s"label$i", "extra", new java.lang.Double(i),
-          df.parse(s"2014-01-01 0$i:00:00"), WKTUtils.read(s"POINT(5$i 50)"))
+          df.synchronized(df.parse(s"2014-01-01 0$i:00:00")), WKTUtils.read(s"POINT(5$i 50)"))
         addDefaultPoint(sft, fid = s"f$i", attributes = attrs)
       }
 
@@ -602,7 +606,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
           features(i).getID mustEqual(s"f$i")
           features(i).getAttributeCount mustEqual 3
           features(i).getAttribute("label") mustEqual s"label$i"
-          features(i).getAttribute("dtg") mustEqual df.parse(s"2014-01-01 0$i:00:00")
+          features(i).getAttribute("dtg") mustEqual df.synchronized(df.parse(s"2014-01-01 0$i:00:00"))
           features(i).getAttribute("geom") mustEqual WKTUtils.read(s"POINT(5$i 50)")
         }
         success
@@ -616,7 +620,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
         (0 until 5).foreach { i =>
           features(i).getID mustEqual(s"f$i")
           features(i).getAttributeCount mustEqual 2
-          features(i).getAttribute("dtg") mustEqual df.parse(s"2014-01-01 0$i:00:00")
+          features(i).getAttribute("dtg") mustEqual df.synchronized(df.parse(s"2014-01-01 0$i:00:00"))
           features(i).getAttribute("geom") mustEqual WKTUtils.read(s"POINT(5$i 50)")
         }
         success
@@ -634,7 +638,7 @@ class AccumuloDataStoreTest extends Specification with AccumuloDataStoreDefaults
           features(i).getAttribute("label") mustEqual s"label$i"
           features(i).getAttribute("trackId") mustEqual s"trk$i"
           features(i).getAttribute("score") mustEqual i.toDouble
-          features(i).getAttribute("dtg") mustEqual df.parse(s"2014-01-01 0$i:00:00")
+          features(i).getAttribute("dtg") mustEqual df.synchronized(df.parse(s"2014-01-01 0$i:00:00"))
           features(i).getAttribute("geom") mustEqual WKTUtils.read(s"POINT(5$i 50)")
         }
         success

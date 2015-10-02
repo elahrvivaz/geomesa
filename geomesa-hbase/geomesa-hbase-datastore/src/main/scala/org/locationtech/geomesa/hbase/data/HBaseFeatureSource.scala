@@ -11,7 +11,7 @@ import com.vividsolutions.jts.geom.Envelope
 import org.geotools.data.store.{ContentEntry, ContentFeatureStore}
 import org.geotools.data.{FeatureReader, FeatureWriter, Query}
 import org.geotools.geometry.jts.ReferencedEnvelope
-import org.joda.time.Weeks
+import org.joda.time.{Interval, Weeks}
 import org.locationtech.geomesa.curve.Z3SFC
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.filter

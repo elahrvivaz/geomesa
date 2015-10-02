@@ -13,7 +13,7 @@ import com.vividsolutions.jts.geom.{Geometry, GeometryCollection}
 import org.apache.accumulo.core.data.Range
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
-import org.joda.time.{DateTime, Weeks}
+import org.joda.time.Weeks
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.iterators._
@@ -74,14 +74,19 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
 
     val fp = FILTERING_ITER_PRIORITY
 
-    // If we have some sort of complicated geometry predicate,
-    // we need to pass it through to be evaluated
-    val singleTweakedGeomFilter: Option[Filter]  = filterListAsAnd(tweakedGeomFilters).filter(isComplicatedSpatialFilter)
-
-    val ecql: Option[Filter] = (singleTweakedGeomFilter, filter.secondary) match {
-      case (None, fs)           => fs
-      case (gf, None)           => gf
-      case (Some(gf), Some(fs)) => filterListAsAnd(Seq(gf, fs))
+    val ecql: Option[Filter] = if (sft.isPoints) {
+      // for normal bboxes, the index is fine enough that we don't need to apply the filter on top of it
+      // this may cause some minor errors at extremely fine resolution, but the performance is worth it
+      // if we have a complicated geometry predicate, we need to pass it through to be evaluated
+      val complexGeomFilter = filterListAsAnd(tweakedGeomFilters).filter(isComplicatedSpatialFilter)
+      (complexGeomFilter, filter.secondary) match {
+        case (None, fs)           => fs
+        case (gf, None)           => gf
+        case (Some(gf), Some(fs)) => filterListAsAnd(Seq(gf, fs))
+      }
+    } else {
+      // for non-point geoms, the index is coarse-grained, so we always apply the full filter
+      Some(filter.filter)
     }
 
     val (iterators, kvsToFeatures, colFamily) = if (hints.isBinQuery) {
@@ -96,7 +101,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       // if possible, use the pre-computed values
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
-        if (ecql.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
+        if (filter.secondary.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
           (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, hints)), Z3Table.BIN_CF)
         } else {
           val iter = BinAggregatingIterator.configureDynamic(sft, ecql, hints)
@@ -133,13 +138,11 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     val env = geometryToCover.getEnvelopeInternal
     val (lx, ly, ux, uy) = (env.getMinX, env.getMinY, env.getMaxX, env.getMaxY)
 
-    val intervalStart = new DateTime(interval._1)
-    val intervalEnd = new DateTime(interval._2)
-    val epochWeekStart = Weeks.weeksBetween(Z3Table.EPOCH, intervalStart)
-    val epochWeekEnd = Weeks.weeksBetween(Z3Table.EPOCH, intervalEnd)
+    val epochWeekStart = Weeks.weeksBetween(Z3Table.EPOCH, interval.getStart)
+    val epochWeekEnd = Weeks.weeksBetween(Z3Table.EPOCH, interval.getEnd)
     val weeks = scala.Range.inclusive(epochWeekStart.getWeeks, epochWeekEnd.getWeeks)
-    val lt = Z3Table.secondsInCurrentWeek(intervalStart, epochWeekStart)
-    val ut = Z3Table.secondsInCurrentWeek(intervalEnd, epochWeekEnd)
+    val lt = Z3Table.secondsInCurrentWeek(interval.getStart, epochWeekStart)
+    val ut = Z3Table.secondsInCurrentWeek(interval.getEnd, epochWeekEnd)
 
     val lz = Z3SFC.index(lx, ly, lt).z
     val uz = Z3SFC.index(ux, uy, ut).z

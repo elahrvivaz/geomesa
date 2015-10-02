@@ -50,7 +50,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with Loggin
         case f      => partitionPrimaryTemporals(Seq(f), queryPlanner.sft)
       }.getOrElse((Seq.empty, Seq.empty))
       val interval = extractInterval(dateFilters, queryPlanner.sft.getDtgField)
-      if (interval == everywhen) None else Some(interval)
+      if (interval == everywhen) None else Some((interval.getStartMillis, interval.getEndMillis))
     }
 
     val propsAndRanges = filter.primary.map(getPropertyAndRange(queryPlanner.sft, _, dates))
