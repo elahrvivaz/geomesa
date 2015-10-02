@@ -26,7 +26,6 @@ import org.locationtech.geomesa.accumulo.index.QueryPlanners._
 import org.locationtech.geomesa.curve.ZRange.ZPrefix
 import org.locationtech.geomesa.curve.{Z3, Z3SFC, ZRange}
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
-import org.locationtech.geomesa.filter.function.{BasicValues, Convert2ViewerFunction}
 import org.locationtech.geomesa.utils.geotools.Conversions._
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.`type`.GeometryDescriptor
@@ -43,6 +42,10 @@ object Z3Table extends GeoMesaTable {
   val BIN_CF = new Text("B")
   val EMPTY_BYTES = Array.empty[Byte]
   val EMPTY_VALUE = new Value(EMPTY_BYTES)
+  // the bytes of z we keep for complex geoms
+  val GEOM_Z_NUM_BYTES = 3
+  val GEOM_Z_MASK: Long =
+    java.lang.Long.decode("0x" + Array.fill(GEOM_Z_NUM_BYTES)("ff").mkString) << (8 - GEOM_Z_NUM_BYTES) * 8
 
   def secondsInCurrentWeek(dtg: DateTime, weeks: Weeks) =
     Seconds.secondsBetween(EPOCH, dtg).getSeconds - weeks.toStandardSeconds.getSeconds
@@ -131,7 +134,7 @@ object Z3Table extends GeoMesaTable {
     val x = geom.getX
     val y = geom.getY
     val dtg = ftw.feature.getAttribute(dtgIndex).asInstanceOf[Date]
-    val time = if (dtg == null) System.currentTimeMillis() else dtg.getTime
+    val time = if (dtg == null) 0 else dtg.getTime
     val prefix = getRowPrefix(x, y, time)
     val idBytes = ftw.feature.getID.getBytes(Charsets.UTF_8)
     Seq(Bytes.concat(prefix, idBytes))
@@ -141,9 +144,9 @@ object Z3Table extends GeoMesaTable {
     val idBytes = ftw.feature.getID.getBytes(Charsets.UTF_8)
     // TODO allow for date ranges - NOTE we'd have to consider tmin/tmax on a per-week basis
     val dtg = ftw.feature.getAttribute(dtgIndex).asInstanceOf[Date]
-    val time = if (dtg == null) System.currentTimeMillis() else dtg.getTime
+    val time = if (dtg == null) 0 else dtg.getTime
     val zs = zBox(ftw.feature.getDefaultGeometry.asInstanceOf[Geometry], time).distinct
-    zs.map { case (w, z) => Bytes.concat(Shorts.toByteArray(w), Longs.toByteArray(z).take(3), idBytes) }
+    zs.map { case (w, z) => Bytes.concat(Shorts.toByteArray(w), Longs.toByteArray(z).take(GEOM_Z_NUM_BYTES), idBytes) }
   }
 
   private def zBox(geom: Geometry, time: Long): Seq[(Short, Long)] = geom match {
@@ -168,6 +171,7 @@ object Z3Table extends GeoMesaTable {
 
   private def minMax(a: Double, b: Double): (Double, Double) = if (a < b) (a, b) else (b, a)
 
+  // we keep the first 3 bytes - this is roughly equivalent to 3 digits of geohash or ~75km resolution
   private def getZPrefixes(zmin: Long, zmax: Long): Seq[Long] = {
     val in = scala.collection.mutable.Queue((zmin, zmax))
     val out = ArrayBuffer.empty[Long]
@@ -175,11 +179,11 @@ object Z3Table extends GeoMesaTable {
     while (in.nonEmpty) {
       val (min, max) = in.dequeue()
       val ZPrefix(zprefix, zbits) = ZRange.longestCommonPrefix(min, max, Z3)
-      if (zbits > 23) {
-        out.append(zprefix & 0xffffff0000000000L) // truncate down to the 3 bytes we use so we can dedupe rows
-      } else {
+      if (zbits < GEOM_Z_NUM_BYTES * 8) {
         val (litmax, bigmin) = ZRange.zdivide(Z3((min + max) / 2), Z3(min), Z3(max), Z3)
         in.enqueue((min, litmax.z), (bigmin.z, max))
+      } else {
+        out.append(zprefix & GEOM_Z_MASK) // truncate down to the 3 bytes we use so we can dedupe rows
       }
     }
 

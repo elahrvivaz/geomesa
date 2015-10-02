@@ -12,6 +12,7 @@ import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{ByteSequence, Key, Range => AccRange, Value}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.apache.hadoop.io.Text
+import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.curve.Z3
 
 class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
@@ -60,7 +61,9 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
     val bytes = row.getBytes
     val week = Shorts.fromBytes(bytes(0), bytes(1))
     // non-points only use 3 bytes of the z curve
-    val keyZ = Longs.fromBytes(bytes(2), bytes(3), bytes(4), 0, 0, 0, 0, 0)
+    val zBytes = Array.fill[Byte](8)(0)
+    System.arraycopy(bytes, 2, zBytes, 0, Z3Table.GEOM_Z_NUM_BYTES)
+    val keyZ = Longs.fromByteArray(zBytes)
     val (x, y, t) = Z3(keyZ).decode
     val (xmin, ymin, tmin, xmax, ymax, tmax) = zsByWeek(week - weekOffset)
     x >= xmin && x <= xmax && y >= ymin && y <= ymax && t >= tmin && t <= tmax
@@ -81,7 +84,7 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
     val zs = if (isPoints) {
       stringToMap(zMap).toList.sortBy(_._1)
     } else {
-      stringToMap(zMap).toList.sortBy(_._1).map { case(w, (ll, ur)) => (w, (ll & 0xffffff0000000000L, ur & 0xffffff0000000000L)) }
+      stringToMap(zMap).toList.sortBy(_._1).map { case(w, (ll, ur)) => (w, (ll & Z3Table.GEOM_Z_MASK, ur & Z3Table.GEOM_Z_MASK)) }
     }
     weekOffset = zs.head._1
     // NB: we assume weeks are continuous

@@ -190,9 +190,9 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
 
   def getGeomRanges(weeks: Seq[Int], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {
     val prefixes = weeks.map(w => Shorts.toByteArray(w.toShort))
-    Z3SFC.ranges(x, y, t, 24).flatMap { case (s, e) =>
-      val startBytes = Longs.toByteArray(s).take(3)
-      val endBytes = Longs.toByteArray(e).take(3)
+    Z3SFC.ranges(x, y, t, 8 * Z3Table.GEOM_Z_NUM_BYTES).flatMap { case (s, e) =>
+      val startBytes = Longs.toByteArray(s).take(Z3Table.GEOM_Z_NUM_BYTES)
+      val endBytes = Longs.toByteArray(e).take(Z3Table.GEOM_Z_NUM_BYTES)
       prefixes.map { prefix =>
         val start = new Text(Bytes.concat(prefix, startBytes))
         val end = Range.followingPrefix(new Text(Bytes.concat(prefix, endBytes)))

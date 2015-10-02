@@ -17,6 +17,7 @@ import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.geotools.factory.Hints
+import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.iterators.KryoLazyDensityIterator.DensityResult
 import org.locationtech.geomesa.curve.{Z3, Z3SFC}
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -57,8 +58,13 @@ class Z3DensityIterator extends KryoLazyDensityIterator {
    */
   override def writeNonPoint(geom: Geometry, weight: Double, result: DensityResult): Unit = {
     val row = topKey.getRowData
-    val o = row.offset()
-    val zBytes = Array[Byte](row.byteAt(o + 2), row.byteAt(o + 3), row.byteAt(o + 4), 0, 0, 0, 0, 0)
+    val o = row.offset() + 2
+    val zBytes = Array.fill[Byte](8)(0)
+    var i = 0
+    while (i < Z3Table.GEOM_Z_NUM_BYTES) {
+      zBytes(i) = row.byteAt(o + i)
+      i += 1
+    }
     val (x, y, _) = Z3SFC.invert(Z3(Longs.fromByteArray(zBytes)))
     val nWeight = normalizeWeight(weight)
     writePointToResult(x, y, nWeight, result)
