@@ -45,7 +45,7 @@ public class GeoMesaInputFormat extends InputFormat<Text, SimpleFeature> {
 
     public static void configure(Job job, Map<String, String> dataStoreParams, Query query) {
         scala.collection.immutable.Map<String, String> scalaParams =
-                JavaConverters.asScalaMapConverter(dataStoreParams).asScala()
+                JavaConverters.mapAsScalaMapConverter(dataStoreParams).asScala()
                               .toMap(Predef.<Tuple2<String, String>>conforms());
         GeoMesaInputFormat$.MODULE$.configure(job, scalaParams, query);
     }
@@ -57,7 +57,7 @@ public class GeoMesaInputFormat extends InputFormat<Text, SimpleFeature> {
                                  String filter,
                                  String[] transform) {
         scala.collection.immutable.Map<String, String> scalaParams =
-                JavaConverters.asScalaMapConverter(dataStoreParams).asScala()
+                JavaConverters.mapAsScalaMapConverter(dataStoreParams).asScala()
                               .toMap(Predef.<Tuple2<String, String>>conforms());
         Option<String> f = Option.apply(filter);
         Option<String[]> t = Option.apply(transform);

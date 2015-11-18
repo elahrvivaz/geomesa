@@ -33,12 +33,12 @@
         </dependency>
         <dependency>
             <groupId>org.spire-math</groupId>
-            <artifactId>spire_2.10</artifactId>
+            <artifactId>spire_2.11</artifactId>
             <version>0.9.0</version>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2_2.10</artifactId>
+            <artifactId>specs2_2.11</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

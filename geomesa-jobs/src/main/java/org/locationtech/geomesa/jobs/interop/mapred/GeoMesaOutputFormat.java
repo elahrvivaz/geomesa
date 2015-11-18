@@ -50,7 +50,7 @@ public class GeoMesaOutputFormat implements OutputFormat<Text, SimpleFeature> {
 
     public static void configureDataStore(JobConf job, Map<String, String> dataStoreParams) {
         scala.collection.immutable.Map<String, String> scalaParams =
-                JavaConverters.asScalaMapConverter(dataStoreParams).asScala()
+                JavaConverters.mapAsScalaMapConverter(dataStoreParams).asScala()
                               .toMap(Predef.<Tuple2<String, String>>conforms());
         GeoMesaOutputFormat$.MODULE$.configureDataStore(job, scalaParams);
     }

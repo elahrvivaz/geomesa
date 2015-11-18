@@ -8,21 +8,19 @@
 
 package org.locationtech.geomesa.utils.index
 
-import java.util.ConcurrentModificationException
 import java.util.concurrent.atomic.AtomicBoolean
 
-import com.typesafe.scalalogging.slf4j.Logging
-import com.vividsolutions.jts.geom.{Envelope, Point}
-import com.vividsolutions.jts.index.quadtree.Quadtree
+import com.typesafe.scalalogging.slf4j.LazyLogging
+import com.vividsolutions.jts.geom.Envelope
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
-import scala.util.{Random, Try}
+import scala.util.Random
 
 @RunWith(classOf[JUnitRunner])
-class BucketIndexTest extends Specification with Logging {
+class BucketIndexTest extends Specification with LazyLogging {
 
   "BucketIndex" should {
     "be thread safe" in {

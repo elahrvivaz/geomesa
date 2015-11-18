@@ -8,14 +8,14 @@
 package org.locationtech.geomesa.tools
 
 import com.beust.jcommander.ParameterException
-import com.typesafe.scalalogging.slf4j.Logging
+import com.typesafe.scalalogging.slf4j.LazyLogging
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.tools.commands.CreateFeatureParams
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 
-object FeatureCreator extends Logging {
+object FeatureCreator extends LazyLogging {
 
   def checkSpec(params: CreateFeatureParams) = {
     if (params.spec == null) {

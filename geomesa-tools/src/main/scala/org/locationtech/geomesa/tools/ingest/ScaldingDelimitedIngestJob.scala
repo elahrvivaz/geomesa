@@ -13,7 +13,7 @@ import java.util.{List => JList, Map => JMap}
 
 import com.google.common.hash.Hashing
 import com.twitter.scalding.{Args, Hdfs, Job, Local, Mode}
-import com.typesafe.scalalogging.slf4j.Logging
+import com.typesafe.scalalogging.slf4j.LazyLogging
 import com.vividsolutions.jts.geom.Coordinate
 import org.apache.commons.csv.{CSVFormat, CSVParser}
 import org.geotools.data.{DataStoreFinder, FeatureWriter, Transaction}
@@ -36,7 +36,7 @@ import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import scala.util.parsing.combinator.JavaTokenParsers
 import scala.util.{Failure, Success, Try}
 
-class ScaldingDelimitedIngestJob(args: Args) extends Job(args) with Logging {
+class ScaldingDelimitedIngestJob(args: Args) extends Job(args) with LazyLogging {
   import scala.collection.JavaConversions._
 
   var lineNumber            = 0

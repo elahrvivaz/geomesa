@@ -11,7 +11,7 @@ package org.locationtech.geomesa.convert
 import javax.imageio.spi.ServiceRegistry
 
 import com.typesafe.config.Config
-import com.typesafe.scalalogging.slf4j.Logging
+import com.typesafe.scalalogging.slf4j.LazyLogging
 import org.geotools.filter.identity.FeatureIdImpl
 import org.locationtech.geomesa.convert.Transformers.{EvaluationContext, Expr, FieldLookup, FunctionExpr}
 import org.locationtech.geomesa.features.avro.AvroSimpleFeature
@@ -67,7 +67,7 @@ trait SimpleFeatureConverter[I] {
   def close(): Unit = {}
 }
 
-trait ToSimpleFeatureConverter[I] extends SimpleFeatureConverter[I] with Logging {
+trait ToSimpleFeatureConverter[I] extends SimpleFeatureConverter[I] with LazyLogging {
   def logErrors: Boolean = false
   def targetSFT: SimpleFeatureType
   def inputFields: IndexedSeq[Field]

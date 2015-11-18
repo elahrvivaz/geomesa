@@ -11,7 +11,7 @@ package org.locationtech.geomesa.tools
 import java.io.{BufferedReader, File, InputStreamReader}
 import java.util.UUID
 
-import com.typesafe.scalalogging.slf4j.Logging
+import com.typesafe.scalalogging.slf4j.LazyLogging
 import org.apache.accumulo.core.client.ZooKeeperInstance
 import org.apache.accumulo.server.client.HdfsZooInstance
 import org.apache.commons.compress.compressors.bzip2.BZip2Utils
@@ -137,7 +137,7 @@ trait GetPassword {
  * Loads accumulo properties for instance and zookeepers from the accumulo installation found via
  * the system path in ACCUMULO_HOME in the case that command line parameters are not provided
  */
-trait AccumuloProperties extends GetPassword with Logging {
+trait AccumuloProperties extends GetPassword with LazyLogging {
   lazy val accumuloConf = XML.loadFile(s"${System.getenv("ACCUMULO_HOME")}/conf/accumulo-site.xml")
 
   lazy val zookeepersProp =

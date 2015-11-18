@@ -13,7 +13,7 @@ import java.io.IOException
 import java.util.NoSuchElementException
 import java.util.concurrent.TimeUnit
 
-import com.typesafe.scalalogging.slf4j.Logging
+import com.typesafe.scalalogging.slf4j.LazyLogging
 import org.apache.accumulo.core.client._
 import org.apache.accumulo.core.client.mock.MockConnector
 import org.apache.accumulo.core.client.security.tokens.AuthenticationToken
@@ -72,7 +72,7 @@ class AccumuloDataStore(val connector: Connector,
                         val recordThreadsConfig: Option[Int] = None,
                         val writeThreadsConfig: Option[Int] = None,
                         val cachingConfig: Boolean = false)
-    extends AbstractDataStore(true) with AccumuloConnectorCreator with StrategyHintsProvider with Logging {
+    extends AbstractDataStore(true) with AccumuloConnectorCreator with StrategyHintsProvider with LazyLogging {
 
   // having at least as many shards as tservers provides optimal parallelism in queries
   val DEFAULT_MAX_SHARD = connector.instanceOperations().getTabletServers.size()

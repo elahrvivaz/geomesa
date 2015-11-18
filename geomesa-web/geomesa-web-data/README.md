@@ -392,7 +392,7 @@ curl --header 'Accept: text/plain' --get --data-urlencode 'q=select mySft.myAttr
 | jt-vectorbinarize-1.3.1.jar | 10573 |
 | jt-vectorize-1.3.1.jar | 14230 |
 | jt-zonalstats-1.3.1.jar | 19969 |
-| kafka_2.10-0.8.2.1.jar | 3991269 |
+| kafka_2.11-0.8.2.1.jar | 3991269 |
 | kafka-clients-0.8.2.1.jar | 324010 |
 | libthrift-0.9.0.jar | 347531 |
 | log4j-1.2.15.jar | 391834 |
