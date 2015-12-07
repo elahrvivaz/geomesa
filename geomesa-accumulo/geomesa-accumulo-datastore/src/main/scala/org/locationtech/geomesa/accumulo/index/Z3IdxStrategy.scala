@@ -51,12 +51,8 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     output(s"Geometry filters: ${filtersToString(geomFilters)}")
     output(s"Temporal filters: ${filtersToString(temporalFilters)}")
 
-    val tweakedGeomFilters = geomFilters.map(updateTopologicalFilters(_, sft))
-
-    output(s"Tweaked geom filters are $tweakedGeomFilters")
-
     // standardize the two key query arguments:  polygon and date-range
-    val geomsToCover = tryReduceGeometryFilter(tweakedGeomFilters).flatMap(decomposeToGeometry)
+    val geomsToCover = tryReduceGeometryFilter(geomFilters).flatMap(decomposeToGeometry)
 
     val collectionToCover: Geometry = geomsToCover match {
       case Nil => null
@@ -78,7 +74,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       // for normal bboxes, the index is fine enough that we don't need to apply the filter on top of it
       // this may cause some minor errors at extremely fine resolution, but the performance is worth it
       // if we have a complicated geometry predicate, we need to pass it through to be evaluated
-      val complexGeomFilter = filterListAsAnd(tweakedGeomFilters).filter(isComplicatedSpatialFilter)
+      val complexGeomFilter = filterListAsAnd(geomFilters).filter(isComplicatedSpatialFilter)
       (complexGeomFilter, filter.secondary) match {
         case (None, fs)           => fs
         case (gf, None)           => gf
@@ -144,33 +140,33 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     val lt = Z3Table.secondsInCurrentWeek(interval.getStart, epochWeekStart)
     val ut = Z3Table.secondsInCurrentWeek(interval.getEnd, epochWeekEnd)
 
-    val lz = Z3SFC.index(lx, ly, lt).z
-    val uz = Z3SFC.index(ux, uy, ut).z
+    // time range for a chunk is 0 to 1 week (in seconds)
+    val (tStart, tEnd) = (0, Weeks.ONE.toStandardSeconds.getSeconds)
 
     val getRanges: (Seq[Int], (Double, Double), (Double, Double), (Long, Long)) => Seq[Range] =
       if (sft.isPoints) getPointRanges else getGeomRanges
 
     // the z3 index breaks time into 1 week chunks, so create a range for each week in our range
-    val (ranges, zMap) = if (weeks.length == 1) {
-      val ranges = getRanges(weeks, (lx, ux), (ly, uy), (lt, ut))
-      val map = Map(weeks.head.toShort -> (lz, uz))
-      (ranges, map)
+    val ranges = if (weeks.length == 1) {
+      getRanges(weeks, (lx, ux), (ly, uy), (lt, ut))
     } else {
-      // time range for a chunk is 0 to 1 week (in seconds)
-      val tMax = Weeks.ONE.toStandardSeconds.getSeconds
       val head +: middle :+ last = weeks.toList
-      val headRanges = getRanges(Seq(head), (lx, ux), (ly, uy), (lt, tMax))
-      val lastRanges = getRanges(Seq(last), (lx, ux), (ly, uy), (0, ut))
-      val middleRanges = if (middle.isEmpty) Seq.empty else getRanges(middle, (lx, ux), (ly, uy), (0, tMax))
-      val ranges = headRanges ++ middleRanges ++ lastRanges
-      val minz = Z3SFC.index(lx, ly, 0).z
-      val maxZ = Z3SFC.index(ux, uy, tMax).z
-      val map = Map(head.toShort -> (lz, maxZ), last.toShort -> (minz, uz)) ++
-          middle.map(_.toShort -> (minz, maxZ)).toMap
-      (ranges, map)
+      val headRanges = getRanges(Seq(head), (lx, ux), (ly, uy), (lt, tEnd))
+      val lastRanges = getRanges(Seq(last), (lx, ux), (ly, uy), (tStart, ut))
+      val middleRanges = if (middle.isEmpty) Seq.empty else getRanges(middle, (lx, ux), (ly, uy), (tStart, tEnd))
+      headRanges ++ middleRanges ++ lastRanges
     }
 
-    val zIter = Z3Iterator.configure(zMap, sft.isPoints, Z3_ITER_PRIORITY)
+    // index space values for comparing in the iterator
+    val (xmin, ymin, tmin) = Z3SFC.index(lx, ly, lt).decode
+    val (xmax, ymax, tmax) = Z3SFC.index(ux, uy, ut).decode
+    val (tLo, tHi) = (Z3SFC.normT(tStart), Z3SFC.normT(tEnd))
+    // TODO
+
+    val wmin = weeks.head.toShort
+    val wmax = weeks.last.toShort
+
+    val zIter = Z3Iterator.configure(sft.isPoints, xmin, xmax, ymin, ymax, tmin, tmax, wmin, wmax, tLo, tHi, Z3_ITER_PRIORITY)
     val iters = Seq(zIter) ++ iterators
     BatchScanPlan(z3table, ranges, iters, Seq(colFamily), kvsToFeatures, numThreads, hasDuplicates = !sft.isPoints)
   }

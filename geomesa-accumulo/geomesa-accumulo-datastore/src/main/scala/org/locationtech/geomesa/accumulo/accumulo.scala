@@ -18,7 +18,6 @@ package object accumulo {
   //  Since we would like to be able to use ECQL filters, we are restricted to letters, numbers, and _'s.
   val DEFAULT_GEOMETRY_PROPERTY_NAME = "SF_PROPERTY_GEOMETRY"
   val DEFAULT_DTG_PROPERTY_NAME = "dtg"
-  val DEFAULT_DTG_END_PROPERTY_NAME = "dtg_end_time"
 
   val DEFAULT_FEATURE_TYPE = "geomesa.feature.type"
   val DEFAULT_SCHEMA_NAME  = "geomesa.index.schema"
@@ -53,6 +52,7 @@ package object accumulo {
     object QueryProperties {
       val QUERY_EXACT_COUNT    = PropAndDefault("geomesa.force.count", "true")
       val QUERY_TIMEOUT_MILLIS = PropAndDefault("geomesa.query.timeout.millis", null) // default is no timeout
+      val SCAN_BATCH_RANGES    = PropAndDefault("geomesa.scan.ranges.batch", "10000")
     }
 
     object BatchWriterProperties {

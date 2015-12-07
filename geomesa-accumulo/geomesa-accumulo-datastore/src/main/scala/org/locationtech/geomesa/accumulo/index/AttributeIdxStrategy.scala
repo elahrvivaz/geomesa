@@ -53,6 +53,8 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with Loggin
       if (interval == everywhen) None else Some((interval.getStartMillis, interval.getEndMillis))
     }
 
+    // for an attribute query, the primary filters are considered an OR
+    // (an AND would never match unless the attribute is a list...)
     val propsAndRanges = filter.primary.map(getPropertyAndRange(queryPlanner.sft, _, dates))
     val attributeSftIndex = propsAndRanges.head._1
     val ranges = propsAndRanges.map(_._2)
@@ -168,11 +170,24 @@ object AttributeIdxStrategy extends StrategyProvider {
   type ScanPlanFn = (SimpleFeatureType, Option[Filter], Option[(String, SimpleFeatureType)]) => BatchScanPlan
 
   override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) = {
-    val cost = filter.primary.flatMap(getAttributeProperty).map { p =>
-      val descriptor = sft.getDescriptor(p.name)
+    val attrsAndCounts = filter.primary
+      .flatMap(getAttributeProperty)
+      .map(_.name)
+      .groupBy((f: String) => f)
+      .map { case (name, itr) => (name, itr.size) }
+
+    val cost = attrsAndCounts.map{ case (attr, count) =>
+      val descriptor = sft.getDescriptor(attr)
       // join queries are much more expensive than non-join queries
       // TODO we could consider whether a join is actually required based on the filter and transform
-      val multiplier = if (descriptor.getIndexCoverage() == IndexCoverage.JOIN) 10 else 1
+      // TODO figure out the actual cost of each additional range...I'll make it 2
+      val additionalRangeCost = 1
+      val joinCost = 10
+      val multiplier =
+        if (descriptor.getIndexCoverage() == IndexCoverage.JOIN) joinCost + (additionalRangeCost*(count-1))
+        else 1
+
+      // scale attribute cost by expected cardinality
       hints.cardinality(descriptor) match {
         case Cardinality.HIGH    => 1 * multiplier
         case Cardinality.UNKNOWN => 101 * multiplier
@@ -303,14 +318,15 @@ object AttributeIdxStrategy extends StrategyProvider {
 
   def tryMergeDisjointAttrEquals(toMerge: QueryFilter, mergeTo: QueryFilter): QueryFilter = {
     // determine if toMerge.primary and mergeTo.primary are all Equals filters on the same attribute
-    if(isPropertyIsEqualToFilter(toMerge) && isPropertyIsEqualToFilter(mergeTo) && isSameProperty(toMerge, mergeTo)) {
+    // TODO this will be incorrect for multi-valued properties where we have an AND in the primary filter
+    if (isPropertyIsEqualToFilter(toMerge) && isPropertyIsEqualToFilter(mergeTo) && isSameProperty(toMerge, mergeTo)) {
       // if we have disjoint attribute queries with the same secondary filter, merge into a multi-range query
       (toMerge.secondary, mergeTo.secondary) match {
         case (Some(f1), Some(f2)) if f1.equals(f2) =>
-          mergeTo.copy(primary = mergeTo.primary ++ toMerge.primary)
+          mergeTo.copy(primary = mergeTo.primary ++ toMerge.primary, or = true)
 
         case (None, None) =>
-          mergeTo.copy(primary = mergeTo.primary ++ toMerge.primary)
+          mergeTo.copy(primary = mergeTo.primary ++ toMerge.primary, or = true)
 
         case _ =>
           null

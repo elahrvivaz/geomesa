@@ -7,7 +7,7 @@
 *************************************************************************/
 package org.locationtech.geomesa.accumulo.iterators
 
-import com.google.common.primitives.{Shorts, Longs}
+import com.google.common.primitives.{Longs, Shorts}
 import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{ByteSequence, Key, Range => AccRange, Value}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
@@ -17,13 +17,23 @@ import org.locationtech.geomesa.curve.Z3
 
 class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
 
-  import org.locationtech.geomesa.accumulo.iterators.Z3Iterator.{pointsKey, zKey, stringToMap}
+  import org.locationtech.geomesa.accumulo.iterators.Z3Iterator.{pointsKey, zKey}
 
   var source: SortedKeyValueIterator[Key, Value] = null
+  var zNums: Array[Int] = null
 
-  var zMap: String = null
-  var zsByWeek: Array[(Int, Int, Int, Int, Int, Int)] = null
-  var weekOffset: Short = -1
+  var xmin: Int = -1
+  var xmax: Int = -1
+  var ymin: Int = -1
+  var ymax: Int = -1
+  var tmin: Int = -1
+  var tmax: Int = -1
+  var wmin: Short = -1
+  var wmax: Short = -1
+
+  var tLo: Int = -1
+  var tHi: Int = -1
+
   var isPoints: Boolean = false
   var inBounds: (Key) => Boolean = null
 
@@ -52,11 +62,19 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
     val week = Shorts.fromBytes(bytes(0), bytes(1))
     val keyZ = Longs.fromBytes(bytes(2), bytes(3), bytes(4), bytes(5), bytes(6), bytes(7), bytes(8), bytes(9))
     val (x, y, t) = Z3(keyZ).decode
-    val (xmin, ymin, tmin, xmax, ymax, tmax) = zsByWeek(week - weekOffset)
-    x >= xmin && x <= xmax && y >= ymin && y <= ymax && t >= tmin && t <= tmax
+    x >= xmin && x <= xmax && y >= ymin && y <= ymax && {
+      if (week == wmin) {
+        t >= tmin && t <= tHi
+      } else if (week == wmax) {
+        t >= tLo && t <= tmax
+      } else {
+        true
+      }
+    }
   }
 
   private def inBoundsNonPoints(k: Key): Boolean = {
+    // TODO
     k.getRow(row)
     val bytes = row.getBytes
     val week = Shorts.fromBytes(bytes(0), bytes(1))
@@ -79,19 +97,26 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
     IteratorClassLoader.initClassLoader(getClass)
 
     this.source = source.deepCopy(env)
+
     isPoints = options.get(pointsKey).toBoolean
-    zMap = options.get(zKey)
+
+    zNums = options.get(zKey).split(":").map(_.toInt)
+    xmin = zNums(0)
+    xmax = zNums(1)
+    ymin = zNums(2)
+    ymax = zNums(3)
+    tmin = zNums(4)
+    tmax = zNums(5)
+    wmin = zNums(6).toShort
+    wmax = zNums(7).toShort
+    tLo = if (wmin == wmax) tmin else zNums(8)
+    tHi = if (wmin == wmax) tmax else zNums(9)
+
+    // TODO
     val zs = if (isPoints) {
       stringToMap(zMap).toList.sortBy(_._1)
     } else {
       stringToMap(zMap).toList.sortBy(_._1).map { case(w, (ll, ur)) => (w, (ll & Z3Table.GEOM_Z_MASK, ur & Z3Table.GEOM_Z_MASK)) }
-    }
-    weekOffset = zs.head._1
-    // NB: we assume weeks are continuous
-    zsByWeek = zs.map(_._2).toArray.map { case (ll, ur) =>
-      val (x0, y0, t0) = Z3(ll).decode
-      val (x1, y1, t1) = Z3(ur).decode
-      (x0, y0, t0, x1, y1, t1)
     }
     inBounds = if (isPoints) inBoundsPoints else inBoundsNonPoints
   }
@@ -104,7 +129,7 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
   override def deepCopy(env: IteratorEnvironment): SortedKeyValueIterator[Key, Value] = {
     import scala.collection.JavaConversions._
     val iter = new Z3Iterator
-    iter.init(source, Map(zKey -> zMap, pointsKey -> isPoints.toString), env)
+    iter.init(source, Map(pointsKey -> isPoints.toString, zKey -> zNums.mkString(":")), env)
     iter
   }
 }
@@ -114,16 +139,21 @@ object Z3Iterator {
   val zKey = "z"
   val pointsKey = "g"
 
-  def configure(zRangesByWeek: Map[Short, (Long, Long)], isPoints: Boolean, priority: Int) = {
+  def configure(isPoints: Boolean,
+                xmin: Int,
+                xmax: Int,
+                ymin: Int,
+                ymax: Int,
+                tmin: Int,
+                tmax: Int,
+                wmin: Short,
+                wmax: Short,
+                tLo: Int,
+                tHi: Int,
+                priority: Int) = {
     val is = new IteratorSetting(priority, "z3", classOf[Z3Iterator])
-    is.addOption(zKey, mapToString(zRangesByWeek))
     is.addOption(pointsKey, isPoints.toString)
+    is.addOption(zKey, s"$xmin:$xmax:$ymin:$ymax:$tmin:$tmax:$wmin:$wmax:$tLo:$tHi")
     is
   }
-
-  protected[iterators] def mapToString(ranges: Map[Short, (Long, Long)]): String =
-    ranges.map { case (w, (ll, ur)) => s"$w-$ll-$ur" }.mkString(",")
-
-  protected[iterators] def stringToMap(ranges: String): Map[Short, (Long, Long)] =
-    ranges.split(",").map(_.split("-")).map(r => r.head.toShort -> (r(1).toLong, r(2).toLong)).toMap
 }
