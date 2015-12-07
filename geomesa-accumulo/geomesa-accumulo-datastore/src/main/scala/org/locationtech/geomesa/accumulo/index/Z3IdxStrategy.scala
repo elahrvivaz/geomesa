@@ -17,7 +17,7 @@ import org.joda.time.Weeks
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.iterators._
-import org.locationtech.geomesa.curve.Z3SFC
+import org.locationtech.geomesa.curve.{Z3, Z3SFC}
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeatureType
@@ -158,10 +158,15 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     }
 
     // index space values for comparing in the iterator
-    val (xmin, ymin, tmin) = Z3SFC.index(lx, ly, lt).decode
-    val (xmax, ymax, tmax) = Z3SFC.index(ux, uy, ut).decode
-    val (tLo, tHi) = (Z3SFC.normT(tStart), Z3SFC.normT(tEnd))
-    // TODO
+    def decode(x: Double, y: Double, t: Long): (Int, Int, Int) = if (sft.isPoints) {
+      Z3SFC.index(x, y, t).decode
+    } else {
+      Z3(Z3SFC.index(x, y, t).z & Z3Table.GEOM_Z_MASK).decode
+    }
+
+    val (xmin, ymin, tmin) = decode(lx, ly, lt)
+    val (xmax, ymax, tmax) = decode(ux, uy, ut)
+    val (tLo, tHi) = (Z3SFC.time.normalize(tStart), Z3SFC.time.normalize(tEnd))
 
     val wmin = weeks.head.toShort
     val wmax = weeks.last.toShort

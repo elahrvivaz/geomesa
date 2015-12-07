@@ -35,7 +35,7 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
   var tHi: Int = -1
 
   var isPoints: Boolean = false
-  var inBounds: (Key) => Boolean = null
+  var rowToLong: Array[Byte] => Long = null
 
   var topKey: Key = null
   var topValue: Value = null
@@ -49,18 +49,18 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
   def findTop(): Unit = {
     topKey = null
     topValue = null
-    while (source.hasTop && !inBounds(source.getTopKey)) { source.next() }
+    while (source.hasTop && !inBounds(source.getTopKey, rowToLong)) { source.next() }
     if (source.hasTop) {
       topKey = source.getTopKey
       topValue = source.getTopValue
     }
   }
 
-  private def inBoundsPoints(k: Key): Boolean = {
+  private def inBounds(k: Key, getZ: (Array[Byte] => Long)): Boolean = {
     k.getRow(row)
     val bytes = row.getBytes
     val week = Shorts.fromBytes(bytes(0), bytes(1))
-    val keyZ = Longs.fromBytes(bytes(2), bytes(3), bytes(4), bytes(5), bytes(6), bytes(7), bytes(8), bytes(9))
+    val keyZ = getZ(bytes)
     val (x, y, t) = Z3(keyZ).decode
     x >= xmin && x <= xmax && y >= ymin && y <= ymax && {
       if (week == wmin) {
@@ -73,19 +73,11 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
     }
   }
 
-  private def inBoundsNonPoints(k: Key): Boolean = {
-    // TODO
-    k.getRow(row)
-    val bytes = row.getBytes
-    val week = Shorts.fromBytes(bytes(0), bytes(1))
-    // non-points only use 3 bytes of the z curve
-    val zBytes = Array.fill[Byte](8)(0)
-    System.arraycopy(bytes, 2, zBytes, 0, Z3Table.GEOM_Z_NUM_BYTES)
-    val keyZ = Longs.fromByteArray(zBytes)
-    val (x, y, t) = Z3(keyZ).decode
-    val (xmin, ymin, tmin, xmax, ymax, tmax) = zsByWeek(week - weekOffset)
-    x >= xmin && x <= xmax && y >= ymin && y <= ymax && t >= tmin && t <= tmax
-  }
+  private def rowToLongPoint(bytes: Array[Byte]): Long =
+    Longs.fromBytes(bytes(2), bytes(3), bytes(4), bytes(5), bytes(6), bytes(7), bytes(8), bytes(9))
+
+  private def rowToLongNonPoints(bytes: Array[Byte]): Long =
+    Longs.fromBytes(bytes(2), bytes(3), bytes(4), 0, 0, 0, 0, 0)
 
   override def getTopValue: Value = topValue
   override def getTopKey: Key = topKey
@@ -112,13 +104,10 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
     tLo = if (wmin == wmax) tmin else zNums(8)
     tHi = if (wmin == wmax) tmax else zNums(9)
 
-    // TODO
-    val zs = if (isPoints) {
-      stringToMap(zMap).toList.sortBy(_._1)
-    } else {
-      stringToMap(zMap).toList.sortBy(_._1).map { case(w, (ll, ur)) => (w, (ll & Z3Table.GEOM_Z_MASK, ur & Z3Table.GEOM_Z_MASK)) }
-    }
-    inBounds = if (isPoints) inBoundsPoints else inBoundsNonPoints
+    rowToLong = if (isPoints) rowToLongPoint else rowToLongNonPoints
+
+    // verify that only 3 bytes are used for non point geoms - need to update inBounds if changed
+    assert(Z3Table.GEOM_Z_NUM_BYTES == 3, "Z Bytes have changed but implementation hasn't been updated")
   }
 
   override def seek(range: AccRange, columnFamilies: java.util.Collection[ByteSequence], inclusive: Boolean): Unit = {
