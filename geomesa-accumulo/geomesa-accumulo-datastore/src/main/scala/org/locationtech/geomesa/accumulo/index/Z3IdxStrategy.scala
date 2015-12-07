@@ -156,7 +156,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       val middleRanges = if (middle.isEmpty) Seq.empty else getRanges(middle, (lx, ux), (ly, uy), (tStart, tEnd))
       headRanges ++ middleRanges ++ lastRanges
     }
-
+// TODO need to double check dedupe for other strategies
     // index space values for comparing in the iterator
     def decode(x: Double, y: Double, t: Long): (Int, Int, Int) = if (sft.isPoints) {
       Z3SFC.index(x, y, t).decode
