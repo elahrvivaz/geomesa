@@ -35,9 +35,9 @@ class BinEncoder(sft: SimpleFeatureType, trackIdField: String) {
   val getDtg: (SimpleFeature) => Long = sft.getDtgIndex match {
     case Some(i) => (sf: SimpleFeature) => {
       val dtg = sf.getAttribute(i).asInstanceOf[Date]
-      if (dtg == null) System.currentTimeMillis() else dtg.getTime
+      if (dtg == null) 0L else dtg.getTime
     }
-    case None => (sf: SimpleFeature) => System.currentTimeMillis()
+    case None => (sf: SimpleFeature) => 0L
   }
 
   def encode(sf: SimpleFeature): Array[Byte] = {

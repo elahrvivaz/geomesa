@@ -73,11 +73,11 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
     }
   }
 
-  private def rowToLongPoint(bytes: Array[Byte]): Long =
-    Longs.fromBytes(bytes(2), bytes(3), bytes(4), bytes(5), bytes(6), bytes(7), bytes(8), bytes(9))
-
-  private def rowToLongNonPoints(bytes: Array[Byte]): Long =
-    Longs.fromBytes(bytes(2), bytes(3), bytes(4), 0, 0, 0, 0, 0)
+  private def rowToLong(count: Int): (Array[Byte]) => Long = count match {
+    case 3 => (bytes) => Longs.fromBytes(bytes(2), bytes(3), bytes(4), 0, 0, 0, 0, 0)
+    case 4 => (bytes) => Longs.fromBytes(bytes(2), bytes(3), bytes(4), bytes(5), 0, 0, 0, 0)
+    case 8 => (bytes) => Longs.fromBytes(bytes(2), bytes(3), bytes(4), bytes(5), bytes(6), bytes(7), bytes(8), bytes(9))
+  }
 
   override def getTopValue: Value = topValue
   override def getTopKey: Key = topKey
@@ -104,10 +104,7 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
     tLo = if (wmin == wmax) tmin else zNums(8)
     tHi = if (wmin == wmax) tmax else zNums(9)
 
-    rowToLong = if (isPoints) rowToLongPoint else rowToLongNonPoints
-
-    // verify that only 3 bytes are used for non point geoms - need to update inBounds if changed
-    assert(Z3Table.GEOM_Z_NUM_BYTES == 3, "Z Bytes have changed but implementation hasn't been updated")
+    rowToLong = if (isPoints) rowToLong(8) else rowToLong(Z3Table.GEOM_Z_NUM_BYTES)
   }
 
   override def seek(range: AccRange, columnFamilies: java.util.Collection[ByteSequence], inclusive: Boolean): Unit = {
@@ -126,7 +123,7 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
 object Z3Iterator {
 
   val zKey = "z"
-  val pointsKey = "g"
+  val pointsKey = "p"
 
   def configure(isPoints: Boolean,
                 xmin: Int,

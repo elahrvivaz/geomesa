@@ -123,8 +123,11 @@ class KryoLazyDensityIterator extends KryoLazyAggregatingIterator[(Int, Int), Do
   /**
    * Writes a density record from a feature that has an arbitrary geometry
    */
-  def writeNonPoint(geom: Geometry, weight: Double, result: DensityResult): Unit =
+  def writeNonPoint(geom: Geometry, weight: Double, result: DensityResult): Unit = {
+    println(geom)
+    println(geom.getCentroid)
     writePointToResult(geom.getCentroid, weight, result)
+  }
 
   protected[iterators] def writePointToResult(pt: Point, weight: Double, result: DensityResult): Unit =
     writeSnappedPoint((gridSnap.i(pt.getX), gridSnap.j(pt.getY)), weight, result)
@@ -226,8 +229,7 @@ object KryoLazyDensityIterator extends Logging {
    */
   def decodeResult(envelope: Envelope, gridWidth: Int, gridHeight: Int): GridIterator = {
     val gs = new GridSnap(envelope, gridWidth, gridHeight)
-    val decode = decodeResult(_: SimpleFeature, gs)
-    (f) => decode(f)
+    decodeResult(_: SimpleFeature, gs)
   }
 
   /**

@@ -200,8 +200,6 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
       clearFeatures()
       val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate.getTime
       val features = (0 until 15).toArray.map { i =>
-        // space out the points very slightly around 5 primary latitudes 1 degree apart
-        val lat = (i / 30) + 1 + (Random.nextDouble() - 0.5) / 1000.0
         val sf = new ScalaSimpleFeature(i.toString, sft)
         sf.setAttribute(0, i.toString)
         sf.setAttribute(1, "1.0")
@@ -220,8 +218,6 @@ class DensityIteratorTest extends Specification with TestWithDataStore {
       clearFeatures()
       val date = new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate.getTime
       val features = (0 until 15).toArray.map { i =>
-        // space out the points very slightly around 5 primary latitudes 1 degree apart
-        val lat = (i / 30) + 1 + (Random.nextDouble() - 0.5) / 1000.0
         val sf = new ScalaSimpleFeature(i.toString, sft)
         sf.setAttribute(0, i.toString)
         sf.setAttribute(1, "1.0")

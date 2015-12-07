@@ -85,7 +85,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       Some(filter.filter)
     }
 
-    val (iterators, kvsToFeatures, colFamily) = if (hints.isBinQuery) {
+    val (iterators, kvsToFeatures, colFamily, hasDupes) = if (hints.isBinQuery) {
       val trackId = hints.getBinTrackIdField
       val geom = hints.getBinGeomField
       val dtg = hints.getBinDtgField
@@ -103,16 +103,16 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
           val iter = BinAggregatingIterator.configureDynamic(sft, ecql, hints)
           (Seq(iter), Z3Table.FULL_CF)
         }
-      (iters, BinAggregatingIterator.kvsToFeatures(), cf)
+      (iters, BinAggregatingIterator.kvsToFeatures(), cf, false)
     } else if (hints.isDensityQuery) {
       val iter = Z3DensityIterator.configure(sft, ecql, hints)
-      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z3Table.FULL_CF)
+      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z3Table.FULL_CF, false)
     } else if (hints.isTemporalDensityQuery) {
       val iter = KryoLazyTemporalDensityIterator.configure(sft, ecql, hints)
-      (Seq(iter), queryPlanner.defaultKVsToFeatures(hints), Z3Table.FULL_CF)
+      (Seq(iter), queryPlanner.defaultKVsToFeatures(hints), Z3Table.FULL_CF, false)
     } else if (hints.isMapAggregatingQuery) {
       val iter = KryoLazyMapAggregatingIterator.configure(sft, ecql, hints)
-      (Seq(iter), queryPlanner.defaultKVsToFeatures(hints), Z3Table.FULL_CF)
+      (Seq(iter), queryPlanner.defaultKVsToFeatures(hints), Z3Table.FULL_CF, false)
     } else {
       val transforms = for {
         tdef <- hints.getTransformDefinition
@@ -124,7 +124,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
         case (None, None) => Seq.empty
         case _ => Seq(KryoLazyFilterTransformIterator.configure(sft, ecql, transforms, fp))
       }
-      (iters, Z3Table.adaptZ3KryoIterator(hints.getReturnSft), Z3Table.FULL_CF)
+      (iters, Z3Table.adaptZ3KryoIterator(hints.getReturnSft), Z3Table.FULL_CF, !sft.isPoints)
     }
 
     val z3table = acc.getTableName(sft.getTypeName, Z3Table)
@@ -173,7 +173,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
 
     val zIter = Z3Iterator.configure(sft.isPoints, xmin, xmax, ymin, ymax, tmin, tmax, wmin, wmax, tLo, tHi, Z3_ITER_PRIORITY)
     val iters = Seq(zIter) ++ iterators
-    BatchScanPlan(z3table, ranges, iters, Seq(colFamily), kvsToFeatures, numThreads, hasDuplicates = !sft.isPoints)
+    BatchScanPlan(z3table, ranges, iters, Seq(colFamily), kvsToFeatures, numThreads, hasDupes)
   }
 
   def getPointRanges(weeks: Seq[Int], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {

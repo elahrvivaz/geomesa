@@ -186,7 +186,7 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
     } else {
       byteBuffer.putInt(track.hashCode())
     }
-    val dtg = if (dtgIndex == -1) System.currentTimeMillis() else sf.getDateAsLong(dtgIndex)
+    val dtg = if (dtgIndex == -1) 0L else sf.getDateAsLong(dtgIndex)
     byteBuffer.putInt((dtg / 1000).toInt)
     byteBuffer.putFloat(pt.getY.toFloat) // y is lat
     byteBuffer.putFloat(pt.getX.toFloat) // x is lon
