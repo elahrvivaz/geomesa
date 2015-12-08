@@ -117,7 +117,7 @@ object ZRange {
    * @param rmax: maximum z-index of the query range, inclusive
    * @return (LITMAX, BIGMIN)
    */
-  def zdiv(load: (Long, Long, Int, Int) => Long, dims: Int)(xd: Long, rmin: Long, rmax: Long): (Long, Long) = {
+  private def zdiv(load: (Long, Long, Int, Int) => Long, dims: Int)(xd: Long, rmin: Long, rmax: Long): (Long, Long) = {
     require(rmin < rmax, s"min ($rmin) must be less than max ($rmax)")
     var zmin: Long = rmin
     var zmax: Long = rmax

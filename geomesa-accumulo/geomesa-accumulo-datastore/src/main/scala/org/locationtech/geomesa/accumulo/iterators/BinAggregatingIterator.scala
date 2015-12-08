@@ -275,6 +275,7 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
    * Copies the current value directly into the output buffer - used for pre-computed bin values
    */
   def copyValue(): Unit = {
+    topKey = source.getTopKey
     System.arraycopy(source.getTopValue.get, 0, bytes, bytesWritten, binSize)
     bytesWritten += binSize
   }
@@ -285,7 +286,6 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
   def copyValueWithFilter(sf: ScalaSimpleFeature, filter: Filter, gf: GeometryFactory)(): Unit = {
     setValuesFromBin(sf, gf)
     if (filter.evaluate(sf)) {
-      topKey = source.getTopKey
       copyValue()
     }
   }
@@ -296,11 +296,9 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
   def copyValueWithDupes(getId: (Array[Byte]) => String)(): Unit = {
     if (idsSeen.size < maxIdsToTrack) {
       if (idsSeen.add(getId(source.getTopKey.getRow.getBytes))) {
-        topKey = source.getTopKey
         copyValue()
       }
     } else if (idsSeen.contains(getId(source.getTopKey.getRow.getBytes))) {
-      topKey = source.getTopKey
       copyValue()
     }
   }
@@ -316,11 +314,9 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
     if (filter.evaluate(sf)) {
       if (idsSeen.size < maxIdsToTrack) {
         if (idsSeen.add(getId(source.getTopKey.getRow.getBytes))) {
-          topKey = source.getTopKey
           copyValue()
         }
       } else if (idsSeen.contains(getId(source.getTopKey.getRow.getBytes))) {
-        topKey = source.getTopKey
         copyValue()
       }
     }

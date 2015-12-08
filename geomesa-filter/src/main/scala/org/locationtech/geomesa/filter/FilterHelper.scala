@@ -145,7 +145,7 @@ object FilterHelper {
   }
 
   // NB: This method assumes that the filters represent a collection of 'and'ed temporal filters.
-  def extractInterval(filters: Seq[Filter], dtField: Option[String], exclusive: Boolean = false): Interval = {
+  def extractInterval(filters: Seq[Filter], dtField: Option[String], exclusive: Boolean = false): Interval =
     dtField match {
       case None      => everywhen
       case Some(dtf) =>
@@ -153,8 +153,6 @@ object FilterHelper {
         val (s, e) = intervals.fold((minDateTime, maxDateTime))(overlap)
         if (s > e) null else new Interval(s, e, DateTimeZone.UTC)
     }
-  }
-
 
   private def overlap(dt1: (Long, Long), dt2: (Long, Long)): (Long, Long) =
     (math.max(dt1._1, dt2._1), math.min(dt1._2, dt2._2))
@@ -163,8 +161,8 @@ object FilterHelper {
     filter match {
       case during: During =>
         val p = during.getExpression2.evaluate(null, classOf[Period])
-        val start = p.getBeginning.getPosition.getDate.getTime
-        val end = p.getEnding.getPosition.getDate.getTime
+        val start = new DateTime(p.getBeginning.getPosition.getDate, DateTimeZone.UTC).getMillis
+        val end = new DateTime(p.getEnding.getPosition.getDate.getTime, DateTimeZone.UTC).getMillis
         if (exclusive) {
           (roundSecondsUp(start), roundSecondsDown(end))
         } else {
@@ -325,8 +323,8 @@ object FilterHelper {
 
   def tryReduceGeometryFilter(filts: Seq[Filter]): Seq[Filter] = {
     import org.geotools.data.DataUtilities._
-
     import scala.collection.JavaConversions._
+
     val filtFactory = CommonFactoryFinder.getFilterFactory2
 
     def getAttrName(l: BBOX): String = propertyNames(l).head.getPropertyName

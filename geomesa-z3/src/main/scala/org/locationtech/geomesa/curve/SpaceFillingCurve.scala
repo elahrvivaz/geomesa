@@ -10,6 +10,9 @@ package org.locationtech.geomesa.curve
 import org.joda.time.Weeks
 
 trait SpaceFillingCurve[T] {
+  def lat: NormalizedDimension
+  def lon: NormalizedDimension
+  def time: NormalizedDimension
   def index(x: Double, y: Double, t: Long): T
   def invert(i: T): (Double, Double, Long)
   def ranges(x: (Double, Double), y: (Double, Double), t: (Long, Long), precision: Int = 64): Seq[(Long, Long)]
@@ -22,9 +25,9 @@ object Z3SFC extends SpaceFillingCurve[Z3] {
   private[curve] val tprec: Long = math.pow(2, 20).toLong - 1
   private[curve] val tmax: Double = Weeks.weeks(1).toStandardSeconds.getSeconds.toDouble
 
-  val lon  = NormalizedLon(xprec)
-  val lat  = NormalizedLat(yprec)
-  val time = NormalizedTime(tprec, tmax)
+  override val lon  = NormalizedLon(xprec)
+  override val lat  = NormalizedLat(yprec)
+  override val time = NormalizedTime(tprec, tmax)
 
   override def index(x: Double, y: Double, t: Long): Z3 =
     Z3(lon.normalize(x), lat.normalize(y), time.normalize(t))

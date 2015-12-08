@@ -62,6 +62,7 @@ class DensityIterator extends KryoLazyDensityIterator with Logging {
       case _             => super.writeNonPoint(geom, weight, result)
     }
   }
+
   def writeMultiPoint(geom: MultiPoint, weight: Double, result: DensityResult): Unit = {
     val geohash = indexDecoder.decode(source.getTopKey).getDefaultGeometry.asInstanceOf[Geometry]
     (0 until geom.getNumGeometries).foreach { i =>

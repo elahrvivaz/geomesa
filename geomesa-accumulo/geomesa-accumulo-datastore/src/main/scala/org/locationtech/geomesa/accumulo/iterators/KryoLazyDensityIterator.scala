@@ -123,11 +123,8 @@ class KryoLazyDensityIterator extends KryoLazyAggregatingIterator[(Int, Int), Do
   /**
    * Writes a density record from a feature that has an arbitrary geometry
    */
-  def writeNonPoint(geom: Geometry, weight: Double, result: DensityResult): Unit = {
-    println(geom)
-    println(geom.getCentroid)
+  def writeNonPoint(geom: Geometry, weight: Double, result: DensityResult): Unit =
     writePointToResult(geom.getCentroid, weight, result)
-  }
 
   protected[iterators] def writePointToResult(pt: Point, weight: Double, result: DensityResult): Unit =
     writeSnappedPoint((gridSnap.i(pt.getX), gridSnap.j(pt.getY)), weight, result)

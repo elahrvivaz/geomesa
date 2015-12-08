@@ -51,8 +51,8 @@ abstract class KryoLazyAggregatingIterator[K, V] extends SortedKeyValueIterator[
     val options = jOptions.asScala
 
     sft = SimpleFeatureTypes.createType("", options(SFT_OPT))
-    filter = options.get(CQL_OPT).map(FastFilterFactory.toFilter).orNull
     reusableSf = new KryoFeatureSerializer(sft).getReusableFeature
+    filter = options.get(CQL_OPT).map(FastFilterFactory.toFilter).orNull
   }
 
   override def hasTop: Boolean = topKey != null
