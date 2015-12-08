@@ -174,9 +174,9 @@ object Z3Table extends GeoMesaTable {
 
     while (in.nonEmpty) {
       val (min, max) = in.dequeue()
-      val ZPrefix(zprefix, zbits) = ZRange.longestCommonPrefix(min, max, Z3)
+      val ZPrefix(zprefix, zbits) = ZRange.longestCommonPrefix(min, max)
       if (zbits < GEOM_Z_NUM_BYTES * 8) {
-        val (litmax, bigmin) = ZRange.zdivide(Z3((min + max) / 2), Z3(min), Z3(max), Z3)
+        val (litmax, bigmin) = ZRange.zdivide(Z3((min + max) / 2), Z3(min), Z3(max))
         in.enqueue((min, litmax.z), (bigmin.z, max))
       } else {
         out.append(zprefix & GEOM_Z_MASK) // truncate down to the bytes we use so we can dedupe rows

@@ -11,30 +11,20 @@ package org.locationtech.geomesa.curve
  * Represents a cube in index space defined by min and max as two opposing points.
  * All operations refer to user space.
  */
-case class ZRange(min: ZPoint, max: ZPoint) {
+case class ZRange(min: Z3, max: Z3) {
 
   // contains in user space - each dimension is contained
   def contains(r: ZRange): Boolean = {
-    var i = 0
-    while (i < min.dims) {
-      if (min.dim(i) > r.min.dim(i) || max.dim(i) < r.max.dim(i)) {
-        return false
-      }
-      i += 1
-    }
-    true
+    min.dim(0) <= r.min.dim(0) && max.dim(0) >= r.max.dim(0) &&
+        min.dim(1) <= r.min.dim(1) && max.dim(1) >= r.max.dim(1) &&
+        min.dim(2) <= r.min.dim(2) && max.dim(2) >= r.max.dim(2)
   }
 
   // overlap in user space - if all dimensions overlaps
   def overlaps(r: ZRange): Boolean = {
-    var i = 0
-    while (i < min.dims) {
-      if (math.max(min.dim(i), r.min.dim(i)) > math.min(max.dim(i), r.max.dim(i))) {
-        return false
-      }
-      i += 1
-    }
-    true
+    math.max(min.dim(0), r.min.dim(0)) <= math.min(max.dim(0), r.max.dim(0)) &&
+        math.max(min.dim(1), r.min.dim(1)) <= math.min(max.dim(1), r.max.dim(1)) &&
+        math.max(min.dim(2), r.min.dim(2)) <= math.min(max.dim(2), r.max.dim(2))
   }
 }
 
@@ -44,20 +34,20 @@ object ZRange {
    * Recurse down the oct-tree and report all z-ranges which are contained
    * in the cube defined by the min and max points
    */
-  def zranges(min: ZPoint, max: ZPoint, n: ZN, precision: Int = 64): Seq[(Long, Long)] = {
-    val ZPrefix(commonPrefix, commonBits) = longestCommonPrefix(min.z, max.z, n)
+  def zranges(min: Z3, max: Z3, precision: Int = 64): Seq[(Long, Long)] = {
+    val ZPrefix(commonPrefix, commonBits) = longestCommonPrefix(min.z, max.z)
 
     val searchRange = ZRange(min, max)
     var mq = new MergeQueue // stores our results
 
     // base our recursion on the depth of the tree that we get 'for free' from the common prefix,
     // and on the expansion factor of the number child regions, which is proportional to the number of dimensions
-    val maxRecurse = (if (commonBits < 31) 21 else if (commonBits < 41) 18 else 15) / n.dims
+    val maxRecurse = if (commonBits < 31) 7 else if (commonBits < 41) 6 else 5
 
     def zranges(prefix: Long, offset: Int, oct: Long, level: Int): Unit = {
       val min: Long = prefix | (oct << offset) // QR + 00000...
       val max: Long = min | (1L << offset) - 1 // QR + 11111...
-      val octRange = ZRange(n.apply(min), n.apply(max))
+      val octRange = ZRange(Z3(min), Z3(max))
 
       if (searchRange.contains(octRange) || offset < 64 - precision) {
         // whole range matches, happy day
@@ -66,10 +56,10 @@ object ZRange {
         if (level < maxRecurse && offset > 0) {
           // some portion of this range is excluded
           // let our children work on each subrange
-          val nextOffset = offset - n.dims
+          val nextOffset = offset - Z3.dims
           val nextLevel = level + 1
           var nextRegion = 0
-          while (nextRegion < n.subRegions) {
+          while (nextRegion < Z3.subRegions) {
             zranges(min, nextOffset, nextRegion, nextLevel)
             nextRegion += 1
           }
@@ -92,28 +82,28 @@ object ZRange {
    *
    * @return (common prefix, number of bits in common)
    */
-  def longestCommonPrefix(lower: Long, upper: Long, n: ZN): ZPrefix = {
-    var bitShift = n.bits - n.dims
+  def longestCommonPrefix(lower: Long, upper: Long): ZPrefix = {
+    var bitShift = Z3.bits - Z3.dims
     while ((lower >>> bitShift) == (upper >>> bitShift) && bitShift > -1) {
-      bitShift -= n.dims
+      bitShift -= Z3.dims
     }
-    bitShift += n.dims // increment back to the last valid value
+    bitShift += Z3.dims // increment back to the last valid value
     ZPrefix(lower & (Long.MaxValue << bitShift), 64 - bitShift)
   }
 
   /**
    * Returns (litmax, bigmin) for the given range and point
    */
-  def zdivide(p: ZPoint, rmin: ZPoint, rmax: ZPoint, n: ZN): (ZPoint, ZPoint) = {
-    val (litmax, bigmin) = zdiv(load(n), n.dims)(p.z, rmin.z, rmax.z)
-    (n.apply(litmax), n.apply(bigmin))
+  def zdivide(p: Z3, rmin: Z3, rmax: Z3): (Z3, Z3) = {
+    val (litmax, bigmin) = zdiv(load, Z3.dims)(p.z, rmin.z, rmax.z)
+    (Z3(litmax), Z3(bigmin))
   }
 
   /** Loads either 1000... or 0111... into starting at given bit index of a given dimension */
-  private def load(n: ZN)(target: Long, p: Long, bits: Int, dim: Int): Long = {
-    val mask = ~(Z3.split(n.maxValue >> (n.bitsPerDim - bits)) << dim)
+  private def load(target: Long, p: Long, bits: Int, dim: Int): Long = {
+    val mask = ~(Z3.split(Z3.maxValue >> (Z3.bitsPerDim - bits)) << dim)
     val wiped = target & mask
-    wiped | (n.split(p) << dim)
+    wiped | (Z3.split(p) << dim)
   }
 
   /**

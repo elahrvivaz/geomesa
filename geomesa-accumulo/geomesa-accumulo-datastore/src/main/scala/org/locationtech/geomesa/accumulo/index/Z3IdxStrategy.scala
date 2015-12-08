@@ -141,7 +141,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     val ut = Z3Table.secondsInCurrentWeek(interval.getEnd, epochWeekEnd)
 
     // time range for a chunk is 0 to 1 week (in seconds)
-    val (tStart, tEnd) = (0, Weeks.ONE.toStandardSeconds.getSeconds)
+    val (tStart, tEnd) = (Z3SFC.time.min.toLong, Z3SFC.time.max.toLong)
 
     val getRanges: (Seq[Int], (Double, Double), (Double, Double), (Long, Long)) => Seq[Range] =
       if (sft.isPoints) getPointRanges else getGeomRanges

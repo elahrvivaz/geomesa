@@ -42,7 +42,7 @@ class ZRangeTest extends Specification {
     "calculate ranges" >> {
       val min = Z3(2, 2, 0)
       val max = Z3(3, 6, 0)
-      val ranges = ZRange.zranges(min, max, Z3)
+      val ranges = ZRange.zranges(min, max)
       ranges must haveLength(3)
       ranges must containTheSameElementsAs(Seq((Z3(2, 2, 0).z, Z3(3, 3, 0).z),
         (Z3(2, 4, 0).z, Z3(3, 5, 0).z), (Z3(2, 6, 0).z, Z3(3, 6, 0).z)))
@@ -80,10 +80,8 @@ class ZRangeTest extends Specification {
         (math.round(z._1 * 1000.0) / 1000.0, math.round(z._2 * 1000.0) / 1000.0, z._3)
 
       forall(ranges) { r =>
-        val ret = ZRange.zranges(r._1, r._2, Z3)
+        val ret = ZRange.zranges(r._1, r._2)
         ret.length must beGreaterThan(0)
-        val old = Z3Range.zranges(r._1, r._2)
-        ret.length mustEqual old.length
       }
     }
   }

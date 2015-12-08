@@ -7,22 +7,24 @@
 *************************************************************************/
 package org.locationtech.geomesa.curve
 
-class Z3(val z: Long) extends AnyVal with ZPoint {
-  override def dims = Z3.dims
-  override def decode = (dim(0), dim(1), dim(2))
-  override def dim(i: Int): Int = if (i == 0) Z3.combine(z) else Z3.combine(z >> i)
+class Z3(val z: Long) extends AnyVal {
+  def decode = (dim(0), dim(1), dim(2))
+  def dim(i: Int): Int = if (i == 0) Z3.combine(z) else Z3.combine(z >> i)
   override def toString = f"$z $decode"
 }
 
-object Z3 extends ZN {
+object Z3 {
 
-  override final val dims = 3
-  override final val bits = 63
-  override final val bitsPerDim = 21
-  override final val maxValue = 0x1fffffL
+  final val dims = 3
+  final val bits = 63
+  final val bitsPerDim = 21
+  final val maxValue = 0x1fffffL
 
-  override def apply(z: Long) = new Z3(z)
-  override def apply(dims: Int*) = new Z3(split(dims.head) | split(dims(1)) << 1 | split(dims(2)) << 2)
+  def apply(z: Long): Z3 = new Z3(z)
+  def apply(dims: Int*) = new Z3(split(dims(0)) | split(dims(1)) << 1 | split(dims(2)) << 2)
+
+  // the number of child regions, e.g. for 2 dims it would be 00 01 10 11
+  val subRegions = math.pow(2, dims).toInt
 
   /** insert 00 between every bit in value. Only first 21 bits can be considered. */
   def split(value: Long): Long = {
