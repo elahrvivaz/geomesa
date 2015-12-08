@@ -187,6 +187,11 @@ object Z3Table extends GeoMesaTable {
     out.toSeq
   }
 
+  def getIdFromRow(sft: SimpleFeatureType): (Array[Byte]) => String = {
+    val offset = if (sft.isPoints) 10 else 2 + GEOM_Z_NUM_BYTES
+    (row: Array[Byte]) => new String(row, offset, row.length - offset, Charsets.UTF_8)
+  }
+
   def adaptZ3KryoIterator(sft: SimpleFeatureType): FeatureFunction = {
     val kryo = new KryoFeatureSerializer(sft)
     (e: Entry[Key, Value]) => {
@@ -195,8 +200,7 @@ object Z3Table extends GeoMesaTable {
     }
   }
 
-
-  def configureTable(sft: SimpleFeatureType, table: String, tableOps: TableOperations): Unit = {
+  override def configureTable(sft: SimpleFeatureType, table: String, tableOps: TableOperations): Unit = {
     tableOps.setProperty(table, Property.TABLE_SPLIT_THRESHOLD.getKey, "128M")
     tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
 

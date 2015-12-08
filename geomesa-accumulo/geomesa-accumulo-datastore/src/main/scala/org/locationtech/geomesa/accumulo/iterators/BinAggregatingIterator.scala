@@ -20,6 +20,7 @@ import org.apache.accumulo.core.data.{Range => aRange, _}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.geotools.factory.Hints
 import org.geotools.filter.text.ecql.ECQL
+import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index.QueryPlanners._
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features.kryo.{KryoBufferSimpleFeature, KryoFeatureSerializer}
@@ -64,6 +65,10 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
 
   var handleValue: () => Unit = null
 
+  // server-side deduplication - not 100% effective, but we can't dedupe client side as we don't send ids
+  val idsSeen = scala.collection.mutable.HashSet.empty[String]
+  var maxIdsToTrack = 10000 // TODO configurable
+
   override def init(src: SortedKeyValueIterator[Key, Value],
                     jOptions: jMap[String, String],
                     env: IteratorEnvironment): Unit = {
@@ -89,19 +94,19 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
       byteBuffer = ByteBuffer.wrap(bytes).order(ByteOrder.LITTLE_ENDIAN)
     }
 
+    idsSeen.clear()
+    val deduplicate = options(DEDUPE_OPT).toBoolean
+
     if (options.get(BIN_CF_OPT).exists(_.toBoolean)) {
       // we are using the pre-computed bin values - we can copy the value directly into our buffer
-      handleValue = if (filter == null) {
-        copyValue
-      } else {
-        val sf = new ScalaSimpleFeature("", sft)
-        val gf = new GeometryFactory
-        () => {
-          setValuesFromBin(sf, gf)
-          if (filter.evaluate(sf)) {
-            copyValue()
-          }
-        }
+      val sf = new ScalaSimpleFeature("", sft)
+      val gf = new GeometryFactory
+      val getId = Z3Table.getIdFromRow(sft) // NOTE: Z3 is the only table we use precomputed values for
+      handleValue = (filter, deduplicate) match {
+        case (null, false) => copyValue
+        case (null, true)  => copyValueWithDupes(getId)
+        case (_, false)    => copyValueWithFilter(sf, filter, gf)
+        case (_, true)     => copyValueWithFilterAndDupes(sf, filter, gf, getId)
       }
     } else {
       // we need to derive the bin values from the features
@@ -115,12 +120,11 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
         } else {
           if (labelIndex == -1) writeGeometry else writeGeometryWithLabel
         }
-      handleValue = () => {
-        reusableSf.setBuffer(source.getTopValue.get())
-        if (filter == null || filter.evaluate(reusableSf)) {
-          topKey = source.getTopKey
-          writeBin(reusableSf)
-        }
+      handleValue = (filter, deduplicate) match {
+        case (null, false) => writeValue(reusableSf, writeBin)
+        case (null, true)  => writeValueWithDupes(reusableSf, writeBin)
+        case (_, false)    => writeValueWithFilter(reusableSf, writeBin)
+        case (_, true)     => writeValueWithFilterAndDupes(reusableSf, writeBin)
       }
     }
   }
@@ -270,10 +274,108 @@ class BinAggregatingIterator extends SortedKeyValueIterator[Key, Value] with Log
   /**
    * Copies the current value directly into the output buffer - used for pre-computed bin values
    */
-  def copyValue() = {
-    topKey = source.getTopKey
+  def copyValue(): Unit = {
     System.arraycopy(source.getTopValue.get, 0, bytes, bytesWritten, binSize)
     bytesWritten += binSize
+  }
+
+  /**
+   * Copies the current value directly into the output buffer - used for pre-computed bin values
+   */
+  def copyValueWithFilter(sf: ScalaSimpleFeature, filter: Filter, gf: GeometryFactory)(): Unit = {
+    setValuesFromBin(sf, gf)
+    if (filter.evaluate(sf)) {
+      topKey = source.getTopKey
+      copyValue()
+    }
+  }
+
+  /**
+   * Copies the current value directly into the output buffer - used for pre-computed bin values
+   */
+  def copyValueWithDupes(getId: (Array[Byte]) => String)(): Unit = {
+    if (idsSeen.size < maxIdsToTrack) {
+      if (idsSeen.add(getId(source.getTopKey.getRow.getBytes))) {
+        topKey = source.getTopKey
+        copyValue()
+      }
+    } else if (idsSeen.contains(getId(source.getTopKey.getRow.getBytes))) {
+      topKey = source.getTopKey
+      copyValue()
+    }
+  }
+
+  /**
+   * Copies the current value directly into the output buffer - used for pre-computed bin values
+   */
+  def copyValueWithFilterAndDupes(sf: ScalaSimpleFeature,
+                                  filter: Filter,
+                                  gf: GeometryFactory,
+                                  getId: (Array[Byte]) => String)(): Unit = {
+    setValuesFromBin(sf, gf)
+    if (filter.evaluate(sf)) {
+      if (idsSeen.size < maxIdsToTrack) {
+        if (idsSeen.add(getId(source.getTopKey.getRow.getBytes))) {
+          topKey = source.getTopKey
+          copyValue()
+        }
+      } else if (idsSeen.contains(getId(source.getTopKey.getRow.getBytes))) {
+        topKey = source.getTopKey
+        copyValue()
+      }
+    }
+  }
+
+  /**
+   * Writes values to the output buffer from the kryo-encoded features
+   */
+  def writeValue(sf: KryoBufferSimpleFeature, writeBin: (KryoBufferSimpleFeature) => Unit)(): Unit = {
+    sf.setBuffer(source.getTopValue.get())
+    topKey = source.getTopKey
+    writeBin(sf)
+  }
+
+  /**
+   * Writes values to the output buffer from the kryo-encoded features
+   */
+  def writeValueWithFilter(sf: KryoBufferSimpleFeature, writeBin: (KryoBufferSimpleFeature) => Unit)(): Unit = {
+    sf.setBuffer(source.getTopValue.get())
+    if (filter.evaluate(sf)) {
+      topKey = source.getTopKey
+      writeBin(sf)
+    }
+  }
+
+  /**
+   * Writes values to the output buffer from the kryo-encoded features
+   */
+  def writeValueWithDupes(sf: KryoBufferSimpleFeature, writeBin: (KryoBufferSimpleFeature) => Unit)(): Unit = {
+    sf.setBuffer(source.getTopValue.get())
+    if (idsSeen.size < maxIdsToTrack) {
+      if (idsSeen.add(sf.getID)) {
+        topKey = source.getTopKey
+        writeBin(sf)
+      }
+    } else if (idsSeen.contains(sf.getID)) {
+      topKey = source.getTopKey
+      writeBin(sf)
+    }
+  }
+
+  /**
+   * Writes values to the output buffer from the kryo-encoded features
+   */
+  def writeValueWithFilterAndDupes(sf: KryoBufferSimpleFeature, writeBin: (KryoBufferSimpleFeature) => Unit)(): Unit = {
+    sf.setBuffer(source.getTopValue.get())
+    if (idsSeen.size < maxIdsToTrack) {
+      if (filter.evaluate(sf) && idsSeen.add(sf.getID)) {
+        topKey = source.getTopKey
+        writeBin(sf)
+      }
+    } else if (filter.evaluate(sf) && idsSeen.contains(sf.getID)) {
+      topKey = source.getTopKey
+      writeBin(sf)
+    }
   }
 
   override def deepCopy(env: IteratorEnvironment): SortedKeyValueIterator[Key, Value] = ???
@@ -294,6 +396,7 @@ object BinAggregatingIterator extends Logging {
   private val BATCH_SIZE_OPT = "batch"
   private val BIN_CF_OPT     = "bincf"
   private val SORT_OPT       = "sort"
+  private val DEDUPE_OPT     = "dedupe"
 
   private val TRACK_OPT      = "track"
   private val GEOM_OPT       = "geom"
@@ -306,6 +409,7 @@ object BinAggregatingIterator extends Logging {
   def configurePrecomputed(sft: SimpleFeatureType,
                            filter: Option[Filter],
                            hints: Hints,
+                           deduplicate: Boolean,
                            priority: Int = DEFAULT_PRIORITY): IteratorSetting = {
     sft.getBinTrackId match {
       case Some(trackId) =>
@@ -313,7 +417,7 @@ object BinAggregatingIterator extends Logging {
         val dtg = sft.getDtgField
         val batch = hints.getBinBatchSize
         val sort = hints.isBinSorting
-        val is = configureDynamic(sft, filter, trackId, geom, dtg, None, batch , sort, priority)
+        val is = configure(sft, filter, trackId, geom, dtg, None, batch , sort, deduplicate, priority)
         is.addOption(BIN_CF_OPT, "true")
         is
       case None => throw new RuntimeException(s"No default trackId field found in SFT $sft")
@@ -321,17 +425,36 @@ object BinAggregatingIterator extends Logging {
   }
 
   /**
-   * Creates an iterator config that will operate on regular kryo encoded entries
+   * Configure based on query hints
    */
   def configureDynamic(sft: SimpleFeatureType,
                        filter: Option[Filter],
-                       trackId: String,
-                       geom: String,
-                       dtg: Option[String],
-                       label: Option[String],
-                       batchSize: Int,
-                       sort: Boolean,
-                       priority: Int): IteratorSetting = {
+                       hints: Hints,
+                       deduplicate: Boolean,
+                       priority: Int = DEFAULT_PRIORITY): IteratorSetting = {
+    val trackId = hints.getBinTrackIdField
+    val geom = hints.getBinGeomField.getOrElse(sft.getGeomField)
+    val dtg = hints.getBinDtgField.orElse(sft.getDtgField)
+    val label = hints.getBinLabelField
+    val batchSize = hints.getBinBatchSize
+    val sort = hints.isBinSorting
+
+    configure(sft, filter, trackId, geom, dtg, label, batchSize, sort, deduplicate, priority)
+  }
+
+  /**
+   * Creates an iterator config that will operate on regular kryo encoded entries
+   */
+  private def configure(sft: SimpleFeatureType,
+                        filter: Option[Filter],
+                        trackId: String,
+                        geom: String,
+                        dtg: Option[String],
+                        label: Option[String],
+                        batchSize: Int,
+                        sort: Boolean,
+                        deduplicate: Boolean,
+                        priority: Int): IteratorSetting = {
     val is = new IteratorSetting(priority, "bin-iter", classOf[BinAggregatingIterator])
     filter.foreach(f => is.addOption(CQL_OPT, ECQL.toCQL(f)))
     is.addOption(SFT_OPT, SimpleFeatureTypes.encodeType(sft))
@@ -341,24 +464,8 @@ object BinAggregatingIterator extends Logging {
     is.addOption(DATE_OPT, dtg.map(sft.indexOf).getOrElse(-1).toString)
     label.foreach(l => is.addOption(LABEL_OPT, sft.indexOf(l).toString))
     is.addOption(SORT_OPT, sort.toString)
+    is.addOption(DEDUPE_OPT, deduplicate.toString)
     is
-  }
-
-  /**
-   * Configure based on query hints
-   */
-  def configureDynamic(sft: SimpleFeatureType,
-                       filter: Option[Filter],
-                       hints: Hints,
-                       priority: Int = DEFAULT_PRIORITY): IteratorSetting = {
-    val trackId = hints.getBinTrackIdField
-    val geom = hints.getBinGeomField.getOrElse(sft.getGeomField)
-    val dtg = hints.getBinDtgField.orElse(sft.getDtgField)
-    val label = hints.getBinLabelField
-    val batchSize = hints.getBinBatchSize
-    val sort = hints.isBinSorting
-
-    BinAggregatingIterator.configureDynamic(sft, filter, trackId, geom, dtg, label, batchSize, sort, priority)
   }
 
   /**

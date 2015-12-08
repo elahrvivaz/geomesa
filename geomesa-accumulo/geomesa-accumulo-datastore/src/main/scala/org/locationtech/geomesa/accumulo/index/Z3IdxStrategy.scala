@@ -98,9 +98,9 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
         if (filter.secondary.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
-          (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, hints)), Z3Table.BIN_CF)
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, hints, sft.nonPoints)), Z3Table.BIN_CF)
         } else {
-          val iter = BinAggregatingIterator.configureDynamic(sft, ecql, hints)
+          val iter = BinAggregatingIterator.configureDynamic(sft, ecql, hints, sft.nonPoints)
           (Seq(iter), Z3Table.FULL_CF)
         }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf, false)
