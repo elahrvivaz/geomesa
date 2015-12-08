@@ -45,8 +45,9 @@ object Z3Table extends GeoMesaTable {
   // 3 bytes is 15 bits of geometry (not including time bits and the first 2 bits which aren't used)
   // roughly equivalent to 3 digits of geohash (32^3 == 2^15) and ~78km resolution
   // 4 bytes is 20 bits, equivalent to 4 digits of geohash and ~20km resolution
+  // note: we also lose time resolution
   val GEOM_Z_NUM_BYTES = 3
-  // TODO make this not filter time bits?
+  // mask for zeroing the last 8 - GEOM_Z_NUM_BYTES bytes
   val GEOM_Z_MASK: Long =
     java.lang.Long.decode("0x" + Array.fill(GEOM_Z_NUM_BYTES)("ff").mkString) << (8 - GEOM_Z_NUM_BYTES) * 8
 

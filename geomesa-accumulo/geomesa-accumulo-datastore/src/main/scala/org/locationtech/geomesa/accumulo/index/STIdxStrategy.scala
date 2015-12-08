@@ -15,7 +15,6 @@ import org.apache.accumulo.core.iterators.user.RegExFilter
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
 import org.geotools.filter.text.ecql.ECQL
-import org.joda.time.Interval
 import org.locationtech.geomesa.accumulo.GEOMESA_ITERATORS_IS_DENSITY_TYPE
 import org.locationtech.geomesa.accumulo.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.accumulo.index.QueryHints._
@@ -85,7 +84,7 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     output(s"Interval:  ${oint.getOrElse("No interval")}")
     output(s"Filter: ${Option(keyPlanningFilter).getOrElse("No Filter")}")
 
-    val (iterators, kvsToFeatures, useIndexEntries) = if (hints.isDensityQuery) {
+    val (iterators, kvsToFeatures, useIndexEntries, hasDupes) = if (hints.isDensityQuery) {
       val (width, height) = hints.getDensityBounds.get
       val envelope = hints.getDensityEnvelope.get
       val weight = hints.getDensityWeight
@@ -99,7 +98,7 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
 
       val iter =
         DensityIterator.configure(sft, featureEncoding, schema, filter, envelope, width, height, weight, p)
-      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), false)
+      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), false, false)
     } else {
       val iteratorConfig = IteratorTrigger.chooseIterator(filter.filter, ecql, hints, sft)
       val stiiIterCfg = getSTIIIterCfg(iteratorConfig, hints, sft, ofilter, ecql, featureEncoding, version)
@@ -110,13 +109,13 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
         case SpatioTemporalIterator => false
       }
       val iters = Seq(stiiIterCfg) ++ aggIterCfg
-      val kvs = if (hints.isBinQuery) {
+      val (kvs, dupes) = if (hints.isBinQuery) {
         // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
-        BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, hints, featureEncoding)
+        (BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, hints, featureEncoding), false)
       } else {
-        queryPlanner.defaultKVsToFeatures(hints)
+        (queryPlanner.defaultKVsToFeatures(hints), sft.nonPoints)
       }
-      (iters, kvs, indexEntries)
+      (iters, kvs, indexEntries, dupes)
     }
 
     // set up row ranges and regular expression filter
@@ -124,7 +123,6 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
 
     val table = acc.getTableName(sft.getTypeName, SpatioTemporalTable)
     val numThreads = acc.getSuggestedThreads(sft.getTypeName, SpatioTemporalTable)
-    val hasDupes = STIdxStrategy.mayContainDuplicates(hints, sft)
     qp.copy(table = table, iterators = iterators, kvsToFeatures = kvsToFeatures,
       numThreads = numThreads, hasDuplicates = hasDupes)
   }
@@ -254,8 +252,4 @@ object STIdxStrategy extends StrategyProvider {
    * Eventually cost will be computed based on dynamic metadata and the query.
    */
   override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) = 400
-
-  def mayContainDuplicates(hints: Hints, sft: SimpleFeatureType): Boolean =
-    !hints.isDensityQuery && IndexSchema.mayContainDuplicates(sft)
-
 }

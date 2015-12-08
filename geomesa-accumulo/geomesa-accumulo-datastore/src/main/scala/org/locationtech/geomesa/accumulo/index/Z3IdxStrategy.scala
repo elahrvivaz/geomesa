@@ -76,9 +76,9 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       // if we have a complicated geometry predicate, we need to pass it through to be evaluated
       val complexGeomFilter = filterListAsAnd(geomFilters).filter(isComplicatedSpatialFilter)
       (complexGeomFilter, filter.secondary) match {
+        case (Some(gf), Some(fs)) => filterListAsAnd(Seq(gf, fs))
         case (None, fs)           => fs
         case (gf, None)           => gf
-        case (Some(gf), Some(fs)) => filterListAsAnd(Seq(gf, fs))
       }
     } else {
       // for non-point geoms, the index is coarse-grained, so we always apply the full filter
@@ -124,7 +124,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
         case (None, None) => Seq.empty
         case _ => Seq(KryoLazyFilterTransformIterator.configure(sft, ecql, transforms, fp))
       }
-      (iters, Z3Table.adaptZ3KryoIterator(hints.getReturnSft), Z3Table.FULL_CF, !sft.isPoints)
+      (iters, Z3Table.adaptZ3KryoIterator(hints.getReturnSft), Z3Table.FULL_CF, sft.nonPoints)
     }
 
     val z3table = acc.getTableName(sft.getTypeName, Z3Table)
@@ -156,7 +156,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
       val middleRanges = if (middle.isEmpty) Seq.empty else getRanges(middle, (lx, ux), (ly, uy), (tStart, tEnd))
       headRanges ++ middleRanges ++ lastRanges
     }
-// TODO need to double check dedupe for other strategies
+
     // index space values for comparing in the iterator
     def decode(x: Double, y: Double, t: Long): (Int, Int, Int) = if (sft.isPoints) {
       Z3SFC.index(x, y, t).decode

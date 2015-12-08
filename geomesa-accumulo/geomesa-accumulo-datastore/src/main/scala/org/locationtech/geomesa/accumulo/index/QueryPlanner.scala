@@ -95,7 +95,7 @@ case class QueryPlanner(sft: SimpleFeatureType,
     } else {
       iter
     }
-// TODO !query.getHints.isTemporalDensityQuery dedupe
+
     def reduce(iter: SFIter): SFIter = if (query.getHints.isTemporalDensityQuery) {
       KryoLazyTemporalDensityIterator.reduceTemporalFeatures(iter, query)
     } else if (query.getHints.isMapAggregatingQuery) {
@@ -115,17 +115,15 @@ case class QueryPlanner(sft: SimpleFeatureType,
                             requested: Option[StrategyType],
                             output: ExplainerOutputType): Iterator[QueryPlan] = {
 
-    configureQuery(query, sft) // configure the query - set hints that we'll need later on
-
     output(s"Planning '${query.getTypeName}' ${filterToString(query.getFilter)}")
 
-    val hints = query.getHints
+    configureQuery(query, sft) // configure the query - set hints that we'll need later on
 
     output(s"Modified filter: ${filterToString(query.getFilter)}")
-    output(s"Hints: density[${hints.isDensityQuery}] bin[${hints.isBinQuery}] " +
-        s"temporal-density[${hints.isTemporalDensityQuery}] map-aggregate[${hints.isMapAggregatingQuery}]")
+    output(s"Hints: density[${query.getHints.isDensityQuery}] bin[${query.getHints.isBinQuery}] " +
+        s"temporal-density[${query.getHints.isTemporalDensityQuery}] map-aggregate[${query.getHints.isMapAggregatingQuery}]")
     output(s"Sort: ${Option(query.getSortBy).filter(_.nonEmpty).map(_.mkString(", ")).getOrElse("none")}")
-    output(s"Transforms: ${hints.getTransformDefinition.getOrElse("None")}")
+    output(s"Transforms: ${query.getHints.getTransformDefinition.getOrElse("None")}")
 
     val requestedStrategy = requested.orElse(query.getHints.getRequestedStrategy)
     val strategies = QueryStrategyDecider.chooseStrategies(sft, query, strategyHints, requestedStrategy, output)
