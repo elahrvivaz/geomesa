@@ -109,13 +109,13 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
         case SpatioTemporalIterator => false
       }
       val iters = Seq(stiiIterCfg) ++ aggIterCfg
-      val (kvs, dupes) = if (hints.isBinQuery) {
+      val kvs = if (hints.isBinQuery) {
         // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
-        (BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, hints, featureEncoding), false)
+        BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, hints, featureEncoding)
       } else {
-        (queryPlanner.defaultKVsToFeatures(hints), sft.nonPoints)
+        queryPlanner.defaultKVsToFeatures(hints)
       }
-      (iters, kvs, indexEntries, dupes)
+      (iters, kvs, indexEntries, sft.nonPoints)
     }
 
     // set up row ranges and regular expression filter
