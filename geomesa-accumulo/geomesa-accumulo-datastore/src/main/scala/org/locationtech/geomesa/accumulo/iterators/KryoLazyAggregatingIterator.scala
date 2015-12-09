@@ -11,8 +11,10 @@ package org.locationtech.geomesa.accumulo.iterators
 import java.util.{Collection => jCollection, Map => jMap}
 
 import com.typesafe.scalalogging.slf4j.Logging
+import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{Range => aRange, _}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
+import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.features.kryo.{KryoBufferSimpleFeature, KryoFeatureSerializer}
 import org.locationtech.geomesa.filter.factory.FastFilterFactory
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -20,27 +22,32 @@ import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
 import scala.collection.JavaConverters._
-import scala.collection.mutable
 
 /**
  * Aggregating iterator - only works on kryo-encoded features
  */
-abstract class KryoLazyAggregatingIterator[K, V] extends SortedKeyValueIterator[Key, Value] {
+abstract class KryoLazyAggregatingIterator[T <: AnyRef { def isEmpty: Boolean; def clear(): Unit }]
+    extends SortedKeyValueIterator[Key, Value] {
 
   import KryoLazyAggregatingIterator._
 
   var sft: SimpleFeatureType = null
   var source: SortedKeyValueIterator[Key, Value] = null
-  private var filter: Filter = null
+
+  private var validate: (SimpleFeature) => Boolean = null
 
   // map of our snapped points to accumulated weight
-  private val result = mutable.Map.empty[K, V]
+  private var result: T = _
 
   protected var topKey: Key = null
   private var topValue: Value = new Value()
   private var currentRange: aRange = null
 
   private var reusableSf: KryoBufferSimpleFeature = null
+
+  // server-side deduplication - not 100% effective, but we can't dedupe client side as we don't send ids
+  private val idsSeen = scala.collection.mutable.HashSet.empty[String]
+  private var maxIdsToTrack = -1
 
   override def init(src: SortedKeyValueIterator[Key, Value],
                     jOptions: jMap[String, String],
@@ -52,7 +59,18 @@ abstract class KryoLazyAggregatingIterator[K, V] extends SortedKeyValueIterator[
 
     sft = SimpleFeatureTypes.createType("", options(SFT_OPT))
     reusableSf = new KryoFeatureSerializer(sft).getReusableFeature
-    filter = options.get(CQL_OPT).map(FastFilterFactory.toFilter).orNull
+    val filt = options.get(CQL_OPT).map(FastFilterFactory.toFilter).orNull
+    val dedupe = options.get(DUPE_OPT).exists(_.toBoolean)
+    maxIdsToTrack = options.get(MAX_DUPE_OPT).map(_.toInt).getOrElse(9999)
+    validate = (filt, dedupe) match {
+      case (null, false) => (_) => true
+      case (null, true)  => deduplicate
+      case (_, false)    => filter(filt)
+      case (_, true)     => val f = filter(filt)(_); (sf) => f(sf) && deduplicate(sf)
+    }
+    if (result == null) {
+      result = newResult()
+    }
   }
 
   override def hasTop: Boolean = topKey != null
@@ -77,9 +95,9 @@ abstract class KryoLazyAggregatingIterator[K, V] extends SortedKeyValueIterator[
   def findTop(): Unit = {
     result.clear()
 
-    while (source.hasTop && !currentRange.afterEndKey(source.getTopKey)) {
+    while (inRange(result)) {
       val sf = decode(source.getTopValue.get())
-      if (filter == null || filter.evaluate(sf)) {
+      if (validate(sf)) {
         topKey = source.getTopKey
         aggregateResult(sf, result) // write the record to our aggregated results
       }
@@ -98,14 +116,22 @@ abstract class KryoLazyAggregatingIterator[K, V] extends SortedKeyValueIterator[
     }
   }
 
+  def inRange(result: T): Boolean = source.hasTop && !currentRange.afterEndKey(source.getTopKey)
+
   // delegate method to allow overrides in non-kryo subclasses
   def decode(value: Array[Byte]): SimpleFeature = {
     reusableSf.setBuffer(value)
     reusableSf
   }
 
-  def aggregateResult(sf: SimpleFeature, result: mutable.Map[K, V]): Unit
-  def encodeResult(result: mutable.Map[K, V]): Array[Byte]
+  def newResult(): T
+  def aggregateResult(sf: SimpleFeature, result: T): Unit
+  def encodeResult(result: T): Array[Byte]
+
+  def deduplicate(sf: SimpleFeature): Boolean =
+    if (idsSeen.size < maxIdsToTrack) idsSeen.add(sf.getID) else !idsSeen.contains(sf.getID)
+
+  def filter(filter: Filter)(sf: SimpleFeature): Boolean = filter.evaluate(sf)
 
   override def deepCopy(env: IteratorEnvironment): SortedKeyValueIterator[Key, Value] = ???
 }
@@ -113,6 +139,19 @@ abstract class KryoLazyAggregatingIterator[K, V] extends SortedKeyValueIterator[
 object KryoLazyAggregatingIterator extends Logging {
 
   // configuration keys
-  protected[iterators] val SFT_OPT = "sft"
-  protected[iterators] val CQL_OPT = "cql"
+  protected[iterators] val SFT_OPT      = "sft"
+  protected[iterators] val CQL_OPT      = "cql"
+  protected[iterators] val DUPE_OPT     = "dupes"
+  protected[iterators] val MAX_DUPE_OPT = "max-dupes"
+
+  def configure(is: IteratorSetting,
+                sft: SimpleFeatureType,
+                filter: Option[Filter],
+                deduplicate: Boolean,
+                maxDuplicates: Option[Int]): Unit = {
+    is.addOption(SFT_OPT, SimpleFeatureTypes.encodeType(sft))
+    filter.foreach(f => is.addOption(CQL_OPT, ECQL.toCQL(f)))
+    is.addOption(DUPE_OPT, deduplicate.toString)
+    maxDuplicates.foreach(m => is.addOption(MAX_DUPE_OPT, m.toString))
+  }
 }

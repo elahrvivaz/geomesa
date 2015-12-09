@@ -33,7 +33,7 @@ import scala.collection.JavaConverters._
 import scala.collection.mutable
 import scala.languageFeature.implicitConversions
 
-class KryoLazyMapAggregatingIterator extends KryoLazyAggregatingIterator[AnyRef, Int] {
+class KryoLazyMapAggregatingIterator extends KryoLazyAggregatingIterator[mutable.Map[AnyRef, Int]] {
 
   import KryoLazyMapAggregatingIterator._
 
@@ -51,6 +51,8 @@ class KryoLazyMapAggregatingIterator extends KryoLazyAggregatingIterator[AnyRef,
     serializer = new KryoFeatureSerializer(mapSft)
     featureToSerialize = new ScalaSimpleFeature("", mapSft, Array(null, GeometryUtils.zeroPoint))
   }
+
+  override def newResult() = mutable.Map.empty[AnyRef, Int]
 
   override def aggregateResult(sf: SimpleFeature, result: mutable.Map[AnyRef, Int]): Unit = {
     val currCounts = sf.getAttribute(mapAttribute).asInstanceOf[jMap[AnyRef, Int]].asScala

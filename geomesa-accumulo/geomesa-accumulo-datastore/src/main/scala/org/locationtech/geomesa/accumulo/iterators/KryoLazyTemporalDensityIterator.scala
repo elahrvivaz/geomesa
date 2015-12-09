@@ -27,6 +27,7 @@ import org.joda.time.{DateTime, DateTimeZone, Interval}
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanner.SFIter
 import org.locationtech.geomesa.accumulo.iterators.KryoLazyAggregatingIterator._
+import org.locationtech.geomesa.accumulo.iterators.KryoLazyTemporalDensityIterator.TimeSeries
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -39,7 +40,7 @@ import scala.collection.JavaConversions._
 import scala.collection.{breakOut, mutable}
 import scala.util.parsing.json.JSONObject
 
-class KryoLazyTemporalDensityIterator extends KryoLazyAggregatingIterator[DateTime, Long] {
+class KryoLazyTemporalDensityIterator extends KryoLazyAggregatingIterator[TimeSeries] {
 
   import KryoLazyTemporalDensityIterator._
 
@@ -66,6 +67,8 @@ class KryoLazyTemporalDensityIterator extends KryoLazyAggregatingIterator[DateTi
     serializer = new KryoFeatureSerializer(timeSft)
     featureToSerialize = new ScalaSimpleFeature("", timeSft, Array(null, GeometryUtils.zeroPoint))
   }
+
+  override def newResult() = mutable.Map.empty[DateTime, Long]
 
   override def aggregateResult(sf: SimpleFeature, result: TimeSeries): Unit = {
     val date = new DateTime(sf.getAttribute(dtgIndex))

@@ -20,6 +20,7 @@ import org.geotools.factory.Hints
 import org.geotools.filter.text.ecql.ECQL
 import org.geotools.util.Converters
 import org.locationtech.geomesa.accumulo.index.QueryPlanners._
+import org.locationtech.geomesa.accumulo.iterators.KryoLazyDensityIterator.DensityResult
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -34,7 +35,7 @@ import scala.collection.mutable
 /**
  * Density iterator - only works on kryo-encoded geometries
  */
-class KryoLazyDensityIterator extends KryoLazyAggregatingIterator[(Int, Int), Double] with Logging {
+class KryoLazyDensityIterator extends KryoLazyAggregatingIterator[DensityResult] with Logging {
 
   import KryoLazyDensityIterator._
 
@@ -83,6 +84,8 @@ class KryoLazyDensityIterator extends KryoLazyAggregatingIterator[(Int, Int), Do
       }
     }
   }
+
+  override def newResult() = mutable.Map.empty[(Int, Int), Double]
 
   override def aggregateResult(sf: SimpleFeature, result: DensityResult): Unit = writeGeom(sf, result)
 
