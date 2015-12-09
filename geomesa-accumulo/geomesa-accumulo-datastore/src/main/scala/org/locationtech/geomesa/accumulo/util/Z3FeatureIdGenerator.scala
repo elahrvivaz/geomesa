@@ -64,7 +64,7 @@ object Z3UuidGenerator extends RandomLsbUuidGenerator {
       case p: Point => p
       case g: Geometry => g.getCentroid
     }
-    val z3 = Z3Table.getRowPrefix(pt.getX, pt.getY, time)
+    val z3 = Z3Table.getPointRowPrefix(pt.getX, pt.getY, time)
 
     // shard is first 4 bits of our uuid (e.g. 1 hex char) - this allows nice pre-splitting
     val shard = math.abs(MurmurHash3.bytesHash(z3) % 16).toByte
