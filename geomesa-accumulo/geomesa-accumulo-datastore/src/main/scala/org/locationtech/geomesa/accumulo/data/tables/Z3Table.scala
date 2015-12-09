@@ -44,10 +44,10 @@ object Z3Table extends GeoMesaTable {
   // the bytes of z we keep for complex geoms
   // 3 bytes is 15 bits of geometry (not including time bits and the first 2 bits which aren't used)
   // roughly equivalent to 3 digits of geohash (32^3 == 2^15) and ~78km resolution
-  // 4 bytes is 20 bits, equivalent to 4 digits of geohash and ~20km resolution
+  // (4 bytes is 20 bits, equivalent to 4 digits of geohash and ~20km resolution)
   // note: we also lose time resolution
   val GEOM_Z_NUM_BYTES = 3
-  // mask for zeroing the last 8 - GEOM_Z_NUM_BYTES bytes
+  // mask for zeroing the last (8 - GEOM_Z_NUM_BYTES) bytes
   val GEOM_Z_MASK: Long =
     java.lang.Long.decode("0x" + Array.fill(GEOM_Z_NUM_BYTES)("ff").mkString) << (8 - GEOM_Z_NUM_BYTES) * 8
 
@@ -94,10 +94,12 @@ object Z3Table extends GeoMesaTable {
     val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
     val getRowKeys: (FeatureToWrite, Int) => Seq[Array[Byte]] = if (sft.isPoints) getPointRowKey else getGeomRowKeys
     (fw: FeatureToWrite) => {
-      getRowKeys(fw, dtgIndex).map { row =>
+      val rows = getRowKeys(fw, dtgIndex)
+      val cq = if (rows.length > 1) new Text(Integer.toHexString(rows.length)) else EMPTY_TEXT
+      rows.map { row =>
         val mutation = new Mutation(row)
-        mutation.putDelete(BIN_CF, EMPTY_TEXT, fw.columnVisibility)
-        mutation.putDelete(FULL_CF, EMPTY_TEXT, fw.columnVisibility)
+        mutation.putDelete(BIN_CF, cq, fw.columnVisibility)
+        mutation.putDelete(FULL_CF, cq, fw.columnVisibility)
         mutation
       }
     }
