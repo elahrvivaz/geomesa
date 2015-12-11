@@ -17,7 +17,7 @@ import org.locationtech.geomesa.curve.Z3
 
 class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
 
-  import org.locationtech.geomesa.accumulo.iterators.Z3Iterator.{pointsKey, zKey}
+  import org.locationtech.geomesa.accumulo.iterators.Z3Iterator.{pointsKey, splitsKey, zKey}
 
   var source: SortedKeyValueIterator[Key, Value] = null
   var zNums: Array[Int] = null
@@ -35,6 +35,7 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
   var tHi: Int = -1
 
   var isPoints: Boolean = false
+  var hasSplits: Boolean = false
   var rowToLong: Array[Byte] => Long = null
 
   var topKey: Key = null
@@ -59,7 +60,7 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
   private def inBounds(k: Key, getZ: (Array[Byte] => Long)): Boolean = {
     k.getRow(row)
     val bytes = row.getBytes
-    val week = Shorts.fromBytes(bytes(0), bytes(1))
+    val week = if (hasSplits) Shorts.fromBytes(bytes(1), bytes(2)) else Shorts.fromBytes(bytes(0), bytes(1))
     val keyZ = getZ(bytes)
     val (x, y, t) = Z3(keyZ).decode
     x >= xmin && x <= xmax && y >= ymin && y <= ymax && {
@@ -74,9 +75,12 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
   }
 
   private def rowToLong(count: Int): (Array[Byte]) => Long = count match {
-    case 3 => (bytes) => Longs.fromBytes(bytes(2), bytes(3), bytes(4), 0, 0, 0, 0, 0)
-    case 4 => (bytes) => Longs.fromBytes(bytes(2), bytes(3), bytes(4), bytes(5), 0, 0, 0, 0)
-    case 8 => (bytes) => Longs.fromBytes(bytes(2), bytes(3), bytes(4), bytes(5), bytes(6), bytes(7), bytes(8), bytes(9))
+    case 3 if hasSplits => (bb) => Longs.fromBytes(bb(3), bb(4), bb(5), 0, 0, 0, 0, 0)
+    case 3              => (bb) => Longs.fromBytes(bb(2), bb(3), bb(4), 0, 0, 0, 0, 0)
+    case 4 if hasSplits => (bb) => Longs.fromBytes(bb(3), bb(4), bb(5), bb(6), 0, 0, 0, 0)
+    case 4              => (bb) => Longs.fromBytes(bb(2), bb(3), bb(4), bb(5), 0, 0, 0, 0)
+    case 8 if hasSplits => (bb) => Longs.fromBytes(bb(3), bb(4), bb(5), bb(6), bb(7), bb(8), bb(9), bb(10))
+    case 8              => (bb) => Longs.fromBytes(bb(2), bb(3), bb(4), bb(5), bb(6), bb(7), bb(8), bb(9))
   }
 
   override def getTopValue: Value = topValue
@@ -91,6 +95,7 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
     this.source = source.deepCopy(env)
 
     isPoints = options.get(pointsKey).toBoolean
+    hasSplits = options.get(splitsKey).toBoolean
 
     zNums = options.get(zKey).split(":").map(_.toInt)
     xmin = zNums(0)
@@ -115,7 +120,8 @@ class Z3Iterator extends SortedKeyValueIterator[Key, Value] {
   override def deepCopy(env: IteratorEnvironment): SortedKeyValueIterator[Key, Value] = {
     import scala.collection.JavaConversions._
     val iter = new Z3Iterator
-    iter.init(source, Map(pointsKey -> isPoints.toString, zKey -> zNums.mkString(":")), env)
+    val opts = Map(pointsKey -> isPoints.toString, splitsKey -> hasSplits.toString, zKey -> zNums.mkString(":"))
+    iter.init(source, opts, env)
     iter
   }
 }
@@ -124,6 +130,7 @@ object Z3Iterator {
 
   val zKey = "z"
   val pointsKey = "p"
+  val splitsKey = "s"
 
   def configure(isPoints: Boolean,
                 xmin: Int,
@@ -136,10 +143,12 @@ object Z3Iterator {
                 wmax: Short,
                 tLo: Int,
                 tHi: Int,
+                splits: Boolean,
                 priority: Int) = {
     val is = new IteratorSetting(priority, "z3", classOf[Z3Iterator])
     is.addOption(pointsKey, isPoints.toString)
     is.addOption(zKey, s"$xmin:$xmax:$ymin:$ymax:$tmin:$tmax:$wmin:$wmax:$tLo:$tHi")
+    is.addOption(splitsKey, splits.toString)
     is
   }
 }

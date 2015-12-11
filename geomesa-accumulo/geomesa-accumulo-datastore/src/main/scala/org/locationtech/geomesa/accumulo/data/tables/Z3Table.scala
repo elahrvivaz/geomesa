@@ -11,7 +11,7 @@ import java.util.Date
 import java.util.Map.Entry
 
 import com.google.common.base.Charsets
-import com.google.common.collect.ImmutableSet
+import com.google.common.collect.{ImmutableSet, ImmutableSortedSet}
 import com.google.common.primitives.{Bytes, Longs, Shorts}
 import com.vividsolutions.jts.geom._
 import org.apache.accumulo.core.client.BatchDeleter
@@ -19,7 +19,7 @@ import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
 import org.apache.accumulo.core.data.{Key, Mutation, Range => aRange, Value}
 import org.apache.hadoop.io.Text
-import org.joda.time.{DateTimeZone, DateTime, Seconds, Weeks}
+import org.joda.time.{DateTime, DateTimeZone, Seconds, Weeks}
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
 import org.locationtech.geomesa.accumulo.data.EMPTY_TEXT
 import org.locationtech.geomesa.accumulo.index.QueryPlanners._
@@ -40,6 +40,9 @@ object Z3Table extends GeoMesaTable {
   val BIN_CF = new Text("B")
   val EMPTY_BYTES = Array.empty[Byte]
   val EMPTY_VALUE = new Value(EMPTY_BYTES)
+  val NUM_SPLITS = 4 // can't be more than Byte.MaxValue (127)
+  val SPLIT_ARRAYS = (0 until NUM_SPLITS).map(_.toByte).toArray.map(Array(_)).toSeq
+
   // the bytes of z we keep for complex geoms
   // 3 bytes is 15 bits of geometry (not including time bits and the first 2 bits which aren't used)
   // roughly equivalent to 3 digits of geohash (32^3 == 2^15) and ~78km resolution
@@ -61,7 +64,12 @@ object Z3Table extends GeoMesaTable {
 
   override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
-    val getRowKeys: (FeatureToWrite, Int) => Seq[Array[Byte]] = if (sft.isPoints) getPointRowKey else getGeomRowKeys
+    val getRowKeys: (FeatureToWrite, Int) => Seq[Array[Byte]] =
+      if (sft.isPoints) {
+        if (hasSplits(sft)) getPointRowKey else (ftw, i) => getPointRowKey(ftw, i).map(_.drop(1))
+      } else {
+        getGeomRowKeys
+      }
     val getValue: (FeatureToWrite) => Value = if (sft.getSchemaVersion > 5) {
       // we know the data is kryo serialized in version 6+
       (fw) => fw.dataValue
@@ -85,7 +93,12 @@ object Z3Table extends GeoMesaTable {
 
   override def remover(sft: SimpleFeatureType): FeatureToMutations = {
     val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
-    val getRowKeys: (FeatureToWrite, Int) => Seq[Array[Byte]] = if (sft.isPoints) getPointRowKey else getGeomRowKeys
+    val getRowKeys: (FeatureToWrite, Int) => Seq[Array[Byte]] =
+      if (sft.isPoints) {
+        if (hasSplits(sft)) getPointRowKey else (ftw, i) => getPointRowKey(ftw, i).map(_.drop(1))
+      } else {
+        getGeomRowKeys
+      }
     (fw: FeatureToWrite) => {
       val rows = getRowKeys(fw, dtgIndex)
       val cq = if (rows.length > 1) new Text(Integer.toHexString(rows.length)) else EMPTY_TEXT
@@ -103,6 +116,8 @@ object Z3Table extends GeoMesaTable {
     bd.delete()
   }
 
+  def hasSplits(sft: SimpleFeatureType) = sft.getSchemaVersion > 6
+
   // gets week and seconds into that week
   def getWeekAndSeconds(time: DateTime): (Short, Int) = {
     val weeks = Weeks.weeksBetween(EPOCH, time)
@@ -113,8 +128,9 @@ object Z3Table extends GeoMesaTable {
   // gets week and seconds into that week
   def getWeekAndSeconds(time: Long): (Short, Int) = getWeekAndSeconds(new DateTime(time, DateTimeZone.UTC))
 
-  // week(2 bytes), z value (8 bytes), id (n bytes)
+  // split(1 byte), week(2 bytes), z value (8 bytes), id (n bytes)
   private def getPointRowKey(ftw: FeatureToWrite, dtgIndex: Int): Seq[Array[Byte]] = {
+    val split = SPLIT_ARRAYS(ftw.idHash % NUM_SPLITS)
     val (week, z) = {
       val dtg = ftw.feature.getAttribute(dtgIndex).asInstanceOf[Date]
       val time = if (dtg == null) 0 else dtg.getTime
@@ -123,11 +139,12 @@ object Z3Table extends GeoMesaTable {
       (w, Z3SFC.index(geom.getX, geom.getY, t).z)
     }
     val id = ftw.feature.getID.getBytes(Charsets.UTF_8)
-    Seq(Bytes.concat(Shorts.toByteArray(week), Longs.toByteArray(z), id))
+    Seq(Bytes.concat(split, Shorts.toByteArray(week), Longs.toByteArray(z), id))
   }
 
-  // week (2 bytes), z value (3 bytes), id (n bytes)
+  // split(1 byte), week (2 bytes), z value (3 bytes), id (n bytes)
   private def getGeomRowKeys(ftw: FeatureToWrite, dtgIndex: Int): Seq[Array[Byte]] = {
+    val split = SPLIT_ARRAYS(ftw.idHash % NUM_SPLITS)
     val (week, zs) = {
       val dtg = ftw.feature.getAttribute(dtgIndex).asInstanceOf[Date]
       val time = if (dtg == null) 0 else dtg.getTime
@@ -136,7 +153,7 @@ object Z3Table extends GeoMesaTable {
       (Shorts.toByteArray(w), zBox(geom, t).toSeq)
     }
     val id = ftw.feature.getID.getBytes(Charsets.UTF_8)
-    zs.map(z => Bytes.concat(week, Longs.toByteArray(z).take(GEOM_Z_NUM_BYTES), id))
+    zs.map(z => Bytes.concat(split, week, Longs.toByteArray(z).take(GEOM_Z_NUM_BYTES), id))
   }
 
   // gets a sequence of (week, z) values that cover the geometry
@@ -188,7 +205,7 @@ object Z3Table extends GeoMesaTable {
 
   // reads the feature ID from the row key
   def getIdFromRow(sft: SimpleFeatureType): (Array[Byte]) => String = {
-    val offset = if (sft.isPoints) 10 else 2 + GEOM_Z_NUM_BYTES
+    val offset = if (sft.isPoints) { if (hasSplits(sft)) 11 else 10 } else 3 + GEOM_Z_NUM_BYTES
     (row: Array[Byte]) => new String(row, offset, row.length - offset, Charsets.UTF_8)
   }
 
@@ -206,5 +223,12 @@ object Z3Table extends GeoMesaTable {
 
     val localityGroups = Seq(BIN_CF, FULL_CF).map(cf => (cf.toString, ImmutableSet.of(cf))).toMap
     tableOps.setLocalityGroups(table, localityGroups)
+
+    // drop first split, otherwise we get an empty tablet
+    val splits = SPLIT_ARRAYS.drop(1).map(new Text(_)).toSet
+    val splitsToAdd = splits -- tableOps.listSplits(table).toSet
+    if (splitsToAdd.nonEmpty) {
+      tableOps.addSplits(table, ImmutableSortedSet.copyOf(splitsToAdd.toIterable))
+    }
   }
 }
