@@ -13,7 +13,6 @@ import com.vividsolutions.jts.geom.{Geometry, GeometryCollection}
 import org.apache.accumulo.core.data.Range
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
-import org.joda.time.Weeks
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.iterators._
@@ -135,23 +134,23 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     val env = geometryToCover.getEnvelopeInternal
     val (lx, ly, ux, uy) = (env.getMinX, env.getMinY, env.getMaxX, env.getMaxY)
 
-    val epochWeekStart = Weeks.weeksBetween(Z3Table.EPOCH, interval.getStart)
-    val epochWeekEnd = Weeks.weeksBetween(Z3Table.EPOCH, interval.getEnd)
-    val weeks = scala.Range.inclusive(epochWeekStart.getWeeks, epochWeekEnd.getWeeks).map(_.toShort)
-    val lt = Z3Table.secondsInCurrentWeek(interval.getStart, epochWeekStart)
-    val ut = Z3Table.secondsInCurrentWeek(interval.getEnd, epochWeekEnd)
+    val (epochWeekStart, lt) = Z3Table.getWeekAndSeconds(interval.getStart)
+    val (epochWeekEnd, ut) = Z3Table.getWeekAndSeconds(interval.getEnd)
+    val weeks = scala.Range.inclusive(epochWeekStart, epochWeekEnd).map(_.toShort)
 
     // time range for a chunk is 0 to 1 week (in seconds)
-    val (tStart, tEnd) = (Z3SFC.time.min.toLong, Z3SFC.time.max.toLong)
+    val (tStart, tEnd) = (Z3SFC.time.min.toInt, Z3SFC.time.max.toInt)
 
-    val getRanges: (Seq[Short], (Double, Double), (Double, Double), (Long, Long)) => Seq[Range] =
+    val getRanges: (Seq[Array[Byte]], (Double, Double), (Double, Double), (Long, Long)) => Seq[Range] =
       if (sft.isPoints) getPointRanges else getGeomRanges
+
+    val prefixes = weeks.map(Shorts.toByteArray).toSeq
 
     // the z3 index breaks time into 1 week chunks, so create a range for each week in our range
     val ranges = if (weeks.length == 1) {
-      getRanges(weeks, (lx, ux), (ly, uy), (lt, ut))
+      getRanges(prefixes, (lx, ux), (ly, uy), (lt, ut))
     } else {
-      val head +: middle :+ last = weeks.toList
+      val head +: middle :+ last = prefixes.toList
       val headRanges = getRanges(Seq(head), (lx, ux), (ly, uy), (lt, tEnd))
       val lastRanges = getRanges(Seq(last), (lx, ux), (ly, uy), (tStart, ut))
       val middleRanges = if (middle.isEmpty) Seq.empty else getRanges(middle, (lx, ux), (ly, uy), (tStart, tEnd))
@@ -159,7 +158,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     }
 
     // index space values for comparing in the iterator
-    def decode(x: Double, y: Double, t: Long): (Int, Int, Int) = if (sft.isPoints) {
+    def decode(x: Double, y: Double, t: Int): (Int, Int, Int) = if (sft.isPoints) {
       Z3SFC.index(x, y, t).decode
     } else {
       Z3(Z3SFC.index(x, y, t).z & Z3Table.GEOM_Z_MASK).decode
@@ -177,8 +176,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     BatchScanPlan(z3table, ranges, iters, Seq(colFamily), kvsToFeatures, numThreads, hasDupes)
   }
 
-  def getPointRanges(weeks: Seq[Short], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {
-    val prefixes = weeks.map(Shorts.toByteArray)
+  def getPointRanges(prefixes: Seq[Array[Byte]], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {
     Z3SFC.ranges(x, y, t).flatMap { case (s, e) =>
       val startBytes = Longs.toByteArray(s)
       val endBytes = Longs.toByteArray(e)
@@ -190,8 +188,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with Logging with 
     }
   }
 
-  def getGeomRanges(weeks: Seq[Short], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {
-    val prefixes = weeks.map(Shorts.toByteArray)
+  def getGeomRanges(prefixes: Seq[Array[Byte]], x: (Double, Double), y: (Double, Double), t: (Long, Long)): Seq[Range] = {
     Z3SFC.ranges(x, y, t, 8 * Z3Table.GEOM_Z_NUM_BYTES).flatMap { case (s, e) =>
       val startBytes = Longs.toByteArray(s).take(Z3Table.GEOM_Z_NUM_BYTES)
       val endBytes = Longs.toByteArray(e).take(Z3Table.GEOM_Z_NUM_BYTES)

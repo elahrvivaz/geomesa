@@ -19,7 +19,7 @@ import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
 import org.apache.accumulo.core.data.{Key, Mutation, Range => aRange, Value}
 import org.apache.hadoop.io.Text
-import org.joda.time.{DateTime, Seconds, Weeks}
+import org.joda.time.{DateTimeZone, DateTime, Seconds, Weeks}
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
 import org.locationtech.geomesa.accumulo.data.EMPTY_TEXT
 import org.locationtech.geomesa.accumulo.index.QueryPlanners._
@@ -49,11 +49,6 @@ object Z3Table extends GeoMesaTable {
   // mask for zeroing the last (8 - GEOM_Z_NUM_BYTES) bytes
   val GEOM_Z_MASK: Long =
     java.lang.Long.decode("0x" + Array.fill(GEOM_Z_NUM_BYTES)("ff").mkString) << (8 - GEOM_Z_NUM_BYTES) * 8
-
-  def secondsInCurrentWeek(dtg: DateTime, weeks: Weeks) =
-    Seconds.secondsBetween(EPOCH, dtg).getSeconds - weeks.toStandardSeconds.getSeconds
-
-  def epochWeeks(dtg: DateTime) = Weeks.weeksBetween(EPOCH, new DateTime(dtg))
 
   override def supports(sft: SimpleFeatureType): Boolean =
     sft.getDtgField.isDefined && (sft.getSchemaVersion > 6 || (sft.getSchemaVersion > 4 && sft.isPoints))
@@ -108,63 +103,63 @@ object Z3Table extends GeoMesaTable {
     bd.delete()
   }
 
-  // week (2 bytes), z value (8 bytes)
-  def getPointRowPrefix(x: Double, y: Double, time: Long): Array[Byte] = {
-    val (week, z) = getWeekAndZ(x, y, time)
-    val prefix = Shorts.toByteArray(week)
-    val z3idx = Longs.toByteArray(z)
-    Bytes.concat(prefix, z3idx)
+  // gets week and seconds into that week
+  def getWeekAndSeconds(time: DateTime): (Short, Int) = {
+    val weeks = Weeks.weeksBetween(EPOCH, time)
+    val secondsInWeek = Seconds.secondsBetween(EPOCH, time).getSeconds - weeks.toStandardSeconds.getSeconds
+    (weeks.getWeeks.toShort, secondsInWeek)
   }
 
-  // gets week id and z value for time in current week
-  private def getWeekAndZ(x: Double, y: Double, time: Long): (Short, Long) = {
-    val dtg = new DateTime(time)
-    val weeks = epochWeeks(dtg)
-    val secondsInWeek = secondsInCurrentWeek(dtg, weeks)
-    val z3 = Z3SFC.index(x, y, secondsInWeek)
-    (weeks.getWeeks.toShort, z3.z)
-  }
+  // gets week and seconds into that week
+  def getWeekAndSeconds(time: Long): (Short, Int) = getWeekAndSeconds(new DateTime(time, DateTimeZone.UTC))
 
   // week(2 bytes), z value (8 bytes), id (n bytes)
   private def getPointRowKey(ftw: FeatureToWrite, dtgIndex: Int): Seq[Array[Byte]] = {
-    val geom = ftw.feature.point
-    val dtg = ftw.feature.getAttribute(dtgIndex).asInstanceOf[Date]
-    val time = if (dtg == null) 0 else dtg.getTime
-    val prefix = getPointRowPrefix(geom.getX, geom.getY, time)
-    val idBytes = ftw.feature.getID.getBytes(Charsets.UTF_8)
-    Seq(Bytes.concat(prefix, idBytes))
+    val (week, z) = {
+      val dtg = ftw.feature.getAttribute(dtgIndex).asInstanceOf[Date]
+      val time = if (dtg == null) 0 else dtg.getTime
+      val (w, t) = getWeekAndSeconds(time)
+      val geom = ftw.feature.point
+      (w, Z3SFC.index(geom.getX, geom.getY, t).z)
+    }
+    val id = ftw.feature.getID.getBytes(Charsets.UTF_8)
+    Seq(Bytes.concat(Shorts.toByteArray(week), Longs.toByteArray(z), id))
   }
 
   // week (2 bytes), z value (3 bytes), id (n bytes)
   private def getGeomRowKeys(ftw: FeatureToWrite, dtgIndex: Int): Seq[Array[Byte]] = {
-    val idBytes = ftw.feature.getID.getBytes(Charsets.UTF_8)
-    val dtg = ftw.feature.getAttribute(dtgIndex).asInstanceOf[Date]
-    val time = if (dtg == null) 0 else dtg.getTime
-    val zs = zBox(ftw.feature.getDefaultGeometry.asInstanceOf[Geometry], time).toSeq
-    zs.map { case (w, z) => Bytes.concat(Shorts.toByteArray(w), Longs.toByteArray(z).take(GEOM_Z_NUM_BYTES), idBytes) }
+    val (week, zs) = {
+      val dtg = ftw.feature.getAttribute(dtgIndex).asInstanceOf[Date]
+      val time = if (dtg == null) 0 else dtg.getTime
+      val (w, t) = getWeekAndSeconds(time)
+      val geom = ftw.feature.getDefaultGeometry.asInstanceOf[Geometry]
+      (Shorts.toByteArray(w), zBox(geom, t).toSeq)
+    }
+    val id = ftw.feature.getID.getBytes(Charsets.UTF_8)
+    zs.map(z => Bytes.concat(week, Longs.toByteArray(z).take(GEOM_Z_NUM_BYTES), id))
   }
 
   // gets a sequence of (week, z) values that cover the geometry
-  private def zBox(geom: Geometry, time: Long): Set[(Short, Long)] = geom match {
-    case g: Point => Set(getWeekAndZ(g.getX, g.getY, time))
+  private def zBox(geom: Geometry, t: Int): Set[Long] = geom match {
+    case g: Point => Set(Z3SFC.index(g.getX, g.getY, t).z)
     case g: LineString =>
       // we flatMap bounds for each line segment so we cover a smaller area
       (0 until g.getNumPoints).map(g.getPointN).sliding(2).flatMap { case Seq(one, two) =>
         val (xmin, xmax) = minMax(one.getX, two.getX)
         val (ymin, ymax) = minMax(one.getY, two.getY)
-        zBox(xmin, ymin, xmax, ymax, time)
+        zBox(xmin, ymin, xmax, ymax, t)
       }.toSet
-    case g: GeometryCollection => (0 until g.getNumGeometries).toSet.map(g.getGeometryN).flatMap(zBox(_, time))
+    case g: GeometryCollection => (0 until g.getNumGeometries).toSet.map(g.getGeometryN).flatMap(zBox(_, t))
     case g: Geometry =>
       val env = g.getEnvelopeInternal
-      zBox(env.getMinX, env.getMinY, env.getMaxX, env.getMaxY, time)
+      zBox(env.getMinX, env.getMinY, env.getMaxX, env.getMaxY, t)
   }
 
   // gets a sequence of (week, z) values that cover the bounding box
-  private def zBox(xmin: Double, ymin: Double, xmax: Double, ymax: Double, time: Long): Set[(Short, Long)] = {
-    val (week, zmin) = getWeekAndZ(xmin, ymin, time)
-    val zmax = getWeekAndZ(xmax, ymax, time)._2
-    getZPrefixes(zmin, zmax).map((week, _))
+  private def zBox(xmin: Double, ymin: Double, xmax: Double, ymax: Double, t: Int): Set[Long] = {
+    val zmin = Z3SFC.index(xmin, ymin, t).z
+    val zmax = Z3SFC.index(xmax, ymax, t).z
+    getZPrefixes(zmin, zmax)
   }
 
   private def minMax(a: Double, b: Double): (Double, Double) = if (a < b) (a, b) else (b, a)
