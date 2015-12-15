@@ -157,14 +157,14 @@ object Z3Table extends GeoMesaTable {
   }
 
   // gets a sequence of (week, z) values that cover the geometry
-  private def zBox(geom: Geometry, t: Int): Set[Long] = geom match {
-    case g: Point => Set(Z3SFC.index(g.getX, g.getY, t).z)
+  private def zBox(geom: Geometry, tmin: Int, tmax: Int): Set[Long] = geom match {
+    case g: Point => zBox(g, tmin, tmax)
     case g: LineString =>
       // we flatMap bounds for each line segment so we cover a smaller area
       (0 until g.getNumPoints).map(g.getPointN).sliding(2).flatMap { case Seq(one, two) =>
         val (xmin, xmax) = minMax(one.getX, two.getX)
         val (ymin, ymax) = minMax(one.getY, two.getY)
-        zBox(xmin, ymin, xmax, ymax, t)
+        zBox(xmin, ymin, xmax, ymax, tmin, tmax)
       }.toSet
     case g: GeometryCollection => (0 until g.getNumGeometries).toSet.map(g.getGeometryN).flatMap(zBox(_, t))
     case g: Geometry =>
@@ -172,10 +172,29 @@ object Z3Table extends GeoMesaTable {
       zBox(env.getMinX, env.getMinY, env.getMaxX, env.getMaxY, t)
   }
 
-  // gets a sequence of (week, z) values that cover the bounding box
-  private def zBox(xmin: Double, ymin: Double, xmax: Double, ymax: Double, t: Int): Set[Long] = {
-    val zmin = Z3SFC.index(xmin, ymin, t).z
-    val zmax = Z3SFC.index(xmax, ymax, t).z
+  private def zBox(geom: Geometry, tmin: Int, tmax: Int): Set[Long] = geom match {
+    case g: Point => zBox(g, tmin, tmax)
+    case g: LineString =>
+      // we flatMap bounds for each line segment so we cover a smaller area
+      (0 until g.getNumPoints).map(g.getPointN).sliding(2).flatMap { case Seq(one, two) =>
+        val (xmin, xmax) = minMax(one.getX, two.getX)
+        val (ymin, ymax) = minMax(one.getY, two.getY)
+        zBox(xmin, ymin, xmax, ymax, tmin, tmax)
+      }.toSet
+    case g: GeometryCollection => (0 until g.getNumGeometries).toSet.map(g.getGeometryN).flatMap(zBox(_, t))
+    case g: Geometry =>
+      val env = g.getEnvelopeInternal
+      zBox(env.getMinX, env.getMinY, env.getMaxX, env.getMaxY, t)
+  }
+
+  // gets a sequence of z values that cover the point and dates
+  private def zBox(geom: Point, tmin: Int, tmax: Int): Set[Long] =
+    zBox(geom.getX, geom.getY, geom.getX, geom.getY, tmin, tmax)
+
+  // gets a sequence of z values that cover the bounding box
+  private def zBox(xmin: Double, ymin: Double, xmax: Double, ymax: Double, tmin: Int, tmax: Int): Set[Long] = {
+    val zmin = Z3SFC.index(xmin, ymin, tmin).z
+    val zmax = Z3SFC.index(xmax, ymax, tmax).z
     getZPrefixes(zmin, zmax)
   }
 
