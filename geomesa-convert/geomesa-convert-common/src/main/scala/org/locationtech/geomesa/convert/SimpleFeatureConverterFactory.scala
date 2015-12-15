@@ -99,7 +99,7 @@ trait ToSimpleFeatureConverter[I] extends SimpleFeatureConverter[I] with Logging
 
   val idDependencies = dependenciesOf(idBuilder)
   val requiredFieldsNames: Set[String] = attrRequiredFieldsNames ++ idDependencies
-  val requiredFields = inputFields.filter { f => requiredFieldsNames.contains(f.name) }
+  val requiredFields = inputFields.toSeq//.filter { f => requiredFieldsNames.contains(f.name) }
   val nfields = requiredFields.length
 
   val indexes =
