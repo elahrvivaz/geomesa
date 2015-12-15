@@ -62,6 +62,11 @@
             <scope>provided</scope>
         </dependency>
         <dependency>
+            <groupId>com.twitter</groupId>
+            <artifactId>scalding-repl_2.11</artifactId>
+            <version>0.15.1-RC13</version>
+        </dependency>
+        <dependency>
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-csv</artifactId>
         </dependency>
