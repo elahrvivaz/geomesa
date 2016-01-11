@@ -11,26 +11,51 @@ package org.locationtech.geomesa.jobs.mapreduce
 import java.io.{InputStream, OutputStream}
 
 import com.google.common.primitives.Ints
+import org.apache.hadoop.conf.{Configuration, Configurable}
 import org.apache.hadoop.io.serializer.{Deserializer, Serialization, Serializer}
 import org.locationtech.geomesa.features.kryo.serialization.KryoFeatureSerializer
 import org.locationtech.geomesa.jobs.mapreduce.SimpleFeatureSerialization._
 import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
-import org.opengis.feature.simple.SimpleFeature
+import org.opengis.feature.simple.{SimpleFeatureType, SimpleFeature}
 
 /**
  * Hadoop writable serialization for simple features
  */
-class SimpleFeatureSerialization extends Serialization[SimpleFeature] {
+class SimpleFeatureSerialization extends Serialization[SimpleFeature] with Configurable {
+
+  private var conf: Configuration = null
+
+  private var sfts: Map[String, SimpleFeatureType] = Map.empty
 
   override def accept(c: Class[_]) = classOf[SimpleFeature].isAssignableFrom(c)
 
-  override def getSerializer(c: Class[SimpleFeature]) = new HadoopSimpleFeatureSerializer
+  override def getSerializer(c: Class[SimpleFeature]) = new HadoopSimpleFeatureSerializer(sfts)
 
-  override def getDeserializer(c: Class[SimpleFeature]) = new HadoopSimpleFeatureDeserializer
+  override def getDeserializer(c: Class[SimpleFeature]) = new HadoopSimpleFeatureDeserializer(sfts)
+
+  override def getConf: Configuration = conf
+
+  override def setConf(conf: Configuration): Unit = {
+    this.conf = conf
+    val map = scala.collection.mutable.Map.empty[String, SimpleFeatureType]
+    conf.get(SimpleFeatureTypeNamesKey, "").split(",").foreach { typeName =>
+      val sftString = conf.get(s"$SimpleFeatureTypesKeyPrefix.$typeName")
+      if (sftString != null) {
+        map.put(typeName, SimpleFeatureTypes.createType(typeName, sftString))
+      }
+    }
+    synchronized {
+      sfts = map.toMap
+    }
+  }
 }
 
 object SimpleFeatureSerialization {
+
+  val SimpleFeatureTypeNamesKey = "org.locationtech.geomesa.io.sfts.all"
+  val SimpleFeatureTypesKeyPrefix = "org.locationtech.geomesa.io.sft"
+
   // re-usable serializers since they are not thread safe
   val serializers = new SoftThreadLocalCache[String, KryoFeatureSerializer]()
 
@@ -64,7 +89,7 @@ object SimpleFeatureSerialization {
  * Serializer class that delegates to kryo serialization. We also have to encode the sft, however.
  * It would be nice if there was some way to avoid doing that, but it seems impossible to avoid.
  */
-class HadoopSimpleFeatureSerializer extends Serializer[SimpleFeature] {
+class HadoopSimpleFeatureSerializer(sfts: Map[String, SimpleFeatureType]) extends Serializer[SimpleFeature] {
 
   var out: OutputStream = null
 
@@ -73,18 +98,16 @@ class HadoopSimpleFeatureSerializer extends Serializer[SimpleFeature] {
   override def close() = out.close()
 
   override def serialize(sf: SimpleFeature) = {
-    val sft = sf.getFeatureType
-    writeString(out, sft.getTypeName)
-    val sftString = SimpleFeatureTypes.encodeType(sft)
-    writeString(out, sftString)
-    serializers.getOrElseUpdate(s"${sft.getTypeName}:$sftString", KryoFeatureSerializer(sft)).write(sf, out)
+    val sft = sf.getFeatureType.getTypeName
+    writeString(out, sft)
+    serializers.getOrElseUpdate(sft, KryoFeatureSerializer(sf.getFeatureType)).write(sf, out)
   }
 }
 
 /**
  * Deserializer class that delegates to kryo serialization, plus the sft.
  */
-class HadoopSimpleFeatureDeserializer extends Deserializer[SimpleFeature] {
+class HadoopSimpleFeatureDeserializer(sfts: Map[String, SimpleFeatureType]) extends Deserializer[SimpleFeature] {
 
   var in: InputStream = null
 
@@ -93,9 +116,7 @@ class HadoopSimpleFeatureDeserializer extends Deserializer[SimpleFeature] {
   override def close() = in.close()
 
   override def deserialize(ignored: SimpleFeature) = {
-    val sftName = readString(in)
-    val sftString = readString(in)
-    lazy val sft = SimpleFeatureTypes.createType(sftName, sftString)
-    serializers.getOrElseUpdate(s"${sft.getTypeName}:$sftString", KryoFeatureSerializer(sft)).read(in)
+    val sft = readString(in)
+    serializers.getOrElseUpdate(sft, KryoFeatureSerializer(sfts(sft))).read(in)
   }
 }

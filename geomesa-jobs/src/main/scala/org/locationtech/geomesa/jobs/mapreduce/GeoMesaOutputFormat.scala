@@ -33,9 +33,8 @@ object GeoMesaOutputFormat {
    */
   def configureDataStore(job: Job, dsParams: Map[String, String]): Unit = {
 
-    val ds = DataStoreFinder.getDataStore(dsParams).asInstanceOf[AccumuloDataStore]
-
-    assert(ds != null, "Invalid data store parameters")
+    val ds = DataStoreFinder.getDataStore(dsParams)
+    require(ds != null, "Invalid data store parameters")
 
     // set up the underlying accumulo input format
     val user = AccumuloDataStoreFactory.params.userParam.lookUp(dsParams).asInstanceOf[String]
@@ -51,6 +50,7 @@ object GeoMesaOutputFormat {
     // also set the datastore parameters so we can access them later
     val conf = job.getConfiguration
     GeoMesaConfigurator.setDataStoreOutParams(conf, dsParams)
+    ds.getTypeNames.map(ds.getSchema).foreach(GeoMesaConfigurator.registerFeatureType(conf, _))
     GeoMesaConfigurator.setSerialization(conf)
   }
 

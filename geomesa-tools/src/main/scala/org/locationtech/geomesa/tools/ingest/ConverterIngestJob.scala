@@ -49,9 +49,11 @@ object ConverterIngestJob extends LazyLogging {
     job.setNumReduceTasks(0)
 
     FileInputFormat.setInputPaths(job, paths.mkString(","))
-    job.getConfiguration.set(ConverterKey, converterConfig.root().render(ConfigRenderOptions.concise()))
-    GeoMesaConfigurator.setFeatureTypeOut(job.getConfiguration, sft.getTypeName)
+
+    // note: output type is assumed to exist already in data store
     GeoMesaOutputFormat.configureDataStore(job, dsParams)
+    GeoMesaConfigurator.setFeatureTypeOut(job.getConfiguration, sft.getTypeName)
+    job.getConfiguration.set(ConverterKey, converterConfig.root().render(ConfigRenderOptions.concise()))
 
     val result = job.waitForCompletion(true)
     val success = job.getCounters.findCounter(CounterGroup, "success").getValue

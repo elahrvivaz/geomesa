@@ -58,6 +58,14 @@ object GeoMesaConfigurator {
   def getDataStoreOutParams(conf: Configuration): Map[String, String] =
     conf.getValByRegex(dsOutRegex).map { case (key, value) => (key.substring(dsOutSubstring), value) }.toMap
 
+  // register a simple feature type for serialization
+  def registerFeatureType(conf: Configuration, sft: SimpleFeatureType): Unit = {
+    import SimpleFeatureSerialization.{SimpleFeatureTypeNamesKey, SimpleFeatureTypesKeyPrefix}
+    val existing = Option(conf.get(SimpleFeatureTypeNamesKey)).getOrElse("")
+    conf.set(SimpleFeatureTypeNamesKey, s"${sft.getTypeName},$existing")
+    conf.set(s"$SimpleFeatureTypesKeyPrefix.${sft.getTypeName}", SimpleFeatureTypes.encodeType(sft))
+  }
+
   // set/get the feature type name
   def setFeatureType(conf: Configuration, featureType: String): Unit =
     conf.set(sftKey, featureType)

@@ -58,8 +58,7 @@ object GeoMesaInputFormat extends LazyLogging {
   def configure(job: JobConf, dsParams: Map[String, String], query: Query): Unit = {
 
     val ds = DataStoreFinder.getDataStore(dsParams).asInstanceOf[AccumuloDataStore]
-
-    assert(ds != null, "Invalid data store parameters")
+    require(ds != null, "Invalid data store parameters")
 
     // set up the underlying accumulo input format
     val user = AccumuloDataStoreFactory.params.userParam.lookUp(dsParams).asInstanceOf[String]
@@ -94,6 +93,7 @@ object GeoMesaInputFormat extends LazyLogging {
 
     // also set the datastore parameters so we can access them later
     GeoMesaConfigurator.setSerialization(job)
+    ds.getTypeNames.map(ds.getSchema).foreach(GeoMesaConfigurator.registerFeatureType(job, _))
     GeoMesaConfigurator.setDataStoreInParams(job, dsParams)
     GeoMesaConfigurator.setFeatureType(job, featureTypeName)
     if (query.getFilter != Filter.INCLUDE) {
