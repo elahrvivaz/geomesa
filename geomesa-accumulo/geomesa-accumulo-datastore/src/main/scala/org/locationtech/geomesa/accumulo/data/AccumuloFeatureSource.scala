@@ -158,15 +158,8 @@ class AccumuloFeatureCollection(source: AccumuloFeatureSource, query: Query)
     case _ => false
   }
 
-  override def reader(): FeatureReader[SimpleFeatureType, SimpleFeature] = {
-    val reader = ds.getFeatureReader(query, Transaction.AUTO_COMMIT)
-    val maxFeatures = query.getMaxFeatures
-    if (maxFeatures != Integer.MAX_VALUE) {
-      new MaxFeatureReader[SimpleFeatureType, SimpleFeature](reader, maxFeatures)
-    } else {
-      reader
-    }
-  }
+  override def reader(): FeatureReader[SimpleFeatureType, SimpleFeature] =
+    ds.getFeatureReader(query, Transaction.AUTO_COMMIT)
 
   override def getCount = source.getCount(query)
 
