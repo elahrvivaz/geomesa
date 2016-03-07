@@ -8,6 +8,7 @@
 
 package org.locationtech.geomesa.accumulo.data
 
+import java.io.Flushable
 import java.util.concurrent.atomic.AtomicLong
 
 import com.typesafe.scalalogging.LazyLogging
@@ -17,11 +18,12 @@ import org.apache.accumulo.core.security.ColumnVisibility
 import org.apache.hadoop.io.Text
 import org.apache.hadoop.mapred.RecordWriter
 import org.geotools.data.simple.SimpleFeatureWriter
-import org.geotools.data.{DataUtilities, Query}
+import org.geotools.data.{Query, Transaction}
 import org.geotools.factory.Hints
 import org.geotools.filter.identity.FeatureIdImpl
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.FeatureIdProperties.FEATURE_ID_GENERATOR
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToWrite, FeatureWriterFn}
+import org.locationtech.geomesa.accumulo.data.stats.StatsTracker
 import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.util.{GeoMesaBatchWriterConfig, Z3FeatureIdGenerator}
@@ -114,7 +116,8 @@ abstract class AccumuloFeatureWriter(sft: SimpleFeatureType,
                                      encoder: SimpleFeatureSerializer,
                                      indexValueEncoder: IndexValueEncoder,
                                      ds: AccumuloDataStore,
-                                     defaultVisibility: String) extends SimpleFeatureWriter with LazyLogging {
+                                     defaultVisibility: String)
+    extends SimpleFeatureWriter with Flushable with LazyLogging {
 
   protected val multiBWWriter = ds.connector.createMultiTableBatchWriter(GeoMesaBatchWriterConfig())
 
@@ -126,6 +129,8 @@ abstract class AccumuloFeatureWriter(sft: SimpleFeatureType,
     AccumuloFeatureWriter.featureWriter(writers)
   }
 
+  protected val statsTracker = StatsTracker(ds, sft)
+
   // returns a temporary id - we will replace it just before write
   protected def nextFeatureId = AccumuloFeatureWriter.tempFeatureIds.getAndIncrement().toString
 
@@ -133,19 +138,27 @@ abstract class AccumuloFeatureWriter(sft: SimpleFeatureType,
     // see if there's a suggested ID to use for this feature, else create one based on the feature
     val featureWithFid = AccumuloFeatureWriter.featureWithFid(sft, feature)
     writer(new FeatureToWrite(featureWithFid, defaultVisibility, encoder, indexValueEncoder))
+    statsTracker.visit(featureWithFid)
   }
 
   override def getFeatureType: SimpleFeatureType = sft
 
-  override def close(): Unit = multiBWWriter.close()
-
-  override def remove(): Unit = {}
-
   override def hasNext: Boolean = false
 
-  def flush(): Unit = multiBWWriter.flush()
+  override def flush(): Unit = {
+    multiBWWriter.flush()
+    statsTracker.flush()
+  }
+
+  override def close(): Unit = {
+    multiBWWriter.close()
+    statsTracker.close()
+  }
 }
 
+/**
+ * Appends new features - can't modify or delete existing features.
+ */
 class AppendAccumuloFeatureWriter(sft: SimpleFeatureType,
                                   encoder: SimpleFeatureSerializer,
                                   indexValueEncoder: IndexValueEncoder,
@@ -161,12 +174,18 @@ class AppendAccumuloFeatureWriter(sft: SimpleFeatureType,
       currentFeature = null
     }
 
+  override def remove(): Unit =
+    throw new UnsupportedOperationException("Use getFeatureWriter instead of getFeatureWriterAppend")
+
   override def next(): SimpleFeature = {
     currentFeature = new ScalaSimpleFeature(nextFeatureId, sft)
     currentFeature
   }
 }
 
+/**
+ * Modifies or deletes existing features. Per the data store api, does not allow appending new features.
+ */
 class ModifyAccumuloFeatureWriter(sft: SimpleFeatureType,
                                   encoder: SimpleFeatureSerializer,
                                   indexValueEncoder: IndexValueEncoder,
@@ -175,7 +194,7 @@ class ModifyAccumuloFeatureWriter(sft: SimpleFeatureType,
                                   filter: Filter)
   extends AccumuloFeatureWriter(sft, encoder, indexValueEncoder, ds, defaultVisibility) {
 
-  val reader = ds.getFeatureReader(sft.getTypeName, new Query(sft.getTypeName, filter))
+  val reader = ds.getFeatureReader(new Query(sft.getTypeName, filter), Transaction.AUTO_COMMIT)
 
   var live: SimpleFeature = null      /* feature to let user modify   */
   var original: SimpleFeature = null  /* feature returned from reader */
@@ -209,16 +228,11 @@ class ModifyAccumuloFeatureWriter(sft: SimpleFeatureType,
     }
 
   override def next: SimpleFeature = {
-    original = null
-    live = if (hasNext) {
-      original = reader.next()
-      // set the use provided FID hint - allows user to update fid if desired,
-      // but if not we'll use the existing one
-      original.getUserData.put(Hints.USE_PROVIDED_FID, java.lang.Boolean.TRUE)
-      ScalaSimpleFeatureFactory.copyFeature(sft, original, original.getID) // this copies user data as well
-    } else {
-      ScalaSimpleFeatureFactory.buildFeature(sft, Seq.empty, nextFeatureId)
-    }
+    original = reader.next()
+    // set the use provided FID hint - allows user to update fid if desired,
+    // but if not we'll use the existing one
+    original.getUserData.put(Hints.USE_PROVIDED_FID, java.lang.Boolean.TRUE)
+    live = ScalaSimpleFeatureFactory.copyFeature(sft, original, original.getID) // this copies user data as well
     live
   }
 
@@ -226,5 +240,4 @@ class ModifyAccumuloFeatureWriter(sft: SimpleFeatureType,
     super.close() // closes writer
     reader.close()
   }
-
 }

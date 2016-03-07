@@ -21,6 +21,7 @@ import org.apache.hadoop.mapred._
 import org.apache.hadoop.util.Progressable
 import org.geotools.data.{DataStoreFinder, DataUtilities}
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
+import org.locationtech.geomesa.accumulo.data.stats.StatsTracker
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloDataStoreFactory, AccumuloDataStoreParams, AccumuloFeatureWriter}
 import org.locationtech.geomesa.accumulo.index.IndexValueEncoder
 import org.locationtech.geomesa.features.{SimpleFeatureSerializer, SimpleFeatureSerializers}
@@ -100,6 +101,7 @@ class GeoMesaRecordWriter(params: Map[String, String], delegate: RecordWriter[Te
   val writerCache       = scala.collection.mutable.Map.empty[String, Seq[TableAndMutations]]
   val encoderCache      = scala.collection.mutable.Map.empty[String, SimpleFeatureSerializer]
   val indexEncoderCache = scala.collection.mutable.Map.empty[String, IndexValueEncoder]
+  val statsCache        = scala.collection.mutable.Map.empty[String, StatsTracker]
 
   override def write(key: Text, value: SimpleFeature) = {
     val sftName = value.getFeatureType.getTypeName
@@ -121,21 +123,26 @@ class GeoMesaRecordWriter(params: Map[String, String], delegate: RecordWriter[Te
         case (table, writer) => (new Text(table), writer)
       }
     })
+    val statsTracker = statsCache.getOrElseUpdate(sftName, StatsTracker(ds, sft))
 
     val withFid = AccumuloFeatureWriter.featureWithFid(sft, value)
     val encoder = encoderCache.getOrElseUpdate(sftName, SimpleFeatureSerializers(sft, ds.getFeatureEncoding(sft)))
     val ive = indexEncoderCache.getOrElseUpdate(sftName, IndexValueEncoder(sft))
-    val featureToWrite = new FeatureToWrite(withFid, ds.writeVisibilities, encoder, ive)
+    val featureToWrite = new FeatureToWrite(withFid, ds.defaultVisibilities, encoder, ive)
 
     // calculate all the mutations first, so that if something fails we won't have a partially written feature
     try {
       val mutations = writers.map { case (table, featToMuts) => (table, featToMuts(featureToWrite)) }
       mutations.foreach { case (table, muts) => muts.foreach(delegate.write(table, _)) }
+      statsTracker.visit(withFid)
     } catch {
       case e: Exception =>
         logger.error(s"Error creating mutations from feature:\n${DataUtilities.encodeFeature(withFid)}", e)
     }
   }
 
-  override def close(reporter: Reporter) = delegate.close(reporter)
+  override def close(reporter: Reporter) = {
+    delegate.close(reporter)
+    statsCache.values.foreach(_.close())
+  }
 }

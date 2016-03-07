@@ -14,7 +14,7 @@ import java.util.{Collections, Date, TimeZone}
 import org.apache.accumulo.core.data.{Range => ARange}
 import org.apache.accumulo.core.security.Authorizations
 import org.apache.hadoop.io.Text
-import org.geotools.data.Query
+import org.geotools.data.{Transaction, Query}
 import org.geotools.factory.{CommonFactoryFinder, Hints}
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.text.ecql.ECQL
@@ -65,7 +65,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "for string equals" >> {
         val filter = "name = 'b'"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "name"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(4)
         results.map(_.getAttributeCount) must contain(3).foreach
@@ -77,7 +77,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "for string less than" >> {
         val filter = "name < 'b'"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "name"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(4)
         results.map(_.getAttributeCount) must contain(3).foreach
@@ -89,7 +89,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "for string greater than" >> {
         val filter = "name > 'b'"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "name"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(8)
         results.map(_.getAttributeCount) must contain(3).foreach
@@ -102,7 +102,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "for string greater than or equals" >> {
         val filter = "name >= 'b'"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "name"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(12)
         results.map(_.getAttributeCount) must contain(3).foreach
@@ -116,7 +116,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "for date tequals" >> {
         val filter = "dtg TEQUALS 2014-01-02T00:00:00.000Z"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(20)
         results.map(_.getAttributeCount) must contain(2).foreach
@@ -125,7 +125,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "for date equals" >> {
         val filter = "dtg = '2014-01-02T00:00:00.000Z'"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(20)
         results.map(_.getAttributeCount) must contain(2).foreach
@@ -134,7 +134,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "for date between" >> {
         val filter = "dtg BETWEEN '2014-01-01T00:00:00.000Z' AND '2014-01-03T00:00:00.000Z'"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(20)
         results.map(_.getAttributeCount) must contain(2).foreach
@@ -143,7 +143,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "for int less than" >> {
         val filter = "age < 2"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "age"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(5)
         results.map(_.getAttributeCount) must contain(3).foreach
@@ -155,7 +155,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "for int greater than or equals" >> {
         val filter = "age >= 3"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg", "age"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(10)
         results.map(_.getAttributeCount) must contain(3).foreach
@@ -169,7 +169,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "not including attribute queried on" >> {
         val filter = "name = 'b'"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(4)
         results.map(_.getAttributeCount) must contain(2).foreach
@@ -180,7 +180,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "not including geom" >> {
         val filter = "name = 'b'"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("dtg"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(4)
         results.map(_.getAttributeCount) must contain(2).foreach // geom gets added back in
@@ -191,7 +191,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "not including dtg" >> {
         val filter = "name = 'b'"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("geom"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(4)
         results.map(_.getAttributeCount) must contain(1).foreach
@@ -201,7 +201,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "not including geom or dtg" >> {
         val filter = "name = 'b'"
         val query = new Query(sftName, ECQL.toFilter(filter), Array("name"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(4)
         results.map(_.getAttributeCount) must contain(2).foreach // geom gets added back in
@@ -212,7 +212,7 @@ class AttributeIndexIteratorTest extends Specification with TestWithDataStore {
       "with additional filter applied" >> {
         val filter = ff.and(ECQL.toFilter("name = 'b'"), ECQL.toFilter("BBOX(geom, 44.5, 44.5, 45.5, 45.5)"))
         val query = new Query(sftName, filter, Array("geom", "dtg", "name"))
-        val results = SelfClosingIterator(ds.getFeatureReader(sftName, query)).toList
+        val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
         results must haveSize(1)
         results.map(_.getAttributeCount) must contain(3).foreach // geom gets added back in
