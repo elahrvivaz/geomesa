@@ -39,6 +39,7 @@
         <module>geomesa-hbase</module>
         <module>geomesa-blobstore</module>
         <module>geomesa-cassandra</module>
+        <module>geomesa-metrics</module>
         <module>docs</module>
     </modules>
 
@@ -46,7 +47,7 @@
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 
         <!-- bump version when performing releases -->
-        <geomesa.release.version>1.1.0-rc.7</geomesa.release.version>
+        <geomesa.release.version>1.2.0</geomesa.release.version>
 
         <scala.version>2.11.7</scala.version>
         <scala.xml.version>1.0.5</scala.xml.version>
@@ -1303,6 +1304,11 @@
                 <version>1.6</version>
             </dependency>
             <dependency>
+                <groupId>org.apache.commons</groupId>
+                <artifactId>commons-pool2</artifactId>
+                <version>2.2</version>
+            </dependency>
+            <dependency>
                 <groupId>commons-codec</groupId>
                 <artifactId>commons-codec</artifactId>
                 <version>1.9</version>
@@ -1370,11 +1376,6 @@
             <dependency>
                 <groupId>org.locationtech.geomesa</groupId>
                 <artifactId>geomesa-filter</artifactId>
-                <version>${project.version}</version>
-            </dependency>
-            <dependency>
-                <groupId>org.locationtech.geomesa</groupId>
-                <artifactId>geomesa-utils-gs-plugin</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -1456,6 +1457,11 @@
             <dependency>
                 <groupId>org.locationtech.geomesa</groupId>
                 <artifactId>geomesa-convert-xml</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.locationtech.geomesa</groupId>
+                <artifactId>geomesa-metrics</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
