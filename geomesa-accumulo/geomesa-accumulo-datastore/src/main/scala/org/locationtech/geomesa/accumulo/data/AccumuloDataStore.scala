@@ -10,7 +10,7 @@
 package org.locationtech.geomesa.accumulo.data
 
 import java.io.IOException
-import java.util.{List => jList, NoSuchElementException}
+import java.util.{List => jList}
 
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.client._
@@ -20,6 +20,7 @@ import org.geotools.factory.Hints
 import org.geotools.feature.{FeatureTypes, NameImpl}
 import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore._
+import org.locationtech.geomesa.accumulo.data.GeoMesaMetadata._
 import org.locationtech.geomesa.accumulo.data.stats.GeoMesaMetadataStats
 import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
@@ -71,7 +72,7 @@ class AccumuloDataStore(val connector: Connector,
 
   private val defaultBWConfig = GeoMesaBatchWriterConfig().setMaxWriteThreads(config.writeThreads)
 
-  override val metadata: GeoMesaMetadata = new AccumuloBackedMetadata(connector, catalogTable, authProvider)
+  override val metadata: GeoMesaMetadata = new AccumuloBackedMetadata(connector, catalogTable)
 
   private val tableOps = connector.tableOperations()
 
@@ -114,7 +115,7 @@ class AccumuloDataStore(val connector: Connector,
             case Some(schema) => schema
           }
           checkSchemaRequirements(sft, spatioTemporalSchema)
-          writeMetadata(sft, SerializationType.KRYO, spatioTemporalSchema)
+          writeMetadata(sft, spatioTemporalSchema)
 
           // reload the SFT then copy over any additional keys that were in the original sft
           val reloadedSft = getSchema(sft.getTypeName)
@@ -205,8 +206,7 @@ class AccumuloDataStore(val connector: Connector,
           deleteStandAloneTables(sft)
         }
       }
-      metadata.delete(typeName, 1)
-      metadata.expireCache(typeName)
+      metadata.delete(typeName)
     } finally {
       mutex.release()
     }
@@ -437,12 +437,9 @@ class AccumuloDataStore(val connector: Connector,
    */
   @throws[RuntimeException]
   def getFeatureEncoding(sft: SimpleFeatureType): SerializationType = {
-    val name = metadata.readRequired(sft.getTypeName, FEATURE_ENCODING_KEY)
-    try {
-      SerializationType.withName(name)
-    } catch {
-      case e: NoSuchElementException => throw new RuntimeException(s"Invalid Feature Encoding '$name'.")
-    }
+    metadata.read(sft.getTypeName, "featureEncoding")
+        .map(SerializationType.withName)
+        .getOrElse(SerializationType.KRYO)
   }
 
   /**
@@ -528,14 +525,11 @@ class AccumuloDataStore(val connector: Connector,
   /**
    * Computes and writes the metadata for this feature type
    */
-  private def writeMetadata(sft: SimpleFeatureType,
-                            fe: SerializationType,
-                            spatioTemporalSchemaValue: String) {
+  private def writeMetadata(sft: SimpleFeatureType, spatioTemporalSchemaValue: String) {
 
     // compute the metadata values
     val attributesValue             = SimpleFeatureTypes.encodeType(sft)
     val dtgValue: Option[String]    = sft.getDtgField // this will have already been checked and set
-    val featureEncodingValue        = /*_*/fe.toString/*_*/
     val z3TableValue                = Z3Table.formatTableName(catalogTable, sft)
     val spatioTemporalIdxTableValue = SpatioTemporalTable.formatTableName(catalogTable, sft)
     val attrIdxTableValue           = AttributeTable.formatTableName(catalogTable, sft)
@@ -550,7 +544,6 @@ class AccumuloDataStore(val connector: Connector,
       Map(
         ATTRIBUTES_KEY        -> attributesValue,
         SCHEMA_KEY            -> spatioTemporalSchemaValue,
-        FEATURE_ENCODING_KEY  -> featureEncodingValue,
         Z3_TABLE_KEY          -> z3TableValue,
         ST_IDX_TABLE_KEY      -> spatioTemporalIdxTableValue,
         ATTR_IDX_TABLE_KEY    -> attrIdxTableValue,
@@ -568,7 +561,7 @@ class AccumuloDataStore(val connector: Connector,
     // IMPORTANT: this method needs to stay inside a zookeeper distributed locking block
     var schemaId = 1
     val existingSchemaIds =
-      getTypeNames.flatMap(metadata.readNoCache(_, SCHEMA_ID_KEY).map(_.getBytes("UTF-8").head.toInt))
+      getTypeNames.flatMap(metadata.read(_, SCHEMA_ID_KEY, cache = false).map(_.getBytes("UTF-8").head.toInt))
     while (existingSchemaIds.contains(schemaId)) { schemaId += 1 }
     // We use a single byte for the row prefix to save space - if we exceed the single byte limit then
     // our ranges would start to overlap and we'd get errors
@@ -620,7 +613,7 @@ class AccumuloDataStore(val connector: Connector,
    */
   @throws[IOException]
   private def checkSchema(typeName: String): Unit = {
-    metadata.read(typeName, ATTRIBUTES_KEY).getOrElse {
+    metadata.read(typeName, ATTRIBUTES_KEY, cache = false).getOrElse {
       throw new IOException(s"Schema '$typeName' has not been initialized. Please call 'createSchema' first.")
     }
   }

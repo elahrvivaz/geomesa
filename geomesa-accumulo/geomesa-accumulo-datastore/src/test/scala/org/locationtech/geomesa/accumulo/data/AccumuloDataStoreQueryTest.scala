@@ -11,6 +11,7 @@ package org.locationtech.geomesa.accumulo.data
 import java.util.Date
 
 import com.vividsolutions.jts.geom.Coordinate
+import org.apache.accumulo.core.security.Authorizations
 import org.geotools.data._
 import org.geotools.factory.{CommonFactoryFinder, Hints}
 import org.geotools.feature.NameImpl

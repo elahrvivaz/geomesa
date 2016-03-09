@@ -9,12 +9,17 @@
 package org.locationtech.geomesa.accumulo.data.stats
 
 import com.vividsolutions.jts.geom.Envelope
+import org.apache.accumulo.core.client.impl.{Tables, MasterClient}
+import org.apache.accumulo.core.client.mock.MockConnector
+import org.apache.accumulo.core.security.thrift.TCredentials
+import org.apache.accumulo.trace.instrument.Tracer
 import org.geotools.data.Query
 import org.geotools.geometry.jts.ReferencedEnvelope
 import org.joda.time.{DateTimeZone, Interval}
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.data.tables.RecordTable
 import org.locationtech.geomesa.utils.geotools.{CRS_EPSG_4326, wholeWorldEnvelope}
+import org.locationtech.geomesa.accumulo.data.GeoMesaMetadata._
 
 /**
  * Tracks stats for a schema - spatial/temporal bounds, number of records, etc. Persistence of
@@ -86,7 +91,7 @@ trait GeoMesaMetadataStats extends GeoMesaStats {
    * @return count of features
    */
   override def estimateCount(query: Query): Long =
-    metadata.getTableSize(getTableName(query.getTypeName, RecordTable))
+    retrieveTableSize(getTableName(query.getTypeName, RecordTable))
 
   /**
    * Clears any existing spatial bounds
@@ -139,10 +144,26 @@ trait GeoMesaMetadataStats extends GeoMesaStats {
   // TODO apply combiner in order to allow multi-threaded writes
 
   private def readTimeBounds(typeName: String): Option[Interval] =
-    metadata.readNoCache(typeName, TEMPORAL_BOUNDS_KEY).filterNot(_.isEmpty).map(decodeTimeBounds)
+    metadata.read(typeName, TEMPORAL_BOUNDS_KEY, cache = true).filterNot(_.isEmpty).map(decodeTimeBounds)
 
   private def readSpatialBounds(typeName: String): Option[Envelope] =
-    metadata.readNoCache(typeName, SPATIAL_BOUNDS_KEY).filterNot(_.isEmpty).map(decodeSpatialBounds)
+    metadata.read(typeName, SPATIAL_BOUNDS_KEY, cache = true).filterNot(_.isEmpty).map(decodeSpatialBounds)
+
+  // This lazily computed function helps shortcut getCount from scanning entire tables.
+  private lazy val retrieveTableSize: (String) => Long =
+    if (connector.isInstanceOf[MockConnector]) {
+      (tableName: String) => -1
+    } else {
+      val masterClient = MasterClient.getConnection(connector.getInstance())
+      val tc = new TCredentials()
+      val mmi = masterClient.getMasterStats(Tracer.traceInfo(), tc)
+
+      (tableName: String) => {
+        val tableId = Tables.getTableId(connector.getInstance(), tableName)
+        val v = mmi.getTableMap.get(tableId)
+        v.getRecs
+      }
+    }
 }
 
 object GeoMesaStats {
