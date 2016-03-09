@@ -10,16 +10,11 @@
 package org.locationtech.geomesa.accumulo.data
 
 import java.io.IOException
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.locks.{Lock, ReentrantLock}
 import java.util.{List => jList, NoSuchElementException}
 
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.client._
 import org.apache.accumulo.core.client.mock.MockConnector
-import org.apache.curator.framework.CuratorFrameworkFactory
-import org.apache.curator.framework.recipes.locks.InterProcessSemaphoreMutex
-import org.apache.curator.retry.ExponentialBackoffRetry
 import org.geotools.data._
 import org.geotools.factory.Hints
 import org.geotools.feature.{FeatureTypes, NameImpl}
@@ -30,7 +25,7 @@ import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.stats.{QueryStat, Stat, StatWriter}
-import org.locationtech.geomesa.accumulo.util.GeoMesaBatchWriterConfig
+import org.locationtech.geomesa.accumulo.util.{DistributedLocking, GeoMesaBatchWriterConfig, Releasable}
 import org.locationtech.geomesa.accumulo.{AccumuloVersion, GeomesaSystemProperties}
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features.{SerializationType, SimpleFeatureSerializers}
@@ -63,7 +58,7 @@ class AccumuloDataStore(val connector: Connector,
                         val auditProvider: AuditProvider,
                         val defaultVisibilities: String,
                         val config: AccumuloDataStoreConfig)
-    extends DataStore with AccumuloConnectorCreator with HasGeoMesaMetadata
+    extends DataStore with AccumuloConnectorCreator with HasGeoMesaMetadata with DistributedLocking
             with GeoMesaMetadataStats with StrategyHintsProvider with LazyLogging {
 
   Hints.putSystemDefault(Hints.FORCE_LONGITUDE_FIRST_AXIS_ORDER, true)
@@ -104,7 +99,7 @@ class AccumuloDataStore(val connector: Connector,
    */
   override def createSchema(sft: SimpleFeatureType): Unit = {
     if (getSchema(sft.getTypeName) == null) {
-      val lock = acquireDistributedLock()
+      val mutex = lock()
       try {
         // check a second time now that we have the lock
         if (getSchema(sft.getTypeName) == null) {
@@ -134,7 +129,7 @@ class AccumuloDataStore(val connector: Connector,
           }
         }
       } finally {
-        lock.release()
+        mutex.release()
       }
     }
   }
@@ -201,7 +196,7 @@ class AccumuloDataStore(val connector: Connector,
    * @param typeName simple feature type name
    */
   override def removeSchema(typeName: String) = {
-    val lock = acquireDistributedLock()
+    val mutex = lock()
     try {
       Option(getSchema(typeName)).foreach { sft =>
         if (sft.isTableSharing && getTypeNames.filter(_ != typeName).map(getSchema).exists(_.isTableSharing)) {
@@ -213,7 +208,7 @@ class AccumuloDataStore(val connector: Connector,
       metadata.delete(typeName, 1)
       metadata.expireCache(typeName)
     } finally {
-      lock.release()
+      mutex.release()
     }
   }
 
@@ -630,43 +625,15 @@ class AccumuloDataStore(val connector: Connector,
     }
   }
 
-  /**
-   * Gets and acquires a distributed lock for all accumulo data stores sharing this catalog table.
-   * Make sure that you 'release' the lock in a finally block.
-   */
-  private def acquireDistributedLock(): Releasable = {
-    if (connector.isInstanceOf[MockConnector]) {
-      // for mock connections use a jvm-level lock
-      val lock = mockLocks.synchronized(mockLocks.getOrElseUpdate(catalogTable, new ReentrantLock()))
-      lock.lock()
-      new Releasable {
-        override def release(): Unit = lock.unlock()
-      }
-    } else {
-      val backoff = new ExponentialBackoffRetry(1000, 3)
-      val client = CuratorFrameworkFactory.newClient(connector.getInstance().getZooKeepers, backoff)
-      client.start()
-      // unique path per catalog table - must start with a forward slash
-      val lockPath =  s"/org.locationtech.geomesa/accumulo/ds/$catalogTable"
-      val lock = new InterProcessSemaphoreMutex(client, lockPath)
-      if (!lock.acquire(10000, TimeUnit.MILLISECONDS)) {
-        throw new RuntimeException(s"Could not acquire distributed lock at '$lockPath'")
-      }
-      // delegate lock that will close the curator client upon release
-      new Releasable {
-        override def release(): Unit = try lock.release() finally client.close()
-      }
-    }
+  private def lock(): Releasable = {
+    val key = s"/org.locationtech.geomesa/accumulo/ds/$catalogTable"
+    val zoos = connector.getInstance().getZooKeepers
+    val inMemory = connector.isInstanceOf[MockConnector]
+    lock(key, zoos, inMemoryOnly = inMemory)
   }
 }
 
 object AccumuloDataStore {
-
-  private lazy val mockLocks = scala.collection.mutable.Map.empty[String, Lock]
-
-  trait Releasable {
-    def release(): Unit
-  }
 
   /**
    * Format queries table name for Accumulo...table name is stored in metadata for other usage

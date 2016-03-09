@@ -52,7 +52,7 @@ trait GeoMesaStats {
  */
 trait GeoMesaMetadataStats extends GeoMesaStats {
 
-  this: AccumuloConnectorCreator with HasGeoMesaMetadata =>
+  this: AccumuloDataStore =>
 
   import GeoMesaStats.{allTimeBounds, decodeSpatialBounds, decodeTimeBounds, encode}
 
