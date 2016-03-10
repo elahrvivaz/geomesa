@@ -13,10 +13,10 @@ import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.client.{BatchScanner, IteratorSetting, Scanner}
 import org.geotools.factory.Hints
 import org.geotools.filter.text.ecql.ECQL
-import org.joda.time.Interval
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
 import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.data._
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
 import org.locationtech.geomesa.accumulo.iterators.{FEATURE_ENCODING, _}
@@ -213,7 +213,8 @@ object Strategy extends LazyLogging {
 trait StrategyProvider {
 
   /**
-   * Gets the estimated cost of running the query
+   * Gets the estimated cost of running the query. In general, this is the estimated
+   * number of features that will have to be scanned.
    */
-  def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints): Int
+  def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats): Long
 }

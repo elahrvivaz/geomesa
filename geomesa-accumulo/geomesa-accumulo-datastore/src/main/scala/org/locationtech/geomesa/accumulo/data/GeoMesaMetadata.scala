@@ -98,6 +98,8 @@ object GeoMesaMetadata {
   val TEMPORAL_BOUNDS_KEY       = s"$BOUNDS_PREFIX-temporal"
   val SPATIAL_DISTRIBUTION_KEY  = s"$DISTRIBUTION_PREFIX-spatial"
   val TEMPORAL_DISTRIBUTION_KEY = s"$DISTRIBUTION_PREFIX-temporal"
+  val STATS_GENERATION_KEY      = "stats-date"
+  val STATS_INTERVAL_KEY        = "stats-interval"
 }
 
 trait HasGeoMesaMetadata {

@@ -15,6 +15,7 @@ import org.apache.accumulo.core.data.{Range => AccRange}
 import org.geotools.data.DataUtilities
 import org.geotools.factory.Hints
 import org.geotools.temporal.`object`.DefaultPeriod
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.data.tables.{AttributeTable, RecordTable}
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.QueryPlanners.JoinFunction
@@ -24,7 +25,7 @@ import org.locationtech.geomesa.filter.FilterHelper._
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-import org.locationtech.geomesa.utils.stats.{Stat, Cardinality, IndexCoverage}
+import org.locationtech.geomesa.utils.stats.{Cardinality, IndexCoverage, Stat}
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.expression.{Literal, PropertyName}
 import org.opengis.filter.temporal.{After, Before, During, TEquals}
@@ -189,32 +190,26 @@ object AttributeIdxStrategy extends StrategyProvider {
   val FILTERING_ITER_PRIORITY = 25
   type ScanPlanFn = (SimpleFeatureType, Option[Filter], Option[(String, SimpleFeatureType)]) => BatchScanPlan
 
-  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) = {
-    val attrsAndCounts = filter.primary
-      .flatMap(getAttributeProperty)
-      .map(_.name)
-      .groupBy((f: String) => f)
-      .map { case (name, itr) => (name, itr.size) }
-
-    val cost = attrsAndCounts.map{ case (attr, count) =>
-      val descriptor = sft.getDescriptor(attr)
-      // join queries are much more expensive than non-join queries
-      // TODO we could consider whether a join is actually required based on the filter and transform
-      // TODO figure out the actual cost of each additional range...I'll make it 2
-      val additionalRangeCost = 1
-      val joinCost = 10
-      val multiplier =
-        if (descriptor.getIndexCoverage() == IndexCoverage.JOIN) joinCost + (additionalRangeCost*(count-1))
-        else 1
-
-      // scale attribute cost by expected cardinality
-      hints.cardinality(descriptor) match {
-        case Cardinality.HIGH    => 1 * multiplier
-        case Cardinality.UNKNOWN => 101 * multiplier
-        case Cardinality.LOW     => Int.MaxValue
-      }
-    }.sum
-    if (cost == 0) Int.MaxValue else cost // cost == 0 if somehow the filters don't match anything
+  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats): Long = {
+    // note: names should be only a single attribute
+    filter.primary.flatMap(getAttributeProperty).map(_.name).distinct.headOption match {
+      case None => Long.MaxValue // no attribute present - we shouldn't even be here...
+      case Some(name) =>
+        val count = stats.getCount(sft.getTypeName, filter.singlePrimary.getOrElse(Filter.INCLUDE))
+        val descriptor = sft.getDescriptor(name)
+        // join queries are much more expensive than non-join queries
+        // TODO we could consider whether a join is actually required based on the filter and transform
+        val joinMultiplier = if (descriptor.getIndexCoverage() == IndexCoverage.FULL) 1 else 10
+        val cost = if (count >= 0) count * joinMultiplier else {
+          // we don't have valid stats yet... fall back onto user hints
+          descriptor.getCardinality() match {
+            case Cardinality.HIGH    => 1 * joinMultiplier
+            case Cardinality.UNKNOWN => 101 * joinMultiplier
+            case Cardinality.LOW     => Long.MaxValue
+          }
+        }
+        cost
+    }
   }
 
   /**

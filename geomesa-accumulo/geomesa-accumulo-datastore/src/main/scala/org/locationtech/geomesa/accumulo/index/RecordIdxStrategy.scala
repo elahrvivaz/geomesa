@@ -12,6 +12,7 @@ import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.data.{Range => aRange}
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.data.tables.RecordTable
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.Strategy._
@@ -27,7 +28,7 @@ import scala.collection.JavaConversions._
 object RecordIdxStrategy extends StrategyProvider {
 
   // record searches are the least expensive as they are single row lookups (per id)
-  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) = 1
+  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats) = 1
 
   def intersectIdFilters(filters: Seq[Filter]): Option[Id] = {
     if (filters.length < 2) {

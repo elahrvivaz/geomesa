@@ -41,44 +41,46 @@ import org.opengis.filter.sort.SortBy
 import org.opengis.referencing.crs.CoordinateReferenceSystem
 import org.opengis.util.ProgressListener
 
-import scala.util.Try
 import scala.collection.JavaConversions._
+import scala.util.Try
 
 abstract class AccumuloFeatureSource(val dataStore: AccumuloDataStore, val featureName: Name)
     extends SimpleFeatureSource with LazyLogging {
-
-  import org.locationtech.geomesa.utils.geotools.Conversions._
 
   private[data] val typeName = featureName.getLocalPart
 
   lazy private val hints = Collections.unmodifiableSet(Set.empty[Key])
 
-  // The default behavior for getCount is to use Accumulo to look up the number of entries in
-  //  the record table for a feature.
-  //  This approach gives a rough upper count for the size of the query results.
-  //  For Filter.INCLUDE, this is likely pretty close; all others, it is a lie.
-
-  // Since users may want *actual* counts, there are two ways to force exact counts.
-  //  First, one can set the System property "geomesa.force.count".
-  //  Second, there is an EXACT_COUNT query hint.
+  /**
+   * The default behavior for getCount is to use estimated statistics.
+   * In most cases, this should be fairly close.
+   *
+   * Since users may want <b>exact</b> counts, there are two ways to force exact counts.
+   * First, one can set the System property "geomesa.force.count".
+   * Second, there is an EXACT_COUNT query hint.
+   *
+   * @param query query
+   * @return count
+   */
   override def getCount(query: Query): Int = {
     import GeomesaSystemProperties.QueryProperties.QUERY_EXACT_COUNT
 
     val useExactCount = query.getHints.isExactCount.getOrElse(QUERY_EXACT_COUNT.get.toBoolean)
-    lazy val estimatedCount = dataStore.getCount(query)
+    lazy val estimatedCount = dataStore.stats.getCount(query.getTypeName, query.getFilter)
 
-    if (useExactCount || estimatedCount == -1) {
-      getFeaturesNoCache(query).features().size
-    } else if (estimatedCount > Int.MaxValue.toLong) {
-      Int.MaxValue
+    val count = if (useExactCount || estimatedCount < 0) {
+      dataStore.stats.getCount(query.getTypeName, query.getFilter, exact = true) // TODO impl this
     } else {
-      estimatedCount.toInt
+      estimatedCount
     }
+
+    if (count > Int.MaxValue) Int.MaxValue else count.toInt
   }
 
   override def getBounds: ReferencedEnvelope = getBounds(new Query(typeName, Filter.INCLUDE))
 
-  override def getBounds(query: Query): ReferencedEnvelope = dataStore.getBounds(query)
+  override def getBounds(query: Query): ReferencedEnvelope =
+    dataStore.stats.getBounds(query.getTypeName, query.getFilter)
 
   override def getQueryCapabilities = AccumuloQueryCapabilities
 
@@ -140,16 +142,18 @@ class AccumuloFeatureCollection(source: AccumuloFeatureSource, query: Query)
 
   override def accepts(visitor: FeatureVisitor, progress: ProgressListener): Unit =
     visitor match {
-      // TODO GEOMESA-421 implement min/max iterators
-      case v: MinVisitor if isTime(v.getExpression) => v.setValue(ds.getTemporalBounds(query).getStart.toDate)
-      case v: MaxVisitor if isTime(v.getExpression) => v.setValue(ds.getTemporalBounds(query).getEnd.toDate)
-      case v: BoundsVisitor          => v.reset(ds.getBounds(query))
+      case v: BoundsVisitor          => v.reset(ds.stats.getBounds(query.getTypeName, query.getFilter))
       case v: TubeVisitor            => v.setValue(v.tubeSelect(source, query))
       case v: ProximityVisitor       => v.setValue(v.proximitySearch(source, query))
       case v: QueryVisitor           => v.setValue(v.query(source, query))
       case v: StatsVisitor           => v.setValue(v.query(source, query))
       case v: KNNVisitor             => v.setValue(v.kNNSearch(source,query))
       case v: AttributeVisitor       => v.setValue(v.unique(source, query))
+      // TODO GEOMESA-421 implement min/max iterators
+      case v: MinVisitor if isTime(v.getExpression) =>
+        v.setValue(ds.stats.getTemporalBounds(query.getTypeName, query.getFilter).getStart.toDate)
+      case v: MaxVisitor if isTime(v.getExpression) =>
+        v.setValue(ds.stats.getTemporalBounds(query.getTypeName, query.getFilter).getEnd.toDate)
       case _                         => super.accepts(visitor, progress)
     }
 

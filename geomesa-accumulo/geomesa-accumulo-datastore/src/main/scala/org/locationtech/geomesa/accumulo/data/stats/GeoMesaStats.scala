@@ -9,17 +9,18 @@
 package org.locationtech.geomesa.accumulo.data.stats
 
 import com.vividsolutions.jts.geom.Envelope
-import org.apache.accumulo.core.client.impl.{Tables, MasterClient}
+import org.apache.accumulo.core.client.impl.{MasterClient, Tables}
 import org.apache.accumulo.core.client.mock.MockConnector
 import org.apache.accumulo.core.security.thrift.TCredentials
 import org.apache.accumulo.trace.instrument.Tracer
-import org.geotools.data.Query
+import org.geotools.data.{Transaction, Query}
 import org.geotools.geometry.jts.ReferencedEnvelope
 import org.joda.time.{DateTimeZone, Interval}
-import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.data.tables.RecordTable
-import org.locationtech.geomesa.utils.geotools.{CRS_EPSG_4326, wholeWorldEnvelope}
 import org.locationtech.geomesa.accumulo.data.GeoMesaMetadata._
+import org.locationtech.geomesa.accumulo.data._
+import org.locationtech.geomesa.accumulo.util.{SelfClosingIterator, DistributedLocking}
+import org.locationtech.geomesa.utils.geotools.{CRS_EPSG_4326, wholeWorldEnvelope}
+import org.opengis.filter.Filter
 
 /**
  * Tracks stats for a schema - spatial/temporal bounds, number of records, etc. Persistence of
@@ -30,71 +31,93 @@ trait GeoMesaStats {
   /**
    * Gets the bounds for data that will be returned for a query
    *
-   * @param query query
+   * @param typeName simple feature type name
+   * @param filter cql filter
    * @param exact rough estimate, or precise bounds. note: precise bounds will likely be very expensive.
    * @return bounds
    */
-  def getBounds(query: Query, exact: Boolean = false): ReferencedEnvelope
+  def getBounds(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): ReferencedEnvelope
 
   /**
    * Gets the temporal bounds for data that will be returned for a query
    *
-   * @param query query
+   * @param typeName simple feature type name
+   * @param filter cql filter
    * @param exact rough estimate, or precise bounds. note: precise bounds will likely be very expensive.
    * @return time bounds
    */
-  def getTemporalBounds(query: Query, exact: Boolean = false): Interval
+  def getTemporalBounds(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): Interval
 
   /**
    * Gets the number of features that will be returned for a query
    *
-   * @param query query
+   * @param typeName simple feature type name
+   * @param filter cql filter
    * @param exact rough estimate, or precise count. note: precise count will likely be very expensive.
    * @return count of features
    */
-  def getCount(query: Query, exact: Boolean = false): Long
+  def getCount(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): Long
+}
+
+trait HasGeoMesaStats {
+  def stats: GeoMesaStats
 }
 
 /**
  * Tracks stats via entries stored in metadata
  */
-trait GeoMesaMetadataStats extends GeoMesaStats {
-
-  this: AccumuloDataStore =>
+class GeoMesaMetadataStats(ds: AccumuloDataStore) extends GeoMesaStats with DistributedLocking {
 
   import GeoMesaStats.{allTimeBounds, decodeSpatialBounds, decodeTimeBounds, encode}
 
-  /**
-   * Get rough bounds for a query
-   * Note: we don't currently filter by the cql
-   *
-   * @param query query
-   * @return bounds
-   */
-  override def getBounds(query: Query, exact: Boolean = false): ReferencedEnvelope =
-    readSpatialBounds(query.getTypeName)
+  // Note: we don't currently filter by the cql
+  override def getBounds(typeName: String, filter: Filter, exact: Boolean): ReferencedEnvelope =
+    readSpatialBounds(typeName)
         .map(new ReferencedEnvelope(_, CRS_EPSG_4326))
         .getOrElse(wholeWorldEnvelope)
 
-  /**
-   * Get rough time bounds for a query
-   * Note: we don't currently filter by the cql
-   *
-   * @param query query
-   * @return time bounds
-   */
-  override def getTemporalBounds(query: Query, exact: Boolean = false): Interval =
-    readTemporalBounds(query.getTypeName).getOrElse(allTimeBounds)
+  // Note: we don't currently filter by the cql
+  override def getTemporalBounds(typeName: String, filter: Filter, exact: Boolean): Interval =
+    readTemporalBounds(typeName).getOrElse(allTimeBounds)
 
-  /**
-   * Rough estimate of number of features
-   * Note: we don't currently filter by the cql
-   *
-   * @param query query
-   * @return count of features
-   */
-  override def getCount(query: Query, exact: Boolean = false): Long =
-    retrieveTableSize(getTableName(query.getTypeName, RecordTable))
+  // Note: we don't currently filter by the cql
+  override def getCount(typeName: String, filter: Filter, exact: Boolean): Long = {
+    if (exact) {
+      SelfClosingIterator(ds.getFeatureReader(new Query(typeName, filter), Transaction.AUTO_COMMIT)).length
+    } else {
+      -1L
+    }
+    // TODO
+    // ad.getCardinality()
+//    val attrsAndCounts = filter.primary
+//        .flatMap(getAttributeProperty)
+//        .map(_.name)
+//        .groupBy((f: String) => f)
+//        .map { case (name, itr) => (name, itr.size) }
+//
+//    val cost = attrsAndCounts.map { case (attr, count) =>
+//      val descriptor = sft.getDescriptor(attr)
+//      // join queries are much more expensive than non-join queries
+//      // TODO we could consider whether a join is actually required based on the filter and transform
+//      // TODO figure out the actual cost of each additional range...I'll make it 2
+//      val additionalRangeCost = 1
+//      val joinCost = 10
+//      val multiplier = if (descriptor.getIndexCoverage() == IndexCoverage.JOIN) {
+//        joinCost + (additionalRangeCost * (count - 1))
+//      } else {
+//        1
+//      }
+//
+//      // scale attribute cost by expected cardinality
+//      hints.cardinality(descriptor) match {
+//        case Cardinality.HIGH    => 1 * multiplier
+//        case Cardinality.UNKNOWN => 101 * multiplier
+//        case Cardinality.LOW     => Int.MaxValue
+//      }
+//    }.sum
+//    if (cost == 0) Int.MaxValue else cost // cost == 0 if somehow the filters don't match anything
+    //    retrieveTableSize(getTableName(query.getTypeName, RecordTable))
+  }
 
   /**
    * Writes spatial bounds for this feature
@@ -107,7 +130,7 @@ trait GeoMesaMetadataStats extends GeoMesaStats {
       case Some(current) if current == bounds => None
       case _                                  => Some(bounds)
     }
-    toWrite.foreach(b => metadata.insert(typeName, SPATIAL_BOUNDS_KEY, encode(b)))
+    toWrite.foreach(b => ds.metadata.insert(typeName, SPATIAL_BOUNDS_KEY, encode(b)))
   }
 
   /**
@@ -121,31 +144,39 @@ trait GeoMesaMetadataStats extends GeoMesaStats {
       case Some(current) if current == bounds => None
       case _                                  => Some(bounds)
     }
-    toWrite.foreach(b => metadata.insert(typeName, TEMPORAL_BOUNDS_KEY, encode(b)))
+    toWrite.foreach(b => ds.metadata.insert(typeName, TEMPORAL_BOUNDS_KEY, encode(b)))
   }
 
   private def readTemporalBounds(typeName: String): Option[Interval] =
-    metadata.read(typeName, TEMPORAL_BOUNDS_KEY, cache = false).filterNot(_.isEmpty).map(decodeTimeBounds)
+    ds.metadata.read(typeName, TEMPORAL_BOUNDS_KEY, cache = false).filterNot(_.isEmpty).map(decodeTimeBounds)
 
   private def readSpatialBounds(typeName: String): Option[Envelope] =
-    metadata.read(typeName, SPATIAL_BOUNDS_KEY, cache = false).filterNot(_.isEmpty).map(decodeSpatialBounds)
+    ds.metadata.read(typeName, SPATIAL_BOUNDS_KEY, cache = false).filterNot(_.isEmpty).map(decodeSpatialBounds)
 
   // This lazily computed function helps shortcut getCount from scanning entire tables.
   private lazy val retrieveTableSize: (String) => Long =
-    if (connector.isInstanceOf[MockConnector]) {
+    if (ds.connector.isInstanceOf[MockConnector]) {
       (tableName: String) => -1
     } else {
-      val masterClient = MasterClient.getConnection(connector.getInstance())
+      val masterClient = MasterClient.getConnection(ds.connector.getInstance())
       val tc = new TCredentials()
       // TODO this will get stale, no?
       val mmi = masterClient.getMasterStats(Tracer.traceInfo(), tc)
       (tableName: String) => {
-        val tableId = Tables.getTableId(connector.getInstance(), tableName)
+        val tableId = Tables.getTableId(ds.connector.getInstance(), tableName)
         val v = mmi.getTableMap.get(tableId)
         v.getRecs
       }
     }
+
+  class StatRunner extends Runnable {
+    override def run(): Unit = {
+
+    }
+  }
 }
+
+
 
 object GeoMesaStats {
 

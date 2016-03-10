@@ -136,7 +136,7 @@ abstract class AccumuloFeatureWriter(sft: SimpleFeatureType,
     AccumuloFeatureWriter.featureWriter(writers)
   }
 
-  protected val statsTracker = StatsTracker(ds, sft)
+  protected val statsTracker = StatsTracker(ds.stats, sft)
 
   // returns a temporary id - we will replace it just before write
   protected def nextFeatureId = AccumuloFeatureWriter.tempFeatureIds.getAndIncrement().toString

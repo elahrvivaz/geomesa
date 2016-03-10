@@ -21,7 +21,7 @@ import org.geotools.feature.{FeatureTypes, NameImpl}
 import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore._
 import org.locationtech.geomesa.accumulo.data.GeoMesaMetadata._
-import org.locationtech.geomesa.accumulo.data.stats.GeoMesaMetadataStats
+import org.locationtech.geomesa.accumulo.data.stats.{HasGeoMesaStats, GeoMesaMetadataStats, GeoMesaStats}
 import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
 import org.locationtech.geomesa.accumulo.index._
@@ -39,7 +39,6 @@ import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
 import scala.collection.JavaConversions._
-
 
 /**
  * This class handles DataStores which are stored in Accumulo Tables. To be clear, one table may
@@ -59,8 +58,8 @@ class AccumuloDataStore(val connector: Connector,
                         val auditProvider: AuditProvider,
                         val defaultVisibilities: String,
                         val config: AccumuloDataStoreConfig)
-    extends DataStore with AccumuloConnectorCreator with HasGeoMesaMetadata with DistributedLocking
-            with GeoMesaMetadataStats with StrategyHintsProvider with LazyLogging {
+    extends DataStore with AccumuloConnectorCreator with DistributedLocking
+      with HasGeoMesaMetadata with HasGeoMesaStats with LazyLogging {
 
   Hints.putSystemDefault(Hints.FORCE_LONGITUDE_FIRST_AXIS_ORDER, true)
 
@@ -72,9 +71,10 @@ class AccumuloDataStore(val connector: Connector,
 
   private val defaultBWConfig = GeoMesaBatchWriterConfig().setMaxWriteThreads(config.writeThreads)
 
-  override val metadata: GeoMesaMetadata = new AccumuloBackedMetadata(connector, catalogTable)
-
   private val tableOps = connector.tableOperations()
+
+  override val metadata: GeoMesaMetadata = new AccumuloBackedMetadata(connector, catalogTable)
+  override val stats: GeoMesaStats = new GeoMesaMetadataStats(this)
 
   // methods from org.geotools.data.DataStore
 
@@ -403,15 +403,6 @@ class AccumuloDataStore(val connector: Connector,
     }
   }
 
-  /**
-   * Method from StrategyHintsProvider
-   *
-   * @see org.locationtech.geomesa.accumulo.index.StrategyHintsProvider#strategyHints(org.opengis.feature.simple.SimpleFeatureType)
-   * @param sft feature type
-   * @return hints
-   */
-  override def strategyHints(sft: SimpleFeatureType) = new UserDataStrategyHints()
-
   // other public methods
 
   /**
@@ -502,8 +493,7 @@ class AccumuloDataStore(val connector: Connector,
     val sft = getSchema(featureName)
     val indexSchemaFmt = getIndexSchemaFmt(featureName)
     val featureEncoding = getFeatureEncoding(sft)
-    val hints = strategyHints(sft)
-    new QueryPlanner(sft, featureEncoding, indexSchemaFmt, this, hints)
+    new QueryPlanner(sft, featureEncoding, indexSchemaFmt, this, stats)
   }
 
   // end public methods
@@ -613,9 +603,9 @@ class AccumuloDataStore(val connector: Connector,
    */
   @throws[IOException]
   private def checkSchema(typeName: String): Unit = {
-    metadata.read(typeName, ATTRIBUTES_KEY, cache = false).getOrElse {
-      throw new IOException(s"Schema '$typeName' has not been initialized. Please call 'createSchema' first.")
-    }
+    metadata.read(typeName, ATTRIBUTES_KEY)
+        .orElse(metadata.read(typeName, ATTRIBUTES_KEY, cache = false))
+        .getOrElse(throw new IOException(s"Schema '$typeName' has not been initialized. Please call 'createSchema' first."))
   }
 
   private def lock(): Releasable = {

@@ -124,7 +124,7 @@ class GeoMesaRecordWriter(params: Map[String, String], delegate: RecordWriter[Te
         case (table, writer) => (new Text(table), writer)
       }
     })
-    val statsTracker = statsCache.getOrElseUpdate(sftName, StatsTracker(ds, sft))
+    val statsTracker = statsCache.getOrElseUpdate(sftName, StatsTracker(ds.stats, sft))
 
     val withFid = AccumuloFeatureWriter.featureWithFid(sft, value)
     val encoder = encoderCache.getOrElseUpdate(sftName, SimpleFeatureSerializers(sft, ds.getFeatureEncoding(sft)))
