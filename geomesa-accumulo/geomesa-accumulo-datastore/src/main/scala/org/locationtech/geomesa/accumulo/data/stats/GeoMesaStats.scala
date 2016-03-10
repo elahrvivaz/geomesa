@@ -28,28 +28,31 @@ import org.locationtech.geomesa.accumulo.data.GeoMesaMetadata._
 trait GeoMesaStats {
 
   /**
-   * Get rough bounds for a query
+   * Gets the bounds for data that will be returned for a query
    *
    * @param query query
+   * @param exact rough estimate, or precise bounds. note: precise bounds will likely be very expensive.
    * @return bounds
    */
-  def estimateBounds(query: Query): ReferencedEnvelope
+  def getBounds(query: Query, exact: Boolean = false): ReferencedEnvelope
 
   /**
-   * Get rough time bounds for a query
+   * Gets the temporal bounds for data that will be returned for a query
    *
    * @param query query
+   * @param exact rough estimate, or precise bounds. note: precise bounds will likely be very expensive.
    * @return time bounds
    */
-  def estimateTimeBounds(query: Query): Interval
+  def getTemporalBounds(query: Query, exact: Boolean = false): Interval
 
   /**
-   * Rough estimate of number of features
+   * Gets the number of features that will be returned for a query
    *
    * @param query query
+   * @param exact rough estimate, or precise count. note: precise count will likely be very expensive.
    * @return count of features
    */
-  def estimateCount(query: Query): Long
+  def getCount(query: Query, exact: Boolean = false): Long
 }
 
 /**
@@ -68,7 +71,7 @@ trait GeoMesaMetadataStats extends GeoMesaStats {
    * @param query query
    * @return bounds
    */
-  override def estimateBounds(query: Query): ReferencedEnvelope =
+  override def getBounds(query: Query, exact: Boolean = false): ReferencedEnvelope =
     readSpatialBounds(query.getTypeName)
         .map(new ReferencedEnvelope(_, CRS_EPSG_4326))
         .getOrElse(wholeWorldEnvelope)
@@ -80,8 +83,8 @@ trait GeoMesaMetadataStats extends GeoMesaStats {
    * @param query query
    * @return time bounds
    */
-  override def estimateTimeBounds(query: Query): Interval =
-    readTimeBounds(query.getTypeName).getOrElse(allTimeBounds)
+  override def getTemporalBounds(query: Query, exact: Boolean = false): Interval =
+    readTemporalBounds(query.getTypeName).getOrElse(allTimeBounds)
 
   /**
    * Rough estimate of number of features
@@ -90,22 +93,8 @@ trait GeoMesaMetadataStats extends GeoMesaStats {
    * @param query query
    * @return count of features
    */
-  override def estimateCount(query: Query): Long =
+  override def getCount(query: Query, exact: Boolean = false): Long =
     retrieveTableSize(getTableName(query.getTypeName, RecordTable))
-
-  /**
-   * Clears any existing spatial bounds
-   *
-   * @param typeName simple feature type
-   */
-  def clearSpatialBounds(typeName: String): Unit = metadata.insert(typeName, SPATIAL_BOUNDS_KEY, "")
-
-  /**
-   * Clears any existing temporal bounds
-   *
-   * @param typeName simple feature type
-   */
-  def clearTemporalBounds(typeName: String): Unit = metadata.insert(typeName, TEMPORAL_BOUNDS_KEY, "")
 
   /**
    * Writes spatial bounds for this feature
@@ -115,11 +104,8 @@ trait GeoMesaMetadataStats extends GeoMesaStats {
    */
   def writeSpatialBounds(typeName: String, bounds: Envelope): Unit = {
     val toWrite = readSpatialBounds(typeName) match {
-      case None => Some(bounds)
-      case Some(current) =>
-        val expanded = new Envelope(current)
-        expanded.expandToInclude(bounds)
-        if (current == expanded) None else Some(expanded)
+      case Some(current) if current == bounds => None
+      case _                                  => Some(bounds)
     }
     toWrite.foreach(b => metadata.insert(typeName, SPATIAL_BOUNDS_KEY, encode(b)))
   }
@@ -131,23 +117,18 @@ trait GeoMesaMetadataStats extends GeoMesaStats {
    * @param bounds partial bounds - existing bounds will be expanded to include this
    */
   def writeTemporalBounds(typeName: String, bounds: Interval): Unit = {
-    import org.locationtech.geomesa.utils.time.Time.RichInterval
-    val toWrite = readTimeBounds(typeName) match {
-      case None => Some(bounds)
-      case Some(current) =>
-        val expanded = current.expandByInterval(bounds)
-        if (current == expanded) None else Some(expanded)
+    val toWrite = readTemporalBounds(typeName) match {
+      case Some(current) if current == bounds => None
+      case _                                  => Some(bounds)
     }
     toWrite.foreach(b => metadata.insert(typeName, TEMPORAL_BOUNDS_KEY, encode(b)))
   }
 
-  // TODO apply combiner in order to allow multi-threaded writes
-
-  private def readTimeBounds(typeName: String): Option[Interval] =
-    metadata.read(typeName, TEMPORAL_BOUNDS_KEY, cache = true).filterNot(_.isEmpty).map(decodeTimeBounds)
+  private def readTemporalBounds(typeName: String): Option[Interval] =
+    metadata.read(typeName, TEMPORAL_BOUNDS_KEY, cache = false).filterNot(_.isEmpty).map(decodeTimeBounds)
 
   private def readSpatialBounds(typeName: String): Option[Envelope] =
-    metadata.read(typeName, SPATIAL_BOUNDS_KEY, cache = true).filterNot(_.isEmpty).map(decodeSpatialBounds)
+    metadata.read(typeName, SPATIAL_BOUNDS_KEY, cache = false).filterNot(_.isEmpty).map(decodeSpatialBounds)
 
   // This lazily computed function helps shortcut getCount from scanning entire tables.
   private lazy val retrieveTableSize: (String) => Long =
@@ -156,8 +137,8 @@ trait GeoMesaMetadataStats extends GeoMesaStats {
     } else {
       val masterClient = MasterClient.getConnection(connector.getInstance())
       val tc = new TCredentials()
+      // TODO this will get stale, no?
       val mmi = masterClient.getMasterStats(Tracer.traceInfo(), tc)
-
       (tableName: String) => {
         val tableId = Tables.getTableId(connector.getInstance(), tableName)
         val v = mmi.getTableMap.get(tableId)

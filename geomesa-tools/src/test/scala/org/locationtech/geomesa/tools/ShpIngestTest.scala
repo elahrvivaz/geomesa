@@ -86,7 +86,7 @@ class ShpIngestTest extends Specification {
       bounds.getMinY mustEqual minY
       bounds.getMaxY mustEqual maxY
 
-      val timeBounds = ds.estimateTimeBounds(new Query("shpingest"))
+      val timeBounds = ds.getTimeBounds(new Query("shpingest"))
       timeBounds.getStart mustEqual new DateTime(minDate, DateTimeZone.UTC)
       timeBounds.getEnd mustEqual new DateTime(maxDate, DateTimeZone.UTC).plusMillis(1)
 
@@ -100,7 +100,7 @@ class ShpIngestTest extends Specification {
 
       val fs = ds.getFeatureSource("changed")
 
-      val timeBounds = ds.estimateTimeBounds(new Query("changed"))
+      val timeBounds = ds.getTimeBounds(new Query("changed"))
       timeBounds.getStart mustEqual new DateTime(minDate, DateTimeZone.UTC)
       timeBounds.getEnd mustEqual new DateTime(maxDate, DateTimeZone.UTC).plusMillis(1)
 

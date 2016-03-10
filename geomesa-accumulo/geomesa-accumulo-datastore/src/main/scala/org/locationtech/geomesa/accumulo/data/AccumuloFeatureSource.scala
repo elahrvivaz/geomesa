@@ -65,7 +65,7 @@ abstract class AccumuloFeatureSource(val dataStore: AccumuloDataStore, val featu
     import GeomesaSystemProperties.QueryProperties.QUERY_EXACT_COUNT
 
     val useExactCount = query.getHints.isExactCount.getOrElse(QUERY_EXACT_COUNT.get.toBoolean)
-    lazy val estimatedCount = dataStore.estimateCount(query)
+    lazy val estimatedCount = dataStore.getCount(query)
 
     if (useExactCount || estimatedCount == -1) {
       getFeaturesNoCache(query).features().size
@@ -78,7 +78,7 @@ abstract class AccumuloFeatureSource(val dataStore: AccumuloDataStore, val featu
 
   override def getBounds: ReferencedEnvelope = getBounds(new Query(typeName, Filter.INCLUDE))
 
-  override def getBounds(query: Query): ReferencedEnvelope = dataStore.estimateBounds(query)
+  override def getBounds(query: Query): ReferencedEnvelope = dataStore.getBounds(query)
 
   override def getQueryCapabilities = AccumuloQueryCapabilities
 
@@ -141,9 +141,9 @@ class AccumuloFeatureCollection(source: AccumuloFeatureSource, query: Query)
   override def accepts(visitor: FeatureVisitor, progress: ProgressListener): Unit =
     visitor match {
       // TODO GEOMESA-421 implement min/max iterators
-      case v: MinVisitor if isTime(v.getExpression) => v.setValue(ds.estimateTimeBounds(query).getStart.toDate)
-      case v: MaxVisitor if isTime(v.getExpression) => v.setValue(ds.estimateTimeBounds(query).getEnd.toDate)
-      case v: BoundsVisitor          => v.reset(ds.estimateBounds(query))
+      case v: MinVisitor if isTime(v.getExpression) => v.setValue(ds.getTemporalBounds(query).getStart.toDate)
+      case v: MaxVisitor if isTime(v.getExpression) => v.setValue(ds.getTemporalBounds(query).getEnd.toDate)
+      case v: BoundsVisitor          => v.reset(ds.getBounds(query))
       case v: TubeVisitor            => v.setValue(v.tubeSelect(source, query))
       case v: ProximityVisitor       => v.setValue(v.proximitySearch(source, query))
       case v: QueryVisitor           => v.setValue(v.query(source, query))
