@@ -321,7 +321,9 @@ class AccumuloDataStore(val connector: Connector,
    *
    * @see org.geotools.data.DataAccess#dispose()
    */
-  override def dispose(): Unit = {}
+  override def dispose(): Unit = {
+    stats.close()
+  }
 
   // end methods from org.geotools.data.DataStore
 

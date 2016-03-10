@@ -8,6 +8,10 @@
 
 package org.locationtech.geomesa.accumulo.data.stats
 
+import java.io.Closeable
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.{TimeUnit, Executors}
+
 import com.vividsolutions.jts.geom.Envelope
 import org.apache.accumulo.core.client.impl.{MasterClient, Tables}
 import org.apache.accumulo.core.client.mock.MockConnector
@@ -26,7 +30,17 @@ import org.opengis.filter.Filter
  * Tracks stats for a schema - spatial/temporal bounds, number of records, etc. Persistence of
  * stats is not part of this trait, as different implementations will likely have different method signatures.
  */
-trait GeoMesaStats {
+trait GeoMesaStats extends Closeable {
+
+  /**
+   * Gets the number of features that will be returned for a query
+   *
+   * @param typeName simple feature type name
+   * @param filter cql filter
+   * @param exact rough estimate, or precise count. note: precise count will likely be very expensive.
+   * @return count of features
+   */
+  def getCount(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): Long
 
   /**
    * Gets the bounds for data that will be returned for a query
@@ -47,16 +61,6 @@ trait GeoMesaStats {
    * @return time bounds
    */
   def getTemporalBounds(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): Interval
-
-  /**
-   * Gets the number of features that will be returned for a query
-   *
-   * @param typeName simple feature type name
-   * @param filter cql filter
-   * @param exact rough estimate, or precise count. note: precise count will likely be very expensive.
-   * @return count of features
-   */
-  def getCount(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): Long
 }
 
 trait HasGeoMesaStats {
@@ -69,6 +73,11 @@ trait HasGeoMesaStats {
 class GeoMesaMetadataStats(ds: AccumuloDataStore) extends GeoMesaStats with DistributedLocking {
 
   import GeoMesaStats.{allTimeBounds, decodeSpatialBounds, decodeTimeBounds, encode}
+
+  // start the background thread to gather stats
+  private val es = Executors.newSingleThreadScheduledExecutor()
+  private val runner = new StatRunner()
+  es.submit(runner)
 
   // Note: we don't currently filter by the cql
   override def getBounds(typeName: String, filter: Filter, exact: Boolean): ReferencedEnvelope =
@@ -117,6 +126,11 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore) extends GeoMesaStats with Dist
 //    }.sum
 //    if (cost == 0) Int.MaxValue else cost // cost == 0 if somehow the filters don't match anything
     //    retrieveTableSize(getTableName(query.getTypeName, RecordTable))
+  }
+
+  override def close(): Unit = {
+    runner.shutdown.set(true)
+    es.shutdown()
   }
 
   /**
@@ -170,6 +184,9 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore) extends GeoMesaStats with Dist
     }
 
   class StatRunner extends Runnable {
+
+    val shutdown = new AtomicBoolean(false)
+
     override def run(): Unit = {
 
     }
