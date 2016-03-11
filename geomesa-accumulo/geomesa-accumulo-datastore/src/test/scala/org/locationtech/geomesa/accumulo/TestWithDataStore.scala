@@ -85,7 +85,7 @@ trait TestWithDataStore extends Specification {
 
   def explain(query: Query): String = {
     val o = new ExplainString
-    ds.explainQuery(query, o)
+    ds.getQueryPlan(query, explainer = o)
     o.toString()
   }
 
