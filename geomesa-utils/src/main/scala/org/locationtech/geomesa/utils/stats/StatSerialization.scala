@@ -170,11 +170,8 @@ object StatSerialization {
   }
 
   protected [stats] def packRangeHistogram(rh: RangeHistogram[_]): Array[Byte] = {
-    val sb = new StringBuilder(s"${rh.attrIndex};${rh.attrType};${rh.numBins};${rh.lowerEndpoint};${rh.upperEndpoint};")
-
-    val keyValues = rh.histogram.map { case (key, count) => s"${key.toString}->$count" }.mkString(",")
-    sb.append(keyValues)
-
+    val sb = new StringBuilder(s"${rh.attrIndex};${rh.attrType};${rh.numBins};${rh.endpoints._1};${rh.endpoints._2};")
+    sb.append(rh.bins.counts.mkString(","))
     serializeStat(RH_BYTE, sb.toString().getBytes)
   }
 
@@ -184,56 +181,35 @@ object StatSerialization {
 
     val attrIndex = split(0).toInt
     val attrTypeString = split(1)
-    val numBins = split(2)
+    val numBins = split(2).toInt
     val lowerEndpoint = split(3)
     val upperEndpoint = split(4)
-    val keyValues = split(5).split(",")
+    val counts = split(5).split(",").map(_.toLong)
 
     val attrType = Class.forName(attrTypeString)
-    if (attrType == classOf[Date]) {
-      val rh = new RangeHistogram[Date](attrIndex, attrTypeString, numBins.toInt,
-        Stat.javaDateFormat.parseDateTime(lowerEndpoint).toDate, Stat.javaDateFormat.parseDateTime(upperEndpoint).toDate)
-      keyValues.foreach {
-        case (keyValuePair) =>
-          val splitKeyValuePair = keyValuePair.split("->")
-          rh.histogram.put(Stat.javaDateFormat.parseDateTime(splitKeyValuePair(0)).toDate, splitKeyValuePair(1).toLong)
-      }
-      rh
+    val bounds = if (attrType == classOf[Date]) {
+      (Stat.javaDateFormat.parseDateTime(lowerEndpoint).toDate, Stat.javaDateFormat.parseDateTime(upperEndpoint).toDate)
+//      keyValues.foreach {
+//        case (keyValuePair) =>
+//          val splitKeyValuePair = keyValuePair.split("->")
+//          rh.histogram.put(Stat.javaDateFormat.parseDateTime(splitKeyValuePair(0)).toDate, splitKeyValuePair(1).toLong)
+//      }
+//      rh
     } else if (attrType == classOf[Integer]) {
-      val rh = new RangeHistogram[Integer](attrIndex, attrTypeString, numBins.toInt, lowerEndpoint.toInt, upperEndpoint.toInt)
-      keyValues.foreach {
-        case (keyValuePair) =>
-          val splitKeyValuePair = keyValuePair.split("->")
-          rh.histogram.put(splitKeyValuePair(0).toInt, splitKeyValuePair(1).toLong)
-      }
-      rh
+      (java.lang.Integer.parseInt(lowerEndpoint), java.lang.Integer.parseInt(upperEndpoint))
     } else if (attrType == classOf[java.lang.Long]) {
-      val rh = new RangeHistogram[java.lang.Long](attrIndex, attrTypeString, numBins.toInt, lowerEndpoint.toLong, upperEndpoint.toLong)
-      keyValues.foreach {
-        case (keyValuePair) =>
-          val splitKeyValuePair = keyValuePair.split("->")
-          rh.histogram.put(splitKeyValuePair(0).toLong, splitKeyValuePair(1).toLong)
-      }
-      rh
+      (java.lang.Long.parseLong(lowerEndpoint), java.lang.Long.parseLong(upperEndpoint))
     } else if (attrType == classOf[java.lang.Float]) {
-      val rh = new RangeHistogram[java.lang.Float](attrIndex, attrTypeString, numBins.toInt, lowerEndpoint.toFloat, upperEndpoint.toFloat)
-      keyValues.foreach {
-        case (keyValuePair) =>
-          val splitKeyValuePair = keyValuePair.split("->")
-          rh.histogram.put(splitKeyValuePair(0).toFloat, splitKeyValuePair(1).toLong)
-      }
-      rh
+      (java.lang.Float.parseFloat(lowerEndpoint), java.lang.Float.parseFloat(upperEndpoint))
     } else if (attrType == classOf[java.lang.Double]) {
-      val rh = new RangeHistogram[java.lang.Double](attrIndex, attrTypeString, numBins.toInt, lowerEndpoint.toDouble, upperEndpoint.toDouble)
-      keyValues.foreach {
-        case (keyValuePair) =>
-          val splitKeyValuePair = keyValuePair.split("->")
-          rh.histogram.put(splitKeyValuePair(0).toDouble, splitKeyValuePair(1).toLong)
-      }
-      rh
+      (java.lang.Double.parseDouble(lowerEndpoint), java.lang.Double.parseDouble(upperEndpoint))
     } else {
       throw new Exception(s"Cannot unpack RangeHistogram due to invalid type: $attrType")
     }
+
+    val histogram = new RangeHistogram[Any](attrIndex, attrTypeString, numBins, bounds)
+    histogram.bins.add(counts)
+    histogram
   }
 
   /**

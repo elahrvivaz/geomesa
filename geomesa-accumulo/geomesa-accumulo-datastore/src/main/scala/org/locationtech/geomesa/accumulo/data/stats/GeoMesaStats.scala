@@ -262,35 +262,35 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore) extends GeoMesaStats with Runn
   private def update(typeName: String): Boolean = {
     import org.locationtech.geomesa.accumulo.iterators.KryoLazyStatsIterator.{STATS, decodeStat}
 
-    val query = new Query(typeName, Filter.INCLUDE)
-    query.getHints.put(QueryHints.STATS_KEY, statString)
-    query.getHints.put(QueryHints.RETURN_ENCODED_KEY, java.lang.Boolean.TRUE)
-
-    "MinMax(attr);EnumeratedHistogram(idt);RangeHistogram(idt,5,10,15)"
-
-    val seqStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[SeqStat]
-    val stats = seqStat.stats
-    stats.size mustEqual 4
-
-    val minMax = stats(0).asInstanceOf[MinMax[java.lang.Long]]
-    val eh = stats(2).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
-    val rh = stats(3).asInstanceOf[RangeHistogram[java.lang.Integer]]
-
-    val rh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[RangeHistogram[java.lang.Integer]]
-    rh.histogram.size mustEqual 5
-    rh.histogram(10) mustEqual 1
-    rh.histogram(11) mustEqual 1
-    rh.histogram(12) mustEqual 1
-    rh.histogram(13) mustEqual 1
-    rh.histogram(14) mustEqual 1
-    val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[MinMax[java.lang.Long]]
-    minMaxStat.min mustEqual 0
-    minMaxStat.max mustEqual 298
-    val eh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
-    eh.frequencyMap.size mustEqual 150
-    eh.frequencyMap(0) mustEqual 1
-    eh.frequencyMap(149) mustEqual 1
-    eh.frequencyMap(150) mustEqual 0
+//    val query = new Query(typeName, Filter.INCLUDE)
+//    query.getHints.put(QueryHints.STATS_KEY, statString)
+//    query.getHints.put(QueryHints.RETURN_ENCODED_KEY, java.lang.Boolean.TRUE)
+//
+//    "MinMax(attr);EnumeratedHistogram(idt);RangeHistogram(idt,5,10,15)"
+//
+//    val seqStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[SeqStat]
+//    val stats = seqStat.stats
+//    stats.size mustEqual 4
+//
+//    val minMax = stats(0).asInstanceOf[MinMax[java.lang.Long]]
+//    val eh = stats(2).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
+//    val rh = stats(3).asInstanceOf[RangeHistogram[java.lang.Integer]]
+//
+//    val rh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[RangeHistogram[java.lang.Integer]]
+//    rh.histogram.size mustEqual 5
+//    rh.histogram(10) mustEqual 1
+//    rh.histogram(11) mustEqual 1
+//    rh.histogram(12) mustEqual 1
+//    rh.histogram(13) mustEqual 1
+//    rh.histogram(14) mustEqual 1
+//    val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[MinMax[java.lang.Long]]
+//    minMaxStat.min mustEqual 0
+//    minMaxStat.max mustEqual 298
+//    val eh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
+//    eh.frequencyMap.size mustEqual 150
+//    eh.frequencyMap(0) mustEqual 1
+//    eh.frequencyMap(149) mustEqual 1
+//    eh.frequencyMap(150) mustEqual 0
 
     true
   }

@@ -77,12 +77,12 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
       val sf = results.features().next
 
       val rh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[RangeHistogram[java.lang.Integer]]
-      rh.histogram.size mustEqual 5
-      rh.histogram(10) mustEqual 1
-      rh.histogram(11) mustEqual 1
-      rh.histogram(12) mustEqual 1
-      rh.histogram(13) mustEqual 1
-      rh.histogram(14) mustEqual 1
+      rh.bins.length mustEqual 5
+      rh.bins(rh.bins.getIndex(10)) mustEqual 1
+      rh.bins(rh.bins.getIndex(11)) mustEqual 1
+      rh.bins(rh.bins.getIndex(12)) mustEqual 1
+      rh.bins(rh.bins.getIndex(13)) mustEqual 1
+      rh.bins(rh.bins.getIndex(14)) mustEqual 1
     }
 
     "work with multiple stats at once" in {
@@ -109,12 +109,12 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
       eh.frequencyMap(149) mustEqual 1
       eh.frequencyMap(150) mustEqual 0
 
-      rh.histogram.size mustEqual 5
-      rh.histogram(10) mustEqual 1
-      rh.histogram(11) mustEqual 1
-      rh.histogram(12) mustEqual 1
-      rh.histogram(13) mustEqual 1
-      rh.histogram(14) mustEqual 1
+      rh.bins.length mustEqual 5
+      rh.bins(rh.bins.getIndex(10)) mustEqual 1
+      rh.bins(rh.bins.getIndex(11)) mustEqual 1
+      rh.bins(rh.bins.getIndex(12)) mustEqual 1
+      rh.bins(rh.bins.getIndex(13)) mustEqual 1
+      rh.bins(rh.bins.getIndex(14)) mustEqual 1
     }
 
     "work with non AccumuloFeatureCollections" in {
@@ -144,12 +144,12 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
       eh.frequencyMap(149) mustEqual 1
       eh.frequencyMap(150) mustEqual 0
 
-      rh.histogram.size mustEqual 5
-      rh.histogram(10) mustEqual 1
-      rh.histogram(11) mustEqual 1
-      rh.histogram(12) mustEqual 1
-      rh.histogram(13) mustEqual 1
-      rh.histogram(14) mustEqual 1
+      rh.bins.length mustEqual 5
+      rh.bins(rh.bins.getIndex(10)) mustEqual 1
+      rh.bins(rh.bins.getIndex(11)) mustEqual 1
+      rh.bins(rh.bins.getIndex(12)) mustEqual 1
+      rh.bins(rh.bins.getIndex(13)) mustEqual 1
+      rh.bins(rh.bins.getIndex(14)) mustEqual 1
     }
   }
 }

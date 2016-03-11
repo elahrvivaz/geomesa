@@ -52,10 +52,10 @@ class StatTest extends Specification with StatTestHelper {
 
       rh.attrIndex mustEqual doubleIndex
       rh.attrType mustEqual "java.lang.Double"
-      rh.histogram.size mustEqual 20
-      rh.histogram(0.0) mustEqual 0
-      rh.histogram(50.0) mustEqual 0
-      rh.histogram(100.0) mustEqual 0
+      rh.bins.length mustEqual 20
+      rh.bins(rh.bins.getIndex(0.0)) mustEqual 0
+      rh.bins(rh.bins.getIndex(50.0)) mustEqual 0
+      rh.bins(rh.bins.getIndex(100.0)) mustEqual 0
 
       features.foreach { stat.observe }
 
@@ -68,10 +68,10 @@ class StatTest extends Specification with StatTestHelper {
       eh.frequencyMap(0L) mustEqual 1
       eh.frequencyMap(100L) mustEqual 0
 
-      rh.histogram.size mustEqual 20
-      rh.histogram(0.0) mustEqual 10
-      rh.histogram(50.0) mustEqual 10
-      rh.histogram(100.0) mustEqual 0
+      rh.bins.length mustEqual 20
+      rh.bins(rh.bins.getIndex(0.0)) mustEqual 10
+      rh.bins(rh.bins.getIndex(50.0)) mustEqual 10
+      rh.bins(rh.bins.getIndex(100.0)) mustEqual 0
 
       "serialize and deserialize" in {
         val packed   = StatSerialization.pack(stat)
@@ -104,10 +104,10 @@ class StatTest extends Specification with StatTestHelper {
         eh.frequencyMap(0L) mustEqual 1
         eh.frequencyMap(100L) mustEqual 1
 
-        rh.histogram.size mustEqual 20
-        rh.histogram(0.0) mustEqual 10
-        rh.histogram(50.0) mustEqual 10
-        rh.histogram(100.0) mustEqual 10
+        rh.bins.length mustEqual 20
+        rh.bins(rh.bins.getIndex(0.0)) mustEqual 10
+        rh.bins(rh.bins.getIndex(50.0)) mustEqual 10
+        rh.bins(rh.bins.getIndex(100.0)) mustEqual 10
 
         minMax2.min mustEqual 100
         minMax2.max mustEqual 199
@@ -118,10 +118,10 @@ class StatTest extends Specification with StatTestHelper {
         eh2.frequencyMap(0L) mustEqual 0
         eh2.frequencyMap(100L) mustEqual 1
 
-        rh2.histogram.size mustEqual 20
-        rh2.histogram(0.0) mustEqual 0
-        rh2.histogram(50.0) mustEqual 0
-        rh2.histogram(100.0) mustEqual 10
+        rh2.bins.length mustEqual 20
+        rh2.bins(rh2.bins.getIndex(0.0)) mustEqual 0
+        rh2.bins(rh2.bins.getIndex(50.0)) mustEqual 0
+        rh2.bins(rh2.bins.getIndex(100.0)) mustEqual 10
 
         "clear them" in {
           stat.isEmpty must beFalse
@@ -137,10 +137,10 @@ class StatTest extends Specification with StatTestHelper {
 
           eh.frequencyMap.size mustEqual 0
 
-          rh.histogram.size mustEqual 20
-          rh.histogram(0.0) mustEqual 0
-          rh.histogram(50.0) mustEqual 0
-          rh.histogram(100.0) mustEqual 0
+          rh.bins.length mustEqual 20
+          rh.bins(rh.bins.getIndex(0.0)) mustEqual 0
+          rh.bins(rh.bins.getIndex(50.0)) mustEqual 0
+          rh.bins(rh.bins.getIndex(100.0)) mustEqual 0
 
           minMax2.min mustEqual java.lang.Integer.MAX_VALUE
           minMax2.max mustEqual java.lang.Integer.MIN_VALUE
@@ -149,10 +149,10 @@ class StatTest extends Specification with StatTestHelper {
 
           eh2.frequencyMap.size mustEqual 0
 
-          rh2.histogram.size mustEqual 20
-          rh2.histogram(0.0) mustEqual 0
-          rh2.histogram(50.0) mustEqual 0
-          rh2.histogram(100.0) mustEqual 0
+          rh2.bins.length mustEqual 20
+          rh2.bins(rh2.bins.getIndex(0.0)) mustEqual 0
+          rh2.bins(rh2.bins.getIndex(50.0)) mustEqual 0
+          rh2.bins(rh2.bins.getIndex(100.0)) mustEqual 0
         }
       }
     }

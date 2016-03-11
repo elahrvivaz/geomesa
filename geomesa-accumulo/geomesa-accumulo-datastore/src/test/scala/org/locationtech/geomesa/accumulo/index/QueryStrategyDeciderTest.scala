@@ -60,6 +60,7 @@ class QueryStrategyDeciderTest extends Specification {
     override def getCount(typeName: String, filter: Filter, exact: Boolean): Long = -1
     override def getBounds(typeName: String, filter: Filter, exact: Boolean): ReferencedEnvelope = wholeWorldEnvelope
     override def getTemporalBounds(typeName: String, filter: Filter, exact: Boolean): Interval = allTimeBounds
+    override def close: Unit = {}
   }
 
   def getStrategy(filterString: String, version: Int = CURRENT_SCHEMA_VERSION): Strategy = {

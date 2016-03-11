@@ -8,6 +8,7 @@
 
 package org.locationtech.geomesa.utils.stats
 
+import java.lang.{Double => jDouble, Float => jFloat, Long => jLong}
 import java.util.Date
 
 import org.joda.time.format.DateTimeFormat
@@ -116,14 +117,14 @@ object Stat {
 
           if (attrType == classOf[Date]) {
             new MinMax[Date](attrIndex, attrTypeString, MinMaxDate.min, MinMaxDate.max)
-          } else if (attrType == classOf[java.lang.Long]) {
-            new MinMax[java.lang.Long](attrIndex, attrTypeString, MinMaxLong.min, MinMaxLong.max)
-          } else if (attrType == classOf[java.lang.Integer]) {
-            new MinMax[java.lang.Integer](attrIndex, attrTypeString, MinMaxInt.min, MinMaxInt.max)
-          } else if (attrType == classOf[java.lang.Double]) {
-            new MinMax[java.lang.Double](attrIndex, attrTypeString, MinMaxDouble.min, MinMaxDouble.max)
-          } else if (attrType == classOf[java.lang.Float]) {
-            new MinMax[java.lang.Float](attrIndex, attrTypeString, MinMaxFloat.min, MinMaxFloat.max)
+          } else if (attrType == classOf[jLong]) {
+            new MinMax[jLong](attrIndex, attrTypeString, MinMaxLong.min, MinMaxLong.max)
+          } else if (attrType == classOf[Integer]) {
+            new MinMax[Integer](attrIndex, attrTypeString, MinMaxInt.min, MinMaxInt.max)
+          } else if (attrType == classOf[jDouble]) {
+            new MinMax[jDouble](attrIndex, attrTypeString, MinMaxDouble.min, MinMaxDouble.max)
+          } else if (attrType == classOf[jFloat]) {
+            new MinMax[jFloat](attrIndex, attrTypeString, MinMaxFloat.min, MinMaxFloat.max)
           } else {
             throw new Exception(s"Cannot create stat for invalid type: $attrType for attribute: $attribute")
           }
@@ -143,14 +144,14 @@ object Stat {
 
           if (attrType == classOf[Date]) {
             new EnumeratedHistogram[Date](attrIndex, attrTypeString)
-          } else if (attrType == classOf[java.lang.Integer]) {
-            new EnumeratedHistogram[java.lang.Integer](attrIndex, attrTypeString)
-          } else if (attrType == classOf[java.lang.Long]) {
-            new EnumeratedHistogram[java.lang.Long](attrIndex, attrTypeString)
-          } else if (attrType == classOf[java.lang.Float]) {
-            new EnumeratedHistogram[java.lang.Float](attrIndex, attrTypeString)
-          } else if (attrType == classOf[java.lang.Double]) {
-            new EnumeratedHistogram[java.lang.Double](attrIndex, attrTypeString)
+          } else if (attrType == classOf[Integer]) {
+            new EnumeratedHistogram[Integer](attrIndex, attrTypeString)
+          } else if (attrType == classOf[jLong]) {
+            new EnumeratedHistogram[jLong](attrIndex, attrTypeString)
+          } else if (attrType == classOf[jFloat]) {
+            new EnumeratedHistogram[jFloat](attrIndex, attrTypeString)
+          } else if (attrType == classOf[jDouble]) {
+            new EnumeratedHistogram[jDouble](attrIndex, attrTypeString)
           } else {
             throw new Exception(s"Cannot create stat for invalid type: $attrType for attribute: $attribute")
           }
@@ -166,15 +167,15 @@ object Stat {
 
           if (attrType == classOf[Date]) {
             new RangeHistogram[Date](attrIndex, attrTypeString, numBins.toInt,
-              dateFormat.parseDateTime(lowerEndpoint).toDate, dateFormat.parseDateTime(upperEndpoint).toDate)
-          } else if (attrType == classOf[java.lang.Integer]) {
-            new RangeHistogram[java.lang.Integer](attrIndex, attrTypeString, numBins.toInt, lowerEndpoint.toInt, upperEndpoint.toInt)
-          } else if (attrType == classOf[java.lang.Long]) {
-            new RangeHistogram[java.lang.Long](attrIndex, attrTypeString, numBins.toInt, lowerEndpoint.toLong, upperEndpoint.toLong)
-          } else if (attrType == classOf[java.lang.Double]) {
-            new RangeHistogram[java.lang.Double](attrIndex, attrTypeString, numBins.toInt, lowerEndpoint.toDouble, upperEndpoint.toDouble)
-          } else if (attrType == classOf[java.lang.Float]) {
-            new RangeHistogram[java.lang.Float](attrIndex, attrTypeString, numBins.toInt, lowerEndpoint.toFloat, upperEndpoint.toFloat)
+              (dateFormat.parseDateTime(lowerEndpoint).toDate, dateFormat.parseDateTime(upperEndpoint).toDate))
+          } else if (attrType == classOf[Integer]) {
+            new RangeHistogram[Integer](attrIndex, attrTypeString, numBins.toInt, (lowerEndpoint.toInt, upperEndpoint.toInt))
+          } else if (attrType == classOf[jLong]) {
+            new RangeHistogram[jLong](attrIndex, attrTypeString, numBins.toInt, (lowerEndpoint.toLong, upperEndpoint.toLong))
+          } else if (attrType == classOf[jDouble]) {
+            new RangeHistogram[jDouble](attrIndex, attrTypeString, numBins.toInt, (lowerEndpoint.toDouble, upperEndpoint.toDouble))
+          } else if (attrType == classOf[jFloat]) {
+            new RangeHistogram[jFloat](attrIndex, attrTypeString, numBins.toInt, (lowerEndpoint.toFloat, upperEndpoint.toFloat))
           } else {
             throw new Exception(s"Cannot create stat for invalid type: $attrType for attribute: $attribute")
           }
