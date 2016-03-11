@@ -31,7 +31,7 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
 
   val spec = "name:String,dtg:Date,*geom:Point:srid=4326"
 
-  val query = new Query(sftName, Filter.INCLUDE)
+  val filter = Filter.INCLUDE
 
   val baseMillis = {
     val sf = new ScalaSimpleFeature("", sft)
@@ -45,8 +45,8 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
     "track stats for ingested features" >> {
 
       "initially have global stats" >> {
-        ds.estimateBounds(query) mustEqual wholeWorldEnvelope
-        val initialTimeBounds = ds.estimateTimeBounds(query)
+        ds.stats.getBounds(sftName, filter) mustEqual wholeWorldEnvelope
+        val initialTimeBounds = ds.stats.getTemporalBounds(sftName, filter)
         initialTimeBounds.getStartMillis mustEqual 0
         initialTimeBounds.getEndMillis must beCloseTo(System.currentTimeMillis(), 10)
       }
@@ -60,8 +60,9 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
         writer.write()
         writer.flush()
 
-        ds.estimateBounds(query) mustEqual new ReferencedEnvelope(0, 0, 0, 0, CRS_EPSG_4326)
-        ds.estimateTimeBounds(query) mustEqual new Interval(baseMillis, baseMillis + 1, DateTimeZone.UTC)
+        ds.stats.getBounds(sftName, filter) mustEqual new ReferencedEnvelope(0, 0, 0, 0, CRS_EPSG_4326)
+        ds.stats.getTemporalBounds(sftName, filter) mustEqual
+            new Interval(baseMillis, baseMillis + 1, DateTimeZone.UTC)
 
         val sf2 = writer.next()
         sf2.setAttribute(1, "2016-01-02T12:00:00.000Z")
@@ -69,8 +70,9 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
         writer.write()
         writer.close()
 
-        ds.estimateBounds(query) mustEqual new ReferencedEnvelope(0, 10, 0, 10, CRS_EPSG_4326)
-        ds.estimateTimeBounds(query) mustEqual new Interval(baseMillis, baseMillis + (dayInMillis / 2) + 1, DateTimeZone.UTC)
+        ds.stats.getBounds(sftName, filter) mustEqual new ReferencedEnvelope(0, 10, 0, 10, CRS_EPSG_4326)
+        ds.stats.getTemporalBounds(sftName, filter) mustEqual
+            new Interval(baseMillis, baseMillis + (dayInMillis / 2) + 1, DateTimeZone.UTC)
       }
 
       "through feature source add features" >> {
@@ -84,8 +86,9 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
         features.add(sf)
         fs.addFeatures(features)
 
-        ds.estimateBounds(query) mustEqual new ReferencedEnvelope(-10, 10, -10, 10, CRS_EPSG_4326)
-        ds.estimateTimeBounds(query) mustEqual new Interval(baseMillis, baseMillis + dayInMillis + 1, DateTimeZone.UTC)
+        ds.stats.getBounds(sftName, filter) mustEqual new ReferencedEnvelope(-10, 10, -10, 10, CRS_EPSG_4326)
+        ds.stats.getTemporalBounds(sftName, filter)  mustEqual
+            new Interval(baseMillis, baseMillis + dayInMillis + 1, DateTimeZone.UTC)
       }
 
       "not expand bounds when not necessary" >> {
@@ -97,8 +100,9 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
         writer.write()
         writer.close()
 
-        ds.estimateBounds(query) mustEqual new ReferencedEnvelope(-10, 10, -10, 10, CRS_EPSG_4326)
-        ds.estimateTimeBounds(query) mustEqual new Interval(baseMillis, baseMillis + dayInMillis + 1, DateTimeZone.UTC)
+        ds.stats.getBounds(sftName, filter) mustEqual new ReferencedEnvelope(-10, 10, -10, 10, CRS_EPSG_4326)
+        ds.stats.getTemporalBounds(sftName, filter) mustEqual
+            new Interval(baseMillis, baseMillis + dayInMillis + 1, DateTimeZone.UTC)
       }
 
       "through feature source set features" >> {
@@ -118,8 +122,9 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
 
         fs.setFeatures(features)
 
-        ds.estimateBounds(query) mustEqual new ReferencedEnvelope(-10, 15, -10, 10, CRS_EPSG_4326)
-        ds.estimateTimeBounds(query) mustEqual new Interval(baseMillis - dayInMillis, baseMillis + dayInMillis + 1, DateTimeZone.UTC)
+        ds.stats.getBounds(sftName, filter) mustEqual new ReferencedEnvelope(-10, 15, -10, 10, CRS_EPSG_4326)
+        ds.stats.getTemporalBounds(sftName, filter) mustEqual
+            new Interval(baseMillis - dayInMillis, baseMillis + dayInMillis + 1, DateTimeZone.UTC)
       }
     }
   }

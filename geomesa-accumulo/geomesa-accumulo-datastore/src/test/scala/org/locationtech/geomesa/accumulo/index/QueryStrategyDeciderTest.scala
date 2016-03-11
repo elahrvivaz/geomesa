@@ -11,8 +11,11 @@ package org.locationtech.geomesa.accumulo.index
 import org.geotools.data.Query
 import org.geotools.factory.CommonFactoryFinder
 import org.geotools.filter.text.ecql.ECQL
+import org.geotools.geometry.jts.ReferencedEnvelope
+import org.joda.time.Interval
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.filter.TestFilters._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
 import org.locationtech.geomesa.filter.visitor.LocalNameVisitorImpl
@@ -50,14 +53,22 @@ class QueryStrategyDeciderTest extends Specification {
     .stringType("attr2")
     .build("featureNonIndex")
 
+  val stats = new GeoMesaStats {
+    import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats.allTimeBounds
+    import org.locationtech.geomesa.utils.geotools.wholeWorldEnvelope
+
+    override def getCount(typeName: String, filter: Filter, exact: Boolean): Long = -1
+    override def getBounds(typeName: String, filter: Filter, exact: Boolean): ReferencedEnvelope = wholeWorldEnvelope
+    override def getTemporalBounds(typeName: String, filter: Filter, exact: Boolean): Interval = allTimeBounds
+  }
+
   def getStrategy(filterString: String, version: Int = CURRENT_SCHEMA_VERSION): Strategy = {
     val sft = if (version > 0) sftIndex else sftNonIndex
     sft.setSchemaVersion(version)
     val filter = ECQL.toFilter(filterString)
-    val hints = new UserDataStrategyHints()
     val query = new Query(sft.getTypeName)
     query.setFilter(filter.accept(new LocalNameVisitorImpl(sft), null).asInstanceOf[Filter])
-    val strats = QueryStrategyDecider.chooseStrategies(sft, query, hints, None)
+    val strats = QueryStrategyDecider.chooseStrategies(sft, query, stats, None)
     strats must haveLength(1)
     strats.head
   }
@@ -187,15 +198,13 @@ class QueryStrategyDeciderTest extends Specification {
       val heightFilter = ff.equals(ff.property("height"), ff.literal(12.0D))
       val weightFilter = ff.equals(ff.literal(21.12D), ff.property("weight"))
 
-      val hints = new UserDataStrategyHints()
-
       "when best is first" >> {
         val filter = ff.and(Seq(nameFilter, heightFilter, weightFilter, ageFilter))
         val primary = Seq(nameFilter)
         val secondary = ff.and(Seq(heightFilter, weightFilter, ageFilter))
 
         val query = new Query(sft.getTypeName, filter)
-        val strats = QueryStrategyDecider.chooseStrategies(sft, query, hints, None)
+        val strats = QueryStrategyDecider.chooseStrategies(sft, query, stats, None)
 
         strats must haveLength(1)
         strats.head.filter.strategy mustEqual StrategyType.ATTRIBUTE
@@ -209,7 +218,7 @@ class QueryStrategyDeciderTest extends Specification {
         val secondary = ff.and(Seq(heightFilter, weightFilter, ageFilter))
 
         val query = new Query(sft.getTypeName, filter)
-        val strats = QueryStrategyDecider.chooseStrategies(sft, query, hints, None)
+        val strats = QueryStrategyDecider.chooseStrategies(sft, query, stats, None)
 
         strats must haveLength(1)
         strats.head.filter.strategy mustEqual StrategyType.ATTRIBUTE
@@ -223,7 +232,7 @@ class QueryStrategyDeciderTest extends Specification {
         val secondary = ff.and(Seq(heightFilter, weightFilter, ageFilter))
 
         val query = new Query(sft.getTypeName, filter)
-        val strats = QueryStrategyDecider.chooseStrategies(sft, query, hints, None)
+        val strats = QueryStrategyDecider.chooseStrategies(sft, query, stats, None)
 
         strats must haveLength(1)
         strats.head.filter.strategy mustEqual StrategyType.ATTRIBUTE
@@ -235,7 +244,7 @@ class QueryStrategyDeciderTest extends Specification {
         val filter = ECQL.toFilter("name LIKE 'baddy' AND age=21 AND count<5")
         val query = new Query(sft.getTypeName, filter)
 
-        val strats = QueryStrategyDecider.chooseStrategies(sft, query, hints, None)
+        val strats = QueryStrategyDecider.chooseStrategies(sft, query, stats, None)
 
         strats must haveLength(1)
         strats.head.filter.strategy mustEqual StrategyType.ATTRIBUTE

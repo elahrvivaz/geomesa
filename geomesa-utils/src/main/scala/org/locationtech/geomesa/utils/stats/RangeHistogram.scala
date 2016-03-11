@@ -175,10 +175,10 @@ import org.locationtech.geomesa.utils.stats.BinHelper._
  * @tparam T a comparable type which must have a StatHelperFunctions type class
  */
 class RangeHistogram[T: BinAble](val attrIndex: Int,
-                                  val attrType: String,
-                                  val numBins: Int,
-                                  val lowerEndpoint: T,
-                                  val upperEndpoint: T) extends Stat {
+                                 val attrType: String,
+                                 val numBins: Int,
+                                 val lowerEndpoint: T,
+                                 val upperEndpoint: T) extends Stat {
 
   override type S = RangeHistogram[T]
 
@@ -186,7 +186,7 @@ class RangeHistogram[T: BinAble](val attrIndex: Int,
   val binSize = binHelper.getBinSize(numBins, lowerEndpoint, upperEndpoint)
 
   val histogram = {
-    val initial = new collection.mutable.HashMap[T, Long]()
+    val initial = scala.collection.mutable.HashMap.empty[T, Long]
     var i = 0
     while (i < numBins) {
       initial.put(binHelper.getBinKey(binSize, i, lowerEndpoint), 0)

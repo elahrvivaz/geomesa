@@ -13,8 +13,8 @@ import java.text.SimpleDateFormat
 
 import com.google.common.io.Files
 import com.vividsolutions.jts.geom.Coordinate
+import org.geotools.data.Transaction
 import org.geotools.data.shapefile.ShapefileDataStoreFactory
-import org.geotools.data.{Query, Transaction}
 import org.geotools.factory.Hints
 import org.geotools.geometry.jts.JTSFactoryFinder
 import org.joda.time.{DateTime, DateTimeZone}
@@ -86,7 +86,7 @@ class ShpIngestTest extends Specification {
       bounds.getMinY mustEqual minY
       bounds.getMaxY mustEqual maxY
 
-      val timeBounds = ds.estimateTimeBounds(new Query("shpingest"))
+      val timeBounds = ds.stats.getTemporalBounds("shpingest")
       timeBounds.getStart mustEqual new DateTime(minDate, DateTimeZone.UTC)
       timeBounds.getEnd mustEqual new DateTime(maxDate, DateTimeZone.UTC).plusMillis(1)
 
@@ -100,7 +100,7 @@ class ShpIngestTest extends Specification {
 
       val fs = ds.getFeatureSource("changed")
 
-      val timeBounds = ds.estimateTimeBounds(new Query("changed"))
+      val timeBounds = ds.stats.getTemporalBounds("changed")
       timeBounds.getStart mustEqual new DateTime(minDate, DateTimeZone.UTC)
       timeBounds.getEnd mustEqual new DateTime(maxDate, DateTimeZone.UTC).plusMillis(1)
 
