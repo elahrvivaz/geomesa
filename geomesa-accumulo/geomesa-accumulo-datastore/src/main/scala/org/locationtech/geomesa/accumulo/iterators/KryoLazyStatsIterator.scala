@@ -51,7 +51,7 @@ class KryoLazyStatsIterator extends KryoLazyAggregatingIterator[Stat] {
   override def aggregateResult(sf: SimpleFeature, result: Stat): Unit = result.observe(sf)
 
   override def encodeResult(result: Stat): Array[Byte] = {
-    featureToSerialize.setAttribute(0, encodeStat(result))
+    featureToSerialize.setAttribute(0, encodeStat(result, sft))
     serializer.serialize(featureToSerialize)
   }
 }
@@ -86,12 +86,11 @@ object KryoLazyStatsIterator extends LazyLogging {
     SimpleFeatureTypes.createType(outNamespace, name, KryoLazyStatsIterator.STATS_ITERATOR_SFT_STRING)
   }
 
-  def encodeStat(stat: Stat): String = Base64.encodeBase64URLSafeString(StatSerialization.pack(stat))
+  def encodeStat(stat: Stat, sft: SimpleFeatureType): String =
+    Base64.encodeBase64URLSafeString(StatSerialization.pack(stat, sft))
 
-  def decodeStat(encoded: String): Stat = {
-    val bytes = Base64.decodeBase64(encoded)
-    StatSerialization.unpack(bytes)
-  }
+  def decodeStat(encoded: String, sft: SimpleFeatureType): Stat =
+    StatSerialization.unpack(Base64.decodeBase64(encoded), sft)
 
   /**
    * Reduces computed simple features which contain stat information into one on the client
@@ -100,19 +99,19 @@ object KryoLazyStatsIterator extends LazyLogging {
    * @param query query that the stats are being run against
    * @return aggregated iterator of features
    */
-  def reduceFeatures(features: SFIter, query: Query): SFIter = {
+  def reduceFeatures(features: SFIter, query: Query, sft: SimpleFeatureType): SFIter = {
     val encode = query.getHints.containsKey(RETURN_ENCODED_KEY)
-    val sft = query.getHints.getReturnSft
+    val returnSft = query.getHints.getReturnSft
 
-    val decodedStats = features.map(f => decodeStat(f.getAttribute(STATS).toString))
+    val decodedStats = features.map(f => decodeStat(f.getAttribute(STATS).toString, sft))
 
     if (decodedStats.isEmpty) {
       Iterator.empty
     } else {
       val sum = decodedStats.next()
       decodedStats.foreach(sum += _)
-      val time = if (encode) encodeStat(sum) else sum.toJson()
-      val sf = new ScalaSimpleFeature(UUID.randomUUID().toString, sft, Array(time, GeometryUtils.zeroPoint))
+      val time = if (encode) encodeStat(sum, sft) else sum.toJson()
+      val sf = new ScalaSimpleFeature(UUID.randomUUID().toString, returnSft, Array(time, GeometryUtils.zeroPoint))
       Iterator(sf)
     }
   }

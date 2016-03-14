@@ -39,19 +39,16 @@ class StatTest extends Specification with StatTestHelper {
       val eh = stats(2).asInstanceOf[EnumeratedHistogram[java.lang.Long]]
       val rh = stats(3).asInstanceOf[RangeHistogram[java.lang.Double]]
 
-      minMax.attrIndex mustEqual intIndex
-      minMax.attrType mustEqual "java.lang.Integer"
+      minMax.attribute mustEqual intIndex
       minMax.min mustEqual java.lang.Integer.MAX_VALUE
       minMax.max mustEqual java.lang.Integer.MIN_VALUE
 
       isc.count mustEqual 1
 
-      eh.attrIndex mustEqual longIndex
-      eh.attrType mustEqual "java.lang.Long"
+      eh.attribute mustEqual longIndex
       eh.frequencyMap.size mustEqual 0
 
-      rh.attrIndex mustEqual doubleIndex
-      rh.attrType mustEqual "java.lang.Double"
+      rh.attribute mustEqual doubleIndex
       rh.bins.length mustEqual 20
       rh.bins(rh.bins.getIndex(0.0)) mustEqual 0
       rh.bins(rh.bins.getIndex(50.0)) mustEqual 0
@@ -74,8 +71,8 @@ class StatTest extends Specification with StatTestHelper {
       rh.bins(rh.bins.getIndex(100.0)) mustEqual 0
 
       "serialize and deserialize" in {
-        val packed   = StatSerialization.pack(stat)
-        val unpacked = StatSerialization.unpack(packed).asInstanceOf[SeqStat]
+        val packed   = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[SeqStat]
 
         unpacked.toJson() mustEqual stat.asInstanceOf[SeqStat].toJson()
       }

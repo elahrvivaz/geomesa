@@ -8,13 +8,16 @@
 
 package org.locationtech.geomesa.utils.stats
 
+import java.lang.{Double => jDouble, Float => jFloat, Long => jLong}
 import java.nio.ByteBuffer
 import java.util.Date
-import java.lang.{Long => jLong, Double => jDouble, Float => jFloat}
+
 import com.google.common.primitives.Bytes
 import com.vividsolutions.jts.geom.Geometry
 import org.locationtech.geomesa.utils.stats.MinMaxHelper._
-import org.locationtech.geomesa.utils.text.WKTUtils
+import org.opengis.feature.simple.SimpleFeatureType
+
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * Stats are serialized as a byte array where the first byte indicates which type of stat is present.
@@ -41,178 +44,172 @@ object StatSerialization {
     Bytes.concat(Array(kind), size, bytes)
   }
 
-  protected[stats] def packMinMax(mm: MinMax[_]): Array[Byte] = {
-    val stringifiedMinMax = if (mm.isNull) {
-      s"${mm.attrIndex};${mm.attrType};null;null"
+  protected [stats] def packMinMax(stat: MinMax[_], sft: SimpleFeatureType): Array[Byte] = {
+    val stringify = Stat.stringifier(sft.getDescriptor(stat.attribute).getType.getBinding)
+    val asString = s"${stat.attribute};${stringify(stat.min)};${stringify(stat.max)}"
+    serializeStat(MINMAX_BYTE, asString.getBytes("UTF-8"))
+  }
+
+  protected [stats] def unpackMinMax(bytes: Array[Byte], sft: SimpleFeatureType): MinMax[_] = {
+    val split = new String(bytes, "UTF-8").split(";")
+
+    val attribute = split(0).toInt
+    val minString = split(1)
+    val maxString = split(2)
+
+    val attributeType = sft.getDescriptor(attribute).getType.getBinding
+    val destringify = Stat.destringifier(attributeType)
+    val min = destringify(minString)
+    val max = destringify(maxString)
+
+    if (attributeType == classOf[String]) {
+      val stat = new MinMax[String](attribute)
+      if (min != null) {
+        stat.updateMin(min.asInstanceOf[String])
+        stat.updateMax(max.asInstanceOf[String])
+      }
+      stat
+    } else if (attributeType == classOf[Integer]) {
+      val stat = new MinMax[Integer](attribute)
+      if (min != null) {
+        stat.updateMin(min.asInstanceOf[Integer])
+        stat.updateMax(max.asInstanceOf[Integer])
+      }
+      stat
+    } else if (attributeType == classOf[jLong]) {
+      val stat = new MinMax[jLong](attribute)
+      if (min != null) {
+        stat.updateMin(min.asInstanceOf[jLong])
+        stat.updateMax(max.asInstanceOf[jLong])
+      }
+      stat
+    } else if (attributeType == classOf[jFloat]) {
+      val stat = new MinMax[jFloat](attribute)
+      if (min != null) {
+        stat.updateMin(min.asInstanceOf[jFloat])
+        stat.updateMax(max.asInstanceOf[jFloat])
+      }
+      stat
+    } else if (attributeType == classOf[jDouble]) {
+      val stat = new MinMax[jDouble](attribute)
+      if (min != null) {
+        stat.updateMin(min.asInstanceOf[jDouble])
+        stat.updateMax(max.asInstanceOf[jDouble])
+      }
+      stat
+    } else if (attributeType == classOf[Date]) {
+      val stat = new MinMax[Date](attribute)
+      if (min != null) {
+        stat.updateMin(min.asInstanceOf[Date])
+        stat.updateMax(max.asInstanceOf[Date])
+      }
+      stat
+    } else if (classOf[Geometry].isAssignableFrom(attributeType)) {
+      val stat = new MinMax[Geometry](attribute)
+      if (min != null) {
+        stat.updateMin(min.asInstanceOf[Geometry])
+        stat.updateMax(max.asInstanceOf[Geometry])
+      }
+      stat
     } else {
-      s"${mm.attrIndex};${mm.attrType};${mm.min};${mm.max}"
-    }
-
-    serializeStat(MINMAX_BYTE, stringifiedMinMax.getBytes)
-  }
-
-  protected[stats] def unpackMinMax(bytes: Array[Byte]): MinMax[_] = {
-    val split = new String(bytes).split(";")
-    require(split.size == 4)
-
-    val attrIndex = split(0).toInt
-    val attrTypeString = split(1)
-    val min = split(2)
-    val max = split(3)
-
-    val attrType = Class.forName(attrTypeString)
-    if (attrType == classOf[Date]) {
-      if (min == "null") {
-        new MinMax[Date](attrIndex, attrTypeString, MinMaxDate.min, MinMaxDate.max)
-      } else {
-        new MinMax[Date](attrIndex, attrTypeString,
-          Stat.javaDateFormat.parseDateTime(min).toDate, Stat.javaDateFormat.parseDateTime(max).toDate)
-      }
-    } else if (attrType == classOf[Integer]) {
-      if (min == "null") {
-        new MinMax[Integer](attrIndex, attrTypeString, MinMaxInt.min, MinMaxInt.max)
-      } else {
-        new MinMax[Integer](attrIndex, attrTypeString, min.toInt, max.toInt)
-      }
-    } else if (attrType == classOf[jLong]) {
-      if (min == "null") {
-        new MinMax[jLong](attrIndex, attrTypeString, MinMaxLong.min, MinMaxLong.max)
-      } else {
-        new MinMax[jLong](attrIndex, attrTypeString, min.toLong, max.toLong)
-      }
-    } else if (attrType == classOf[jFloat]) {
-      if (min == "null") {
-        new MinMax[jFloat](attrIndex, attrTypeString, MinMaxFloat.min, MinMaxFloat.max)
-      } else {
-        new MinMax[jFloat](attrIndex, attrTypeString, min.toFloat, max.toFloat)
-      }
-    } else if (attrType == classOf[jDouble]) {
-      if (min == "null") {
-        new MinMax[jDouble](attrIndex, attrTypeString, MinMaxDouble.min, MinMaxDouble.max)
-      } else {
-        new MinMax[jDouble](attrIndex, attrTypeString, min.toDouble, max.toDouble)
-      }
-    } else {
-      throw new Exception(s"Cannot unpack MinMax due to invalid type: $attrType")
+      throw new Exception(s"Cannot unpack MinMax due to invalid type: $attributeType")
     }
   }
 
-  protected[stats] def packISC(isc: IteratorStackCounter): Array[Byte] = {
-    serializeStat(ISC_BYTE, s"${isc.count}".getBytes)
+  protected [stats] def packISC(stat: IteratorStackCounter): Array[Byte] = {
+    serializeStat(ISC_BYTE, s"${stat.count}".getBytes("UTF-8"))
   }
 
-  protected[stats] def unpackIteratorStackCounter(bytes: Array[Byte]): IteratorStackCounter = {
+  protected [stats] def unpackIteratorStackCounter(bytes: Array[Byte]): IteratorStackCounter = {
     val stat = new IteratorStackCounter()
-    stat.count = jLong.parseLong(new String(bytes))
+    stat.count = jLong.parseLong(new String(bytes, "UTF-8"))
     stat
   }
 
-  protected[stats] def packEnumeratedHistogram(eh: EnumeratedHistogram[_]): Array[Byte] = {
-    val sb = new StringBuilder(s"${eh.attrIndex};${eh.attrType};")
-
-    val keyValues = eh.frequencyMap.map { case (key, count) => s"${key.toString}->$count" }.mkString(",")
+  protected [stats] def packEnumeratedHistogram(stat: EnumeratedHistogram[_], sft: SimpleFeatureType): Array[Byte] = {
+    val sb = new StringBuilder(s"${stat.attribute};")
+    val stringify = Stat.stringifier(sft.getDescriptor(stat.attribute).getType.getBinding)
+    val keyValues = stat.frequencyMap.map { case (key, count) => s"${stringify(key)}->$count" }.mkString(",")
     sb.append(keyValues)
-
-    serializeStat(EH_BYTE, sb.toString().getBytes)
+    serializeStat(EH_BYTE, sb.toString().getBytes("UTF-8"))
   }
 
-  protected[stats] def unpackEnumeratedHistogram(bytes: Array[Byte]): EnumeratedHistogram[_] = {
+  protected[stats] def unpackEnumeratedHistogram(bytes: Array[Byte], sft: SimpleFeatureType): EnumeratedHistogram[_] = {
     val split = new String(bytes).split(";")
-    require(split.size == 3)
 
-    val attrIndex = split(0).toInt
-    val attrTypeString = split(1)
-    val keyValues = split(2).split(",")
+    val attribute = split(0).toInt
+    val keyValueStrings = split(1).split(",")
 
-    val attrType = Class.forName(attrTypeString)
+    val attributeType = sft.getDescriptor(attribute).getType.getBinding
+    val destringify = Stat.destringifier(attributeType)
 
-    if (attrType == classOf[Date]) {
-      val eh = new EnumeratedHistogram[Date](attrIndex, attrTypeString)
-      keyValues.foreach {
-        case (keyValuePair) =>
-          val splitKeyValuePair = keyValuePair.split("->")
-          eh.frequencyMap.put(Stat.javaDateFormat.parseDateTime(splitKeyValuePair(0)).toDate, splitKeyValuePair(1).toLong)
-      }
-      eh
-    } else if (attrType == classOf[Integer]) {
-      val eh = new EnumeratedHistogram[Integer](attrIndex, attrTypeString)
-      keyValues.foreach {
-        case (keyValuePair) =>
-          val splitKeyValuePair = keyValuePair.split("->")
-          eh.frequencyMap.put(splitKeyValuePair(0).toInt, splitKeyValuePair(1).toLong)
-      }
-      eh
-    } else if (attrType == classOf[jLong]) {
-      val eh = new EnumeratedHistogram[jLong](attrIndex, attrTypeString)
-      keyValues.foreach {
-        case (keyValuePair) =>
-          val splitKeyValuePair = keyValuePair.split("->")
-          eh.frequencyMap.put(splitKeyValuePair(0).toLong, splitKeyValuePair(1).toLong)
-      }
-      eh
-    } else if (attrType == classOf[jFloat]) {
-      val eh = new EnumeratedHistogram[jFloat](attrIndex, attrTypeString)
-      keyValues.foreach {
-        case (keyValuePair) =>
-          val splitKeyValuePair = keyValuePair.split("->")
-          eh.frequencyMap.put(splitKeyValuePair(0).toFloat, splitKeyValuePair(1).toLong)
-      }
-      eh
-    } else if (attrType == classOf[jDouble]) {
-      val eh = new EnumeratedHistogram[jDouble](attrIndex, attrTypeString)
-      keyValues.foreach {
-        case (keyValuePair) =>
-          val splitKeyValuePair = keyValuePair.split("->")
-          eh.frequencyMap.put(splitKeyValuePair(0).toDouble, splitKeyValuePair(1).toLong)
-      }
-      eh
-    } else {
-      throw new Exception(s"Cannot unpack EnumeratedHistogram due to invalid type: $attrType")
-    }
-  }
-
-  protected [stats] def packRangeHistogram(rh: RangeHistogram[_]): Array[Byte] = {
-    val sb = new StringBuilder(s"${rh.attrIndex};${rh.attrType};${rh.numBins};${rh.endpoints._1};${rh.endpoints._2};")
-    sb.append(rh.bins.counts.mkString(","))
-    serializeStat(RH_BYTE, sb.toString().getBytes)
-  }
-
-  protected [stats] def unpackRangeHistogram(bytes: Array[Byte]): RangeHistogram[_] = {
-    val split = new String(bytes).split(";")
-    require(split.size == 6)
-
-    val attrIndex = split(0).toInt
-    val attrTypeString = split(1)
-    val numBins = split(2).toInt
-    val lowerEndpoint = split(3)
-    val upperEndpoint = split(4)
-    val counts = split(5).split(",").map(_.toLong)
-
-    val attrType = Class.forName(attrTypeString)
-    val histogram = if (attrType == classOf[Date]) {
-      val bounds = (Stat.javaDateFormat.parseDateTime(lowerEndpoint).toDate, Stat.javaDateFormat.parseDateTime(upperEndpoint).toDate)
-      new RangeHistogram[Date](attrIndex, attrTypeString, numBins, bounds)
-    } else if (attrType == classOf[Integer]) {
-      val bounds = (new Integer(lowerEndpoint), new Integer(upperEndpoint))
-      new RangeHistogram[Integer](attrIndex, attrTypeString, numBins, bounds)
-    } else if (attrType == classOf[jLong]) {
-      val bounds = (new jLong(lowerEndpoint), new jLong(upperEndpoint))
-      new RangeHistogram[jLong](attrIndex, attrTypeString, numBins, bounds)
-    } else if (attrType == classOf[jFloat]) {
-      val bounds = (new jFloat(lowerEndpoint), new jFloat(upperEndpoint))
-      new RangeHistogram[jFloat](attrIndex, attrTypeString, numBins, bounds)
-    } else if (attrType == classOf[jDouble]) {
-      val bounds = (new jDouble(lowerEndpoint), new jDouble(upperEndpoint))
-      new RangeHistogram[jDouble](attrIndex, attrTypeString, numBins, bounds)
-    } else if (classOf[Geometry].isAssignableFrom(attrType)) {
-      val bounds = (WKTUtils.read(lowerEndpoint), WKTUtils.read(upperEndpoint))
-      new RangeHistogram[Geometry](attrIndex, attrTypeString, numBins, bounds)
-    } else {
-      throw new Exception(s"Cannot unpack RangeHistogram due to invalid type: $attrType")
+    val keyValues = keyValueStrings.map { keyValuePair =>
+      val splitKeyValuePair = keyValuePair.split("->")
+      (destringify(splitKeyValuePair(0)), splitKeyValuePair(1).toLong)
     }
 
-    histogram.bins.add(counts)
-    histogram
+    val stat: EnumeratedHistogram[Any] = if (attributeType == classOf[String]) {
+      new EnumeratedHistogram[String](attribute).asInstanceOf[EnumeratedHistogram[Any]]
+    } else if (attributeType == classOf[Integer]) {
+      new EnumeratedHistogram[Integer](attribute).asInstanceOf[EnumeratedHistogram[Any]]
+    } else if (attributeType == classOf[jLong]) {
+      new EnumeratedHistogram[jLong](attribute).asInstanceOf[EnumeratedHistogram[Any]]
+    } else if (attributeType == classOf[jFloat]) {
+      new EnumeratedHistogram[jFloat](attribute).asInstanceOf[EnumeratedHistogram[Any]]
+    } else if (attributeType == classOf[jDouble]) {
+      new EnumeratedHistogram[jDouble](attribute).asInstanceOf[EnumeratedHistogram[Any]]
+    } else if (attributeType == classOf[Date]) {
+      new EnumeratedHistogram[Date](attribute).asInstanceOf[EnumeratedHistogram[Any]]
+    } else if (classOf[Geometry].isAssignableFrom(attributeType)) {
+      new EnumeratedHistogram[Geometry](attribute).asInstanceOf[EnumeratedHistogram[Any]]
+    } else {
+      throw new Exception(s"Cannot unpack EnumeratedHistogram due to invalid type: $attributeType")
+    }
+
+    stat.frequencyMap ++= keyValues.asInstanceOf[Array[(Any, Long)]]
+    stat
+  }
+
+  protected [stats] def packRangeHistogram(stat: RangeHistogram[_], sft: SimpleFeatureType): Array[Byte] = {
+    val stringify = Stat.stringifier(sft.getDescriptor(stat.attribute).getType.getBinding)
+    val sb = new StringBuilder(s"${stat.attribute};${stat.numBins};${stringify(stat.endpoints._1)};${stringify(stat.endpoints._2)};")
+    sb.append(stat.bins.counts.mkString(","))
+    serializeStat(RH_BYTE, sb.toString().getBytes("UTF-8"))
+  }
+
+  protected [stats] def unpackRangeHistogram(bytes: Array[Byte], sft: SimpleFeatureType): RangeHistogram[_] = {
+    val split = new String(bytes, "UTF-8").split(";")
+
+    val attribute = split(0).toInt
+    val numBins = split(1).toInt
+    val lowerEndpoint = split(2)
+    val upperEndpoint = split(3)
+    val counts = split(4).split(",").map(_.toLong)
+
+    val attributeType = sft.getDescriptor(attribute).getType.getBinding
+    val destringify = Stat.destringifier(attributeType)
+    val bounds = (destringify(lowerEndpoint), destringify(upperEndpoint))
+
+    val stat = if (attributeType == classOf[String]) {
+      new RangeHistogram[String](attribute, numBins, bounds.asInstanceOf[(String, String)])
+    } else if (attributeType == classOf[Integer]) {
+      new RangeHistogram[Integer](attribute, numBins, bounds.asInstanceOf[(Integer, Integer)])
+    } else if (attributeType == classOf[jLong]) {
+      new RangeHistogram[jLong](attribute, numBins, bounds.asInstanceOf[(jLong, jLong)])
+    } else if (attributeType == classOf[jFloat]) {
+      new RangeHistogram[jFloat](attribute, numBins, bounds.asInstanceOf[(jFloat, jFloat)])
+    } else if (attributeType == classOf[jDouble]) {
+      new RangeHistogram[jDouble](attribute, numBins, bounds.asInstanceOf[(jDouble, jDouble)])
+    } else if (attributeType == classOf[Date]) {
+      new RangeHistogram[Date](attribute, numBins, bounds.asInstanceOf[(Date, Date)])
+    } else if (classOf[Geometry].isAssignableFrom(attributeType)) {
+      new RangeHistogram[Geometry](attribute, numBins, bounds.asInstanceOf[(Geometry, Geometry)])
+    } else {
+      throw new Exception(s"Cannot unpack RangeHistogram due to invalid type: $attributeType")
+    }
+
+    stat.bins.add(counts)
+    stat
   }
 
   /**
@@ -221,13 +218,13 @@ object StatSerialization {
    * @param stat the given stat to serialize
    * @return serialized stat
    */
-  def pack(stat: Stat): Array[Byte] = {
+  def pack(stat: Stat, sft: SimpleFeatureType): Array[Byte] = {
     stat match {
-      case mm: MinMax[_]                => packMinMax(mm)
-      case isc: IteratorStackCounter    => packISC(isc)
-      case eh: EnumeratedHistogram[_]   => packEnumeratedHistogram(eh)
-      case rh: RangeHistogram[_]        => packRangeHistogram(rh)
-      case seq: SeqStat                 => Bytes.concat(seq.stats.map(pack): _*)
+      case mm: MinMax[_]              => packMinMax(mm, sft)
+      case isc: IteratorStackCounter  => packISC(isc)
+      case eh: EnumeratedHistogram[_] => packEnumeratedHistogram(eh, sft)
+      case rh: RangeHistogram[_]      => packRangeHistogram(rh, sft)
+      case seq: SeqStat               => Bytes.concat(seq.stats.map(pack(_, sft)): _*)
     }
   }
 
@@ -235,39 +232,32 @@ object StatSerialization {
    * Deserializes the stat
    *
    * @param bytes the serialized stat
+   * @param sft simple feature type that the stat is operating on
    * @return deserialized stat
    */
-  def unpack(bytes: Array[Byte]): Stat = {
-    val returnStats = scala.collection.mutable.ArrayBuffer.empty[Stat]
+  def unpack(bytes: Array[Byte], sft: SimpleFeatureType): Stat = {
+    val returnStats = ArrayBuffer.empty[Stat]
     val bb = ByteBuffer.wrap(bytes)
 
-    var bytePointer = 0
-    while (bytePointer < bytes.length - 1) {
-      val statType = bytes(bytePointer)
-      val statSize = bb.getInt(bytePointer + 1)
-      val statBytes = bytes.slice(bytePointer + 5, bytePointer + 5 + statSize)
+    while (bb.hasRemaining) {
+      val statType = bb.get()
+      val statBytes = Array.ofDim[Byte](bb.getInt()) // stat size
+      bb.get(statBytes)
 
-      statType match {
-        case MINMAX_BYTE =>
-          val stat = unpackMinMax(statBytes)
-          returnStats += stat
-        case ISC_BYTE =>
-          val stat = unpackIteratorStackCounter(statBytes)
-          returnStats += stat
-        case EH_BYTE =>
-          val stat = unpackEnumeratedHistogram(statBytes)
-          returnStats += stat
-        case RH_BYTE =>
-          val stat = unpackRangeHistogram(statBytes)
-          returnStats += stat
+      val stat = statType match {
+        case MINMAX_BYTE => unpackMinMax(statBytes, sft)
+        case ISC_BYTE    => unpackIteratorStackCounter(statBytes)
+        case EH_BYTE     => unpackEnumeratedHistogram(statBytes, sft)
+        case RH_BYTE     => unpackRangeHistogram(statBytes, sft)
       }
 
-      bytePointer += statSize + 5
+      returnStats.append(stat)
     }
 
-    returnStats.size match {
-      case 1 => returnStats.head
-      case _ => new SeqStat(returnStats.toSeq)
+    if (returnStats.length == 1) {
+      returnStats.head
+    } else {
+      new SeqStat(returnStats.toSeq)
     }
   }
 }

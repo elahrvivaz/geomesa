@@ -13,23 +13,21 @@ import org.opengis.feature.simple.SimpleFeature
 import scala.util.parsing.json.JSONObject
 
 /**
- * An EnumeratedHistogram is merely a HashMap mapping values to number of occurences
- * .
- * @param attrIndex attribute index for the attribute the histogram is being made for
- * @param attrType class type as a string for serialization purposes
+ * An EnumeratedHistogram is merely a HashMap mapping values to number of occurrences
+ *
+ * @param attribute attribute index for the attribute the histogram is being made for
  * @tparam T some type T (which is restricted by the stat parser upstream of EnumeratedHistogram instantiation)
  */
-class EnumeratedHistogram[T](val attrIndex: Int,
-                             val attrType: String) extends Stat {
+class EnumeratedHistogram[T](val attribute: Int) extends Stat {
 
   override type S = EnumeratedHistogram[T]
 
   val frequencyMap = scala.collection.mutable.HashMap.empty[T, Long].withDefaultValue(0)
 
   override def observe(sf: SimpleFeature): Unit = {
-    val sfval = sf.getAttribute(attrIndex)
-    if (sfval != null) {
-      frequencyMap(sfval.asInstanceOf[T]) += 1
+    val value = sf.getAttribute(attribute).asInstanceOf[T]
+    if (value != null) {
+      frequencyMap(value) += 1
     }
   }
 
@@ -37,11 +35,8 @@ class EnumeratedHistogram[T](val attrIndex: Int,
     other.frequencyMap.foreach { case (key, count) => frequencyMap(key) += count }; this
   }
 
-
-  override def toJson(): String = {
-    val jsonMap = frequencyMap.toMap.map { case (k, v) => k.toString -> v }
-    new JSONObject(jsonMap).toString()
-  }
+  override def toJson(): String =
+    new JSONObject(frequencyMap.toMap.map { case (k, v) => k.toString -> v }).toString()
 
   override def clear(): Unit = frequencyMap.clear()
 }

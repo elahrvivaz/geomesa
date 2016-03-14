@@ -160,23 +160,17 @@ class BinnedDateArray(length: Int, bounds: (Date, Date)) extends BinnedArray[Dat
 
 class BinnedGeometryArray(length: Int, bounds: (Geometry, Geometry)) extends BinnedArray[Geometry](length, bounds) {
 
-  val zero = getGeoHash(bounds._1)
-  val max  = getGeoHash(bounds._2)
+  val zero = Stat.getGeoHashInt(bounds._1)
+  val max  = Stat.getGeoHashInt(bounds._2)
 
   require(zero < max, s"GeoHashes aren't ordered: lower=${WKTUtils.write(bounds._1)}:$zero upper=${WKTUtils.write(bounds._2)}:$max")
 
   private val binSize = (max - zero).toFloat / length
 
   override def getIndex(value: Geometry): Int = {
-    val gh = getGeoHash(value)
+    val gh = Stat.getGeoHashInt(value)
     if (gh < zero || gh > max) { -1 } else {
       math.floor((gh - zero) / binSize).toInt
     }
-  }
-
-  private def getGeoHash(value: Geometry): Int = {
-    val centroid = value.getCentroid
-    val gh = GeoHash(centroid.getX, centroid.getY, 15).hash
-    Integer.parseInt(gh, 36)
   }
 }

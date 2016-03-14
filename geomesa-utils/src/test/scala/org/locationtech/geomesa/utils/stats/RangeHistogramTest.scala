@@ -12,6 +12,7 @@ import java.util.Date
 
 import com.vividsolutions.jts.geom.Geometry
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.utils.geotools.GeoToolsDateFormat
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
@@ -25,8 +26,8 @@ class RangeHistogramTest extends Specification with StatTestHelper {
     "work with dates" >> {
       val stat = Stat(sft, "RangeHistogram(dtg,24,'2012-01-01T00:00:00.000Z','2012-01-03T00:00:00.000Z')")
       val rh = stat.asInstanceOf[RangeHistogram[Date]]
-      val lowerEndpoint = Stat.dateFormat.parseDateTime("2012-01-01T00:00:00.000Z").toDate
-      val midpoint = Stat.dateFormat.parseDateTime("2012-01-02T00:00:00.000Z").toDate
+      val lowerEndpoint = GeoToolsDateFormat.parseDateTime("2012-01-01T00:00:00.000Z").toDate
+      val midpoint = GeoToolsDateFormat.parseDateTime("2012-01-02T00:00:00.000Z").toDate
 
       val lowerIndex = rh.bins.getIndex(lowerEndpoint)
       val middleIndex = rh.bins.getIndex(midpoint)
@@ -45,12 +46,11 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       }
 
       "serialize and deserialize" >> {
-        val packed   = StatSerialization.pack(rh)
-        val unpacked = StatSerialization.unpack(packed).asInstanceOf[RangeHistogram[Date]]
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[Date]]
 
         unpacked.numBins mustEqual rh.numBins
-        unpacked.attrIndex mustEqual rh.attrIndex
-        unpacked.attrType mustEqual rh.attrType
+        unpacked.attribute mustEqual rh.attribute
         unpacked.toJson() mustEqual rh.toJson()
       }
 
@@ -104,12 +104,11 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       }
 
       "serialize and deserialize" >> {
-        val packed   = StatSerialization.pack(rh)
-        val unpacked = StatSerialization.unpack(packed).asInstanceOf[RangeHistogram[java.lang.Integer]]
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[java.lang.Integer]]
 
         unpacked.numBins mustEqual rh.numBins
-        unpacked.attrIndex mustEqual rh.attrIndex
-        unpacked.attrType mustEqual rh.attrType
+        unpacked.attribute mustEqual rh.attribute
         unpacked.toJson() mustEqual rh.toJson()
       }
 
@@ -166,12 +165,11 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       }
 
       "serialize and deserialize" >> {
-        val packed   = StatSerialization.pack(rh)
-        val unpacked = StatSerialization.unpack(packed).asInstanceOf[RangeHistogram[java.lang.Long]]
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[java.lang.Long]]
 
         unpacked.numBins mustEqual rh.numBins
-        unpacked.attrIndex mustEqual rh.attrIndex
-        unpacked.attrType mustEqual rh.attrType
+        unpacked.attribute mustEqual rh.attribute
         unpacked.toJson() mustEqual rh.toJson()
       }
 
@@ -230,12 +228,11 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       }
 
       "serialize and deserialize" >> {
-        val packed   = StatSerialization.pack(rh)
-        val unpacked = StatSerialization.unpack(packed).asInstanceOf[RangeHistogram[java.lang.Double]]
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[java.lang.Double]]
 
         unpacked.numBins mustEqual rh.numBins
-        unpacked.attrIndex mustEqual rh.attrIndex
-        unpacked.attrType mustEqual rh.attrType
+        unpacked.attribute mustEqual rh.attribute
         unpacked.toJson() mustEqual rh.toJson()
       }
 
@@ -294,12 +291,11 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       }
 
       "serialize and deserialize" >> {
-        val packed   = StatSerialization.pack(rh)
-        val unpacked = StatSerialization.unpack(packed).asInstanceOf[RangeHistogram[java.lang.Float]]
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[java.lang.Float]]
 
         unpacked.numBins mustEqual rh.numBins
-        unpacked.attrIndex mustEqual rh.attrIndex
-        unpacked.attrType mustEqual rh.attrType
+        unpacked.attribute mustEqual rh.attribute
         unpacked.toJson() mustEqual rh.toJson()
       }
 
@@ -358,12 +354,11 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       }
 
       "serialize and deserialize" >> {
-        val packed   = StatSerialization.pack(rh)
-        val unpacked = StatSerialization.unpack(packed).asInstanceOf[RangeHistogram[Geometry]]
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[Geometry]]
 
         unpacked.numBins mustEqual rh.numBins
-        unpacked.attrIndex mustEqual rh.attrIndex
-        unpacked.attrType mustEqual rh.attrType
+        unpacked.attribute mustEqual rh.attribute
         unpacked.toJson() mustEqual rh.toJson()
       }
 

@@ -25,8 +25,8 @@ class IteratorStackCounterTest extends Specification with StatTestHelper {
       isc.isEmpty must beFalse
 
       "serialize and deserialize" in {
-        val packed   = StatSerialization.pack(isc)
-        val unpacked = StatSerialization.unpack(packed).asInstanceOf[IteratorStackCounter]
+        val packed   = StatSerialization.pack(isc, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[IteratorStackCounter]
 
         unpacked.toJson() mustEqual isc.toJson()
       }

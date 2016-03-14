@@ -78,7 +78,7 @@ class StatsVisitor(features: SimpleFeatureCollection, statString: String, encode
 
   override def getResult: CalcResult = {
     if (resultCalc == null) {
-      val packedStat = KryoLazyStatsIterator.encodeStat(stat)
+      val packedStat = KryoLazyStatsIterator.encodeStat(stat, origSft)
       val sf = new ScalaSimpleFeature("", returnSft, Array(packedStat, GeometryUtils.zeroPoint))
       manualVisitResults.add(sf)
       StatsIteratorResult(manualVisitResults)

@@ -55,7 +55,7 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
       val results = fs.getFeatures(q).features().toList
       val sf = results.head
 
-      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[MinMax[java.lang.Long]]
+      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[MinMax[java.lang.Long]]
       minMaxStat.min mustEqual 0
       minMaxStat.max mustEqual 298
     }
@@ -65,7 +65,7 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
       val results = fs.getFeatures(q).features().toList
       val sf = results.head
 
-      val isc = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[IteratorStackCounter]
+      val isc = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[IteratorStackCounter]
       // note: I don't think there is a defined answer here that isn't implementation specific
       isc.count must beGreaterThanOrEqualTo(1L)
     }
@@ -75,7 +75,7 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
       val results = fs.getFeatures(q).features().toList
       val sf = results.head
 
-      val eh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
+      val eh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
       eh.frequencyMap.size mustEqual 150
       eh.frequencyMap(0) mustEqual 1
       eh.frequencyMap(149) mustEqual 1
@@ -87,7 +87,7 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
       val results = fs.getFeatures(q).features().toList
       val sf = results.head
 
-      val rh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[RangeHistogram[java.lang.Integer]]
+      val rh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[RangeHistogram[java.lang.Integer]]
       rh.bins.length mustEqual 5
       rh.bins(rh.bins.getIndex(10)) mustEqual 1
       rh.bins(rh.bins.getIndex(11)) mustEqual 1
@@ -101,7 +101,7 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
       val results = fs.getFeatures(q).features().toList
       val sf = results.head
 
-      val seqStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[SeqStat]
+      val seqStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[SeqStat]
       val stats = seqStat.stats
       stats.size mustEqual 4
 
@@ -134,7 +134,7 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
       val results = fs.getFeatures(q).features().toList
       val sf = results.head
 
-      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[MinMax[java.lang.Long]]
+      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[MinMax[java.lang.Long]]
       minMaxStat.min mustEqual 0
       minMaxStat.max mustEqual 298
     }
@@ -145,7 +145,7 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
       val results = fs.getFeatures(q).features().toList
       val sf = results.head
 
-      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[MinMax[java.lang.Long]]
+      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[MinMax[java.lang.Long]]
       minMaxStat.min mustEqual 0
       minMaxStat.max mustEqual 0
     }
@@ -156,7 +156,7 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
       val results = fs.getFeatures(q).features().toList
       val sf = results.head
 
-      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[MinMax[java.lang.Long]]
+      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[MinMax[java.lang.Long]]
       minMaxStat.min mustEqual 12
       minMaxStat.max mustEqual 298
     }
@@ -167,7 +167,7 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
       val results = fs.getFeatures(q).features().toList
       val sf = results.head
 
-      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[MinMax[java.lang.Integer]]
+      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[MinMax[java.lang.Integer]]
       minMaxStat.min mustEqual 6
       minMaxStat.max mustEqual 149
     }
@@ -178,7 +178,7 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
       val results = fs.getFeatures(q).features().toList
       val sf = results.head
 
-      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[MinMax[java.lang.Long]]
+      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[MinMax[java.lang.Long]]
       minMaxStat.min mustEqual 22
       minMaxStat.max mustEqual 298
     }

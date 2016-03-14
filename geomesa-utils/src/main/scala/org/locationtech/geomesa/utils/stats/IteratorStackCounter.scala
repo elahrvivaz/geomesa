@@ -22,9 +22,7 @@ class IteratorStackCounter(var count: Long = 1) extends Stat {
 
   override def observe(sf: SimpleFeature): Unit = {}
 
-  override def +=(other: IteratorStackCounter): IteratorStackCounter = {
-    count += other.count; this
-  }
+  override def +=(other: IteratorStackCounter): IteratorStackCounter = { count += other.count; this }
 
   override def toJson(): String = s"""{ "count": $count }"""
 

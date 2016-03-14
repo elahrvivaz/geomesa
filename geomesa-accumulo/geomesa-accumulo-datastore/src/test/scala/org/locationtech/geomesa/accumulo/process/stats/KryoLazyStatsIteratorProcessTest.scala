@@ -48,7 +48,7 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
       val results = statsIteratorProcess.execute(fs.getFeatures(query), "MinMax(attr)", encode = true)
       val sf = results.features().next
 
-      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[MinMax[java.lang.Long]]
+      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[MinMax[java.lang.Long]]
       minMaxStat.min mustEqual 0
       minMaxStat.max mustEqual 298
     }
@@ -57,7 +57,7 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
       val results = statsIteratorProcess.execute(fs.getFeatures(query), "IteratorStackCounter", encode = true)
       val sf = results.features().next
 
-      val isc = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[IteratorStackCounter]
+      val isc = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[IteratorStackCounter]
       isc.count must beGreaterThanOrEqualTo(1L)
     }
 
@@ -65,7 +65,7 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
       val results = statsIteratorProcess.execute(fs.getFeatures(query), "EnumeratedHistogram(id)", encode = true)
       val sf = results.features().next
 
-      val eh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
+      val eh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
       eh.frequencyMap.size mustEqual 150
       eh.frequencyMap(0) mustEqual 1
       eh.frequencyMap(149) mustEqual 1
@@ -76,7 +76,7 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
       val results = statsIteratorProcess.execute(fs.getFeatures(query), "RangeHistogram(id,5,10,15)", encode = true)
       val sf = results.features().next
 
-      val rh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[RangeHistogram[java.lang.Integer]]
+      val rh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[RangeHistogram[java.lang.Integer]]
       rh.bins.length mustEqual 5
       rh.bins(rh.bins.getIndex(10)) mustEqual 1
       rh.bins(rh.bins.getIndex(11)) mustEqual 1
@@ -90,7 +90,7 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
         "MinMax(attr);IteratorStackCounter;EnumeratedHistogram(id);RangeHistogram(id,5,10,15)", encode = true)
       val sf = results.features().next
 
-      val seqStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[SeqStat]
+      val seqStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[SeqStat]
       val stats = seqStat.stats
       stats.size mustEqual 4
 
@@ -125,7 +125,7 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
         "MinMax(attr);IteratorStackCounter;EnumeratedHistogram(id);RangeHistogram(id,5,10,15)", encode = true)
       val sf = results.features().next
 
-      val seqStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[SeqStat]
+      val seqStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[SeqStat]
       val stats = seqStat.stats
       stats.size mustEqual 4
 

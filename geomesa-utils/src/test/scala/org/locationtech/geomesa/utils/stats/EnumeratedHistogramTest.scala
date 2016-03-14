@@ -11,11 +11,13 @@ package org.locationtech.geomesa.utils.stats
 import java.util.Date
 
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.utils.geotools.GeoToolsDateFormat
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
 class EnumeratedHistogramTest extends Specification with StatTestHelper {
+
   sequential
 
   "EnumeratedHistogram stat" should {
@@ -24,8 +26,8 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         val stat = Stat(sft, "EnumeratedHistogram(dtg)")
         val eh = stat.asInstanceOf[EnumeratedHistogram[Date]]
 
-        val date1 = Stat.dateFormat.parseDateTime("2012-01-01T00:00:00.000Z").toDate
-        val date2 = Stat.dateFormat.parseDateTime("2012-01-01T23:00:00.000Z").toDate
+        val date1 = GeoToolsDateFormat.parseDateTime("2012-01-01T00:00:00.000Z").toDate
+        val date2 = GeoToolsDateFormat.parseDateTime("2012-01-01T23:00:00.000Z").toDate
 
         eh.frequencyMap.size mustEqual 0
         eh.isEmpty must beFalse
@@ -43,8 +45,8 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         eh.frequencyMap(date2) mustEqual 4
 
         "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(eh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[EnumeratedHistogram[Date]]
+          val packed   = StatSerialization.pack(eh, sft)
+          val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[EnumeratedHistogram[Date]]
 
           unpacked.toJson() mustEqual eh.toJson()
         }
@@ -95,8 +97,8 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         eh.frequencyMap(1) mustEqual 1
 
         "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(eh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
+          val packed   = StatSerialization.pack(eh, sft)
+          val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
 
           unpacked.toJson() mustEqual eh.toJson()
         }
@@ -145,8 +147,8 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         eh.frequencyMap(1L) mustEqual 1
 
         "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(eh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[EnumeratedHistogram[java.lang.Long]]
+          val packed   = StatSerialization.pack(eh, sft)
+          val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[EnumeratedHistogram[java.lang.Long]]
 
           unpacked.toJson() mustEqual eh.toJson()
         }
@@ -195,8 +197,8 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         eh.frequencyMap(1.0) mustEqual 1
 
         "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(eh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[EnumeratedHistogram[java.lang.Double]]
+          val packed   = StatSerialization.pack(eh, sft)
+          val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[EnumeratedHistogram[java.lang.Double]]
 
           unpacked.toJson() mustEqual eh.toJson()
         }
@@ -245,8 +247,8 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         eh.frequencyMap(1.0f) mustEqual 1
 
         "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(eh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[EnumeratedHistogram[java.lang.Float]]
+          val packed   = StatSerialization.pack(eh, sft)
+          val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[EnumeratedHistogram[java.lang.Float]]
 
           unpacked.toJson() mustEqual eh.toJson()
         }

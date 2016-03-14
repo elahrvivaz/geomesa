@@ -104,7 +104,7 @@ case class QueryPlanner(sft: SimpleFeatureType,
     }
 
     def reduce(iter: SFIter): SFIter = if (query.getHints.isStatsIteratorQuery) {
-      KryoLazyStatsIterator.reduceFeatures(iter, query)
+      KryoLazyStatsIterator.reduceFeatures(iter, query, sft)
     } else if (query.getHints.isMapAggregatingQuery) {
       KryoLazyMapAggregatingIterator.reduceMapAggregationFeatures(iter, query)
     } else {
