@@ -22,13 +22,13 @@ trait StatTestHelper {
 
   val features = (0 until 100).toArray.map {
     i => SimpleFeatureBuilder.build(sft,
-      Array("abc", i, i, i, i, "POINT(-77 38)",
+      Array("abc", i, i, i, i, s"POINT(-$i ${i / 2})",
         Stat.dateFormat.parseDateTime(s"2012-01-01T${i%24}:00:00.000Z").toDate).asInstanceOf[Array[AnyRef]], i.toString)
   }
 
   val features2 = (100 until 200).toArray.map {
     i => SimpleFeatureBuilder.build(sft,
-      Array("abc", i, i, i, i, "POINT(-77 38)",
+      Array("abc", i, i, i, i, s"POINT(${i -20} ${i / 2 - 20})",
         Stat.dateFormat.parseDateTime(s"2012-01-02T${i%24}:00:00.000Z").toDate).asInstanceOf[Array[AnyRef]], i.toString)
   }
 }

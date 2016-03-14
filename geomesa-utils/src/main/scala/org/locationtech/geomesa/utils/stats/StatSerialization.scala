@@ -10,9 +10,11 @@ package org.locationtech.geomesa.utils.stats
 
 import java.nio.ByteBuffer
 import java.util.Date
-
+import java.lang.{Long => jLong, Double => jDouble, Float => jFloat}
 import com.google.common.primitives.Bytes
+import com.vividsolutions.jts.geom.Geometry
 import org.locationtech.geomesa.utils.stats.MinMaxHelper._
+import org.locationtech.geomesa.utils.text.WKTUtils
 
 /**
  * Stats are serialized as a byte array where the first byte indicates which type of stat is present.
@@ -66,29 +68,29 @@ object StatSerialization {
         new MinMax[Date](attrIndex, attrTypeString,
           Stat.javaDateFormat.parseDateTime(min).toDate, Stat.javaDateFormat.parseDateTime(max).toDate)
       }
-    } else if (attrType == classOf[java.lang.Integer]) {
+    } else if (attrType == classOf[Integer]) {
       if (min == "null") {
-        new MinMax[java.lang.Integer](attrIndex, attrTypeString, MinMaxInt.min, MinMaxInt.max)
+        new MinMax[Integer](attrIndex, attrTypeString, MinMaxInt.min, MinMaxInt.max)
       } else {
-        new MinMax[java.lang.Integer](attrIndex, attrTypeString, min.toInt, max.toInt)
+        new MinMax[Integer](attrIndex, attrTypeString, min.toInt, max.toInt)
       }
-    } else if (attrType == classOf[java.lang.Long]) {
+    } else if (attrType == classOf[jLong]) {
       if (min == "null") {
-        new MinMax[java.lang.Long](attrIndex, attrTypeString, MinMaxLong.min, MinMaxLong.max)
+        new MinMax[jLong](attrIndex, attrTypeString, MinMaxLong.min, MinMaxLong.max)
       } else {
-        new MinMax[java.lang.Long](attrIndex, attrTypeString, min.toLong, max.toLong)
+        new MinMax[jLong](attrIndex, attrTypeString, min.toLong, max.toLong)
       }
-    } else if (attrType == classOf[java.lang.Float]) {
+    } else if (attrType == classOf[jFloat]) {
       if (min == "null") {
-        new MinMax[java.lang.Float](attrIndex, attrTypeString, MinMaxFloat.min, MinMaxFloat.max)
+        new MinMax[jFloat](attrIndex, attrTypeString, MinMaxFloat.min, MinMaxFloat.max)
       } else {
-        new MinMax[java.lang.Float](attrIndex, attrTypeString, min.toFloat, max.toFloat)
+        new MinMax[jFloat](attrIndex, attrTypeString, min.toFloat, max.toFloat)
       }
-    } else if (attrType == classOf[java.lang.Double]) {
+    } else if (attrType == classOf[jDouble]) {
       if (min == "null") {
-        new MinMax[java.lang.Double](attrIndex, attrTypeString, MinMaxDouble.min, MinMaxDouble.max)
+        new MinMax[jDouble](attrIndex, attrTypeString, MinMaxDouble.min, MinMaxDouble.max)
       } else {
-        new MinMax[java.lang.Double](attrIndex, attrTypeString, min.toDouble, max.toDouble)
+        new MinMax[jDouble](attrIndex, attrTypeString, min.toDouble, max.toDouble)
       }
     } else {
       throw new Exception(s"Cannot unpack MinMax due to invalid type: $attrType")
@@ -101,7 +103,7 @@ object StatSerialization {
 
   protected[stats] def unpackIteratorStackCounter(bytes: Array[Byte]): IteratorStackCounter = {
     val stat = new IteratorStackCounter()
-    stat.count = java.lang.Long.parseLong(new String(bytes))
+    stat.count = jLong.parseLong(new String(bytes))
     stat
   }
 
@@ -140,24 +142,24 @@ object StatSerialization {
           eh.frequencyMap.put(splitKeyValuePair(0).toInt, splitKeyValuePair(1).toLong)
       }
       eh
-    } else if (attrType == classOf[java.lang.Long]) {
-      val eh = new EnumeratedHistogram[java.lang.Long](attrIndex, attrTypeString)
+    } else if (attrType == classOf[jLong]) {
+      val eh = new EnumeratedHistogram[jLong](attrIndex, attrTypeString)
       keyValues.foreach {
         case (keyValuePair) =>
           val splitKeyValuePair = keyValuePair.split("->")
           eh.frequencyMap.put(splitKeyValuePair(0).toLong, splitKeyValuePair(1).toLong)
       }
       eh
-    } else if (attrType == classOf[java.lang.Float]) {
-      val eh = new EnumeratedHistogram[java.lang.Float](attrIndex, attrTypeString)
+    } else if (attrType == classOf[jFloat]) {
+      val eh = new EnumeratedHistogram[jFloat](attrIndex, attrTypeString)
       keyValues.foreach {
         case (keyValuePair) =>
           val splitKeyValuePair = keyValuePair.split("->")
           eh.frequencyMap.put(splitKeyValuePair(0).toFloat, splitKeyValuePair(1).toLong)
       }
       eh
-    } else if (attrType == classOf[java.lang.Double]) {
-      val eh = new EnumeratedHistogram[java.lang.Double](attrIndex, attrTypeString)
+    } else if (attrType == classOf[jDouble]) {
+      val eh = new EnumeratedHistogram[jDouble](attrIndex, attrTypeString)
       keyValues.foreach {
         case (keyValuePair) =>
           val splitKeyValuePair = keyValuePair.split("->")
@@ -187,27 +189,28 @@ object StatSerialization {
     val counts = split(5).split(",").map(_.toLong)
 
     val attrType = Class.forName(attrTypeString)
-    val bounds = if (attrType == classOf[Date]) {
-      (Stat.javaDateFormat.parseDateTime(lowerEndpoint).toDate, Stat.javaDateFormat.parseDateTime(upperEndpoint).toDate)
-//      keyValues.foreach {
-//        case (keyValuePair) =>
-//          val splitKeyValuePair = keyValuePair.split("->")
-//          rh.histogram.put(Stat.javaDateFormat.parseDateTime(splitKeyValuePair(0)).toDate, splitKeyValuePair(1).toLong)
-//      }
-//      rh
+    val histogram = if (attrType == classOf[Date]) {
+      val bounds = (Stat.javaDateFormat.parseDateTime(lowerEndpoint).toDate, Stat.javaDateFormat.parseDateTime(upperEndpoint).toDate)
+      new RangeHistogram[Date](attrIndex, attrTypeString, numBins, bounds)
     } else if (attrType == classOf[Integer]) {
-      (java.lang.Integer.parseInt(lowerEndpoint), java.lang.Integer.parseInt(upperEndpoint))
-    } else if (attrType == classOf[java.lang.Long]) {
-      (java.lang.Long.parseLong(lowerEndpoint), java.lang.Long.parseLong(upperEndpoint))
-    } else if (attrType == classOf[java.lang.Float]) {
-      (java.lang.Float.parseFloat(lowerEndpoint), java.lang.Float.parseFloat(upperEndpoint))
-    } else if (attrType == classOf[java.lang.Double]) {
-      (java.lang.Double.parseDouble(lowerEndpoint), java.lang.Double.parseDouble(upperEndpoint))
+      val bounds = (new Integer(lowerEndpoint), new Integer(upperEndpoint))
+      new RangeHistogram[Integer](attrIndex, attrTypeString, numBins, bounds)
+    } else if (attrType == classOf[jLong]) {
+      val bounds = (new jLong(lowerEndpoint), new jLong(upperEndpoint))
+      new RangeHistogram[jLong](attrIndex, attrTypeString, numBins, bounds)
+    } else if (attrType == classOf[jFloat]) {
+      val bounds = (new jFloat(lowerEndpoint), new jFloat(upperEndpoint))
+      new RangeHistogram[jFloat](attrIndex, attrTypeString, numBins, bounds)
+    } else if (attrType == classOf[jDouble]) {
+      val bounds = (new jDouble(lowerEndpoint), new jDouble(upperEndpoint))
+      new RangeHistogram[jDouble](attrIndex, attrTypeString, numBins, bounds)
+    } else if (classOf[Geometry].isAssignableFrom(attrType)) {
+      val bounds = (WKTUtils.read(lowerEndpoint), WKTUtils.read(upperEndpoint))
+      new RangeHistogram[Geometry](attrIndex, attrTypeString, numBins, bounds)
     } else {
       throw new Exception(s"Cannot unpack RangeHistogram due to invalid type: $attrType")
     }
 
-    val histogram = new RangeHistogram[Any](attrIndex, attrTypeString, numBins, bounds)
     histogram.bins.add(counts)
     histogram
   }

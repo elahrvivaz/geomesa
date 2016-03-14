@@ -44,12 +44,4 @@ class EnumeratedHistogram[T](val attrIndex: Int,
   }
 
   override def clear(): Unit = frequencyMap.clear()
-
-  override def equals(obj: Any): Boolean = {
-    obj match {
-      case eh: EnumeratedHistogram[T] =>
-        attrIndex == eh.attrIndex && attrType == eh.attrType && frequencyMap == eh.frequencyMap
-      case _ => false
-    }
-  }
 }

@@ -31,11 +31,4 @@ class SeqStat(val stats: Seq[Stat]) extends Stat {
   override def toJson(): String = stats.map(_.toJson()).mkString("[ ", ", ", " ]")
 
   override def clear(): Unit = stats.foreach(_.clear())
-
-  override def equals(obj: Any): Boolean = {
-    obj match {
-      case seqStat: SeqStat => stats == seqStat.stats
-      case _ => false
-    }
-  }
 }

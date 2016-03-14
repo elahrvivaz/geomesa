@@ -49,15 +49,5 @@ class RangeHistogram[T](val attrIndex: Int,
 
   override def clear(): Unit = bins.clear()
 
-  override def equals(obj: Any): Boolean = {
-    obj match {
-      case rh: RangeHistogram[T] =>
-        attrIndex == rh.attrIndex &&
-            attrType == rh.attrType &&
-            numBins == rh.numBins &&
-            endpoints == rh.endpoints &&
-            bins == rh.bins
-      case _ => false
-    }
-  }
+  override def toString: String = s"RangeHistogram[${toJson()}]"
 }

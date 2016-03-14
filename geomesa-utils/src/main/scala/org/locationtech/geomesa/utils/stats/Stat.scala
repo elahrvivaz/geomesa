@@ -11,8 +11,10 @@ package org.locationtech.geomesa.utils.stats
 import java.lang.{Double => jDouble, Float => jFloat, Long => jLong}
 import java.util.Date
 
+import com.vividsolutions.jts.geom.Geometry
 import org.joda.time.format.DateTimeFormat
 import org.locationtech.geomesa.utils.stats.MinMaxHelper._
+import org.locationtech.geomesa.utils.text.{EnhancedTokenParsers, WKTUtils}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.util.parsing.combinator.RegexParsers
@@ -52,6 +54,7 @@ trait Stat {
    *
    * @return stat serialized as a json string
    */
+  // noinspection AccessorLikeMethodIsEmptyParen
   def toJson(): String
 
   /**
@@ -88,10 +91,9 @@ object Stat {
 
   def apply(sft: SimpleFeatureType, s: String) = new StatParser(sft).parse(s)
 
-  class StatParser(sft: SimpleFeatureType) extends RegexParsers {
-    val attributeNameRegex = """\w+""".r
+  class StatParser(sft: SimpleFeatureType) extends RegexParsers with EnhancedTokenParsers {
     val numBinRegex = """[1-9][0-9]*""".r // any non-zero positive int
-    val nonEmptyRegex = """[^,)]+""".r
+    val argument = quotedString | "\\w+".r
     val dateFormat = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
 
     /**
@@ -109,7 +111,7 @@ object Stat {
     }
 
     def minMaxParser: Parser[MinMax[_]] = {
-      "MinMax(" ~> attributeNameRegex <~ ")" ^^ {
+      "MinMax(" ~> argument <~ ")" ^^ {
         case attribute =>
           val attrIndex = getAttrIndex(attribute)
           val attrType = sft.getType(attribute).getBinding
@@ -136,7 +138,7 @@ object Stat {
     }
 
     def enumeratedHistogramParser: Parser[EnumeratedHistogram[_]] = {
-      "EnumeratedHistogram(" ~> attributeNameRegex <~ ")" ^^ {
+      "EnumeratedHistogram(" ~> argument <~ ")" ^^ {
         case attribute =>
           val attrIndex = getAttrIndex(attribute)
           val attrType = sft.getType(attribute).getBinding
@@ -159,23 +161,36 @@ object Stat {
     }
 
     def rangeHistogramParser: Parser[RangeHistogram[_]] = {
-      "RangeHistogram(" ~> attributeNameRegex ~ "," ~ numBinRegex ~ "," ~ nonEmptyRegex ~ "," ~ nonEmptyRegex <~ ")" ^^ {
+      "RangeHistogram(" ~> argument ~ "," ~ numBinRegex ~ "," ~ argument ~ "," ~ argument <~ ")" ^^ {
         case attribute ~ "," ~ numBins ~ "," ~ lowerEndpoint ~ "," ~ upperEndpoint =>
           val attrIndex = getAttrIndex(attribute)
           val attrType = sft.getType(attribute).getBinding
           val attrTypeString = attrType.getName
 
           if (attrType == classOf[Date]) {
-            new RangeHistogram[Date](attrIndex, attrTypeString, numBins.toInt,
-              (dateFormat.parseDateTime(lowerEndpoint).toDate, dateFormat.parseDateTime(upperEndpoint).toDate))
+            val lower = dateFormat.parseDateTime(lowerEndpoint).toDate
+            val upper = dateFormat.parseDateTime(upperEndpoint).toDate
+            new RangeHistogram[Date](attrIndex, attrTypeString, numBins.toInt, (lower, upper))
           } else if (attrType == classOf[Integer]) {
-            new RangeHistogram[Integer](attrIndex, attrTypeString, numBins.toInt, (lowerEndpoint.toInt, upperEndpoint.toInt))
+            val lower = lowerEndpoint.toInt
+            val upper = upperEndpoint.toInt
+            new RangeHistogram[Integer](attrIndex, attrTypeString, numBins.toInt, (lower, upper))
           } else if (attrType == classOf[jLong]) {
-            new RangeHistogram[jLong](attrIndex, attrTypeString, numBins.toInt, (lowerEndpoint.toLong, upperEndpoint.toLong))
+            val lower = lowerEndpoint.toLong
+            val upper = upperEndpoint.toLong
+            new RangeHistogram[jLong](attrIndex, attrTypeString, numBins.toInt, (lower, upper))
           } else if (attrType == classOf[jDouble]) {
-            new RangeHistogram[jDouble](attrIndex, attrTypeString, numBins.toInt, (lowerEndpoint.toDouble, upperEndpoint.toDouble))
+            val lower = lowerEndpoint.toDouble
+            val upper = upperEndpoint.toDouble
+            new RangeHistogram[jDouble](attrIndex, attrTypeString, numBins.toInt, (lower, upper))
           } else if (attrType == classOf[jFloat]) {
-            new RangeHistogram[jFloat](attrIndex, attrTypeString, numBins.toInt, (lowerEndpoint.toFloat, upperEndpoint.toFloat))
+            val lower = lowerEndpoint.toFloat
+            val upper = upperEndpoint.toFloat
+            new RangeHistogram[jFloat](attrIndex, attrTypeString, numBins.toInt, (lower, upper))
+          } else if (classOf[Geometry].isAssignableFrom(attrType )) {
+            val lower = WKTUtils.read(lowerEndpoint)
+            val upper = WKTUtils.read(upperEndpoint)
+            new RangeHistogram[Geometry](attrIndex, attrTypeString, numBins.toInt, (lower, upper))
           } else {
             throw new Exception(s"Cannot create stat for invalid type: $attrType for attribute: $attribute")
           }
@@ -195,7 +210,7 @@ object Stat {
       parseAll(statsParser, s) match {
         case Success(result, _) => result
         case failure: NoSuccess =>
-          throw new Exception(s"Could not parse the stats string: $s")
+          throw new Exception(s"Could not parse the stats string: $s\n${failure.msg}")
       }
     }
   }

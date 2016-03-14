@@ -77,7 +77,7 @@ class StatTest extends Specification with StatTestHelper {
         val packed   = StatSerialization.pack(stat)
         val unpacked = StatSerialization.unpack(packed).asInstanceOf[SeqStat]
 
-        unpacked mustEqual stat.asInstanceOf[SeqStat]
+        unpacked.toJson() mustEqual stat.asInstanceOf[SeqStat].toJson()
       }
 
       "combine two SeqStats" in {

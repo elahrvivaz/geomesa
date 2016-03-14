@@ -13,6 +13,7 @@ import java.util.Date
 
 import com.vividsolutions.jts.geom.Geometry
 import org.locationtech.geomesa.utils.geohash.GeoHash
+import org.locationtech.geomesa.utils.text.WKTUtils
 
 import scala.reflect.ClassTag
 
@@ -96,6 +97,8 @@ object BinnedArray {
 
 class BinnedIntegerArray(length: Int, bounds: (Integer, Integer)) extends BinnedArray[Integer](length, bounds) {
 
+  require(bounds._1 < bounds._2, s"Upper bound must be greater than lower bound: lower=${bounds._1} upper=${bounds._2}")
+
   private val binSize = (bounds._2 - bounds._1).toFloat / length
 
   override def getIndex(value: Integer): Int = {
@@ -106,6 +109,8 @@ class BinnedIntegerArray(length: Int, bounds: (Integer, Integer)) extends Binned
 }
 
 class BinnedLongArray(length: Int, bounds: (jLong, jLong)) extends BinnedArray[jLong](length, bounds) {
+
+  require(bounds._1 < bounds._2, s"Upper bound must be greater than lower bound: lower=${bounds._1} upper=${bounds._2}")
 
   private val binSize = (bounds._2 - bounds._1).toDouble / length
 
@@ -119,6 +124,8 @@ class BinnedLongArray(length: Int, bounds: (jLong, jLong)) extends BinnedArray[j
 
 class BinnedFloatArray(length: Int, bounds: (jFloat, jFloat)) extends BinnedArray[jFloat](length, bounds) {
 
+  require(bounds._1 < bounds._2, s"Upper bound must be greater than lower bound: lower=${bounds._1} upper=${bounds._2}")
+
   private val binSize = (bounds._2 - bounds._1) / length
 
   override def getIndex(value: jFloat): Int = {
@@ -129,6 +136,8 @@ class BinnedFloatArray(length: Int, bounds: (jFloat, jFloat)) extends BinnedArra
 }
 
 class BinnedDoubleArray(length: Int, bounds: (jDouble, jDouble)) extends BinnedArray[jDouble](length, bounds) {
+
+  require(bounds._1 < bounds._2, s"Upper bound must be greater than lower bound: lower=${bounds._1} upper=${bounds._2}")
 
   private val binSize = (bounds._2 - bounds._1) / length
 
@@ -144,13 +153,17 @@ class BinnedDateArray(length: Int, bounds: (Date, Date)) extends BinnedArray[Dat
   private val zero = bounds._1.getTime
   private val binSize = (bounds._2.getTime - zero).toFloat / length
 
+  require(zero < bounds._2.getTime, s"Upper bound must be after lower bound: lower=${bounds._1} upper=${bounds._2}")
+
   override def getIndex(value: Date): Int = math.floor((value.getTime - zero) / binSize).toInt
 }
 
 class BinnedGeometryArray(length: Int, bounds: (Geometry, Geometry)) extends BinnedArray[Geometry](length, bounds) {
 
   val zero = getGeoHash(bounds._1)
-  val max = getGeoHash(bounds._2)
+  val max  = getGeoHash(bounds._2)
+
+  require(zero < max, s"GeoHashes aren't ordered: lower=${WKTUtils.write(bounds._1)}:$zero upper=${WKTUtils.write(bounds._2)}:$max")
 
   private val binSize = (max - zero).toFloat / length
 
@@ -163,7 +176,7 @@ class BinnedGeometryArray(length: Int, bounds: (Geometry, Geometry)) extends Bin
 
   private def getGeoHash(value: Geometry): Int = {
     val centroid = value.getCentroid
-    val gh = GeoHash(centroid.getX, centroid.getY).hash
-    Integer.parseInt(gh, 16)
+    val gh = GeoHash(centroid.getX, centroid.getY, 15).hash
+    Integer.parseInt(gh, 36)
   }
 }

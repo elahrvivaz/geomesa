@@ -28,7 +28,7 @@ class IteratorStackCounterTest extends Specification with StatTestHelper {
         val packed   = StatSerialization.pack(isc)
         val unpacked = StatSerialization.unpack(packed).asInstanceOf[IteratorStackCounter]
 
-        unpacked mustEqual isc
+        unpacked.toJson() mustEqual isc.toJson()
       }
 
       "combine two IteratorStackCounters" in {

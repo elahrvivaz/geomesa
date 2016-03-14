@@ -29,11 +29,4 @@ class IteratorStackCounter(var count: Long = 1) extends Stat {
   override def toJson(): String = s"""{ "count": $count }"""
 
   override def clear(): Unit = count = 1L
-
-  override def equals(obj: Any): Boolean = {
-    obj match {
-      case isc: IteratorStackCounter => count == isc.count
-      case _ => false
-    }
-  }
 }

@@ -106,15 +106,4 @@ class MinMax[T <: Comparable[T]](val attrIndex: Int, val attrType: String, var m
     min = minMaxDefaults.min
     max = minMaxDefaults.max
   }
-
-  override def equals(obj: Any): Boolean = {
-    obj match {
-      case minmax: MinMax[T] =>
-        attrIndex == minmax.attrIndex &&
-            attrType == minmax.attrType &&
-            min == minmax.min &&
-            max == minmax.max
-      case _ => false
-    }
-  }
 }

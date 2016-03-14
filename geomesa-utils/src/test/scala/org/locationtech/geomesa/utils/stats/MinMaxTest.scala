@@ -39,7 +39,7 @@ class        MinMaxTest extends Specification with StatTestHelper {
           val packed   = StatSerialization.pack(minMax)
           val unpacked = StatSerialization.unpack(packed).asInstanceOf[MinMax[Date]]
 
-          unpacked mustEqual minMax
+          unpacked.toJson() mustEqual minMax.toJson()
         }
 
         "serialize and deserialize empty MinMax" in {
@@ -48,7 +48,7 @@ class        MinMaxTest extends Specification with StatTestHelper {
           val packed = StatSerialization.pack(minMax)
           val unpacked = StatSerialization.unpack(packed).asInstanceOf[MinMax[Date]]
 
-          unpacked mustEqual minMax
+          unpacked.toJson() mustEqual minMax.toJson()
         }
 
         "combine two MinMaxes" in {
@@ -101,7 +101,7 @@ class        MinMaxTest extends Specification with StatTestHelper {
           val packed   = StatSerialization.pack(minMax)
           val unpacked = StatSerialization.unpack(packed).asInstanceOf[MinMax[Integer]]
 
-          unpacked mustEqual minMax
+          unpacked.toJson() mustEqual minMax.toJson()
         }
 
         "serialize and deserialize empty MinMax" in {
@@ -110,7 +110,7 @@ class        MinMaxTest extends Specification with StatTestHelper {
           val packed   = StatSerialization.pack(minMax)
           val unpacked = StatSerialization.unpack(packed).asInstanceOf[MinMax[Integer]]
 
-          unpacked mustEqual minMax
+          unpacked.toJson() mustEqual minMax.toJson()
         }
 
         "combine two MinMaxes" in {
@@ -163,7 +163,7 @@ class        MinMaxTest extends Specification with StatTestHelper {
           val packed   = StatSerialization.pack(minMax)
           val unpacked = StatSerialization.unpack(packed).asInstanceOf[MinMax[java.lang.Long]]
 
-          unpacked mustEqual minMax
+          unpacked.toJson() mustEqual minMax.toJson()
         }
 
         "serialize and deserialize empty MinMax" in {
@@ -172,7 +172,7 @@ class        MinMaxTest extends Specification with StatTestHelper {
           val packed   = StatSerialization.pack(minMax)
           val unpacked = StatSerialization.unpack(packed).asInstanceOf[MinMax[java.lang.Long]]
 
-          unpacked mustEqual minMax
+          unpacked.toJson() mustEqual minMax.toJson()
         }
 
         "combine two MinMaxes" in {
@@ -225,7 +225,7 @@ class        MinMaxTest extends Specification with StatTestHelper {
           val packed   = StatSerialization.pack(minMax)
           val unpacked = StatSerialization.unpack(packed).asInstanceOf[MinMax[java.lang.Double]]
 
-          unpacked mustEqual minMax
+          unpacked.toJson() mustEqual minMax.toJson()
         }
 
         "serialize and deserialize empty MinMax" in {
@@ -234,7 +234,7 @@ class        MinMaxTest extends Specification with StatTestHelper {
           val packed   = StatSerialization.pack(minMax)
           val unpacked = StatSerialization.unpack(packed).asInstanceOf[MinMax[java.lang.Double]]
 
-          unpacked mustEqual minMax
+          unpacked.toJson() mustEqual minMax.toJson()
         }
 
         "combine two MinMaxes" in {
@@ -287,7 +287,7 @@ class        MinMaxTest extends Specification with StatTestHelper {
           val packed   = StatSerialization.pack(minMax)
           val unpacked = StatSerialization.unpack(packed).asInstanceOf[MinMax[java.lang.Float]]
 
-          unpacked mustEqual minMax
+          unpacked.toJson() mustEqual minMax.toJson()
         }
 
         "serialize and deserialize empty MinMax" in {
@@ -296,7 +296,7 @@ class        MinMaxTest extends Specification with StatTestHelper {
           val packed   = StatSerialization.pack(minMax)
           val unpacked = StatSerialization.unpack(packed).asInstanceOf[MinMax[java.lang.Float]]
 
-          unpacked mustEqual minMax
+          unpacked.toJson() mustEqual minMax.toJson()
         }
 
         "combine two MinMaxes" in {
