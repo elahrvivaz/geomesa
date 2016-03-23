@@ -11,7 +11,6 @@ package org.locationtech.geomesa.utils.stats
 import org.opengis.feature.simple.SimpleFeature
 
 import scala.reflect.ClassTag
-import scala.util.parsing.json.JSONArray
 
 /**
  * The range histogram's state is stored in an indexed array, where the index is the bin number
@@ -44,9 +43,7 @@ class RangeHistogram[T](val attribute: Int,
     bins.add(other.bins.counts); this
   }
 
-  override def toJson(): String = new JSONArray(bins.counts.toList).toString()
+  override def toJson(): String = s"""{ "bins" : [ ${bins.counts.mkString(", ")} ] }"""
 
   override def clear(): Unit = bins.clear()
-
-  override def toString: String = s"RangeHistogram[${toJson()}]"
 }

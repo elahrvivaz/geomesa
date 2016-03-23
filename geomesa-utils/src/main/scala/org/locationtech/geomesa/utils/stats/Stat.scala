@@ -148,6 +148,10 @@ object Stat {
       i
     }
 
+    def countParser: Parser[CountStat] = {
+      "Count(" ~> argument <~ ")" ^^ { cql => new CountStat(cql) }
+    }
+
     def minMaxParser: Parser[MinMax[_]] = {
       "MinMax(" ~> argument <~ ")" ^^ {
         case attribute =>
@@ -198,7 +202,7 @@ object Stat {
             new EnumeratedHistogram[jDouble](attrIndex)
           } else if (classOf[Geometry].isAssignableFrom(attrType )) {
             new EnumeratedHistogram[Geometry](attrIndex)
-          }else {
+          } else {
             throw new Exception(s"Cannot create stat for invalid type: $attrType for attribute: $attribute")
           }
       }
@@ -243,7 +247,7 @@ object Stat {
     }
 
     def statParser: Parser[Stat] =
-      minMaxParser | iteratorStackParser | enumeratedHistogramParser | rangeHistogramParser
+      countParser | minMaxParser | iteratorStackParser | enumeratedHistogramParser | rangeHistogramParser
 
     def statsParser: Parser[Stat] = {
       rep1sep(statParser, ";") ^^ {

@@ -10,9 +10,10 @@ package org.locationtech.geomesa.utils.stats
 
 import java.lang.{Double => jDouble, Float => jFloat, Long => jLong}
 import java.nio.ByteBuffer
+import java.nio.charset.Charset
 import java.util.Date
 
-import com.google.common.primitives.Bytes
+import com.google.common.primitives.{Bytes, Longs}
 import com.vividsolutions.jts.geom.Geometry
 import org.locationtech.geomesa.utils.stats.MinMaxHelper._
 import org.opengis.feature.simple.SimpleFeatureType
@@ -26,32 +27,100 @@ import scala.collection.mutable.ArrayBuffer
  */
 object StatSerialization {
 
+  private val Utf8 = Charset.forName("UTF-8")
+
   // bytes indicating the type of stat
-  val MINMAX_BYTE: Byte = '0'
-  val ISC_BYTE: Byte = '1'
-  val EH_BYTE: Byte = '2'
-  val RH_BYTE: Byte = '3'
+  private val SeqByte: Byte    = '0'
+  private val CountByte: Byte  = '1'
+  private val MinMaxByte: Byte = '2'
+  private val IscByte: Byte    = '3'
+  private val EhByte: Byte     = '4'
+  private val RhByte: Byte     = '5'
+
+  private val SeqByteArray    = Array(SeqByte)
+  private val CountByteArray  = Array(CountByte)
+  private val MinMaxByteArray = Array(MinMaxByte)
+  private val IscByteArray    = Array(IscByte)
+  private val EhByteArray     = Array(EhByte)
+  private val RhByteArray     = Array(RhByte)
 
   /**
-   * Fully serializes a stat by formatting the byte array with the "kind" byte
-   *
-   * @param kind byte indicating the type of stat
-   * @param bytes serialized stat
-   * @return fully serialized stat
-   */
-  private def serializeStat(kind: Byte, bytes: Array[Byte]): Array[Byte] = {
-    val size = ByteBuffer.allocate(4).putInt(bytes.length).array
-    Bytes.concat(Array(kind), size, bytes)
+    * Uses individual stat pack methods to serialize the stat
+    *
+    * @param stat the given stat to serialize
+    * @return serialized stat
+    */
+  def pack(stat: Stat, sft: SimpleFeatureType): Array[Byte] = {
+    stat match {
+      case s: CountStat              => Bytes.concat(CountByteArray, packCount(s))
+      case s: MinMax[_]              => Bytes.concat(MinMaxByteArray, packMinMax(s, sft))
+      case s: IteratorStackCounter   => Bytes.concat(IscByteArray, packIteratorStackCounter(s))
+      case s: EnumeratedHistogram[_] => Bytes.concat(EhByteArray, packEnumeratedHistogram(s, sft))
+      case s: RangeHistogram[_]      => Bytes.concat(RhByteArray, packRangeHistogram(s, sft))
+      case s: SeqStat                => Bytes.concat(SeqByteArray, packSeqStat(s, sft))
+    }
+  }
+
+  def unpack(bytes: Array[Byte], sft: SimpleFeatureType): Stat = unpack(bytes, sft, 0, bytes.length)
+  /**
+    * Deserializes the stat
+    *
+    * @param bytes the serialized stat
+    * @param sft simple feature type that the stat is operating on
+    * @return deserialized stat
+    */
+  def unpack(bytes: Array[Byte], sft: SimpleFeatureType, offset: Int, length: Int): Stat = {
+    bytes(offset) match {
+      case CountByte  => unpackCount(bytes, offset + 1, length - 1)
+      case MinMaxByte => unpackMinMax(bytes, sft, offset + 1, length - 1)
+      case IscByte    => unpackIteratorStackCounter(bytes, offset + 1, length - 1)
+      case EhByte     => unpackEnumeratedHistogram(bytes, sft, offset + 1, length - 1)
+      case RhByte     => unpackRangeHistogram(bytes, sft, offset + 1, length - 1)
+      case SeqByte    => unpackSeqStat(bytes, sft, offset + 1, length - 1)
+    }
+  }
+
+  private def packSeqStat(stat: SeqStat, sft: SimpleFeatureType): Array[Byte] = {
+    val seq = stat.stats.map { s =>
+      val bytes = pack(s, sft)
+      val size = ByteBuffer.allocate(4).putInt(bytes.length).array
+      Bytes.concat(size, bytes)
+    }
+    Bytes.concat(seq: _*)
+  }
+
+  private def unpackSeqStat(bytes: Array[Byte], sft: SimpleFeatureType, offset: Int, length: Int): SeqStat = {
+    val stats = ArrayBuffer.empty[Stat]
+    val bb = ByteBuffer.wrap(bytes)
+
+    var pos = offset
+    while (pos < offset + length) {
+      bb.position(pos)
+      val size = bb.getInt()
+      stats.append(unpack(bytes, sft, pos + 4, size))
+      pos += (4 + size)
+    }
+
+    new SeqStat(stats)
+  }
+
+  private def packCount(stat: CountStat): Array[Byte] =
+    Bytes.concat(Longs.toByteArray(stat.count), stat.ecql.getBytes(Utf8))
+
+  private def unpackCount(bytes: Array[Byte], offset: Int, length: Int): CountStat = {
+    val ecql = new String(bytes, offset + 8, length - 8, Utf8)
+    val stat = new CountStat(ecql)
+    stat.count = Longs.fromByteArray(bytes.slice(offset, offset + 8))
+    stat
   }
 
   protected [stats] def packMinMax(stat: MinMax[_], sft: SimpleFeatureType): Array[Byte] = {
     val stringify = Stat.stringifier(sft.getDescriptor(stat.attribute).getType.getBinding)
-    val asString = s"${stat.attribute};${stringify(stat.min)};${stringify(stat.max)}"
-    serializeStat(MINMAX_BYTE, asString.getBytes("UTF-8"))
+    s"${stat.attribute};${stringify(stat.min)};${stringify(stat.max)}".getBytes(Utf8)
   }
 
-  protected [stats] def unpackMinMax(bytes: Array[Byte], sft: SimpleFeatureType): MinMax[_] = {
-    val split = new String(bytes, "UTF-8").split(";")
+  protected [stats] def unpackMinMax(bytes: Array[Byte], sft: SimpleFeatureType, offset: Int, length: Int): MinMax[_] = {
+    val split = new String(bytes, offset, length, Utf8).split(";")
 
     val attribute = split(0).toInt
     val minString = split(1)
@@ -116,13 +185,12 @@ object StatSerialization {
     }
   }
 
-  protected [stats] def packISC(stat: IteratorStackCounter): Array[Byte] = {
-    serializeStat(ISC_BYTE, s"${stat.count}".getBytes("UTF-8"))
-  }
+  protected [stats] def packIteratorStackCounter(stat: IteratorStackCounter): Array[Byte] =
+    Longs.toByteArray(stat.count)
 
-  protected [stats] def unpackIteratorStackCounter(bytes: Array[Byte]): IteratorStackCounter = {
+  protected [stats] def unpackIteratorStackCounter(bytes: Array[Byte], offset: Int, length: Int): IteratorStackCounter = {
     val stat = new IteratorStackCounter()
-    stat.count = jLong.parseLong(new String(bytes, "UTF-8"))
+    stat.count = Longs.fromByteArray(bytes.slice(offset, offset + length))
     stat
   }
 
@@ -131,11 +199,12 @@ object StatSerialization {
     val stringify = Stat.stringifier(sft.getDescriptor(stat.attribute).getType.getBinding)
     val keyValues = stat.histogram.map { case (key, count) => s"${stringify(key)}->$count" }.mkString(",")
     sb.append(keyValues)
-    serializeStat(EH_BYTE, sb.toString().getBytes("UTF-8"))
+    sb.toString().getBytes(Utf8)
   }
 
-  protected[stats] def unpackEnumeratedHistogram(bytes: Array[Byte], sft: SimpleFeatureType): EnumeratedHistogram[_] = {
-    val split = new String(bytes).split(";")
+  protected[stats] def unpackEnumeratedHistogram(bytes: Array[Byte], sft: SimpleFeatureType,
+                                                 offset: Int, length: Int): EnumeratedHistogram[_] = {
+    val split = new String(bytes, offset, length, Utf8).split(";")
 
     val attribute = split(0).toInt
     val attributeType = sft.getDescriptor(attribute).getType.getBinding
@@ -175,11 +244,12 @@ object StatSerialization {
     val stringify = Stat.stringifier(sft.getDescriptor(stat.attribute).getType.getBinding)
     val sb = new StringBuilder(s"${stat.attribute};${stat.numBins};${stringify(stat.endpoints._1)};${stringify(stat.endpoints._2)};")
     sb.append(stat.bins.counts.mkString(","))
-    serializeStat(RH_BYTE, sb.toString().getBytes("UTF-8"))
+    sb.toString().getBytes(Utf8)
   }
 
-  protected [stats] def unpackRangeHistogram(bytes: Array[Byte], sft: SimpleFeatureType): RangeHistogram[_] = {
-    val split = new String(bytes, "UTF-8").split(";")
+  protected [stats] def unpackRangeHistogram(bytes: Array[Byte], sft: SimpleFeatureType,
+                                             offset: Int, length: Int): RangeHistogram[_] = {
+    val split = new String(bytes, offset, length, Utf8).split(";")
 
     val attribute = split(0).toInt
     val numBins = split(1).toInt
@@ -211,54 +281,5 @@ object StatSerialization {
 
     stat.bins.add(counts)
     stat
-  }
-
-  /**
-   * Uses individual stat pack methods to serialize the stat
-   *
-   * @param stat the given stat to serialize
-   * @return serialized stat
-   */
-  def pack(stat: Stat, sft: SimpleFeatureType): Array[Byte] = {
-    stat match {
-      case mm: MinMax[_]              => packMinMax(mm, sft)
-      case isc: IteratorStackCounter  => packISC(isc)
-      case eh: EnumeratedHistogram[_] => packEnumeratedHistogram(eh, sft)
-      case rh: RangeHistogram[_]      => packRangeHistogram(rh, sft)
-      case seq: SeqStat               => Bytes.concat(seq.stats.map(pack(_, sft)): _*)
-    }
-  }
-
-  /**
-   * Deserializes the stat
-   *
-   * @param bytes the serialized stat
-   * @param sft simple feature type that the stat is operating on
-   * @return deserialized stat
-   */
-  def unpack(bytes: Array[Byte], sft: SimpleFeatureType): Stat = {
-    val returnStats = ArrayBuffer.empty[Stat]
-    val bb = ByteBuffer.wrap(bytes)
-
-    while (bb.hasRemaining) {
-      val statType = bb.get()
-      val statBytes = Array.ofDim[Byte](bb.getInt()) // stat size
-      bb.get(statBytes)
-
-      val stat = statType match {
-        case MINMAX_BYTE => unpackMinMax(statBytes, sft)
-        case ISC_BYTE    => unpackIteratorStackCounter(statBytes)
-        case EH_BYTE     => unpackEnumeratedHistogram(statBytes, sft)
-        case RH_BYTE     => unpackRangeHistogram(statBytes, sft)
-      }
-
-      returnStats.append(stat)
-    }
-
-    if (returnStats.length == 1) {
-      returnStats.head
-    } else {
-      new SeqStat(returnStats)
-    }
   }
 }
