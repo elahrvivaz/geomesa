@@ -212,8 +212,9 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore) extends GeoMesaStats with Runn
           .filter(_.nonEmpty)
           .map(_.min - DateTimeUtils.currentTimeMillis)
           .filter(_ > 0)
-          .getOrElse(60000L) // default to run again in 60s
+          .getOrElse(60000L) // default to check again in 60s
       es.schedule(this, nextScheduled, TimeUnit.MILLISECONDS)
+      // TODO track failures and don't just keep retrying...
     }
   }
 
@@ -230,7 +231,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore) extends GeoMesaStats with Runn
     val last = ds.metadata.read(typeName, STATS_GENERATION_KEY, cache = false)
         .map(dtFormat.parseDateTime).getOrElse(new DateTime(0, DateTimeZone.UTC))
     val interval = ds.metadata.read(typeName, STATS_INTERVAL_KEY, cache = false).map(_.toInt).getOrElse {
-      ds.metadata.insert(typeName, STATS_INTERVAL_KEY, DefaultUpdateInterval.toString) // note: side effect!
+      ds.metadata.insert(typeName, STATS_INTERVAL_KEY, DefaultUpdateInterval.toString) // note: side effect
       DefaultUpdateInterval
     }
     val next = last.plusMinutes(interval)
@@ -297,7 +298,7 @@ object GeoMesaStats {
 
   val dtFormat = ISODateTimeFormat.dateTime().withZoneUTC()
 
-  val DefaultUpdateInterval = 60000 // in minutes
+  val DefaultUpdateInterval = 360 // in minutes
 
   def lockKey(table: String, typeName: String) = {
     val safeName = GeoMesaTable.hexEncodeNonAlphaNumeric(typeName)
