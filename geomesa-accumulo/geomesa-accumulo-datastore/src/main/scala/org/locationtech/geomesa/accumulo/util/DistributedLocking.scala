@@ -29,7 +29,7 @@ trait DistributedLocking {
    * @param timeOut how long to wait for the lock before throwing an exception, in millis
    * @return the lock
    */
-  protected def lock(key: String, timeOut: Long = 10000): Option[Releasable] = {
+  protected def lock(key: String, timeOut: Long = 120000): Option[Releasable] = {
     if (connector.isInstanceOf[MockConnector]) {
       import DistributedLocking.mockLocks
       val lock = mockLocks.synchronized(mockLocks.getOrElseUpdate(key, new ReentrantLock()))

@@ -83,8 +83,6 @@ package object index {
       def getTransform: Option[(String, SimpleFeatureType)] =
         hints.getTransformDefinition.flatMap(d => hints.getTransformSchema.map((d, _)))
       def isExactCount: Option[Boolean] = Option(hints.get(EXACT_COUNT).asInstanceOf[Boolean])
-      def isConfigured: Boolean = Option(hints.get(CONFIGURED_KEY).asInstanceOf[Boolean]).getOrElse(false)
-      def setConfigured(configured: Boolean): Unit = hints.put(CONFIGURED_KEY, configured)
     }
   }
 
