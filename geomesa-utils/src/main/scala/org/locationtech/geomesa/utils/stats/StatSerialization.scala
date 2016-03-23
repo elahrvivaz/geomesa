@@ -129,7 +129,7 @@ object StatSerialization {
   protected [stats] def packEnumeratedHistogram(stat: EnumeratedHistogram[_], sft: SimpleFeatureType): Array[Byte] = {
     val sb = new StringBuilder(s"${stat.attribute};")
     val stringify = Stat.stringifier(sft.getDescriptor(stat.attribute).getType.getBinding)
-    val keyValues = stat.frequencyMap.map { case (key, count) => s"${stringify(key)}->$count" }.mkString(",")
+    val keyValues = stat.histogram.map { case (key, count) => s"${stringify(key)}->$count" }.mkString(",")
     sb.append(keyValues)
     serializeStat(EH_BYTE, sb.toString().getBytes("UTF-8"))
   }
@@ -138,15 +138,7 @@ object StatSerialization {
     val split = new String(bytes).split(";")
 
     val attribute = split(0).toInt
-    val keyValueStrings = split(1).split(",")
-
     val attributeType = sft.getDescriptor(attribute).getType.getBinding
-    val destringify = Stat.destringifier(attributeType)
-
-    val keyValues = keyValueStrings.map { keyValuePair =>
-      val splitKeyValuePair = keyValuePair.split("->")
-      (destringify(splitKeyValuePair(0)), splitKeyValuePair(1).toLong)
-    }
 
     val stat: EnumeratedHistogram[Any] = if (attributeType == classOf[String]) {
       new EnumeratedHistogram[String](attribute).asInstanceOf[EnumeratedHistogram[Any]]
@@ -166,7 +158,16 @@ object StatSerialization {
       throw new Exception(s"Cannot unpack EnumeratedHistogram due to invalid type: $attributeType")
     }
 
-    stat.frequencyMap ++= keyValues.asInstanceOf[Array[(Any, Long)]]
+    if (split.length > 1) {
+      val destringify = Stat.destringifier(attributeType)
+      val keyValueStrings = split(1).split(",")
+      val keyValues = keyValueStrings.map { keyValuePair =>
+        val splitKeyValuePair = keyValuePair.split("->")
+        (destringify(splitKeyValuePair(0)), splitKeyValuePair(1).toLong)
+      }
+      stat.histogram ++= keyValues.asInstanceOf[Array[(Any, Long)]]
+    }
+
     stat
   }
 
@@ -257,7 +258,7 @@ object StatSerialization {
     if (returnStats.length == 1) {
       returnStats.head
     } else {
-      new SeqStat(returnStats.toSeq)
+      new SeqStat(returnStats)
     }
   }
 }

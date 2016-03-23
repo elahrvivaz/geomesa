@@ -76,10 +76,10 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
       val sf = results.head
 
       val eh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String], sft).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
-      eh.frequencyMap.size mustEqual 150
-      eh.frequencyMap(0) mustEqual 1
-      eh.frequencyMap(149) mustEqual 1
-      eh.frequencyMap(150) mustEqual 0
+      eh.histogram.size mustEqual 150
+      eh.histogram(0) mustEqual 1
+      eh.histogram(149) mustEqual 1
+      eh.histogram(150) mustEqual 0
     }
 
     "work with the RangeHistogram stat" in {
@@ -115,10 +115,10 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
 
       isc.count must beGreaterThanOrEqualTo(1L)
 
-      eh.frequencyMap.size mustEqual 150
-      eh.frequencyMap(0) mustEqual 1
-      eh.frequencyMap(149) mustEqual 1
-      eh.frequencyMap(150) mustEqual 0
+      eh.histogram.size mustEqual 150
+      eh.histogram(0) mustEqual 1
+      eh.histogram(149) mustEqual 1
+      eh.histogram(150) mustEqual 0
 
       rh.bins.length mustEqual 5
       rh.bins(rh.bins.getIndex(10)) mustEqual 1

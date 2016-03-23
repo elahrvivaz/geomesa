@@ -46,7 +46,7 @@ class StatTest extends Specification with StatTestHelper {
       isc.count mustEqual 1
 
       eh.attribute mustEqual longIndex
-      eh.frequencyMap.size mustEqual 0
+      eh.histogram.size mustEqual 0
 
       rh.attribute mustEqual doubleIndex
       rh.bins.length mustEqual 20
@@ -61,9 +61,9 @@ class StatTest extends Specification with StatTestHelper {
 
       isc.count mustEqual 1
 
-      eh.frequencyMap.size mustEqual 100
-      eh.frequencyMap(0L) mustEqual 1
-      eh.frequencyMap(100L) mustEqual 0
+      eh.histogram.size mustEqual 100
+      eh.histogram(0L) mustEqual 1
+      eh.histogram(100L) mustEqual 0
 
       rh.bins.length mustEqual 20
       rh.bins(rh.bins.getIndex(0.0)) mustEqual 10
@@ -97,9 +97,9 @@ class StatTest extends Specification with StatTestHelper {
 
         isc.count mustEqual 2
 
-        eh.frequencyMap.size mustEqual 200
-        eh.frequencyMap(0L) mustEqual 1
-        eh.frequencyMap(100L) mustEqual 1
+        eh.histogram.size mustEqual 200
+        eh.histogram(0L) mustEqual 1
+        eh.histogram(100L) mustEqual 1
 
         rh.bins.length mustEqual 20
         rh.bins(rh.bins.getIndex(0.0)) mustEqual 10
@@ -111,9 +111,9 @@ class StatTest extends Specification with StatTestHelper {
 
         isc2.count mustEqual 1
 
-        eh2.frequencyMap.size mustEqual 100
-        eh2.frequencyMap(0L) mustEqual 0
-        eh2.frequencyMap(100L) mustEqual 1
+        eh2.histogram.size mustEqual 100
+        eh2.histogram(0L) mustEqual 0
+        eh2.histogram(100L) mustEqual 1
 
         rh2.bins.length mustEqual 20
         rh2.bins(rh2.bins.getIndex(0.0)) mustEqual 0
@@ -132,7 +132,7 @@ class StatTest extends Specification with StatTestHelper {
 
           isc.count mustEqual 1
 
-          eh.frequencyMap.size mustEqual 0
+          eh.histogram.size mustEqual 0
 
           rh.bins.length mustEqual 20
           rh.bins(rh.bins.getIndex(0.0)) mustEqual 0
@@ -144,7 +144,7 @@ class StatTest extends Specification with StatTestHelper {
 
           isc2.count mustEqual 1
 
-          eh2.frequencyMap.size mustEqual 0
+          eh2.histogram.size mustEqual 0
 
           rh2.bins.length mustEqual 20
           rh2.bins(rh2.bins.getIndex(0.0)) mustEqual 0
