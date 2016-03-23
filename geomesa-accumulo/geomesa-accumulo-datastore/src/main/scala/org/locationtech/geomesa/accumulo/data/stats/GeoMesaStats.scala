@@ -24,10 +24,8 @@ import org.joda.time.{DateTime, DateTimeUtils, DateTimeZone, Interval}
 import org.locationtech.geomesa.accumulo.data.GeoMesaMetadata._
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
-import org.locationtech.geomesa.accumulo.index.QueryHints
 import org.locationtech.geomesa.accumulo.util.{DistributedLocking, SelfClosingIterator}
 import org.locationtech.geomesa.utils.geotools.{CRS_EPSG_4326, wholeWorldEnvelope}
-import org.locationtech.geomesa.utils.stats.{RangeHistogram, EnumeratedHistogram, MinMax, SeqStat}
 import org.opengis.filter.Filter
 
 /**
@@ -260,7 +258,6 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore) extends GeoMesaStats with Runn
    * @return true if the update was completed, otherwise false
    */
   private def update(typeName: String): Boolean = {
-    import org.locationtech.geomesa.accumulo.iterators.KryoLazyStatsIterator.{STATS, decodeStat}
 
 //    val query = new Query(typeName, Filter.INCLUDE)
 //    query.getHints.put(QueryHints.STATS_KEY, statString)

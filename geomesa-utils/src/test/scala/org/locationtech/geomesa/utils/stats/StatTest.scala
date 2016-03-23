@@ -14,6 +14,7 @@ import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
 class StatTest extends Specification with StatTestHelper {
+
   sequential
 
   "stats" should {
@@ -24,7 +25,6 @@ class StatTest extends Specification with StatTestHelper {
       Stat(sft, "RangeHistogram(foo,10,2012-01-01T00:00:00.000Z,2012-02-01T00:00:00.000Z)") must throwAn[Exception]
       Stat(sft, "MinMax()") must throwAn[Exception]
       Stat(sft, "MinMax(abcd)") must throwAn[Exception]
-      Stat(sft, "MinMax(geom)") must throwAn[Exception]
     }
 
     "create a sequence of stats" in {
@@ -40,8 +40,8 @@ class StatTest extends Specification with StatTestHelper {
       val rh = stats(3).asInstanceOf[RangeHistogram[java.lang.Double]]
 
       minMax.attribute mustEqual intIndex
-      minMax.min mustEqual java.lang.Integer.MAX_VALUE
-      minMax.max mustEqual java.lang.Integer.MIN_VALUE
+      minMax.min must beNull
+      minMax.max must beNull
 
       isc.count mustEqual 1
 
@@ -127,8 +127,8 @@ class StatTest extends Specification with StatTestHelper {
           stat.clear()
           stat2.clear()
 
-          minMax.min mustEqual java.lang.Integer.MAX_VALUE
-          minMax.max mustEqual java.lang.Integer.MIN_VALUE
+          minMax.min must beNull
+          minMax.max must beNull
 
           isc.count mustEqual 1
 
@@ -139,8 +139,8 @@ class StatTest extends Specification with StatTestHelper {
           rh.bins(rh.bins.getIndex(50.0)) mustEqual 0
           rh.bins(rh.bins.getIndex(100.0)) mustEqual 0
 
-          minMax2.min mustEqual java.lang.Integer.MAX_VALUE
-          minMax2.max mustEqual java.lang.Integer.MIN_VALUE
+          minMax2.min must beNull
+          minMax2.max must beNull
 
           isc2.count mustEqual 1
 

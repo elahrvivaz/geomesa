@@ -88,23 +88,27 @@ object Stat {
 
   def apply(sft: SimpleFeatureType, s: String) = new StatParser(sft).parse(s)
 
-  def getGeoHash(value: Geometry, length: Int = 3): String = {
+  def getGeoHash(value: Geometry, length: Int = 3): Int = {
     val centroid = value.getCentroid
-    GeoHash(centroid.getX, centroid.getY, 5 * length).hash
+    Integer.parseInt(GeoHash(centroid.getX, centroid.getY, 5 * length).hash, 36)
   }
 
-  def geoHashToInt(gh: String): Int = Integer.parseInt(gh, 36)
-
-  def getGeoHashInt(value: Geometry, length: Int = 3): Int = geoHashToInt(getGeoHash(value, length))
-
-  def stringifier[T](clas: Class[T]): Any => String =
-    if (classOf[Geometry].isAssignableFrom(clas)) {
-      (v) => if (v == null) "null" else '"' + WKTUtils.write(v.asInstanceOf[Geometry]) + '"'
+  def stringifier[T](clas: Class[T], json: Boolean = false): Any => String = {
+    val toString: (Any) => String = if (classOf[Geometry].isAssignableFrom(clas)) {
+      (v) => WKTUtils.write(v.asInstanceOf[Geometry])
     } else if (clas == classOf[Date]) {
-      (v) => if (v == null) "null" else '"' + GeoToolsDateFormat.print(v.asInstanceOf[Date].getTime) + '"'
+      (v) => GeoToolsDateFormat.print(v.asInstanceOf[Date].getTime)
     } else {
-      (v) => if (v == null) "null" else '"' + v.toString + '"'
+      (v) => v.toString
     }
+
+    // add quotes to json strings if needed
+    if (json && !classOf[Number].isAssignableFrom(clas)) {
+      (v) => if (v == null) "null" else s""""${toString(v)}""""
+    } else {
+      (v) => if (v == null) "null" else toString(v)
+    }
+  }
 
   def destringifier[T](clas: Class[T]): String => T =
     if (clas == classOf[String]) {

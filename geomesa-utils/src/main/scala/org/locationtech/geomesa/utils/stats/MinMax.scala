@@ -31,7 +31,7 @@ class MinMax[T](val attribute: Int)(implicit defaults: MinMaxDefaults[T], ct: Cl
   private var minValue: T = defaults.min
   private var maxValue: T = defaults.max
 
-  private lazy val stringify = Stat.stringifier(ct.runtimeClass)
+  private lazy val stringify = Stat.stringifier(ct.runtimeClass, json = true)
 
   override def observe(sf: SimpleFeature): Unit = {
     val value = sf.getAttribute(attribute).asInstanceOf[T]
@@ -62,9 +62,7 @@ class MinMax[T](val attribute: Int)(implicit defaults: MinMaxDefaults[T], ct: Cl
     }
   }
 
-  override def toJson(): String = {
-    s"""{ "min": ${stringify(min)}, "max": ${stringify(max)} }"""
-  }
+  override def toJson(): String = s"""{ "min": ${stringify(min)}, "max": ${stringify(max)} }"""
 
   override def clear(): Unit = {
     minValue = defaults.min
@@ -80,43 +78,43 @@ object MinMaxHelper {
     def compare(l: T, r: T): Int
   }
 
-  abstract class ComparableMinMaxDefaults[T <: Comparable[T]] extends MinMaxDefaults[T] {
+  abstract class ComparableMinMax[T <: Comparable[T]] extends MinMaxDefaults[T] {
     override def compare(l: T, r: T): Int = l.compareTo(r)
   }
 
-  implicit object MinMaxString extends ComparableMinMaxDefaults[String] {
-    override val min: String = ""
-    override val max: String = "~~"
+  implicit object MinMaxString extends ComparableMinMax[String] {
+    override val min: String = "~~"
+    override val max: String = ""
   }
 
-  implicit object MinMaxInt extends ComparableMinMaxDefaults[java.lang.Integer] {
+  implicit object MinMaxInt extends ComparableMinMax[java.lang.Integer] {
     override val min: java.lang.Integer = java.lang.Integer.MAX_VALUE
     override val max: java.lang.Integer = java.lang.Integer.MIN_VALUE
   }
 
-  implicit object MinMaxLong extends ComparableMinMaxDefaults[java.lang.Long] {
+  implicit object MinMaxLong extends ComparableMinMax[java.lang.Long] {
     override val min: java.lang.Long = java.lang.Long.MAX_VALUE
     override val max: java.lang.Long = java.lang.Long.MIN_VALUE
   }
 
-  implicit object MinMaxFloat extends ComparableMinMaxDefaults[java.lang.Float] {
+  implicit object MinMaxFloat extends ComparableMinMax[java.lang.Float] {
     override val min: java.lang.Float = java.lang.Float.MAX_VALUE
     override val max: java.lang.Float = java.lang.Float.MIN_VALUE
   }
 
-  implicit object MinMaxDouble extends ComparableMinMaxDefaults[java.lang.Double] {
+  implicit object MinMaxDouble extends ComparableMinMax[java.lang.Double] {
     override val min: java.lang.Double = java.lang.Double.MAX_VALUE
     override val max: java.lang.Double = java.lang.Double.MIN_VALUE
   }
 
-  implicit object MinMaxDate extends ComparableMinMaxDefaults[Date] {
+  implicit object MinMaxDate extends ComparableMinMax[Date] {
     override val min: Date = new Date(java.lang.Long.MAX_VALUE)
     override val max: Date = new Date(java.lang.Long.MIN_VALUE)
   }
 
   implicit object MinMaxGeometry extends MinMaxDefaults[Geometry] {
-    override val min: Geometry = WKTUtils.read("POINT(-180 -90)")
-    override val max: Geometry = WKTUtils.read("POINT(180 90)")
+    override val min: Geometry = WKTUtils.read("POINT(180 90)")   // geohash zzz
+    override val max: Geometry = WKTUtils.read("POINT(-180 -90)") // geohash 000
     override def compare(l: Geometry, r: Geometry): Int = Stat.getGeoHash(l).compareTo(Stat.getGeoHash(r))
   }
 }
