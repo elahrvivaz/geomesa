@@ -20,6 +20,7 @@ import org.locationtech.geomesa.utils.stats.MinMaxHelper._
 import org.locationtech.geomesa.utils.text.{EnhancedTokenParsers, WKTUtils}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
+import scala.reflect.ClassTag
 import scala.util.parsing.combinator.RegexParsers
 
 /**
@@ -87,6 +88,16 @@ trait Stat {
 object Stat {
 
   def apply(sft: SimpleFeatureType, s: String) = new StatParser(sft).parse(s)
+
+  def Count(ecql: String): String = s"Count($ecql)"
+  def MinMax(attribute: String): String = s"MinMax($attribute)"
+  def EnumeratedHistogram(attribute: String): String = s"EnumeratedHistogram($attribute)"
+  def RangeHistogram[T](attribute: String, bins: Int, min: T, max: T)(implicit ct: ClassTag[T]): String = {
+    val stringify = stringifier(ct.runtimeClass)
+    s"RangeHistogram($attribute,$bins,'${stringify(min)}','${stringify(max)}')"
+  }
+  def IteratorStackCounter(): String = "IteratorStackCounter"
+  def SeqStat(stats: Seq[String]): String = stats.mkString(";")
 
   def getGeoHash(value: Geometry, length: Int = 3): Int = {
     val centroid = value.getCentroid

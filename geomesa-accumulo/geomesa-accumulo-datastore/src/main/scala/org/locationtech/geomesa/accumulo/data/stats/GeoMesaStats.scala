@@ -8,12 +8,13 @@
 
 package org.locationtech.geomesa.accumulo.data.stats
 
-import java.io.Closeable
+import java.io.{Closeable, Flushable}
+import java.util.Date
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.{Executors, TimeUnit}
 
 import com.typesafe.scalalogging.LazyLogging
-import com.vividsolutions.jts.geom.Envelope
+import com.vividsolutions.jts.geom.{Envelope, Geometry}
 import org.apache.accumulo.core.client.impl.{MasterClient, Tables}
 import org.apache.accumulo.core.client.mock.MockConnector
 import org.apache.accumulo.core.security.thrift.TCredentials
@@ -27,7 +28,11 @@ import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
 import org.locationtech.geomesa.accumulo.index.QueryHints
 import org.locationtech.geomesa.accumulo.util.{DistributedLocking, SelfClosingIterator}
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.{CRS_EPSG_4326, wholeWorldEnvelope}
+import org.locationtech.geomesa.utils.stats.{SeqStat, Stat}
+import org.locationtech.geomesa.utils.text.WKTUtils
+import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
 import scala.collection.mutable.ArrayBuffer
@@ -39,38 +44,92 @@ import scala.collection.mutable.ArrayBuffer
 trait GeoMesaStats extends Closeable {
 
   /**
-   * Gets the number of features that will be returned for a query
-   *
-   * @param typeName simple feature type name
-   * @param filter cql filter
-   * @param exact rough estimate, or precise count. note: precise count will likely be very expensive.
-   * @return count of features
-   */
+    * Gets the number of features that will be returned for a query
+    *
+    * @param typeName simple feature type name
+    * @param filter cql filter
+    * @param exact rough estimate, or precise count. note: precise count will likely be very expensive.
+    * @return count of features
+    */
   def getCount(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): Long
 
   /**
-   * Gets the bounds for data that will be returned for a query
-   *
-   * @param typeName simple feature type name
-   * @param filter cql filter
-   * @param exact rough estimate, or precise bounds. note: precise bounds will likely be very expensive.
-   * @return bounds
-   */
+    * Gets the bounds for data that will be returned for a query
+    *
+    * @param typeName simple feature type name
+    * @param filter cql filter
+    * @param exact rough estimate, or precise bounds. note: precise bounds will likely be very expensive.
+    * @return bounds
+    */
   def getBounds(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): ReferencedEnvelope
 
   /**
-   * Gets the temporal bounds for data that will be returned for a query
-   *
-   * @param typeName simple feature type name
-   * @param filter cql filter
-   * @param exact rough estimate, or precise bounds. note: precise bounds will likely be very expensive.
-   * @return time bounds
-   */
+    * Gets the temporal bounds for data that will be returned for a query
+    *
+    * @param typeName simple feature type name
+    * @param filter cql filter
+    * @param exact rough estimate, or precise bounds. note: precise bounds will likely be very expensive.
+    * @return time bounds
+    */
   def getTemporalBounds(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): Interval
+
+  /**
+    * Gets an object to track stats as they are written
+    *
+    * @param typeName simple feature type name
+    * @return updater
+    */
+  def getStatUpdater(typeName: String): StatUpdater
+}
+
+object GeoMesaStats {
+
+  val dtFormat = ISODateTimeFormat.dateTime().withZoneUTC()
+
+  val DefaultUpdateInterval = 360 // in minutes
+  val GeometryHistogramSize = 1024 // corresponds to 2 digits of geohash
+  val MinGeom = WKTUtils.read("POINT (-180 -90)")
+  val MaxGeom = WKTUtils.read("POINT (180 90)")
+
+  def lockKey(table: String, typeName: String) = {
+    val safeName = GeoMesaTable.hexEncodeNonAlphaNumeric(typeName)
+    s"/org.locationtech.geomesa/accumulo/stats/$table/$safeName"
+  }
+
+  def allTimeBounds = new Interval(0L, System.currentTimeMillis(), DateTimeZone.UTC) // Epoch till now
+
+  def decodeTimeBounds(value: String): Interval = {
+    val longs = value.split(":").map(java.lang.Long.parseLong)
+    require(longs(0) <= longs(1))
+    require(longs.length == 2)
+    new Interval(longs(0), longs(1), DateTimeZone.UTC)
+  }
+
+  def decodeSpatialBounds(string: String): Envelope = {
+    val minMaxXY = string.split(":")
+    require(minMaxXY.size == 4)
+    new Envelope(minMaxXY(0).toDouble, minMaxXY(1).toDouble, minMaxXY(2).toDouble, minMaxXY(3).toDouble)
+  }
+
+  def encode(bounds: Interval): String = s"${bounds.getStartMillis}:${bounds.getEndMillis}"
+
+  def encode(bounds: Envelope): String =
+    Seq(bounds.getMinX, bounds.getMaxX, bounds.getMinY, bounds.getMaxY).mkString(":")
+
+  private [stats] def minMaxStat(sft: SimpleFeatureType): Seq[String] =
+    (Option(sft.getGeomField).toSeq ++ sft.getDtgField ++ sft.getIndexedAttributes).distinct.map(Stat.MinMax)
+
 }
 
 trait HasGeoMesaStats {
   def stats: GeoMesaStats
+}
+
+/**
+  * Trait for tracking stats based on simple features
+  */
+trait StatUpdater extends Flushable with Closeable {
+  def update(sf: SimpleFeature): Unit
 }
 
 /**
@@ -80,18 +139,19 @@ trait HasGeoMesaStats {
  * Before updating stats, acquires a distributed lock to ensure that we aren't
  * duplicating effort.
  */
-class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 5) extends
+class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10) extends
     GeoMesaStats with DistributedLocking with Runnable with LazyLogging {
 
   import GeoMesaStats._
 
   val connector = ds.connector
 
-  // start the background thread to gather stats
-  // we schedule the initial run for 5 minutes - this should avoid overload during startup,
-  // and prevent short-lived data stores from spamming updates
   private val es = Executors.newSingleThreadScheduledExecutor()
   private val shutdown = new AtomicBoolean(false)
+
+  // start the background thread to gather stats
+  // we schedule the initial run for 10 minutes - this should avoid overload during startup,
+  // and prevent short-lived data stores from spamming updates
   if (!connector.isInstanceOf[MockConnector]) {
     es.schedule(this, initialDelayMinutes, TimeUnit.MINUTES)
   }
@@ -242,6 +302,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 5) 
 
     if (!shutdown.get()) {
       implicit def dateTimeOrdering: Ordering[DateTime] = Ordering.fromLessThan(_ isBefore _)
+
       val nextScheduled = Some(nextUpdates).collect { case u if u.nonEmpty => u.min } match {
         case Some(next) if next.isAfterNow => next.getMillis - DateTimeUtils.currentTimeMillis()
         case _ => 60000L // default to check again in 60s
@@ -260,16 +321,11 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 5) 
   private def update(typeName: String): Unit = {
 
     import org.locationtech.geomesa.accumulo.iterators.KryoLazyStatsIterator.decodeStat
-    import org.locationtech.geomesa.utils.geotools.GeoToolsDateFormat
-    import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
-    import scala.collection.JavaConversions._
-
     val sft = ds.getSchema(typeName)
-    val geom = Option(sft.getGeomField)
 
-    val geomHistogram = geom.map(g => s"RangeHistogram($g,$GeometryHistogramSize,'POINT(-180 -90)','POINT(180 90)')")
+    val geomHistogram = Option(sft.getGeomField).map(g => Stat.RangeHistogram(g, GeometryHistogramSize, MinGeom, MaxGeom))
 
     val dateHistogram = for {
       dtg <- sft.getDtgField
@@ -277,71 +333,43 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 5) 
       weeks = bounds.toDuration.getStandardDays / 7
       if weeks > 1
     } yield {
-      val start = GeoToolsDateFormat.print(bounds.getStart)
-      val end = GeoToolsDateFormat.print(bounds.getEnd)
-      s"RangeHistogram($dtg,$weeks,'$start','$end')"
+      Stat.RangeHistogram(dtg, weeks.toInt, bounds.getStart, bounds.getEnd)
     }
 
-    val minMax = {
-      val attrs = sft.getAttributeDescriptors.filter(_.isIndexed).map(_.getLocalName) ++ sft.getDtgField
-      val toMinMax = geom.map(g => attrs.filter(_ != g)).getOrElse(attrs).distinct
-      toMinMax.map(a => s"MinMax($a)")
-    }
+    val minMax = GeoMesaStats.minMaxStat(sft)
 
-    val statStrings = geomHistogram.toSeq ++ dateHistogram ++ minMax
+    val allStats = Stat.SeqStat(geomHistogram.toSeq ++ dateHistogram ++ minMax)
 
-    if (statStrings.isEmpty) {
+    if (allStats.isEmpty) {
       logger.debug(s"Not calculating any stats for sft ${DataUtilities.encodeType(sft)}")
       return
     }
 
-    logger.debug(s"Calculating stats for ${sft.getTypeName}: $statStrings")
+    logger.debug(s"Calculating stats for ${sft.getTypeName}: $allStats")
 
     val stats = {
       val query = new Query(typeName, Filter.INCLUDE)
-      query.getHints.put(QueryHints.STATS_KEY, statStrings.mkString(";"))
+      query.getHints.put(QueryHints.STATS_KEY, allStats)
       query.getHints.put(QueryHints.RETURN_ENCODED_KEY, java.lang.Boolean.TRUE)
 
       val reader = ds.getFeatureReader(query, Transaction.AUTO_COMMIT)
       try {
+        // stats should always return one result, even if there are no features in the table
         decodeStat(reader.next.getAttribute(0).asInstanceOf[String], sft)
       } finally {
         reader.close()
       }
     }
 
-    // match our return with what we passed in
-
-
-//    "MinMax(attr);EnumeratedHistogram(idt);RangeHistogram(idt,5,10,15)"
-//
-//    val seqStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[SeqStat]
-//    val stats = seqStat.stats
-//    stats.size mustEqual 4
-//
-//    val minMax = stats(0).asInstanceOf[MinMax[java.lang.Long]]
-//    val eh = stats(2).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
-//    val rh = stats(3).asInstanceOf[RangeHistogram[java.lang.Integer]]
-//
-//    val rh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[RangeHistogram[java.lang.Integer]]
-//    rh.histogram.size mustEqual 5
-//    rh.histogram(10) mustEqual 1
-//    rh.histogram(11) mustEqual 1
-//    rh.histogram(12) mustEqual 1
-//    rh.histogram(13) mustEqual 1
-//    rh.histogram(14) mustEqual 1
-//    val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[MinMax[java.lang.Long]]
-//    minMaxStat.min mustEqual 0
-//    minMaxStat.max mustEqual 298
-//    val eh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
-//    eh.frequencyMap.size mustEqual 150
-//    eh.frequencyMap(0) mustEqual 1
-//    eh.frequencyMap(149) mustEqual 1
-//    eh.frequencyMap(150) mustEqual 0
-
-    true
+    stats match {
+      case seq: SeqStat =>
+      case _ =>
+    }
   }
 
+  private [stats] def writeStat(stat: Stat): Unit = {
+
+  }
 
   /**
     * Reads the time of the last update
@@ -384,35 +412,30 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 5) 
   }
 }
 
-object GeoMesaStats {
 
-  val dtFormat = ISODateTimeFormat.dateTime().withZoneUTC()
+/**
+  * Stores stats as metadata entries
+  *
+  * @param stats persistence
+  * @param sft simple feature type
+  */
+class MetadataStatsTracker(stats: GeoMesaMetadataStats, sft: SimpleFeatureType) extends StatUpdater {
 
-  val DefaultUpdateInterval = 360 // in minutes
-  val GeometryHistogramSize = 1024 // corresponds to 2 digits of geohash
-
-  def lockKey(table: String, typeName: String) = {
-    val safeName = GeoMesaTable.hexEncodeNonAlphaNumeric(typeName)
-    s"/org.locationtech.geomesa/accumulo/stats/$table/$safeName"
+  private val minMax = {
+    val statString = Stat.SeqStat(GeoMesaStats.minMaxStat(sft))
+    if (statString.isEmpty) None else Some(Stat(sft, statString))
   }
 
-  def allTimeBounds = new Interval(0L, System.currentTimeMillis(), DateTimeZone.UTC) // Epoch till now
-
-  def decodeTimeBounds(value: String): Interval = {
-    val longs = value.split(":").map(java.lang.Long.parseLong)
-    require(longs(0) <= longs(1))
-    require(longs.length == 2)
-    new Interval(longs(0), longs(1), DateTimeZone.UTC)
+  private val setStats: (SimpleFeature) => Unit = minMax match {
+    case None       => (_) => Unit
+    case Some(stat) => (f) => stat.observe(f)
   }
 
-  def decodeSpatialBounds(string: String): Envelope = {
-    val minMaxXY = string.split(":")
-    require(minMaxXY.size == 4)
-    new Envelope(minMaxXY(0).toDouble, minMaxXY(1).toDouble, minMaxXY(2).toDouble, minMaxXY(3).toDouble)
+  override def update(f: SimpleFeature): Unit = setStats(f)
+
+  override def close(): Unit = flush()
+
+  override def flush(): Unit = {
+    minMax.foreach(_.)
   }
-
-  def encode(bounds: Interval): String = s"${bounds.getStartMillis}:${bounds.getEndMillis}"
-
-  def encode(bounds: Envelope): String =
-    Seq(bounds.getMinX, bounds.getMaxX, bounds.getMinY, bounds.getMaxY).mkString(":")
 }

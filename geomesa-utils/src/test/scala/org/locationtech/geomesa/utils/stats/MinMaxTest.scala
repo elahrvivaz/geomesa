@@ -449,13 +449,13 @@ class MinMaxTest extends Specification with StatTestHelper {
 
       "observe correct values" >> {
         val minMax = newStat[Geometry]("geom")
-        minMax.min mustEqual WKTUtils.read("POINT (-99 49)")
-        minMax.max mustEqual WKTUtils.read("POINT (-0 0)")
+        minMax.min mustEqual WKTUtils.read("POINT (-99 0)")
+        minMax.max mustEqual WKTUtils.read("POINT (0 49)")
       }
 
       "serialize to json" >> {
         val minMax = newStat[Geometry]("geom")
-        minMax.toJson() mustEqual """{ "min": "POINT (-99 49)", "max": "POINT (-0 0)" }"""
+        minMax.toJson() mustEqual """{ "min": "POINT (-99 0)", "max": "POINT (-0 49)" }"""
       }
 
       "serialize empty to json" >> {
@@ -488,7 +488,7 @@ class MinMaxTest extends Specification with StatTestHelper {
 
         minMax += minMax2
 
-        minMax.min mustEqual WKTUtils.read("POINT (-99 49)")
+        minMax.min mustEqual WKTUtils.read("POINT (-99 0)")
         minMax.max mustEqual WKTUtils.read("POINT (179 79)")
         minMax2.min mustEqual WKTUtils.read("POINT (80 30)")
         minMax2.max mustEqual WKTUtils.read("POINT (179 79)")

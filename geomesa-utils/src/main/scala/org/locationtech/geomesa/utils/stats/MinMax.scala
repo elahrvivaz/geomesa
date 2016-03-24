@@ -10,9 +10,8 @@ package org.locationtech.geomesa.utils.stats
 
 import java.util.Date
 
-import com.vividsolutions.jts.geom.Geometry
-import org.locationtech.geomesa.utils.stats.MinMaxHelper._
-import org.locationtech.geomesa.utils.text.WKTUtils
+import com.vividsolutions.jts.geom.{Coordinate, Geometry}
+import org.geotools.geometry.jts.JTSFactoryFinder
 import org.opengis.feature.simple.SimpleFeature
 
 import scala.reflect.ClassTag
@@ -24,43 +23,35 @@ import scala.reflect.ClassTag
  * @param attribute attribute index for the attribute the histogram is being made for
  * @tparam T the type of the attribute the stat is targeting (needs to be comparable)
  */
-class MinMax[T](val attribute: Int)(implicit defaults: MinMaxDefaults[T], ct: ClassTag[T]) extends Stat {
+class MinMax[T](val attribute: Int)(implicit defaults: MinMax.MinMaxDefaults[T], ct: ClassTag[T]) extends Stat {
 
   override type S = MinMax[T]
 
-  private var minValue: T = defaults.min
-  private var maxValue: T = defaults.max
+  private [stats] var minValue: T = defaults.min
+  private [stats] var maxValue: T = defaults.max
 
   private lazy val stringify = Stat.stringifier(ct.runtimeClass, json = true)
 
   override def observe(sf: SimpleFeature): Unit = {
     val value = sf.getAttribute(attribute).asInstanceOf[T]
     if (value != null) {
-      updateMin(value)
-      updateMax(value)
+      val (mn, mx) = defaults.minmax(value, minValue, maxValue)
+      minValue = mn
+      maxValue = mx
     }
   }
 
   override def +=(other: MinMax[T]): MinMax[T] = {
-    updateMin(other.minValue)
-    updateMax(other.maxValue)
+    Seq(other.minValue, other.maxValue).foreach { value =>
+      val (mn, mx) = defaults.minmax(value, minValue, maxValue)
+      minValue = mn
+      maxValue = mx
+    }
     this
   }
 
   def min: T = if (minValue == defaults.min) null.asInstanceOf[T] else minValue
   def max: T = if (maxValue == defaults.max) null.asInstanceOf[T] else maxValue
-
-  private [stats] def updateMin(sfval: T): Unit = {
-    if (defaults.compare(minValue, sfval) > 0) {
-      minValue = sfval
-    }
-  }
-
-  private [stats] def updateMax(sfval: T): Unit = {
-    if (defaults.compare(maxValue, sfval) < 0) {
-      maxValue = sfval
-    }
-  }
 
   override def toJson(): String = s"""{ "min": ${stringify(min)}, "max": ${stringify(max)} }"""
 
@@ -70,16 +61,20 @@ class MinMax[T](val attribute: Int)(implicit defaults: MinMaxDefaults[T], ct: Cl
   }
 }
 
-object MinMaxHelper {
+object MinMax {
 
   trait MinMaxDefaults[T] {
     def min: T
     def max: T
-    def compare(l: T, r: T): Int
+    def minmax(value: T, min: T, max: T): (T, T)
   }
 
   abstract class ComparableMinMax[T <: Comparable[T]] extends MinMaxDefaults[T] {
-    override def compare(l: T, r: T): Int = l.compareTo(r)
+    override def minmax(value: T, min: T, max: T): (T, T) = {
+      val mn = if (value.compareTo(min) > 0) min else value
+      val mx = if (value.compareTo(max) < 0) max else value
+      (mn, mx)
+    }
   }
 
   implicit object MinMaxString extends ComparableMinMax[String] {
@@ -113,8 +108,39 @@ object MinMaxHelper {
   }
 
   implicit object MinMaxGeometry extends MinMaxDefaults[Geometry] {
-    override val min: Geometry = WKTUtils.read("POINT(180 90)")   // geohash zzz
-    override val max: Geometry = WKTUtils.read("POINT(-180 -90)") // geohash 000
-    override def compare(l: Geometry, r: Geometry): Int = Stat.getGeoHash(l).compareTo(Stat.getGeoHash(r))
+
+    private val gf = JTSFactoryFinder.getGeometryFactory
+
+    override val min: Geometry = gf.createPoint(new Coordinate(180.0, 90.0))
+    override val max: Geometry = gf.createPoint(new Coordinate(-180.0, -90.0))
+
+    override def minmax(value: Geometry, min: Geometry, max: Geometry): (Geometry, Geometry) = {
+
+      val (xmin, ymin) = { val e = min.getEnvelopeInternal; (e.getMinX, e.getMinY) }
+      val (xmax, ymax) = { val e = max.getEnvelopeInternal; (e.getMaxX, e.getMaxY) }
+
+      val (vxmin, vymin, vxmax, vymax) = {
+        val e = value.getEnvelopeInternal
+        (e.getMinX, e.getMinY, e.getMaxX, e.getMaxY)
+      }
+
+      val mn = if (vxmin < xmin || vymin < ymin) {
+        val x = if (vxmin < xmin) vxmin else xmin
+        val y = if (vymin < ymin) vymin else ymin
+        gf.createPoint(new Coordinate(x, y))
+      } else {
+        min
+      }
+
+      val mx = if (vxmax > xmax || vymax > ymax) {
+        val x = if (vxmax > xmax) vxmax else xmax
+        val y = if (vymax > ymax) vymax else ymax
+        gf.createPoint(new Coordinate(x, y))
+      } else {
+        max
+      }
+
+      (mn, mx)
+    }
   }
 }

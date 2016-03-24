@@ -131,58 +131,30 @@ object StatSerialization {
     val min = destringify(minString)
     val max = destringify(maxString)
 
-    if (attributeType == classOf[String]) {
-      val stat = new MinMax[String](attribute)
-      if (min != null) {
-        stat.updateMin(min.asInstanceOf[String])
-        stat.updateMax(max.asInstanceOf[String])
-      }
-      stat
+    val stat = if (attributeType == classOf[String]) {
+      new MinMax[String](attribute)
     } else if (attributeType == classOf[Integer]) {
-      val stat = new MinMax[Integer](attribute)
-      if (min != null) {
-        stat.updateMin(min.asInstanceOf[Integer])
-        stat.updateMax(max.asInstanceOf[Integer])
-      }
-      stat
+      new MinMax[Integer](attribute)
     } else if (attributeType == classOf[jLong]) {
-      val stat = new MinMax[jLong](attribute)
-      if (min != null) {
-        stat.updateMin(min.asInstanceOf[jLong])
-        stat.updateMax(max.asInstanceOf[jLong])
-      }
-      stat
+      new MinMax[jLong](attribute)
     } else if (attributeType == classOf[jFloat]) {
-      val stat = new MinMax[jFloat](attribute)
-      if (min != null) {
-        stat.updateMin(min.asInstanceOf[jFloat])
-        stat.updateMax(max.asInstanceOf[jFloat])
-      }
-      stat
+      new MinMax[jFloat](attribute)
     } else if (attributeType == classOf[jDouble]) {
-      val stat = new MinMax[jDouble](attribute)
-      if (min != null) {
-        stat.updateMin(min.asInstanceOf[jDouble])
-        stat.updateMax(max.asInstanceOf[jDouble])
-      }
-      stat
+      new MinMax[jDouble](attribute)
     } else if (attributeType == classOf[Date]) {
-      val stat = new MinMax[Date](attribute)
-      if (min != null) {
-        stat.updateMin(min.asInstanceOf[Date])
-        stat.updateMax(max.asInstanceOf[Date])
-      }
-      stat
+      new MinMax[Date](attribute)
     } else if (classOf[Geometry].isAssignableFrom(attributeType)) {
-      val stat = new MinMax[Geometry](attribute)
-      if (min != null) {
-        stat.updateMin(min.asInstanceOf[Geometry])
-        stat.updateMax(max.asInstanceOf[Geometry])
-      }
-      stat
+      new MinMax[Geometry](attribute)
     } else {
       throw new Exception(s"Cannot unpack MinMax due to invalid type: $attributeType")
     }
+
+    if (min != null) {
+      stat.asInstanceOf[MinMax[Any]].minValue = min
+      stat.asInstanceOf[MinMax[Any]].maxValue = max
+    }
+
+    stat
   }
 
   protected [stats] def packIteratorStackCounter(stat: IteratorStackCounter): Array[Byte] =
