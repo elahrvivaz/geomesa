@@ -90,7 +90,7 @@ object Stat {
 
   def getGeoHash(value: Geometry, length: Int = 3): Int = {
     val centroid = value.getCentroid
-    Integer.parseInt(GeoHash(centroid.getX, centroid.getY, 5 * length).hash, 36)
+    GeoHash(centroid.getX, centroid.getY, 5 * length).toInt
   }
 
   def stringifier[T](clas: Class[T], json: Boolean = false): Any => String = {

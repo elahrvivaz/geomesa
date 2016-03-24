@@ -390,7 +390,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
     }
 
     "work with geometries" >> {
-      val stat = Stat(sft, "RangeHistogram(geom,36,'POINT(-180 -90)','POINT(180 90)')")
+      val stat = Stat(sft, "RangeHistogram(geom,32,'POINT(-180 -90)','POINT(180 90)')")
       // 4096, 256, 36
       val rh = stat.asInstanceOf[RangeHistogram[Geometry]]
       val lowerEndpoint = WKTUtils.read("POINT(-180 -90)")
@@ -401,7 +401,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
 
       "correctly bin values" >> {
         rh.isEmpty must beFalse
-        rh.bins.length mustEqual 36
+        rh.bins.length mustEqual 32
         rh.bins(12) mustEqual 9
         rh.bins(13) mustEqual 44
         rh.bins(14) mustEqual 45

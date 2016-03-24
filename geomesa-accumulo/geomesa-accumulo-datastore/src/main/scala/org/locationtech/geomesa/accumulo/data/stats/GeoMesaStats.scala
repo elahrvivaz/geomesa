@@ -12,21 +12,25 @@ import java.io.Closeable
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.{Executors, TimeUnit}
 
+import com.typesafe.scalalogging.LazyLogging
 import com.vividsolutions.jts.geom.Envelope
 import org.apache.accumulo.core.client.impl.{MasterClient, Tables}
 import org.apache.accumulo.core.client.mock.MockConnector
 import org.apache.accumulo.core.security.thrift.TCredentials
 import org.apache.accumulo.trace.instrument.Tracer
-import org.geotools.data.{Query, Transaction}
+import org.geotools.data.{DataUtilities, Query, Transaction}
 import org.geotools.geometry.jts.ReferencedEnvelope
 import org.joda.time.format.ISODateTimeFormat
 import org.joda.time.{DateTime, DateTimeUtils, DateTimeZone, Interval}
 import org.locationtech.geomesa.accumulo.data.GeoMesaMetadata._
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
+import org.locationtech.geomesa.accumulo.index.QueryHints
 import org.locationtech.geomesa.accumulo.util.{DistributedLocking, SelfClosingIterator}
 import org.locationtech.geomesa.utils.geotools.{CRS_EPSG_4326, wholeWorldEnvelope}
 import org.opengis.filter.Filter
+
+import scala.collection.mutable.ArrayBuffer
 
 /**
  * Tracks stats for a schema - spatial/temporal bounds, number of records, etc. Persistence of
@@ -76,7 +80,8 @@ trait HasGeoMesaStats {
  * Before updating stats, acquires a distributed lock to ensure that we aren't
  * duplicating effort.
  */
-class GeoMesaMetadataStats(ds: AccumuloDataStore) extends GeoMesaStats with Runnable with DistributedLocking {
+class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 5) extends
+    GeoMesaStats with DistributedLocking with Runnable with LazyLogging {
 
   import GeoMesaStats._
 
@@ -88,7 +93,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore) extends GeoMesaStats with Runn
   private val es = Executors.newSingleThreadScheduledExecutor()
   private val shutdown = new AtomicBoolean(false)
   if (!connector.isInstanceOf[MockConnector]) {
-    es.schedule(this, 5, TimeUnit.MINUTES)
+    es.schedule(this, initialDelayMinutes, TimeUnit.MINUTES)
   }
 
   // Note: we don't currently filter by the cql
@@ -200,70 +205,114 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore) extends GeoMesaStats with Runn
    * Updates metadata accordingly.
    */
   override def run(): Unit = {
-    val nextUpdates = ds.getTypeNames.flatMap { typeName =>
-      if (shutdown.get()) { None } else {
-        lock(lockKey(ds.catalogTable, typeName), 1000).map { lock =>
-          try { updateIfNeeded(typeName) } finally { lock.release() }
+    val nextUpdates = ArrayBuffer.empty[DateTime]
+
+    // convert to iterator so we check shutdown before each update
+    ds.getTypeNames.iterator.filter(_ => !shutdown.get()).foreach { typeName =>
+      // try to get an exclusive lock on the sft - if not, don't wait just move along
+      lock(lockKey(ds.catalogTable, typeName), 1000).foreach { lock =>
+        try {
+          val lastUpdate = getLastUpdate(typeName)
+          val updateInterval = getUpdateInterval(typeName)
+          val nextUpdate = lastUpdate.plusMinutes(updateInterval)
+
+          if (nextUpdate.isAfterNow) {
+            nextUpdates.append(nextUpdate)
+          } else {
+            // run the update
+            try {
+              update(typeName)
+              // update the metadata
+              val updated = DateTime.now(DateTimeZone.UTC)
+              setLastUpdate(typeName, updated)
+              nextUpdates.append(updated.plusMinutes(updateInterval))
+            } catch {
+              case e: Exception =>
+                logger.error(s"Error running stat update for type $typeName:", e)
+                // after error, don't schedule again until next interval has passed
+                // TODO track failures and don't just keep retrying...
+                nextUpdates.append(nextUpdate.plusMinutes(updateInterval))
+            }
+          }
+        } finally {
+          lock.release()
         }
       }
     }
+
     if (!shutdown.get()) {
-      val nextScheduled = Some(nextUpdates)
-          .filter(_.nonEmpty)
-          .map(_.min - DateTimeUtils.currentTimeMillis)
-          .filter(_ > 0)
-          .getOrElse(60000L) // default to check again in 60s
-      es.schedule(this, nextScheduled, TimeUnit.MILLISECONDS)
-      // TODO track failures and don't just keep retrying...
-    }
-  }
-
-  /**
-   * Update the stats for this sft, if they haven't been updated recently.
-   * Checks the metadata for last time the stats were run, and updates it if needed.
-   *
-   * Note: this method assumes that we have an exclusive lock on the sft
-   *
-   * @param typeName simple feature type name
-   * @return date time of next scheduled update
-   */
-  private def updateIfNeeded(typeName: String): Long = {
-    val last = ds.metadata.read(typeName, STATS_GENERATION_KEY, cache = false)
-        .map(dtFormat.parseDateTime).getOrElse(new DateTime(0, DateTimeZone.UTC))
-    val interval = ds.metadata.read(typeName, STATS_INTERVAL_KEY, cache = false).map(_.toInt).getOrElse {
-      ds.metadata.insert(typeName, STATS_INTERVAL_KEY, DefaultUpdateInterval.toString) // note: side effect
-      DefaultUpdateInterval
-    }
-    val next = last.plusMinutes(interval)
-    if (next.isAfterNow && !shutdown.get()) {
-      // run the update
-      if (update(typeName)) {
-        // update the metadata
-        val updated = DateTime.now(DateTimeZone.UTC)
-        ds.metadata.insert(typeName, STATS_GENERATION_KEY, dtFormat.print(updated))
-        updated.plusMinutes(interval).getMillis
-      } else {
-        next.getMillis
+      implicit def dateTimeOrdering: Ordering[DateTime] = Ordering.fromLessThan(_ isBefore _)
+      val nextScheduled = Some(nextUpdates).collect { case u if u.nonEmpty => u.min } match {
+        case Some(next) if next.isAfterNow => next.getMillis - DateTimeUtils.currentTimeMillis()
+        case _ => 60000L // default to check again in 60s
       }
-    } else {
-      next.getMillis
+      es.schedule(this, nextScheduled, TimeUnit.MILLISECONDS)
     }
   }
 
   /**
-   * Updates the stats for this sft.
-   *
-   * Note: this method assumes that we have an exclusive lock on the sft
-   *
-   * @param typeName simple feature type name
-   * @return true if the update was completed, otherwise false
-   */
-  private def update(typeName: String): Boolean = {
+    * Updates the stats for this sft.
+    *
+    * Note: this method assumes that we have an exclusive lock on the sft
+    *
+    * @param typeName simple feature type name
+    */
+  private def update(typeName: String): Unit = {
 
-//    val query = new Query(typeName, Filter.INCLUDE)
-//    query.getHints.put(QueryHints.STATS_KEY, statString)
-//    query.getHints.put(QueryHints.RETURN_ENCODED_KEY, java.lang.Boolean.TRUE)
-//
+    import org.locationtech.geomesa.accumulo.iterators.KryoLazyStatsIterator.decodeStat
+    import org.locationtech.geomesa.utils.geotools.GeoToolsDateFormat
+    import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
+    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+
+    import scala.collection.JavaConversions._
+
+    val sft = ds.getSchema(typeName)
+    val geom = Option(sft.getGeomField)
+
+    val geomHistogram = geom.map(g => s"RangeHistogram($g,$GeometryHistogramSize,'POINT(-180 -90)','POINT(180 90)')")
+
+    val dateHistogram = for {
+      dtg <- sft.getDtgField
+      bounds <- readTemporalBounds(typeName)
+      weeks = bounds.toDuration.getStandardDays / 7
+      if weeks > 1
+    } yield {
+      val start = GeoToolsDateFormat.print(bounds.getStart)
+      val end = GeoToolsDateFormat.print(bounds.getEnd)
+      s"RangeHistogram($dtg,$weeks,'$start','$end')"
+    }
+
+    val minMax = {
+      val attrs = sft.getAttributeDescriptors.filter(_.isIndexed).map(_.getLocalName) ++ sft.getDtgField
+      val toMinMax = geom.map(g => attrs.filter(_ != g)).getOrElse(attrs).distinct
+      toMinMax.map(a => s"MinMax($a)")
+    }
+
+    val statStrings = geomHistogram.toSeq ++ dateHistogram ++ minMax
+
+    if (statStrings.isEmpty) {
+      logger.debug(s"Not calculating any stats for sft ${DataUtilities.encodeType(sft)}")
+      return
+    }
+
+    logger.debug(s"Calculating stats for ${sft.getTypeName}: $statStrings")
+
+    val stats = {
+      val query = new Query(typeName, Filter.INCLUDE)
+      query.getHints.put(QueryHints.STATS_KEY, statStrings.mkString(";"))
+      query.getHints.put(QueryHints.RETURN_ENCODED_KEY, java.lang.Boolean.TRUE)
+
+      val reader = ds.getFeatureReader(query, Transaction.AUTO_COMMIT)
+      try {
+        decodeStat(reader.next.getAttribute(0).asInstanceOf[String], sft)
+      } finally {
+        reader.close()
+      }
+    }
+
+    // match our return with what we passed in
+
+
 //    "MinMax(attr);EnumeratedHistogram(idt);RangeHistogram(idt,5,10,15)"
 //
 //    val seqStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[SeqStat]
@@ -292,6 +341,47 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore) extends GeoMesaStats with Runn
 
     true
   }
+
+
+  /**
+    * Reads the time of the last update
+    *
+    * @param typeName simple feature type name
+    * @return time of the last update
+    */
+  private def getLastUpdate(typeName: String): DateTime = {
+    ds.metadata.read(typeName, STATS_GENERATION_KEY, cache = false) match {
+      case Some(dt) => dtFormat.parseDateTime(dt)
+      case None     => new DateTime(0, DateTimeZone.UTC)
+    }
+  }
+
+  /**
+    * Persists the time of the last update
+    *
+    * @param typeName simple feature type name
+    */
+  private def setLastUpdate(typeName: String, update: DateTime = DateTime.now(DateTimeZone.UTC)): Unit = {
+    ds.metadata.insert(typeName, STATS_GENERATION_KEY, dtFormat.print(update))
+  }
+
+  /**
+    * Reads the update interval.
+    *
+    * Note: will write the default update interval if the data doesn't exist
+    *
+    * @param typeName simple feature type name
+    * @return update interval, in minutes
+    */
+  private def getUpdateInterval(typeName: String): Int = {
+    ds.metadata.read(typeName, STATS_INTERVAL_KEY, cache = false) match {
+      case Some(dt) => dt.toInt
+      case None     =>
+        // write the default so that it's there if anyone wants to modify it
+        ds.metadata.insert(typeName, STATS_INTERVAL_KEY, DefaultUpdateInterval.toString)
+        DefaultUpdateInterval
+    }
+  }
 }
 
 object GeoMesaStats {
@@ -299,6 +389,7 @@ object GeoMesaStats {
   val dtFormat = ISODateTimeFormat.dateTime().withZoneUTC()
 
   val DefaultUpdateInterval = 360 // in minutes
+  val GeometryHistogramSize = 1024 // corresponds to 2 digits of geohash
 
   def lockKey(table: String, typeName: String) = {
     val safeName = GeoMesaTable.hexEncodeNonAlphaNumeric(typeName)

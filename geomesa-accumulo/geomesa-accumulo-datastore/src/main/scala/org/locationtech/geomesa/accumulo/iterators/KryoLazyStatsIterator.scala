@@ -8,8 +8,6 @@
 
 package org.locationtech.geomesa.accumulo.iterators
 
-import java.util.UUID
-
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.commons.codec.binary.Base64
@@ -61,8 +59,7 @@ object KryoLazyStatsIterator extends LazyLogging {
   val DEFAULT_PRIORITY = 30
   val STATS_STRING_KEY = "geomesa.stats.string"
   val STATS_FEATURE_TYPE_KEY = "geomesa.stats.featuretype"
-  val STATS = "stats"
-  val STATS_ITERATOR_SFT_STRING = s"$STATS:String,geom:Geometry"
+  val STATS_ITERATOR_SFT_STRING = "stats:String,geom:Geometry"
 
   def configure(sft: SimpleFeatureType,
                 filter: Option[Filter],
@@ -103,16 +100,15 @@ object KryoLazyStatsIterator extends LazyLogging {
     val encode = query.getHints.containsKey(RETURN_ENCODED_KEY)
     val returnSft = query.getHints.getReturnSft
 
-    val decodedStats = features.map(f => decodeStat(f.getAttribute(STATS).toString, sft))
+    val decodedStats = features.map(f => decodeStat(f.getAttribute(0).toString, sft))
 
     if (decodedStats.isEmpty) {
       Iterator.empty
     } else {
       val sum = decodedStats.next()
       decodedStats.foreach(sum += _)
-      val time = if (encode) encodeStat(sum, sft) else sum.toJson()
-      val sf = new ScalaSimpleFeature(UUID.randomUUID().toString, returnSft, Array(time, GeometryUtils.zeroPoint))
-      Iterator(sf)
+      val stats = if (encode) encodeStat(sum, sft) else sum.toJson()
+      Iterator(new ScalaSimpleFeature("stat-1", returnSft, Array(stats, GeometryUtils.zeroPoint)))
     }
   }
 }
