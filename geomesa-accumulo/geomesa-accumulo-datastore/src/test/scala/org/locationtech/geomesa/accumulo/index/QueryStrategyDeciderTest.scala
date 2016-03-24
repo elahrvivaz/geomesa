@@ -15,7 +15,7 @@ import org.geotools.geometry.jts.ReferencedEnvelope
 import org.joda.time.Interval
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
-import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
+import org.locationtech.geomesa.accumulo.data.stats.{GeoMesaStats, StatUpdater}
 import org.locationtech.geomesa.accumulo.filter.TestFilters._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
 import org.locationtech.geomesa.filter.visitor.LocalNameVisitorImpl
@@ -23,6 +23,7 @@ import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleF
 import org.locationtech.geomesa.utils.geotools.SftBuilder.Opts
 import org.locationtech.geomesa.utils.geotools.{SftBuilder, SimpleFeatureTypes}
 import org.locationtech.geomesa.utils.stats.Cardinality
+import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.{And, Filter}
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
@@ -60,7 +61,8 @@ class QueryStrategyDeciderTest extends Specification {
     override def getCount(typeName: String, filter: Filter, exact: Boolean): Long = -1
     override def getBounds(typeName: String, filter: Filter, exact: Boolean): ReferencedEnvelope = wholeWorldEnvelope
     override def getTemporalBounds(typeName: String, filter: Filter, exact: Boolean): Interval = allTimeBounds
-    override def close: Unit = {}
+    override def getStatUpdater(sft: SimpleFeatureType): StatUpdater = ???
+    override def close(): Unit = {}
   }
 
   def getStrategy(filterString: String, version: Int = CURRENT_SCHEMA_VERSION): Strategy = {

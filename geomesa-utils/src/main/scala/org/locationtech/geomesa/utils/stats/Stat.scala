@@ -16,7 +16,6 @@ import org.geotools.data.DataUtilities
 import org.joda.time.format.DateTimeFormat
 import org.locationtech.geomesa.utils.geohash.GeoHash
 import org.locationtech.geomesa.utils.geotools._
-import org.locationtech.geomesa.utils.stats.MinMaxHelper._
 import org.locationtech.geomesa.utils.text.{EnhancedTokenParsers, WKTUtils}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 

@@ -15,7 +15,6 @@ import java.util.Date
 
 import com.google.common.primitives.{Bytes, Longs}
 import com.vividsolutions.jts.geom.Geometry
-import org.locationtech.geomesa.utils.stats.MinMaxHelper._
 import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.collection.mutable.ArrayBuffer

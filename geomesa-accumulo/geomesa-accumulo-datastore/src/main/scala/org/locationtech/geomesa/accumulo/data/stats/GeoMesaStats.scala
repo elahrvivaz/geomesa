@@ -9,12 +9,11 @@
 package org.locationtech.geomesa.accumulo.data.stats
 
 import java.io.{Closeable, Flushable}
-import java.util.Date
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.{Executors, TimeUnit}
 
 import com.typesafe.scalalogging.LazyLogging
-import com.vividsolutions.jts.geom.{Envelope, Geometry}
+import com.vividsolutions.jts.geom.Envelope
 import org.apache.accumulo.core.client.impl.{MasterClient, Tables}
 import org.apache.accumulo.core.client.mock.MockConnector
 import org.apache.accumulo.core.security.thrift.TCredentials
@@ -76,10 +75,10 @@ trait GeoMesaStats extends Closeable {
   /**
     * Gets an object to track stats as they are written
     *
-    * @param typeName simple feature type name
+    * @param sft simple feature type
     * @return updater
     */
-  def getStatUpdater(typeName: String): StatUpdater
+  def getStatUpdater(sft: SimpleFeatureType): StatUpdater
 }
 
 object GeoMesaStats {
@@ -260,6 +259,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
       }
     }
 
+
   /**
    * Checks for the last time stats were run, and runs if needed.
    * Updates metadata accordingly.
@@ -361,14 +361,22 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
       }
     }
 
-    stats match {
-      case seq: SeqStat =>
+    writeStat(stats, sft)
+  }
+
+  private def writeStat(stat: Stat, sft: SimpleFeatureType): Unit = {
+    stat match {
+      case seq: SeqStat => seq.stats.foreach(writeStat(_, sft))
       case _ =>
+
     }
   }
 
-  private [stats] def writeStat(stat: Stat): Unit = {
-
+  private [stats] def writeStat(stat: Stat, sft: SimpleFeatureType, lockTimeout: Long): Boolean = {
+    lock(lockKey(ds.catalogTable, sft.getTypeName), lockTimeout) match {
+      case Some(lock) => try { writeStat(stat, sft) } finally { lock.release() }; true
+      case None => false
+    }
   }
 
   /**
@@ -410,8 +418,9 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
         DefaultUpdateInterval
     }
   }
-}
 
+  override def getStatUpdater(sft: SimpleFeatureType): StatUpdater = new MetadataStatsUpdater(this, sft)
+}
 
 /**
   * Stores stats as metadata entries
@@ -419,23 +428,28 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
   * @param stats persistence
   * @param sft simple feature type
   */
-class MetadataStatsTracker(stats: GeoMesaMetadataStats, sft: SimpleFeatureType) extends StatUpdater {
+class MetadataStatsUpdater(stats: GeoMesaMetadataStats, sft: SimpleFeatureType) extends StatUpdater {
 
   private val minMax = {
     val statString = Stat.SeqStat(GeoMesaStats.minMaxStat(sft))
     if (statString.isEmpty) None else Some(Stat(sft, statString))
   }
 
-  private val setStats: (SimpleFeature) => Unit = minMax match {
-    case None       => (_) => Unit
+  private val updateStats: (SimpleFeature) => Unit = minMax match {
     case Some(stat) => (f) => stat.observe(f)
+    case None       => (_) => Unit
   }
 
-  override def update(f: SimpleFeature): Unit = setStats(f)
+  override def update(f: SimpleFeature): Unit = updateStats(f)
 
   override def close(): Unit = flush()
 
   override def flush(): Unit = {
-    minMax.foreach(_.)
+    minMax.foreach { mm =>
+      // don't wait around if the lock isn't available...
+      if (stats.writeStat(mm, sft, 10)) {
+        mm.clear()
+      }
+    }
   }
 }

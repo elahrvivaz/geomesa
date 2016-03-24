@@ -19,7 +19,7 @@ import org.apache.hadoop.io.Text
 import org.apache.hadoop.mapreduce._
 import org.geotools.data.{DataStoreFinder, DataUtilities}
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
-import org.locationtech.geomesa.accumulo.data.stats.StatsTracker
+import org.locationtech.geomesa.accumulo.data.stats.StatUpdater
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloDataStoreFactory, AccumuloDataStoreParams, AccumuloFeatureWriter}
 import org.locationtech.geomesa.accumulo.index.{BinEncoder, IndexValueEncoder}
 import org.locationtech.geomesa.features.SimpleFeatureSerializers
@@ -111,7 +111,7 @@ class GeoMesaRecordWriter(params: Map[String, String],
   val encoderCache      = scala.collection.mutable.Map.empty[String, org.locationtech.geomesa.features.SimpleFeatureSerializer]
   val indexEncoderCache = scala.collection.mutable.Map.empty[String, IndexValueEncoder]
   val binEncoderCache   = scala.collection.mutable.Map.empty[String, Option[BinEncoder]]
-  val statsCache        = scala.collection.mutable.Map.empty[String, StatsTracker]
+  val statsCache        = scala.collection.mutable.Map.empty[String, StatUpdater]
 
   val written = context.getCounter(GeoMesaOutputFormat.Counters.Group, GeoMesaOutputFormat.Counters.Written)
   val failed  = context.getCounter(GeoMesaOutputFormat.Counters.Group, GeoMesaOutputFormat.Counters.Failed)
@@ -136,7 +136,7 @@ class GeoMesaRecordWriter(params: Map[String, String],
         case (table, writer) => (new Text(table), writer)
       }
     })
-    val statsTracker = statsCache.getOrElseUpdate(sftName, StatsTracker(ds.stats, sft))
+    val stats = statsCache.getOrElseUpdate(sftName, ds.stats.getStatUpdater(sft))
 
     val withFid = AccumuloFeatureWriter.featureWithFid(sft, value)
     val encoder = encoderCache.getOrElseUpdate(sftName, SimpleFeatureSerializers(sft, ds.getFeatureEncoding(sft)))
@@ -148,7 +148,7 @@ class GeoMesaRecordWriter(params: Map[String, String],
     try {
       val mutations = writers.map { case (table, featToMuts) => (table, featToMuts(featureToWrite)) }
       mutations.foreach { case (table, muts) => muts.foreach(delegate.write(table, _)) }
-      statsTracker.visit(withFid)
+      stats.update(withFid)
       written.increment(1)
     } catch {
       case e: Exception =>

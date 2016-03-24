@@ -23,7 +23,6 @@ import org.geotools.factory.Hints
 import org.geotools.filter.identity.FeatureIdImpl
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.FeatureIdProperties.FEATURE_ID_GENERATOR
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToWrite, FeatureWriterFn}
-import org.locationtech.geomesa.accumulo.data.stats.StatsTracker
 import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.util.{GeoMesaBatchWriterConfig, Z3FeatureIdGenerator}
@@ -136,7 +135,7 @@ abstract class AccumuloFeatureWriter(sft: SimpleFeatureType,
     AccumuloFeatureWriter.featureWriter(writers)
   }
 
-  protected val statsTracker = StatsTracker(ds.stats, sft)
+  protected val statsTracker = ds.stats.getStatUpdater(sft)
 
   // returns a temporary id - we will replace it just before write
   protected def nextFeatureId = AccumuloFeatureWriter.tempFeatureIds.getAndIncrement().toString
@@ -145,7 +144,7 @@ abstract class AccumuloFeatureWriter(sft: SimpleFeatureType,
     // see if there's a suggested ID to use for this feature, else create one based on the feature
     val featureWithFid = AccumuloFeatureWriter.featureWithFid(sft, feature)
     writer(new FeatureToWrite(featureWithFid, defaultVisibility, encoder, indexValueEncoder, binEncoder))
-    statsTracker.visit(featureWithFid)
+    statsTracker.update(featureWithFid)
   }
 
   override def getFeatureType: SimpleFeatureType = sft
