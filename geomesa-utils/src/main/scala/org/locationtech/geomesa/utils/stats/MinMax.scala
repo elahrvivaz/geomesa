@@ -61,6 +61,8 @@ class MinMax[T](val attribute: Int)(implicit val defaults: MinMax.MinMaxDefaults
 
   override def toJson(): String = s"""{ "min": ${stringify(min)}, "max": ${stringify(max)} }"""
 
+  override def isEmpty: Boolean = min == null && max == null
+
   override def clear(): Unit = {
     minValue = defaults.min
     maxValue = defaults.max

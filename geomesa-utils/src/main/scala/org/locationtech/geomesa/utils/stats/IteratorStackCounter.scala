@@ -35,5 +35,7 @@ class IteratorStackCounter() extends Stat {
 
   override def toJson(): String = s"""{ "count": $cnt }"""
 
+  override def isEmpty: Boolean = false
+
   override def clear(): Unit = cnt = 1L
 }

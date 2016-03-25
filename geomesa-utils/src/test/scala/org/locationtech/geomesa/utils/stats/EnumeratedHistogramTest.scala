@@ -37,7 +37,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         val stat = newStat[String]("strAttr", observe = false)
         stat.attribute mustEqual stringIndex
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -94,7 +94,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         stat.clear()
 
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
     }
 
@@ -103,7 +103,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         val stat = newStat[java.lang.Integer]("intAttr", observe = false)
         stat.attribute mustEqual intIndex
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -161,7 +161,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         stat.clear()
 
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
     }
 
@@ -170,7 +170,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         val stat = newStat[java.lang.Long]("longAttr", observe = false)
         stat.attribute mustEqual longIndex
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -228,7 +228,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         stat.clear()
 
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
     }
 
@@ -237,7 +237,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         val stat = newStat[java.lang.Float]("floatAttr", observe = false)
         stat.attribute mustEqual floatIndex
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -295,7 +295,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         stat.clear()
 
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
     }
 
@@ -304,7 +304,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         val stat = newStat[java.lang.Double]("doubleAttr", observe = false)
         stat.attribute mustEqual doubleIndex
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -362,7 +362,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         stat.clear()
 
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
     }
 
@@ -371,7 +371,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         val stat = newStat[Date]("dtg", observe = false)
         stat.attribute mustEqual dateIndex
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -437,7 +437,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         stat.clear()
 
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
     }
 
@@ -446,7 +446,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         val stat = newStat[Geometry]("geom", observe = false)
         stat.attribute mustEqual geomIndex
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -506,7 +506,7 @@ class EnumeratedHistogramTest extends Specification with StatTestHelper {
         stat.clear()
 
         stat.histogram must beEmpty
-        stat.isEmpty must beFalse
+        stat.isEmpty must beTrue
       }
     }
   }

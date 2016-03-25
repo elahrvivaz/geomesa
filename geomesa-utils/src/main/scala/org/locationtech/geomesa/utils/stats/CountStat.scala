@@ -40,5 +40,7 @@ class CountStat(val ecql: String) extends Stat {
 
   override def toJson(): String = s"""{ "count": $count }"""
 
+  override def isEmpty: Boolean = count == 0
+
   override def clear(): Unit = count = 0
 }

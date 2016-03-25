@@ -50,5 +50,7 @@ class RangeHistogram[T](val attribute: Int,
 
   override def toJson(): String = s"""{ "bins" : [ ${bins.counts.mkString(", ")} ] }"""
 
+  override def isEmpty: Boolean = bins.counts.forall(_ == 0)
+
   override def clear(): Unit = bins.clear()
 }

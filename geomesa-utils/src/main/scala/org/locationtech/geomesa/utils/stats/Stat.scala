@@ -12,9 +12,9 @@ import java.lang.{Double => jDouble, Float => jFloat, Long => jLong}
 import java.util.Date
 
 import com.vividsolutions.jts.geom.Geometry
+import org.apache.commons.lang.StringEscapeUtils
 import org.geotools.data.DataUtilities
 import org.geotools.filter.text.ecql.ECQL
-import org.joda.time.format.DateTimeFormat
 import org.locationtech.geomesa.utils.geohash.GeoHash
 import org.locationtech.geomesa.utils.geotools._
 import org.locationtech.geomesa.utils.text.{EnhancedTokenParsers, WKTUtils}
@@ -76,13 +76,11 @@ trait Stat {
   def toJson(): String
 
   /**
-   * Necessary method used by the StatIterator.
-   * Leaving the isEmpty as false ensures that we will always get a stat back from the query
-   * (even if the query doesn't hit any rows).
+   * Necessary method used by the StatIterator. Indicates if the stat has any values or not
    *
-   * @return boolean value
+   * @return true if stat contains values
    */
-  def isEmpty: Boolean = false
+  def isEmpty: Boolean
 
   /**
    * Clears the stat to its original state when first initialized.
@@ -104,15 +102,17 @@ object Stat {
   def apply(sft: SimpleFeatureType, s: String) = new StatParser(sft).parse(s)
 
   def Count(ecql: Filter): String = Count(ECQL.toCQL(ecql))
-  def Count(ecql: String): String = s"Count($ecql)"
-  def MinMax(attribute: String): String = s"MinMax($attribute)"
-  def EnumeratedHistogram(attribute: String): String = s"EnumeratedHistogram($attribute)"
+  def Count(ecql: String): String = s"Count(${safeString(ecql)})"
+  def MinMax(attribute: String): String = s"MinMax(${safeString(attribute)})"
+  def EnumeratedHistogram(attribute: String): String = s"EnumeratedHistogram(${safeString(attribute)})"
   def RangeHistogram[T](attribute: String, bins: Int, min: T, max: T)(implicit ct: ClassTag[T]): String = {
     val stringify = stringifier(ct.runtimeClass)
-    s"RangeHistogram($attribute,$bins,'${stringify(min)}','${stringify(max)}')"
+    s"RangeHistogram(${safeString(attribute)},$bins,${safeString(stringify(min))},${safeString(stringify(max))})"
   }
   def IteratorStackCounter(): String = "IteratorStackCounter"
   def SeqStat(stats: Seq[String]): String = stats.mkString(";")
+
+  private def safeString(s: String): String = s""""${StringEscapeUtils.escapeJava(s)}"""" // there's extra quotes here
 
   def getGeoHash(value: Geometry, length: Int = 2): Int = {
     val centroid = value.getCentroid
@@ -156,9 +156,6 @@ object Stat {
     }
 
   class StatParser(sft: SimpleFeatureType) extends RegexParsers with EnhancedTokenParsers {
-    val numBinRegex = """[1-9][0-9]*""".r // any non-zero positive int
-    val argument = quotedString | "\\w+".r
-    val dateFormat = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
 
     /**
      * Obtains the index of the attribute within the SFT
@@ -168,11 +165,12 @@ object Stat {
      */
     private def getAttrIndex(attribute: String): Int = {
       val i = sft.indexOf(attribute)
-      if (i == -1) {
-        require(i != -1, s"Attribute '$attribute' does not exist in sft ${DataUtilities.encodeType(sft)}")
-      }
+      require(i != -1, s"Attribute '$attribute' does not exist in sft ${DataUtilities.encodeType(sft)}")
       i
     }
+
+    val numBinRegex = """[1-9][0-9]*""".r // any non-zero positive int
+    val argument = dequotedString | "[a-zA-Z0-9_]+".r
 
     def countParser: Parser[CountStat] = {
       "Count(" ~> argument <~ ")" ^^ { cql => new CountStat(cql) }
@@ -244,8 +242,8 @@ object Stat {
           if (attrType == classOf[String]) {
             new RangeHistogram[String](attrIndex, numBins.toInt, (lowerEndpoint, upperEndpoint))
           } else if (attrType == classOf[Date]) {
-            val lower = dateFormat.parseDateTime(lowerEndpoint).toDate
-            val upper = dateFormat.parseDateTime(upperEndpoint).toDate
+            val lower = GeoToolsDateFormat.parseDateTime(lowerEndpoint).toDate
+            val upper = GeoToolsDateFormat.parseDateTime(upperEndpoint).toDate
             new RangeHistogram[Date](attrIndex, numBins.toInt, (lower, upper))
           } else if (attrType == classOf[Integer]) {
             val lower = lowerEndpoint.toInt

@@ -74,7 +74,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       "clear" >> {
         rh.clear()
 
-        rh.isEmpty must beFalse
+        rh.isEmpty must beTrue
         rh.bins.length mustEqual 20
         rh.bins(lowerIndex) mustEqual 0
         rh.bins(middleIndex) mustEqual 0
@@ -131,7 +131,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       "clear" >> {
         rh.clear()
 
-        rh.isEmpty must beFalse
+        rh.isEmpty must beTrue
         rh.bins.length mustEqual 20
         rh.bins(lowerIndex) mustEqual 0
         rh.bins(middleIndex) mustEqual 0
@@ -149,7 +149,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       val middleIndex = rh.bins.getIndex(midpoint)
       val upperIndex = rh.bins.getIndex(upperEndpoint)
 
-      rh.isEmpty must beFalse
+      rh.isEmpty must beTrue
 
       features.foreach { stat.observe }
 
@@ -195,7 +195,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       "clear" >> {
         rh.clear()
 
-        rh.isEmpty must beFalse
+        rh.isEmpty must beTrue
         rh.bins.length mustEqual 7
         rh.bins(lowerIndex) mustEqual 0
         rh.bins(middleIndex) mustEqual 0
@@ -258,7 +258,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       "clear" >> {
         rh.clear()
 
-        rh.isEmpty must beFalse
+        rh.isEmpty must beTrue
         rh.bins.length mustEqual 7
         rh.bins(lowerIndex) mustEqual 0
         rh.bins(middleIndex) mustEqual 0
@@ -321,7 +321,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       "clear" >> {
         rh.clear()
 
-        rh.isEmpty must beFalse
+        rh.isEmpty must beTrue
         rh.bins.length mustEqual 7
         rh.bins(lowerIndex) mustEqual 0
         rh.bins(middleIndex) mustEqual 0
@@ -329,7 +329,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
     }
 
     "work with dates" >> {
-      val stat = Stat(sft, "RangeHistogram(dtg,24,'2012-01-01T00:00:00.000Z','2012-01-03T00:00:00.000Z')")
+      val stat = Stat(sft, "RangeHistogram(dtg,24,\"2012-01-01T00:00:00.000Z\",\"2012-01-03T00:00:00.000Z\")")
       val rh = stat.asInstanceOf[RangeHistogram[Date]]
       val lowerEndpoint = GeoToolsDateFormat.parseDateTime("2012-01-01T00:00:00.000Z").toDate
       val midpoint = GeoToolsDateFormat.parseDateTime("2012-01-02T00:00:00.000Z").toDate
@@ -382,7 +382,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       "clear them" >> {
         rh.clear()
 
-        rh.isEmpty must beFalse
+        rh.isEmpty must beTrue
         rh.bins.length mustEqual 24
         rh.bins(lowerIndex) mustEqual 0
         rh.bins(middleIndex) mustEqual 0
@@ -390,7 +390,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
     }
 
     "work with geometries" >> {
-      val stat = Stat(sft, "RangeHistogram(geom,32,'POINT(-180 -90)','POINT(180 90)')")
+      val stat = Stat(sft, "RangeHistogram(geom,32,\"POINT(-180 -90)\",\"POINT(180 90)\")")
       // 1024, 32
       val rh = stat.asInstanceOf[RangeHistogram[Geometry]]
       val lowerEndpoint = WKTUtils.read("POINT(-180 -90)")
@@ -420,7 +420,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       }
 
       "combine two RangeHistograms" >> {
-        val stat2 = Stat(sft, "RangeHistogram(geom,32,'POINT(-180 -90)','POINT(180 90)')")
+        val stat2 = Stat(sft, "RangeHistogram(geom,32,\"POINT(-180 -90)\",\"POINT(180 90)\")")
         val rh2 = stat2.asInstanceOf[RangeHistogram[Geometry]]
 
         features2.foreach { stat2.observe }
@@ -457,7 +457,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       "clear" >> {
         rh.clear()
 
-        rh.isEmpty must beFalse
+        rh.isEmpty must beTrue
         rh.bins.length mustEqual 32
         rh.bins(0) mustEqual 0
         rh.bins(14) mustEqual 0

@@ -102,13 +102,16 @@ object KryoLazyStatsIterator extends LazyLogging {
 
     val decodedStats = features.map(f => decodeStat(f.getAttribute(0).toString, sft))
 
-    if (decodedStats.isEmpty) {
-      Iterator.empty
+    val sum = if (decodedStats.isEmpty) {
+      // get empty stats
+      Stat(sft, query.getHints.get(STATS_KEY).asInstanceOf[String])
     } else {
       val sum = decodedStats.next()
       decodedStats.foreach(sum += _)
-      val stats = if (encode) encodeStat(sum, sft) else sum.toJson()
-      Iterator(new ScalaSimpleFeature("stat-1", returnSft, Array(stats, GeometryUtils.zeroPoint)))
+      sum
     }
+
+    val stats = if (encode) encodeStat(sum, sft) else sum.toJson()
+    Iterator(new ScalaSimpleFeature("stat", returnSft, Array(stats, GeometryUtils.zeroPoint)))
   }
 }

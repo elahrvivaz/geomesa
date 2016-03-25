@@ -36,7 +36,7 @@ class MinMaxTest extends Specification with StatTestHelper {
         minMax.attribute mustEqual stringIndex
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -94,7 +94,7 @@ class MinMaxTest extends Specification with StatTestHelper {
 
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
     }
 
@@ -104,7 +104,7 @@ class MinMaxTest extends Specification with StatTestHelper {
         minMax.attribute mustEqual intIndex
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -162,7 +162,7 @@ class MinMaxTest extends Specification with StatTestHelper {
 
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
     }
 
@@ -172,7 +172,7 @@ class MinMaxTest extends Specification with StatTestHelper {
         minMax.attribute mustEqual longIndex
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -230,7 +230,7 @@ class MinMaxTest extends Specification with StatTestHelper {
 
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
     }
 
@@ -240,7 +240,7 @@ class MinMaxTest extends Specification with StatTestHelper {
         minMax.attribute mustEqual floatIndex
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -298,7 +298,7 @@ class MinMaxTest extends Specification with StatTestHelper {
 
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
     }
 
@@ -308,7 +308,7 @@ class MinMaxTest extends Specification with StatTestHelper {
         minMax.attribute mustEqual doubleIndex
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -366,7 +366,7 @@ class MinMaxTest extends Specification with StatTestHelper {
 
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
     }
 
@@ -376,7 +376,7 @@ class MinMaxTest extends Specification with StatTestHelper {
         minMax.attribute mustEqual dateIndex
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -434,7 +434,7 @@ class MinMaxTest extends Specification with StatTestHelper {
 
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
     }
 
@@ -444,7 +444,7 @@ class MinMaxTest extends Specification with StatTestHelper {
         minMax.attribute mustEqual geomIndex
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
 
       "observe correct values" >> {
@@ -502,7 +502,7 @@ class MinMaxTest extends Specification with StatTestHelper {
 
         minMax.min must beNull
         minMax.max must beNull
-        minMax.isEmpty must beFalse
+        minMax.isEmpty must beTrue
       }
     }
   }

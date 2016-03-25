@@ -29,7 +29,7 @@ class CountStatTest extends Specification with StatTestHelper {
       val stat = newStat("INCLUDE", observe = false)
       stat.ecql mustEqual "INCLUDE"
       stat.count mustEqual 0L
-      stat.isEmpty must beFalse
+      stat.isEmpty must beTrue
     }
 
     "observe correct values" >> {
@@ -87,7 +87,7 @@ class CountStatTest extends Specification with StatTestHelper {
       stat.clear()
 
       stat.count mustEqual 0L
-      stat.isEmpty must beFalse
+      stat.isEmpty must beTrue
     }
   }
 }

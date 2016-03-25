@@ -49,6 +49,7 @@ class EnumeratedHistogram[T](val attribute: Int)(implicit ct: ClassTag[T]) exten
     }
   }
 
+  override def isEmpty: Boolean = histogram.isEmpty
 
   override def clear(): Unit = histogram.clear()
 }

@@ -165,7 +165,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
   }
 
   override def getCount(sft: SimpleFeatureType, filter: Filter, exact: Boolean): Long = {
-    if (exact) {
+    def exactCount: Long = {
       executeStatsQuery(Stat.Count(filter), sft) match {
         case s: CountStat => s.count
         case s =>
@@ -174,12 +174,15 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
           val query = new Query(sft.getTypeName, filter)
           SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).length
       }
+    }
+    if (exact) {
+      exactCount
     } else if (filter == Filter.INCLUDE) {
-      ds.metadata.read(sft.getTypeName, TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(-1L)
+      ds.metadata.read(sft.getTypeName, TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(exactCount)
     } else {
       // TODO use the histograms to estimate counts
 //      val spatialHistogram = ds.metadata.read(sft.getTypeName, SPATIAL_HISTOGRAM_KEY, cache = false)
-      ds.metadata.read(sft.getTypeName, TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(-1L)
+      ds.metadata.read(sft.getTypeName, TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(exactCount)
     }
   }
 
