@@ -199,6 +199,7 @@ object Stat {
           } else if (classOf[Geometry].isAssignableFrom(attrType)) {
             new MinMax[Geometry](attrIndex)
           } else {
+            println(s"\n\nCannot create stat for invalid type: $attrType for attribute: $attribute\n\n")
             throw new Exception(s"Cannot create stat for invalid type: $attrType for attribute: $attribute")
           }
       }

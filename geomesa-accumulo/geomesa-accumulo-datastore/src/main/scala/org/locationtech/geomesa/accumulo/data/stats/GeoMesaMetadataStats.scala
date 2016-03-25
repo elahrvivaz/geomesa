@@ -30,6 +30,7 @@ import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
 import org.locationtech.geomesa.utils.geotools.{CRS_EPSG_4326, SimpleFeatureTypes, wholeWorldEnvelope}
 import org.locationtech.geomesa.utils.stats._
 import org.locationtech.geomesa.utils.text.WKTUtils
+import org.opengis.feature.`type`.AttributeDescriptor
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
@@ -67,7 +68,17 @@ object GeoMesaMetadataStats {
 
   private [stats] def minMaxStat(sft: SimpleFeatureType): Seq[String] = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-    (Option(sft.getGeomField).toSeq ++ sft.getDtgField ++ sft.getIndexedAttributes).distinct.map(Stat.MinMax)
+
+    import scala.collection.JavaConversions._
+
+    val indexed = sft.getAttributeDescriptors.filter(okForMinMax).map(_.getLocalName)
+    (Option(sft.getGeomField).toSeq ++ sft.getDtgField ++ indexed).distinct.map(Stat.MinMax)
+  }
+
+  private def okForMinMax(d: AttributeDescriptor): Boolean = {
+    import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
+    // TODO support list/map types in stats
+    d.isIndexed && !d.isMultiValued && d.getType.getBinding != classOf[java.lang.Boolean]
   }
 }
 

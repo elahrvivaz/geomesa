@@ -239,8 +239,6 @@ object RichSimpleFeatureType {
     def getEnabledTables: String = userData[String](SimpleFeatureTypes.ENABLED_INDEXES).getOrElse("")
     def setEnabledTables(tables: String): Unit = sft.getUserData.put(SimpleFeatureTypes.ENABLED_INDEXES, tables)
 
-    def getIndexedAttributes: Seq[String] = sft.getAttributeDescriptors.filter(_.isIndexed).map(_.getLocalName)
-
     def userData[T](key: AnyRef): Option[T] = Option(sft.getUserData.get(key).asInstanceOf[T])
   }
 }
