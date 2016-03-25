@@ -391,7 +391,7 @@ class RangeHistogramTest extends Specification with StatTestHelper {
 
     "work with geometries" >> {
       val stat = Stat(sft, "RangeHistogram(geom,32,'POINT(-180 -90)','POINT(180 90)')")
-      // 4096, 256, 36
+      // 1024, 32
       val rh = stat.asInstanceOf[RangeHistogram[Geometry]]
       val lowerEndpoint = WKTUtils.read("POINT(-180 -90)")
       val midpoint = WKTUtils.read("POINT(0 0)")
@@ -402,12 +402,12 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       "correctly bin values" >> {
         rh.isEmpty must beFalse
         rh.bins.length mustEqual 32
-        rh.bins(12) mustEqual 9
-        rh.bins(13) mustEqual 44
-        rh.bins(14) mustEqual 45
-        rh.bins(15) mustEqual 1
-        rh.bins(28) mustEqual 1
-        forall((0 until 36).filterNot(i => (i > 11 && i < 16) || i == 28))(rh.bins(_) mustEqual 0)
+        rh.bins(11) mustEqual 9
+        rh.bins(12) mustEqual 44
+        rh.bins(13) mustEqual 45
+        rh.bins(14) mustEqual 1
+        rh.bins(24) mustEqual 1
+        forall((0 until 32).filterNot(i => (i > 10 && i < 15) || i == 24))(rh.bins(_) mustEqual 0)
       }
 
       "serialize and deserialize" >> {
@@ -420,45 +420,45 @@ class RangeHistogramTest extends Specification with StatTestHelper {
       }
 
       "combine two RangeHistograms" >> {
-        val stat2 = Stat(sft, "RangeHistogram(geom,36,'POINT(-180 -90)','POINT(180 90)')")
+        val stat2 = Stat(sft, "RangeHistogram(geom,32,'POINT(-180 -90)','POINT(180 90)')")
         val rh2 = stat2.asInstanceOf[RangeHistogram[Geometry]]
 
         features2.foreach { stat2.observe }
 
-        rh2.bins.length mustEqual 36
-        rh2.bins(29) mustEqual 10
-        rh2.bins(32) mustEqual 20
-        rh2.bins(34) mustEqual 25
-        rh2.bins(35) mustEqual 45
-        forall((0 until 36).filterNot(i => i == 29 || i == 32 || i == 34 || i == 35))(rh2.bins(_) mustEqual 0)
+        rh2.bins.length mustEqual 32
+        rh2.bins(25) mustEqual 10
+        rh2.bins(28) mustEqual 20
+        rh2.bins(30) mustEqual 25
+        rh2.bins(31) mustEqual 45
+        forall((0 until 32).filterNot(i => i == 25 || i == 28 || i == 30 || i == 31))(rh2.bins(_) mustEqual 0)
 
         stat += stat2
 
-        rh.bins.length mustEqual 36
-        rh.bins(12) mustEqual 9
-        rh.bins(13) mustEqual 44
-        rh.bins(14) mustEqual 45
-        rh.bins(15) mustEqual 1
-        rh.bins(28) mustEqual 1
-        rh.bins(29) mustEqual 10
-        rh.bins(32) mustEqual 20
-        rh.bins(34) mustEqual 25
-        rh.bins(35) mustEqual 45
-        forall((0 until 36).filterNot(i => (i > 11 && i < 16) || i == 28 || i == 29 || i == 32 || i == 34 || i == 35))(rh.bins(_) mustEqual 0)
+        rh.bins.length mustEqual 32
+        rh.bins(11) mustEqual 9
+        rh.bins(12) mustEqual 44
+        rh.bins(13) mustEqual 45
+        rh.bins(14) mustEqual 1
+        rh.bins(24) mustEqual 1
+        rh.bins(25) mustEqual 10
+        rh.bins(28) mustEqual 20
+        rh.bins(30) mustEqual 25
+        rh.bins(31) mustEqual 45
+        forall((0 until 32).filterNot(i => (i > 10 && i < 15) || i == 24 || i == 25 || i == 28 || i == 30 || i == 31))(rh.bins(_) mustEqual 0)
 
-        rh2.bins.length mustEqual 36
-        rh2.bins(29) mustEqual 10
-        rh2.bins(32) mustEqual 20
-        rh2.bins(34) mustEqual 25
-        rh2.bins(35) mustEqual 45
-        forall((0 until 36).filterNot(i => i == 29 || i == 32 || i == 34 || i == 35))(rh2.bins(_) mustEqual 0)
+        rh2.bins.length mustEqual 32
+        rh2.bins(25) mustEqual 10
+        rh2.bins(28) mustEqual 20
+        rh2.bins(30) mustEqual 25
+        rh2.bins(31) mustEqual 45
+        forall((0 until 32).filterNot(i => i == 25 || i == 28 || i == 30 || i == 31))(rh2.bins(_) mustEqual 0)
       }
 
       "clear" >> {
         rh.clear()
 
         rh.isEmpty must beFalse
-        rh.bins.length mustEqual 36
+        rh.bins.length mustEqual 32
         rh.bins(0) mustEqual 0
         rh.bins(14) mustEqual 0
       }
