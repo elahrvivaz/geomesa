@@ -33,9 +33,15 @@ class EnumeratedHistogram[T](val attribute: Int)(implicit ct: ClassTag[T]) exten
     }
   }
 
-  override def +=(other: EnumeratedHistogram[T]): EnumeratedHistogram[T] = {
-    other.histogram.foreach { case (key, count) => histogram(key) += count }; this
+  override def +(other: EnumeratedHistogram[T]): EnumeratedHistogram[T] = {
+    val plus = new EnumeratedHistogram[T](attribute)
+    plus += this
+    plus += other
+    plus
   }
+
+  override def +=(other: EnumeratedHistogram[T]): Unit =
+    other.histogram.foreach { case (key, count) => histogram(key) += count }
 
   override def toJson(): String = {
     if (histogram.isEmpty) { "{ }" } else {

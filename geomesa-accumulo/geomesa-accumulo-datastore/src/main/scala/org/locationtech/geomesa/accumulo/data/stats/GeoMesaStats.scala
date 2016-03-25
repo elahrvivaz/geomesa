@@ -9,6 +9,8 @@
 package org.locationtech.geomesa.accumulo.data.stats
 
 import java.io.{Closeable, Flushable}
+import java.nio.charset.Charset
+import java.util.Date
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.{Executors, TimeUnit}
 
@@ -18,23 +20,25 @@ import org.apache.accumulo.core.client.impl.{MasterClient, Tables}
 import org.apache.accumulo.core.client.mock.MockConnector
 import org.apache.accumulo.core.security.thrift.TCredentials
 import org.apache.accumulo.trace.instrument.Tracer
-import org.geotools.data.{DataUtilities, Query, Transaction}
+import org.geotools.data.{Query, Transaction}
 import org.geotools.geometry.jts.ReferencedEnvelope
 import org.joda.time.format.ISODateTimeFormat
-import org.joda.time.{DateTime, DateTimeUtils, DateTimeZone, Interval}
+import org.joda.time._
 import org.locationtech.geomesa.accumulo.data.GeoMesaMetadata._
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
 import org.locationtech.geomesa.accumulo.index.QueryHints
 import org.locationtech.geomesa.accumulo.util.{DistributedLocking, SelfClosingIterator}
+import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-import org.locationtech.geomesa.utils.geotools.{CRS_EPSG_4326, wholeWorldEnvelope}
-import org.locationtech.geomesa.utils.stats.{SeqStat, Stat}
+import org.locationtech.geomesa.utils.geotools.{CRS_EPSG_4326, SimpleFeatureTypes, wholeWorldEnvelope}
+import org.locationtech.geomesa.utils.stats._
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
 import scala.collection.mutable.ArrayBuffer
+import scala.util.Try
 
 /**
  * Tracks stats for a schema - spatial/temporal bounds, number of records, etc. Persistence of
@@ -47,7 +51,7 @@ trait GeoMesaStats extends Closeable {
     *
     * @param typeName simple feature type name
     * @param filter cql filter
-    * @param exact rough estimate, or precise count. note: precise count will likely be very expensive.
+    * @param exact rough estimate, or precise count. note: precise count will likely be expensive.
     * @return count of features
     */
   def getCount(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): Long
@@ -57,20 +61,23 @@ trait GeoMesaStats extends Closeable {
     *
     * @param typeName simple feature type name
     * @param filter cql filter
-    * @param exact rough estimate, or precise bounds. note: precise bounds will likely be very expensive.
+    * @param exact rough estimate, or precise bounds. note: precise bounds will likely be expensive.
     * @return bounds
     */
   def getBounds(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): ReferencedEnvelope
 
+  // TODO for optimization, we could have a getBoundsAndCountExact method so we only scan features once
+  // would that be useful though?
+
   /**
-    * Gets the temporal bounds for data that will be returned for a query
+    * Gets the minimum and maximum values for the given attributes
     *
     * @param typeName simple feature type name
-    * @param filter cql filter
-    * @param exact rough estimate, or precise bounds. note: precise bounds will likely be very expensive.
-    * @return time bounds
+    * @param attributes attribute names to examine
+    * @param exact rough estimate, or precise values. note: precise values will likely be expensive.
+    * @return mix/max values. types will be consistent with the binding for each attribute
     */
-  def getTemporalBounds(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): Interval
+  def getMinMax(typeName: String, attributes: Seq[String], exact: Boolean = false): Seq[(Any, Any)]
 
   /**
     * Gets an object to track stats as they are written
@@ -79,45 +86,41 @@ trait GeoMesaStats extends Closeable {
     * @return updater
     */
   def getStatUpdater(sft: SimpleFeatureType): StatUpdater
+
+  // use cases:
+  // 1. query planning - estimate counts for different primary filters (dtg+geom, geom, attr, rec?)
+  // 2. bounds visitor - estimate spatial bounds for different queries
+  // 3. min/max visitors - for various attributes
 }
 
 object GeoMesaStats {
 
   val dtFormat = ISODateTimeFormat.dateTime().withZoneUTC()
 
-  val DefaultUpdateInterval = 360 // in minutes
-  val GeometryHistogramSize = 1024 // corresponds to 2 digits of geohash
+  val DefaultUpdateInterval = 360  // in minutes
+  val GeometryHistogramSize = 1024 // corresponds to 2 digits of geohash - 1,252.3km lon 624.1km lat
   val MinGeom = WKTUtils.read("POINT (-180 -90)")
   val MaxGeom = WKTUtils.read("POINT (180 90)")
 
-  def lockKey(table: String, typeName: String) = {
+  private [stats] val Utf8 = Charset.forName("UTF-8")
+
+  def allTimeBounds = new Interval(0L, System.currentTimeMillis(), DateTimeZone.UTC) // epoch till now
+
+  /**
+    * Gets a safe string to use as a key in accumulo
+    *
+    * @param input input string
+    * @return safe encoded string, all alphanumeric or underscore
+    */
+  def keySafeString(input: String): String = GeoMesaTable.hexEncodeNonAlphaNumeric(input)
+
+  private [stats] def lockKey(table: String, typeName: String) = {
     val safeName = GeoMesaTable.hexEncodeNonAlphaNumeric(typeName)
     s"/org.locationtech.geomesa/accumulo/stats/$table/$safeName"
   }
 
-  def allTimeBounds = new Interval(0L, System.currentTimeMillis(), DateTimeZone.UTC) // Epoch till now
-
-  def decodeTimeBounds(value: String): Interval = {
-    val longs = value.split(":").map(java.lang.Long.parseLong)
-    require(longs(0) <= longs(1))
-    require(longs.length == 2)
-    new Interval(longs(0), longs(1), DateTimeZone.UTC)
-  }
-
-  def decodeSpatialBounds(string: String): Envelope = {
-    val minMaxXY = string.split(":")
-    require(minMaxXY.size == 4)
-    new Envelope(minMaxXY(0).toDouble, minMaxXY(1).toDouble, minMaxXY(2).toDouble, minMaxXY(3).toDouble)
-  }
-
-  def encode(bounds: Interval): String = s"${bounds.getStartMillis}:${bounds.getEndMillis}"
-
-  def encode(bounds: Envelope): String =
-    Seq(bounds.getMinX, bounds.getMaxX, bounds.getMinY, bounds.getMaxY).mkString(":")
-
   private [stats] def minMaxStat(sft: SimpleFeatureType): Seq[String] =
     (Option(sft.getGeomField).toSeq ++ sft.getDtgField ++ sft.getIndexedAttributes).distinct.map(Stat.MinMax)
-
 }
 
 trait HasGeoMesaStats {
@@ -148,6 +151,8 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
   private val es = Executors.newSingleThreadScheduledExecutor()
   private val shutdown = new AtomicBoolean(false)
 
+  private val serializers = new SoftThreadLocalCache[String, StatSerializer]()
+
   // start the background thread to gather stats
   // we schedule the initial run for 10 minutes - this should avoid overload during startup,
   // and prevent short-lived data stores from spamming updates
@@ -155,15 +160,22 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
     es.schedule(this, initialDelayMinutes, TimeUnit.MINUTES)
   }
 
-  // Note: we don't currently filter by the cql
-  override def getBounds(typeName: String, filter: Filter, exact: Boolean): ReferencedEnvelope =
-    readSpatialBounds(typeName)
-        .map(new ReferencedEnvelope(_, CRS_EPSG_4326))
-        .getOrElse(wholeWorldEnvelope)
+  override def getStatUpdater(sft: SimpleFeatureType): StatUpdater = new MetadataStatUpdater(this, sft)
 
-  // Note: we don't currently filter by the cql
-  override def getTemporalBounds(typeName: String, filter: Filter, exact: Boolean): Interval =
-    readTemporalBounds(typeName).getOrElse(allTimeBounds)
+  override def getBounds(typeName: String, filter: Filter, exact: Boolean): ReferencedEnvelope = {
+    if (exact) {
+
+    } else {
+//      readSpatialBounds(typeName)
+//          .map(new ReferencedEnvelope(_, CRS_EPSG_4326))
+//          .getOrElse(wholeWorldEnvelope)
+    }
+    ???
+  }
+
+  override def getMinMax(typeName: String, attributes: Seq[String], exact: Boolean): Seq[(Any, Any)] = {
+    ???
+  }
 
   // Note: we don't currently filter by the cql
   override def getCount(typeName: String, filter: Filter, exact: Boolean): Long = {
@@ -172,6 +184,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
     } else {
       -1L
     }
+    ???
     // TODO
     // ad.getCardinality()
 //    val attrsAndCounts = filter.primary
@@ -208,57 +221,6 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
     shutdown.set(true)
     es.shutdown()
   }
-
-  /**
-   * Writes spatial bounds for this feature
-   *
-   * @param typeName simple feature type
-   * @param bounds partial bounds - existing bounds will be expanded to include this
-   */
-  def writeSpatialBounds(typeName: String, bounds: Envelope): Unit = {
-    val toWrite = readSpatialBounds(typeName) match {
-      case Some(current) if current == bounds => None
-      case _                                  => Some(bounds)
-    }
-    toWrite.foreach(b => ds.metadata.insert(typeName, SPATIAL_BOUNDS_KEY, encode(b)))
-  }
-
-  /**
-   * Writes temporal bounds for this feature
-   *
-   * @param typeName simple feature type
-   * @param bounds partial bounds - existing bounds will be expanded to include this
-   */
-  def writeTemporalBounds(typeName: String, bounds: Interval): Unit = {
-    val toWrite = readTemporalBounds(typeName) match {
-      case Some(current) if current == bounds => None
-      case _                                  => Some(bounds)
-    }
-    toWrite.foreach(b => ds.metadata.insert(typeName, TEMPORAL_BOUNDS_KEY, encode(b)))
-  }
-
-  private def readTemporalBounds(typeName: String): Option[Interval] =
-    ds.metadata.read(typeName, TEMPORAL_BOUNDS_KEY, cache = false).filterNot(_.isEmpty).map(decodeTimeBounds)
-
-  private def readSpatialBounds(typeName: String): Option[Envelope] =
-    ds.metadata.read(typeName, SPATIAL_BOUNDS_KEY, cache = false).filterNot(_.isEmpty).map(decodeSpatialBounds)
-
-  // This lazily computed function helps shortcut getCount from scanning entire tables.
-  private lazy val retrieveTableSize: (String) => Long =
-    if (ds.connector.isInstanceOf[MockConnector]) {
-      (tableName: String) => -1
-    } else {
-      val masterClient = MasterClient.getConnection(ds.connector.getInstance())
-      val tc = new TCredentials()
-      // TODO this will get stale, no?
-      val mmi = masterClient.getMasterStats(Tracer.traceInfo(), tc)
-      (tableName: String) => {
-        val tableId = Tables.getTableId(ds.connector.getInstance(), tableName)
-        val v = mmi.getTableMap.get(tableId)
-        v.getRecs
-      }
-    }
-
 
   /**
    * Checks for the last time stats were run, and runs if needed.
@@ -325,23 +287,24 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
     val sft = ds.getSchema(typeName)
 
+    val count = Stat.Count("INCLUDE")
     val geomHistogram = Option(sft.getGeomField).map(g => Stat.RangeHistogram(g, GeometryHistogramSize, MinGeom, MaxGeom))
 
     val dateHistogram = for {
       dtg <- sft.getDtgField
-      bounds <- readTemporalBounds(typeName)
-      weeks = bounds.toDuration.getStandardDays / 7
+      bounds <- readStat(sft, TEMPORAL_BOUNDS_KEY).map(_.asInstanceOf[MinMax[Date]])
+      weeks = new Duration(bounds.min.getTime, bounds.max.getTime).getStandardDays / 7
       if weeks > 1
     } yield {
-      Stat.RangeHistogram(dtg, weeks.toInt, bounds.getStart, bounds.getEnd)
+      Stat.RangeHistogram(dtg, weeks.toInt, bounds.min, bounds.max)
     }
 
     val minMax = GeoMesaStats.minMaxStat(sft)
 
-    val allStats = Stat.SeqStat(geomHistogram.toSeq ++ dateHistogram ++ minMax)
+    val allStats = Stat.SeqStat(Seq(count) ++ geomHistogram ++ dateHistogram ++ minMax)
 
     if (allStats.isEmpty) {
-      logger.debug(s"Not calculating any stats for sft ${DataUtilities.encodeType(sft)}")
+      logger.debug(s"Not calculating any stats for sft ${sft.getTypeName}: ${SimpleFeatureTypes.encodeType(sft)}")
       return
     }
 
@@ -354,7 +317,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
       val reader = ds.getFeatureReader(query, Transaction.AUTO_COMMIT)
       try {
-        // stats should always return one result, even if there are no features in the table
+        // stats should always return exactly one result, even if there are no features in the table
         decodeStat(reader.next.getAttribute(0).asInstanceOf[String], sft)
       } finally {
         reader.close()
@@ -364,20 +327,75 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
     writeStat(stats, sft)
   }
 
-  private def writeStat(stat: Stat, sft: SimpleFeatureType): Unit = {
+  /**
+    * Write a stat to accumulo. If update == true, will attempt to merge the existing stat
+    * and the new one, otherwise will overwrite.
+    *
+    * @param stat stat to write
+    * @param sft simple feature type
+    * @param merge merge with the existing stat - otherwise overwrite
+    */
+  private def writeStat(stat: Stat, sft: SimpleFeatureType, merge: Boolean = false): Unit = {
     stat match {
-      case seq: SeqStat => seq.stats.foreach(writeStat(_, sft))
-      case _ =>
-
+      case s: MinMax[_]         => writeMinMax(s, sft, merge)
+      case s: RangeHistogram[_] => writeHistogram(s, sft, merge)
+      case s: CountStat         => writeCount(s, sft, merge)
+      case s: SeqStat           => s.stats.foreach(writeStat(_, sft, merge))
+      case _ => throw new NotImplementedError("Only Count, MinMax and RangeHistogram stats are supported")
     }
   }
 
-  private [stats] def writeStat(stat: Stat, sft: SimpleFeatureType, lockTimeout: Long): Boolean = {
+  /**
+    * Acquires the lock before updating the stat
+    *
+    * @param stat stat to write
+    * @param sft simple feature type
+    * @param lockTimeout how long to wait for the lock, in milliseconds
+    * @return true if stat was updated, else false
+    */
+  private [stats] def writeStatUpdate(stat: Stat, sft: SimpleFeatureType, lockTimeout: Long): Boolean = {
     lock(lockKey(ds.catalogTable, sft.getTypeName), lockTimeout) match {
-      case Some(lock) => try { writeStat(stat, sft) } finally { lock.release() }; true
+      case Some(lock) => try { writeStat(stat, sft, merge = true) } finally { lock.release() }; true
       case None => false
     }
   }
+
+  private def writeMinMax(stat: MinMax[_], sft: SimpleFeatureType, merge: Boolean = false): Unit = {
+    val key = s"$MIN_MAX_PREFIX-${keySafeString(sft.getDescriptor(stat.attribute).getLocalName)}"
+    val updated = if (merge) tryMerge(sft, key, stat) else stat
+    val value = serializer(sft).serialize(updated)
+    ds.metadata.insert(sft.getTypeName, key, new String(value, Utf8))
+  }
+
+  private def writeHistogram(stat: RangeHistogram[_], sft: SimpleFeatureType, merge: Boolean = false): Unit = {
+    val key = if (sft.getGeomIndex == stat.attribute) {
+      SPATIAL_HISTOGRAM_KEY
+    } else if (sft.getDtgIndex.contains(stat.attribute)) {
+      TEMPORAL_HISTOGRAM_KEY
+    } else {
+      s"$HISTOGRAM_PREFIX-${keySafeString(sft.getDescriptor(stat.attribute).getLocalName)}"
+    }
+
+    val updated = if (merge) tryMerge(sft, key, stat) else stat
+    val value = serializer(sft).serialize(updated)
+    ds.metadata.insert(sft.getTypeName, key, new String(value, Utf8))
+  }
+
+  private def writeCount(stat: CountStat, sft: SimpleFeatureType, merge: Boolean = false): Unit = {
+    val updated = if (merge) {
+      val existing = ds.metadata.read(sft.getTypeName, TOTAL_COUNT_KEY, cache = false)
+      existing.map(_.toLong + stat.count).getOrElse(stat.count)
+    } else {
+      stat.count
+    }
+    ds.metadata.insert(sft.getTypeName, TOTAL_COUNT_KEY, updated.toString)
+  }
+
+  private def tryMerge(sft: SimpleFeatureType, key: String, stat: Stat): Stat =
+    readStat(sft, key).flatMap(s => Try(s + stat).toOption).getOrElse(stat)
+
+  private def readStat(sft: SimpleFeatureType, key: String): Option[Stat] =
+    ds.metadata.read(sft.getTypeName, key, cache = false).map(s => serializer(sft).deserialize(s.getBytes(Utf8)))
 
   /**
     * Reads the time of the last update
@@ -397,9 +415,8 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
     *
     * @param typeName simple feature type name
     */
-  private def setLastUpdate(typeName: String, update: DateTime = DateTime.now(DateTimeZone.UTC)): Unit = {
+  private def setLastUpdate(typeName: String, update: DateTime = DateTime.now(DateTimeZone.UTC)): Unit =
     ds.metadata.insert(typeName, STATS_GENERATION_KEY, dtFormat.print(update))
-  }
 
   /**
     * Reads the update interval.
@@ -419,7 +436,8 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
     }
   }
 
-  override def getStatUpdater(sft: SimpleFeatureType): StatUpdater = new MetadataStatsUpdater(this, sft)
+  private def serializer(sft: SimpleFeatureType): StatSerializer =
+    serializers.getOrElseUpdate(sft.getTypeName, StatSerializer(sft))
 }
 
 /**
@@ -428,7 +446,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
   * @param stats persistence
   * @param sft simple feature type
   */
-class MetadataStatsUpdater(stats: GeoMesaMetadataStats, sft: SimpleFeatureType) extends StatUpdater {
+class MetadataStatUpdater(stats: GeoMesaMetadataStats, sft: SimpleFeatureType) extends StatUpdater {
 
   private val minMax = {
     val statString = Stat.SeqStat(GeoMesaStats.minMaxStat(sft))
@@ -447,7 +465,7 @@ class MetadataStatsUpdater(stats: GeoMesaMetadataStats, sft: SimpleFeatureType) 
   override def flush(): Unit = {
     minMax.foreach { mm =>
       // don't wait around if the lock isn't available...
-      if (stats.writeStat(mm, sft, 10)) {
+      if (stats.writeStatUpdate(mm, sft, 10)) {
         mm.clear()
       }
     }

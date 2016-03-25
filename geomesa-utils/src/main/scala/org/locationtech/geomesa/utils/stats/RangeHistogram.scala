@@ -39,9 +39,14 @@ class RangeHistogram[T](val attribute: Int,
     }
   }
 
-  override def +=(other: RangeHistogram[T]): RangeHistogram[T] = {
-    bins.add(other.bins.counts); this
+  override def +(other: RangeHistogram[T]): RangeHistogram[T] = {
+    val plus = new RangeHistogram(attribute, numBins, endpoints)
+    plus += this
+    plus += other
+    plus
   }
+
+  override def +=(other: RangeHistogram[T]): Unit = bins.add(other.bins.counts)
 
   override def toJson(): String = s"""{ "bins" : [ ${bins.counts.mkString(", ")} ] }"""
 

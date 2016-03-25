@@ -79,27 +79,29 @@ trait GeoMesaMetadata {
 }
 
 object GeoMesaMetadata {
-  val ATTRIBUTES_KEY            = "attributes"
-  val SCHEMA_KEY                = "schema"
-  val DTGFIELD_KEY              = "dtgfield"
-  val ST_IDX_TABLE_KEY          = "tables.idx.st.name"
-  val ATTR_IDX_TABLE_KEY        = "tables.idx.attr.name"
-  val RECORD_TABLE_KEY          = "tables.record.name"
-  val Z3_TABLE_KEY              = "tables.z3.name"
-  val QUERIES_TABLE_KEY         = "tables.queries.name"
-  val SHARED_TABLES_KEY         = "tables.sharing"
-  val TABLES_ENABLED_KEY        = SimpleFeatureTypes.ENABLED_INDEXES
-  val SCHEMA_ID_KEY             = "id"
-  val VERSION_KEY               = "version"
+  val ATTRIBUTES_KEY         = "attributes"
+  val SCHEMA_KEY             = "schema"
+  val DTGFIELD_KEY           = "dtgfield"
+  val ST_IDX_TABLE_KEY       = "tables.idx.st.name"
+  val ATTR_IDX_TABLE_KEY     = "tables.idx.attr.name"
+  val RECORD_TABLE_KEY       = "tables.record.name"
+  val Z3_TABLE_KEY           = "tables.z3.name"
+  val QUERIES_TABLE_KEY      = "tables.queries.name"
+  val SHARED_TABLES_KEY      = "tables.sharing"
+  val TABLES_ENABLED_KEY     = SimpleFeatureTypes.ENABLED_INDEXES
+  val SCHEMA_ID_KEY          = "id"
+  val VERSION_KEY            = "version"
 
-  val BOUNDS_PREFIX             = "stats-b"
-  val DISTRIBUTION_PREFIX       = "stats-d"
-  val SPATIAL_BOUNDS_KEY        = s"$BOUNDS_PREFIX-spatial"
-  val TEMPORAL_BOUNDS_KEY       = s"$BOUNDS_PREFIX-temporal"
-  val SPATIAL_DISTRIBUTION_KEY  = s"$DISTRIBUTION_PREFIX-spatial"
-  val TEMPORAL_DISTRIBUTION_KEY = s"$DISTRIBUTION_PREFIX-temporal"
-  val STATS_GENERATION_KEY      = "stats-date"
-  val STATS_INTERVAL_KEY        = "stats-interval"
+  val STATS_GENERATION_KEY   = "stats-date"
+  val STATS_INTERVAL_KEY     = "stats-interval"
+  val BOUNDS_PREFIX          = "stats-bounds"
+  val HISTOGRAM_PREFIX       = "stats-hist"
+  val SPATIAL_BOUNDS_KEY     = s"$BOUNDS_PREFIX-spatial"
+  val TEMPORAL_BOUNDS_KEY    = s"$BOUNDS_PREFIX-temporal"
+  val SPATIAL_HISTOGRAM_KEY  = s"$HISTOGRAM_PREFIX-spatial"
+  val TEMPORAL_HISTOGRAM_KEY = s"$HISTOGRAM_PREFIX-temporal"
+  val TOTAL_COUNT_KEY        = "stats-count"
+  val MIN_MAX_PREFIX         = "stats-minmax"
 }
 
 trait HasGeoMesaMetadata {
@@ -112,7 +114,7 @@ class AccumuloBackedMetadata(connector: Connector, catalogTable: String)
   import GeoMesaMetadata._
 
   // warning: only access this map in a synchronized fashion
-  /*private */val metaDataCache = scala.collection.mutable.HashMap.empty[(String, String), Option[String]]
+  private val metaDataCache = scala.collection.mutable.HashMap.empty[(String, String), Option[String]]
 
   private val metadataBWConfig = GeoMesaBatchWriterConfig().setMaxMemory(10000L).setMaxWriteThreads(1)
 
@@ -127,8 +129,8 @@ class AccumuloBackedMetadata(connector: Connector, catalogTable: String)
   override def getFeatureTypes: Array[String] = {
     val scanner = createScanner
     scanner.setRange(new Range(METADATA_TAG, METADATA_TAG_END))
-    // restrict to just schema cf so we only get 1 hit per feature
-    scanner.fetchColumnFamily(new Text(SCHEMA_KEY))
+    // restrict to just one cf so we only get 1 hit per feature
+    scanner.fetchColumnFamily(new Text(VERSION_KEY))
     try {
       scanner.map(kv => getFeatureNameFromMetadataRowKey(kv.getKey.getRow.toString)).toArray
     } finally {

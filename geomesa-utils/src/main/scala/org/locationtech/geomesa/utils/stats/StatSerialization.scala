@@ -20,6 +20,24 @@ import org.opengis.feature.simple.SimpleFeatureType
 import scala.collection.mutable.ArrayBuffer
 
 /**
+  * Serialize and deserialize stats. May not be thread safe.
+  */
+trait StatSerializer {
+  def serialize(stat: Stat): Array[Byte]
+  def deserialize(bytes: Array[Byte]): Stat
+}
+
+object StatSerializer {
+  // TODO implement kryo serialization
+  def apply(sft: SimpleFeatureType): StatSerializer = new DefaultStatSerializer(sft)
+}
+
+class DefaultStatSerializer(sft: SimpleFeatureType) extends StatSerializer {
+  override def serialize(stat: Stat): Array[Byte] = StatSerialization.pack(stat, sft)
+  override def deserialize(bytes: Array[Byte]): Stat = StatSerialization.unpack(bytes, sft)
+}
+
+/**
  * Stats are serialized as a byte array where the first byte indicates which type of stat is present.
  * The next four bits contain the size of the serialized information.
  * A SeqStat is serialized the same way, with each individual stat immediately following the previous in the byte array.
@@ -157,11 +175,11 @@ object StatSerialization {
   }
 
   protected [stats] def packIteratorStackCounter(stat: IteratorStackCounter): Array[Byte] =
-    Longs.toByteArray(stat.count)
+    Longs.toByteArray(stat.cnt)
 
   protected [stats] def unpackIteratorStackCounter(bytes: Array[Byte], offset: Int, length: Int): IteratorStackCounter = {
     val stat = new IteratorStackCounter()
-    stat.count = Longs.fromByteArray(bytes.slice(offset, offset + length))
+    stat.cnt = Longs.fromByteArray(bytes.slice(offset, offset + length))
     stat
   }
 

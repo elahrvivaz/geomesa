@@ -38,19 +38,32 @@ trait Stat {
   def observe(sf: SimpleFeature): Unit
 
   /**
-   * Meant to be used to combine two Stats of the same subtype.
-   * Used in the "reduce" step client-side.
+   * Add another stat to this stat. Avoids allocating another object.
    *
    * @param other the other stat to add
    */
-  def +=(other: S): S
+  def +=(other: S): Unit
 
   /**
    * Non type-safe add - if stats are not the same type, will throw an exception
    *
    * @param other the other stat to add
    */
-  def +=(other: Stat)(implicit d: DummyImplicit): Stat = this.+=(other.asInstanceOf[S])
+  def +=(other: Stat)(implicit d: DummyImplicit): Unit = this += other.asInstanceOf[S]
+
+  /**
+    * Combine two stats into a new stat
+    *
+    * @param other the other stat to add
+    */
+  def +(other: S): S
+
+  /**
+    * Non type-safe add - if stats are not the same type, will throw an exception
+    *
+    * @param other the other stat to add
+    */
+  def +(other: Stat)(implicit d: DummyImplicit): Stat = this + other.asInstanceOf[S]
 
   /**
    * Serves as serialization needed for storing the computed statistic in a SimpleFeature.
@@ -98,7 +111,7 @@ object Stat {
   def IteratorStackCounter(): String = "IteratorStackCounter"
   def SeqStat(stats: Seq[String]): String = stats.mkString(";")
 
-  def getGeoHash(value: Geometry, length: Int = 3): Int = {
+  def getGeoHash(value: Geometry, length: Int = 2): Int = {
     val centroid = value.getCentroid
     GeoHash(centroid.getX, centroid.getY, 5 * length).toInt
   }

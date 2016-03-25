@@ -45,7 +45,7 @@ class SeqStatTest extends Specification with StatTestHelper {
       mm.min must beNull
       mm.max must beNull
 
-      ic.count mustEqual 1
+      ic.cnt mustEqual 1
 
       eh.attribute mustEqual longIndex
       eh.histogram must beEmpty
@@ -70,7 +70,7 @@ class SeqStatTest extends Specification with StatTestHelper {
       mm.min mustEqual 0
       mm.max mustEqual 99
 
-      ic.count mustEqual 1
+      ic.cnt mustEqual 1
 
       eh.histogram.size mustEqual 100
       eh.histogram(0L) mustEqual 1
@@ -123,7 +123,7 @@ class SeqStatTest extends Specification with StatTestHelper {
       mm2.min must beNull
       mm2.max must beNull
 
-      ic2.count mustEqual 1
+      ic2.cnt mustEqual 1
 
       eh2.histogram must beEmpty
 
@@ -137,7 +137,7 @@ class SeqStatTest extends Specification with StatTestHelper {
       mm.min mustEqual 0
       mm.max mustEqual 199
 
-      ic.count mustEqual 2
+      ic.cnt mustEqual 2
 
       eh.histogram.size mustEqual 200
       eh.histogram(0L) mustEqual 1
@@ -151,7 +151,7 @@ class SeqStatTest extends Specification with StatTestHelper {
       mm2.min mustEqual 100
       mm2.max mustEqual 199
 
-      ic2.count mustEqual 1
+      ic2.cnt mustEqual 1
 
       eh2.histogram.size mustEqual 100
       eh2.histogram(0L) mustEqual 0
@@ -178,7 +178,7 @@ class SeqStatTest extends Specification with StatTestHelper {
       mm.min must beNull
       mm.max must beNull
 
-      ic.count mustEqual 1
+      ic.cnt mustEqual 1
 
       eh.attribute mustEqual longIndex
       eh.histogram must beEmpty

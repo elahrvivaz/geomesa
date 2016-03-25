@@ -30,10 +30,13 @@ class CountStat(val ecql: String) extends Stat {
     }
   }
 
-  override def +=(other: CountStat): CountStat = {
-    count += other.count
-    this
+  override def +(other: CountStat): CountStat = {
+    val plus = new CountStat(ecql)
+    plus.count = this.count + other.count
+    plus
   }
+
+  override def +=(other: CountStat): Unit = count += other.count
 
   override def toJson(): String = s"""{ "count": $count }"""
 

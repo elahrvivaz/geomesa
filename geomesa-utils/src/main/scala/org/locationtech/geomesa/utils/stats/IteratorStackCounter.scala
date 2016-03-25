@@ -13,18 +13,27 @@ import org.opengis.feature.simple.SimpleFeature
 /**
  * The IteratorStackCounter keeps track of the number of times Accumulo sets up an iterator stack
  * as a result of a query.
- *
- * @param count number of iterators
  */
-class IteratorStackCounter(var count: Long = 1) extends Stat {
+class IteratorStackCounter() extends Stat {
+
+  private [stats] var cnt: Long = 1
 
   override type S = IteratorStackCounter
 
+  def count: Long = cnt
+
   override def observe(sf: SimpleFeature): Unit = {}
 
-  override def +=(other: IteratorStackCounter): IteratorStackCounter = { count += other.count; this }
+  override def +(other: IteratorStackCounter): IteratorStackCounter = {
+    val plus = new IteratorStackCounter()
+    plus.cnt += this.cnt
+    plus.cnt += other.cnt
+    plus
+  }
 
-  override def toJson(): String = s"""{ "count": $count }"""
+  override def +=(other: IteratorStackCounter): Unit = cnt += other.cnt
 
-  override def clear(): Unit = count = 1L
+  override def toJson(): String = s"""{ "count": $cnt }"""
+
+  override def clear(): Unit = cnt = 1L
 }

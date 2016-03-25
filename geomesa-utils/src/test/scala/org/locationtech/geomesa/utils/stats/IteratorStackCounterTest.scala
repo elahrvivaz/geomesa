@@ -21,7 +21,7 @@ class IteratorStackCounterTest extends Specification with StatTestHelper {
       val stat = Stat(sft, "IteratorStackCounter")
       val isc = stat.asInstanceOf[IteratorStackCounter]
 
-      isc.count mustEqual 1L
+      isc.cnt mustEqual 1L
       isc.isEmpty must beFalse
 
       "serialize and deserialize" in {
@@ -34,12 +34,12 @@ class IteratorStackCounterTest extends Specification with StatTestHelper {
       "combine two IteratorStackCounters" in {
         val stat2 = Stat(sft, "IteratorStackCounter")
         val isc2 = stat2.asInstanceOf[IteratorStackCounter]
-        isc2.count = 5L
+        isc2.cnt = 5L
 
         isc += isc2
 
-        isc.count mustEqual 6L
-        isc2.count mustEqual 5L
+        isc.cnt mustEqual 6L
+        isc2.cnt mustEqual 5L
 
         "clear them" in {
           isc.isEmpty must beFalse
@@ -48,8 +48,8 @@ class IteratorStackCounterTest extends Specification with StatTestHelper {
           isc.clear()
           isc2.clear()
 
-          isc.count mustEqual 1L
-          isc2.count mustEqual 1L
+          isc.cnt mustEqual 1L
+          isc2.cnt mustEqual 1L
         }
       }
     }
