@@ -12,7 +12,6 @@ import org.geotools.data.Query
 import org.geotools.factory.CommonFactoryFinder
 import org.geotools.filter.text.ecql.ECQL
 import org.geotools.geometry.jts.ReferencedEnvelope
-import org.joda.time.Interval
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.accumulo.data.stats.{GeoMesaStats, StatUpdater}
@@ -22,7 +21,7 @@ import org.locationtech.geomesa.filter.visitor.LocalNameVisitorImpl
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SftBuilder.Opts
 import org.locationtech.geomesa.utils.geotools.{SftBuilder, SimpleFeatureTypes}
-import org.locationtech.geomesa.utils.stats.Cardinality
+import org.locationtech.geomesa.utils.stats.{Cardinality, MinMax, Stat}
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.{And, Filter}
 import org.specs2.mutable.Specification
@@ -55,12 +54,14 @@ class QueryStrategyDeciderTest extends Specification {
     .build("featureNonIndex")
 
   val stats = new GeoMesaStats {
-    import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats.allTimeBounds
     import org.locationtech.geomesa.utils.geotools.wholeWorldEnvelope
 
-    override def getCount(typeName: String, filter: Filter, exact: Boolean): Long = -1
-    override def getBounds(typeName: String, filter: Filter, exact: Boolean): ReferencedEnvelope = wholeWorldEnvelope
-    override def getTemporalBounds(typeName: String, filter: Filter, exact: Boolean): Interval = allTimeBounds
+    override def getCount(sft: SimpleFeatureType, filter: Filter, exact: Boolean): Long = -1
+    override def getBounds(sft: SimpleFeatureType, filter: Filter, exact: Boolean): ReferencedEnvelope = wholeWorldEnvelope
+    override def getMinMax[T](sft: SimpleFeatureType, attribute: String, filter: Filter, exact: Boolean): (T, T) = {
+      val defaults = Stat(sft, Stat.MinMax(attribute)).asInstanceOf[MinMax[T]].defaults
+      (defaults.min, defaults.max)
+    }
     override def getStatUpdater(sft: SimpleFeatureType): StatUpdater = ???
     override def close(): Unit = {}
   }

@@ -10,6 +10,7 @@ package org.locationtech.geomesa.tools
 
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Date
 
 import com.google.common.io.Files
 import com.vividsolutions.jts.geom.Coordinate
@@ -86,9 +87,7 @@ class ShpIngestTest extends Specification {
       bounds.getMinY mustEqual minY
       bounds.getMaxY mustEqual maxY
 
-      val timeBounds = ds.stats.getTemporalBounds("shpingest")
-      timeBounds.getStart mustEqual new DateTime(minDate, DateTimeZone.UTC)
-      timeBounds.getEnd mustEqual new DateTime(maxDate, DateTimeZone.UTC).plusMillis(1)
+      ds.stats.getMinMax[Date](ds.getSchema("shpingest"), "dtg") mustEqual (minDate, maxDate)
 
       val result = fs.getFeatures.features().toList
       result.length mustEqual 2
@@ -100,9 +99,7 @@ class ShpIngestTest extends Specification {
 
       val fs = ds.getFeatureSource("changed")
 
-      val timeBounds = ds.stats.getTemporalBounds("changed")
-      timeBounds.getStart mustEqual new DateTime(minDate, DateTimeZone.UTC)
-      timeBounds.getEnd mustEqual new DateTime(maxDate, DateTimeZone.UTC).plusMillis(1)
+      ds.stats.getMinMax[Date](ds.getSchema("changed"), "dtg") mustEqual (minDate, maxDate)
 
       val bounds = fs.getBounds
       bounds.getMinX mustEqual minX

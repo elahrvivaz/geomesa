@@ -208,7 +208,7 @@ object AttributeIdxStrategy extends StrategyProvider {
     filter.primary.flatMap(getAttributeProperty).map(_.name).distinct.headOption match {
       case None => Long.MaxValue // no attribute present - we shouldn't even be here...
       case Some(name) =>
-        val count = stats.getCount(sft.getTypeName, filter.singlePrimary.getOrElse(Filter.INCLUDE))
+        val count = stats.getCount(sft, filter.singlePrimary.getOrElse(Filter.INCLUDE), exact = false)
         val descriptor = sft.getDescriptor(name)
         // join queries are much more expensive than non-join queries
         // TODO we could consider whether a join is actually required based on the filter and transform

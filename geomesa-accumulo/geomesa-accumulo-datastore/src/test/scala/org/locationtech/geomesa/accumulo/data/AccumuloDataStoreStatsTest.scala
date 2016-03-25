@@ -14,7 +14,7 @@ import org.geotools.data._
 import org.geotools.data.simple.SimpleFeatureReader
 import org.geotools.feature.DefaultFeatureCollection
 import org.geotools.geometry.jts.ReferencedEnvelope
-import org.joda.time.{DateTime, DateTimeZone, Interval}
+import org.joda.time.{DateTime, DateTimeZone}
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithDataStore
 import org.locationtech.geomesa.features.ScalaSimpleFeature
@@ -45,10 +45,10 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
     "track stats for ingested features" >> {
 
       "initially have global stats" >> {
-        ds.stats.getBounds(sftName, filter) mustEqual wholeWorldEnvelope
-        val initialTimeBounds = ds.stats.getTemporalBounds(sftName, filter)
-        initialTimeBounds.getStartMillis mustEqual 0
-        initialTimeBounds.getEndMillis must beCloseTo(System.currentTimeMillis(), 10)
+        ds.stats.getBounds(sft, filter) mustEqual wholeWorldEnvelope
+        val initialTimeBounds = ds.stats.getMinMax[Date](sft, "dtg", filter)
+        initialTimeBounds._1.getTime mustEqual 0
+        initialTimeBounds._2.getTime must beCloseTo(System.currentTimeMillis(), 10)
       }
 
       "through feature writer append" >> {
@@ -60,9 +60,9 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
         writer.write()
         writer.flush()
 
-        ds.stats.getBounds(sftName, filter) mustEqual new ReferencedEnvelope(0, 0, 0, 0, CRS_EPSG_4326)
-        ds.stats.getTemporalBounds(sftName, filter) mustEqual
-            new Interval(baseMillis, baseMillis + 1, DateTimeZone.UTC)
+        ds.stats.getBounds(sft, filter) mustEqual new ReferencedEnvelope(0, 0, 0, 0, CRS_EPSG_4326)
+        ds.stats.getMinMax[Date](sft, "dtg", filter) mustEqual
+            (new Date(baseMillis), new Date(baseMillis + 1))
 
         val sf2 = writer.next()
         sf2.setAttribute(1, "2016-01-02T12:00:00.000Z")
@@ -70,9 +70,9 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
         writer.write()
         writer.close()
 
-        ds.stats.getBounds(sftName, filter) mustEqual new ReferencedEnvelope(0, 10, 0, 10, CRS_EPSG_4326)
-        ds.stats.getTemporalBounds(sftName, filter) mustEqual
-            new Interval(baseMillis, baseMillis + (dayInMillis / 2) + 1, DateTimeZone.UTC)
+        ds.stats.getBounds(sft, filter) mustEqual new ReferencedEnvelope(0, 10, 0, 10, CRS_EPSG_4326)
+        ds.stats.getMinMax[Date](sft, "dtg", filter) mustEqual
+            (new Date(baseMillis), new Date(baseMillis + (dayInMillis / 2) + 1))
       }
 
       "through feature source add features" >> {
@@ -86,9 +86,9 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
         features.add(sf)
         fs.addFeatures(features)
 
-        ds.stats.getBounds(sftName, filter) mustEqual new ReferencedEnvelope(-10, 10, -10, 10, CRS_EPSG_4326)
-        ds.stats.getTemporalBounds(sftName, filter)  mustEqual
-            new Interval(baseMillis, baseMillis + dayInMillis + 1, DateTimeZone.UTC)
+        ds.stats.getBounds(sft, filter) mustEqual new ReferencedEnvelope(-10, 10, -10, 10, CRS_EPSG_4326)
+        ds.stats.getMinMax[Date](sft, "dtg", filter)  mustEqual
+            (new Date(baseMillis), new Date(baseMillis + dayInMillis + 1))
       }
 
       "not expand bounds when not necessary" >> {
@@ -100,9 +100,9 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
         writer.write()
         writer.close()
 
-        ds.stats.getBounds(sftName, filter) mustEqual new ReferencedEnvelope(-10, 10, -10, 10, CRS_EPSG_4326)
-        ds.stats.getTemporalBounds(sftName, filter) mustEqual
-            new Interval(baseMillis, baseMillis + dayInMillis + 1, DateTimeZone.UTC)
+        ds.stats.getBounds(sft, filter) mustEqual new ReferencedEnvelope(-10, 10, -10, 10, CRS_EPSG_4326)
+        ds.stats.getMinMax[Date](sft, "dtg", filter) mustEqual
+            (new Date(baseMillis), new Date(baseMillis + dayInMillis + 1))
       }
 
       "through feature source set features" >> {
@@ -122,9 +122,9 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
 
         fs.setFeatures(features)
 
-        ds.stats.getBounds(sftName, filter) mustEqual new ReferencedEnvelope(-10, 15, -10, 10, CRS_EPSG_4326)
-        ds.stats.getTemporalBounds(sftName, filter) mustEqual
-            new Interval(baseMillis - dayInMillis, baseMillis + dayInMillis + 1, DateTimeZone.UTC)
+        ds.stats.getBounds(sft, filter) mustEqual new ReferencedEnvelope(-10, 15, -10, 10, CRS_EPSG_4326)
+        ds.stats.getMinMax[Date](sft, "dtg", filter) mustEqual
+            (new Date(baseMillis - dayInMillis), new Date(baseMillis + dayInMillis + 1))
       }
     }
   }

@@ -31,12 +31,11 @@ import org.locationtech.geomesa.accumulo.process.query.QueryVisitor
 import org.locationtech.geomesa.accumulo.process.stats.StatsVisitor
 import org.locationtech.geomesa.accumulo.process.tube.TubeVisitor
 import org.locationtech.geomesa.accumulo.process.unique.AttributeVisitor
-import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.FeatureVisitor
 import org.opengis.feature.`type`.Name
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
-import org.opengis.filter.expression.{Expression, PropertyName}
+import org.opengis.filter.expression.PropertyName
 import org.opengis.filter.sort.SortBy
 import org.opengis.referencing.crs.CoordinateReferenceSystem
 import org.opengis.util.ProgressListener
@@ -50,6 +49,8 @@ abstract class AccumuloFeatureSource(val dataStore: AccumuloDataStore, val featu
   private[data] val typeName = featureName.getLocalPart
 
   lazy private val hints = Collections.unmodifiableSet(Set.empty[Key])
+
+  override lazy val getSchema: SimpleFeatureType = dataStore.getSchema(featureName)
 
   /**
    * The default behavior for getCount is to use estimated statistics.
@@ -66,21 +67,14 @@ abstract class AccumuloFeatureSource(val dataStore: AccumuloDataStore, val featu
     import GeomesaSystemProperties.QueryProperties.QUERY_EXACT_COUNT
 
     val useExactCount = query.getHints.isExactCount.getOrElse(QUERY_EXACT_COUNT.get.toBoolean)
-    lazy val estimatedCount = dataStore.stats.getCount(query.getTypeName, query.getFilter)
-
-    val count = if (useExactCount || estimatedCount < 0) {
-      dataStore.stats.getCount(query.getTypeName, query.getFilter, exact = true) // TODO impl this
-    } else {
-      estimatedCount
-    }
-
+    val count = dataStore.stats.getCount(getSchema, query.getFilter, useExactCount)
     if (count > Int.MaxValue) Int.MaxValue else count.toInt
   }
 
   override def getBounds: ReferencedEnvelope = getBounds(new Query(typeName, Filter.INCLUDE))
 
   override def getBounds(query: Query): ReferencedEnvelope =
-    dataStore.stats.getBounds(query.getTypeName, query.getFilter)
+    dataStore.stats.getBounds(getSchema, query.getFilter)
 
   override def getQueryCapabilities = AccumuloQueryCapabilities
 
@@ -94,8 +88,6 @@ abstract class AccumuloFeatureSource(val dataStore: AccumuloDataStore, val featu
   override def getName: Name = featureName
 
   override def getDataStore: AccumuloDataStore = dataStore
-
-  override def getSchema: SimpleFeatureType = dataStore.getSchema(featureName)
 
   override def getSupportedHints: java.util.Set[Key] = hints
 
@@ -142,25 +134,23 @@ class AccumuloFeatureCollection(source: AccumuloFeatureSource, query: Query)
 
   override def accepts(visitor: FeatureVisitor, progress: ProgressListener): Unit =
     visitor match {
-      case v: BoundsVisitor          => v.reset(ds.stats.getBounds(query.getTypeName, query.getFilter))
+      case v: BoundsVisitor          => v.reset(ds.stats.getBounds(source.getSchema, query.getFilter))
       case v: TubeVisitor            => v.setValue(v.tubeSelect(source, query))
       case v: ProximityVisitor       => v.setValue(v.proximitySearch(source, query))
       case v: QueryVisitor           => v.setValue(v.query(source, query))
       case v: StatsVisitor           => v.setValue(v.query(source, query))
       case v: KNNVisitor             => v.setValue(v.kNNSearch(source,query))
       case v: AttributeVisitor       => v.setValue(v.unique(source, query))
-      // TODO GEOMESA-421 implement min/max iterators
-      case v: MinVisitor if isTime(v.getExpression) =>
-        v.setValue(ds.stats.getTemporalBounds(query.getTypeName, query.getFilter).getStart.toDate)
-      case v: MaxVisitor if isTime(v.getExpression) =>
-        v.setValue(ds.stats.getTemporalBounds(query.getTypeName, query.getFilter).getEnd.toDate)
+
+      case v: MinVisitor if v.getExpression.isInstanceOf[PropertyName] =>
+        val attribute = v.getExpression.asInstanceOf[PropertyName].getPropertyName
+        v.setValue(ds.stats.getMinMax(source.getSchema, attribute, query.getFilter)._1)
+      case v: MaxVisitor if v.getExpression.isInstanceOf[PropertyName] =>
+        val attribute = v.getExpression.asInstanceOf[PropertyName].getPropertyName
+        v.setValue(ds.stats.getMinMax(source.getSchema, attribute, query.getFilter)._2)
+
       case _                         => super.accepts(visitor, progress)
     }
-
-  private def isTime(e: Expression) = e match {
-    case p: PropertyName => getSchema.getDtgField.contains(p.getPropertyName)
-    case _ => false
-  }
 
   override def reader(): FeatureReader[SimpleFeatureType, SimpleFeature] =
     ds.getFeatureReader(query, Transaction.AUTO_COMMIT)

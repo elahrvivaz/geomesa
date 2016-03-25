@@ -9,13 +9,11 @@
 package org.locationtech.geomesa.accumulo.data
 
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.client.{Connector, IteratorSetting, Scanner}
+import org.apache.accumulo.core.client.{Connector, Scanner}
 import org.apache.accumulo.core.data.{Mutation, Range, Value}
-import org.apache.accumulo.core.iterators.user.VersioningIterator
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.AccumuloVersion
 import org.locationtech.geomesa.accumulo.data.AccumuloBackedMetadata._
-import org.locationtech.geomesa.accumulo.data.stats.StatsCombiner
 import org.locationtech.geomesa.accumulo.util.{EmptyScanner, GeoMesaBatchWriterConfig, SelfClosingIterator}
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 
@@ -119,7 +117,7 @@ class AccumuloBackedMetadata(connector: Connector, catalogTable: String)
   private val metadataBWConfig = GeoMesaBatchWriterConfig().setMaxMemory(10000L).setMaxWriteThreads(1)
 
   // warning: only access in a synchronized fashion
-  private var tableExists = false
+  private var tableExists: Boolean = connector.tableOperations().exists(catalogTable)
 
   /**
    * Scans metadata rows and pulls out the different feature types in the table
@@ -156,7 +154,7 @@ class AccumuloBackedMetadata(connector: Connector, catalogTable: String)
     insert(featureName, Map(key -> value))
 
   override def insert(featureName: String, kvPairs: Map[String, String]): Unit = {
-    checkTable(create = true)
+    ensureTableExists()
     val delete = new Mutation(getMetadataRowKey(featureName))
     val insert = new Mutation(getMetadataRowKey(featureName))
     kvPairs.foreach { case (k,v) =>
@@ -186,7 +184,7 @@ class AccumuloBackedMetadata(connector: Connector, catalogTable: String)
    * @param featureName the name of the table to query and delete from
    */
   override def delete(featureName: String): Unit = {
-    if (checkTable(create = false)) {
+    if (synchronized(tableExists)) {
       val range = new Range(getMetadataRowKey(featureName))
       val deleter = connector.createBatchDeleter(catalogTable, AccumuloVersion.getEmptyAuths, 1, metadataBWConfig)
       deleter.setRanges(List(range))
@@ -218,42 +216,16 @@ class AccumuloBackedMetadata(connector: Connector, catalogTable: String)
    * Create an Accumulo Scanner to the Catalog table to query Metadata for this store
    */
   private def createScanner: Scanner =
-    if (checkTable(create = false)) {
+    if (synchronized(tableExists)) {
       connector.createScanner(catalogTable, AccumuloVersion.getEmptyAuths)
     } else {
       EmptyScanner
     }
 
-  /**
-   * Verifies that the metadata table exists. Ensures that iterators are configured correctly
-   * for statistics. Creates table if requested.
-   *
-   * @param create create the table if it doesn't exist
-   * @return true if table exists after this method runs
-   */
-  private def checkTable(create: Boolean): Boolean = synchronized {
-    if (tableExists) {
-      true
-    } else {
-      val ops = connector.tableOperations()
-      lazy val iterator = new IteratorSetting(10, classOf[StatsCombiner],
-        Map("columns"-> Seq(SPATIAL_BOUNDS_KEY, TEMPORAL_BOUNDS_KEY).map(_ + ":").mkString(",")))
-      tableExists = ops.exists(catalogTable)
-      if (tableExists) {
-        // verify that the correct iterators are configured - for back compatibility
-        val iterators = ops.listIterators(catalogTable)
-        Option(iterators.get(classOf[VersioningIterator].getSimpleName)).foreach { scopes =>
-          ops.removeIterator(catalogTable, classOf[VersioningIterator].getSimpleName, scopes)
-        }
-        if (iterators.get(classOf[StatsCombiner].getSimpleName) == null) {
-          ops.attachIterator(catalogTable, iterator)
-        }
-      } else if (create) {
-        AccumuloVersion.ensureTableExists(connector, catalogTable, versioning = false)
-        ops.attachIterator(catalogTable, iterator)
-        tableExists = true
-      }
-      tableExists
+  private def ensureTableExists(): Unit = synchronized {
+    if (!tableExists) {
+      AccumuloVersion.ensureTableExists(connector, catalogTable)
+      tableExists = true
     }
   }
 }
