@@ -494,6 +494,65 @@ class MinMaxTest extends Specification with StatTestHelper {
         minMax2.max mustEqual WKTUtils.read("POINT (179 79)")
       }
 
+      "combine two MinMaxes2" >> {
+        val minMax = newStat[Geometry]("geom")
+        val minMax2 = newStat[Geometry]("geom", observe = false)
+
+        minMax.min mustEqual WKTUtils.read("POINT (-99 0)")
+        minMax.max mustEqual WKTUtils.read("POINT (0 49)")
+        minMax2.min must beNull
+        minMax2.max must beNull
+
+        minMax += minMax2
+
+        minMax.min mustEqual WKTUtils.read("POINT (-99 0)")
+        minMax.max mustEqual WKTUtils.read("POINT (0 49)")
+        minMax2.min must beNull
+        minMax2.max must beNull
+      }
+
+      "combine two MinMaxes3" >> {
+        val minMax = newStat[Geometry]("geom")
+        val minMax2 = newStat[Geometry]("geom", observe = false)
+
+        minMax.min mustEqual WKTUtils.read("POINT (-99 0)")
+        minMax.max mustEqual WKTUtils.read("POINT (0 49)")
+        minMax2.min must beNull
+        minMax2.max must beNull
+
+        minMax2 += minMax
+
+        minMax.min mustEqual WKTUtils.read("POINT (-99 0)")
+        minMax.max mustEqual WKTUtils.read("POINT (0 49)")
+        minMax2.min mustEqual WKTUtils.read("POINT (-99 0)")
+        minMax2.max mustEqual WKTUtils.read("POINT (0 49)")
+      }
+
+      "combine empty MinMaxes" >> {
+        val minMax = newStat[Geometry]("geom")
+        val minMax2 = newStat[Geometry]("geom", observe = false)
+
+        minMax.min mustEqual WKTUtils.read("POINT (-99 0)")
+        minMax.max mustEqual WKTUtils.read("POINT (0 49)")
+
+        minMax2.min must beNull
+        minMax2.max must beNull
+
+        val addRight = minMax2 + minMax
+        addRight.min mustEqual WKTUtils.read("POINT (-99 0)")
+        addRight.max mustEqual WKTUtils.read("POINT (0 49)")
+
+        val addLeft = minMax + minMax2
+        addLeft.min mustEqual WKTUtils.read("POINT (-99 0)")
+        addLeft.max mustEqual WKTUtils.read("POINT (0 49)")
+
+        minMax.min mustEqual WKTUtils.read("POINT (-99 0)")
+        minMax.max mustEqual WKTUtils.read("POINT (0 49)")
+
+        minMax2.min must beNull
+        minMax2.max must beNull
+      }
+
       "clear" >> {
         val minMax = newStat[Geometry]("geom")
         minMax.isEmpty must beFalse

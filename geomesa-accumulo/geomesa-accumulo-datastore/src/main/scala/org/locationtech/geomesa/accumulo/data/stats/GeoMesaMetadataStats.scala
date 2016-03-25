@@ -146,7 +146,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
     def defaultMinMax: (T, T) = {
       val defaults = Stat(sft, Stat.MinMax(attribute)).asInstanceOf[MinMax[T]].defaults
-      (defaults.min, defaults.max)
+      (defaults.max, defaults.min) // defaults are set up so any comparison will replace them - swap min/max
     }
 
     if (exact) {
@@ -420,7 +420,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
     ds.metadata.read(typeName, STATS_INTERVAL_KEY, cache = false) match {
       case Some(dt) => dt.toInt
-      case None     =>
+      case None =>
         // write the default so that it's there if anyone wants to modify it
         ds.metadata.insert(typeName, STATS_INTERVAL_KEY, DefaultUpdateInterval.toString)
         DefaultUpdateInterval

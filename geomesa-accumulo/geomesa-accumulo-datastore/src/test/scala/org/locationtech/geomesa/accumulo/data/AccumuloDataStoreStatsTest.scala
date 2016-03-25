@@ -47,8 +47,8 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
       "initially have global stats" >> {
         ds.stats.getBounds(sft, filter) mustEqual wholeWorldEnvelope
         val initialTimeBounds = ds.stats.getMinMax[Date](sft, "dtg", filter)
-        initialTimeBounds._1.getTime mustEqual 0
-        initialTimeBounds._2.getTime must beCloseTo(System.currentTimeMillis(), 10)
+        initialTimeBounds._1.getTime mustEqual Long.MinValue
+        initialTimeBounds._2.getTime mustEqual Long.MaxValue
       }
 
       "through feature writer append" >> {

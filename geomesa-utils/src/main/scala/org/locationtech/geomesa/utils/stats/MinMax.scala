@@ -43,16 +43,24 @@ class MinMax[T](val attribute: Int)(implicit val defaults: MinMax.MinMaxDefaults
 
   override def +(other: MinMax[T]): MinMax[T] = {
     val plus = new MinMax(attribute)
-    plus += this
+    plus.minValue = this.minValue
+    plus.maxValue = this.maxValue
     plus += other
     plus
   }
 
   override def +=(other: MinMax[T]): Unit = {
-    Seq(other.minValue, other.maxValue).foreach { value =>
-      val (mn, mx) = defaults.minmax(value, minValue, maxValue)
-      minValue = mn
-      maxValue = mx
+    if (!other.isEmpty) {
+      if (isEmpty) {
+        minValue = other.minValue
+        maxValue = other.maxValue
+      } else {
+        Seq(other.minValue, other.maxValue).foreach { value =>
+          val (mn, mx) = defaults.minmax(value, minValue, maxValue)
+          minValue = mn
+          maxValue = mx
+        }
+      }
     }
   }
 
