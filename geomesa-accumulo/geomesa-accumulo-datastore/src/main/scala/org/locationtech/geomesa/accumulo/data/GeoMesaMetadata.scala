@@ -92,14 +92,9 @@ object GeoMesaMetadata {
 
   val STATS_GENERATION_KEY   = "stats-date"
   val STATS_INTERVAL_KEY     = "stats-interval"
-  val BOUNDS_PREFIX          = "stats-bounds"
-  val HISTOGRAM_PREFIX       = "stats-hist"
-  val SPATIAL_BOUNDS_KEY     = s"$BOUNDS_PREFIX-spatial"
-  val TEMPORAL_BOUNDS_KEY    = s"$BOUNDS_PREFIX-temporal"
-  val SPATIAL_HISTOGRAM_KEY  = s"$HISTOGRAM_PREFIX-spatial"
-  val TEMPORAL_HISTOGRAM_KEY = s"$HISTOGRAM_PREFIX-temporal"
-  val TOTAL_COUNT_KEY        = "stats-count"
-  val MIN_MAX_PREFIX         = "stats-minmax"
+  val STATS_BOUNDS_PREFIX    = "stats-bounds"
+  val STATS_HISTOGRAM_PREFIX = "stats-hist"
+  val STATS_TOTAL_COUNT_KEY  = "stats-count"
 }
 
 trait HasGeoMesaMetadata {
@@ -155,20 +150,9 @@ class AccumuloBackedMetadata(connector: Connector, catalogTable: String)
 
   override def insert(featureName: String, kvPairs: Map[String, String]): Unit = {
     ensureTableExists()
-    val delete = new Mutation(getMetadataRowKey(featureName))
     val insert = new Mutation(getMetadataRowKey(featureName))
-    kvPairs.foreach { case (k,v) =>
-      insert.put(new Text(k), EMPTY_COLQ, new Value(v.getBytes))
-      // if it's a bounds query, we use a combiner to merge them
-      // otherwise, explicitly delete any existing value
-      if (!k.startsWith(BOUNDS_PREFIX)) {
-        delete.putDelete(new Text(k), EMPTY_COLQ)
-      }
-    }
+    kvPairs.foreach { case (k,v) => insert.put(new Text(k), EMPTY_COLQ, new Value(v.getBytes)) }
     val writer = connector.createBatchWriter(catalogTable, metadataBWConfig)
-    if (delete.size() > 0) {
-      writer.addMutation(delete)
-    }
     writer.addMutation(insert)
     writer.flush()
     writer.close()

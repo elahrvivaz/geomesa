@@ -61,8 +61,7 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
         writer.flush()
 
         ds.stats.getBounds(sft, filter) mustEqual new ReferencedEnvelope(0, 0, 0, 0, CRS_EPSG_4326)
-        ds.stats.getMinMax[Date](sft, "dtg", filter) mustEqual
-            (new Date(baseMillis), new Date(baseMillis + 1))
+        ds.stats.getMinMax[Date](sft, "dtg", filter) mustEqual (new Date(baseMillis), new Date(baseMillis))
 
         val sf2 = writer.next()
         sf2.setAttribute(1, "2016-01-02T12:00:00.000Z")
@@ -72,7 +71,7 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
 
         ds.stats.getBounds(sft, filter) mustEqual new ReferencedEnvelope(0, 10, 0, 10, CRS_EPSG_4326)
         ds.stats.getMinMax[Date](sft, "dtg", filter) mustEqual
-            (new Date(baseMillis), new Date(baseMillis + (dayInMillis / 2) + 1))
+            (new Date(baseMillis), new Date(baseMillis + dayInMillis / 2))
       }
 
       "through feature source add features" >> {
@@ -88,7 +87,7 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
 
         ds.stats.getBounds(sft, filter) mustEqual new ReferencedEnvelope(-10, 10, -10, 10, CRS_EPSG_4326)
         ds.stats.getMinMax[Date](sft, "dtg", filter)  mustEqual
-            (new Date(baseMillis), new Date(baseMillis + dayInMillis + 1))
+            (new Date(baseMillis), new Date(baseMillis + dayInMillis ))
       }
 
       "not expand bounds when not necessary" >> {
@@ -102,7 +101,7 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
 
         ds.stats.getBounds(sft, filter) mustEqual new ReferencedEnvelope(-10, 10, -10, 10, CRS_EPSG_4326)
         ds.stats.getMinMax[Date](sft, "dtg", filter) mustEqual
-            (new Date(baseMillis), new Date(baseMillis + dayInMillis + 1))
+            (new Date(baseMillis), new Date(baseMillis + dayInMillis))
       }
 
       "through feature source set features" >> {
@@ -124,7 +123,7 @@ class AccumuloDataStoreStatsTest extends Specification with TestWithDataStore {
 
         ds.stats.getBounds(sft, filter) mustEqual new ReferencedEnvelope(-10, 15, -10, 10, CRS_EPSG_4326)
         ds.stats.getMinMax[Date](sft, "dtg", filter) mustEqual
-            (new Date(baseMillis - dayInMillis), new Date(baseMillis + dayInMillis + 1))
+            (new Date(baseMillis - dayInMillis), new Date(baseMillis + dayInMillis))
       }
     }
   }

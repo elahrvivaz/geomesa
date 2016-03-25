@@ -64,7 +64,7 @@ object GeoMesaMetadataStats {
   }
 
   private [stats] def minMaxKey(attribute: String): String =
-    s"$MIN_MAX_PREFIX-${keySafeString(attribute)}"
+    s"$STATS_BOUNDS_PREFIX-${keySafeString(attribute)}"
 
   private [stats] def minMaxStat(sft: SimpleFeatureType): Seq[String] = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -92,7 +92,7 @@ object GeoMesaMetadataStats {
 class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10) extends
     GeoMesaStats with DistributedLocking with Runnable with LazyLogging {
 
-  import GeoMesaMetadataStats.{Utf8, dtFormat, lockKey}
+  import GeoMesaMetadataStats.{Utf8, dtFormat, lockKey, minMaxKey}
 
   val connector = ds.connector
 
@@ -117,28 +117,12 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
     if (geom == null) {
       // geometry-less schema
-      return wholeWorldEnvelope
-    }
-
-    def minMaxToEnvelope(s: MinMax[Geometry]): ReferencedEnvelope = {
-      if (s.min == null) {
-        wholeWorldEnvelope
-      } else {
-        val env = s.min.getEnvelopeInternal
-        env.expandToInclude(s.max.getEnvelopeInternal)
-        new ReferencedEnvelope(env, CRS_EPSG_4326)
-      }
-    }
-
-    if (exact) {
-      executeStatsQuery(Stat.MinMax(geom), sft, filter) match {
-        case s: MinMax[Geometry] => minMaxToEnvelope(s)
-        case s =>
-          logger.warn(s"Got back unexpected MinMax geometry: ${if (s == null) "null" else s.toJson()}")
-          wholeWorldEnvelope
-      }
+      wholeWorldEnvelope
     } else {
-      readStat[MinMax[Geometry]](sft, SPATIAL_BOUNDS_KEY).map(minMaxToEnvelope).getOrElse(wholeWorldEnvelope)
+      val (min, max) = getMinMax[Geometry](sft, geom, filter, exact)
+      val env = min.getEnvelopeInternal
+      env.expandToInclude(max.getEnvelopeInternal)
+      new ReferencedEnvelope(env, CRS_EPSG_4326)
     }
   }
 
@@ -178,11 +162,11 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
     if (exact) {
       exactCount
     } else if (filter == Filter.INCLUDE) {
-      ds.metadata.read(sft.getTypeName, TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(exactCount)
+      ds.metadata.read(sft.getTypeName, STATS_TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(exactCount)
     } else {
       // TODO use the histograms to estimate counts
 //      val spatialHistogram = ds.metadata.read(sft.getTypeName, SPATIAL_HISTOGRAM_KEY, cache = false)
-      ds.metadata.read(sft.getTypeName, TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(exactCount)
+      ds.metadata.read(sft.getTypeName, STATS_TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(exactCount)
     }
   }
 
@@ -261,7 +245,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
     val dateHistogram = for {
       dtg <- sft.getDtgField
-      bounds <- readStat(sft, TEMPORAL_BOUNDS_KEY).map(_.asInstanceOf[MinMax[Date]])
+      bounds <- readStat(sft, minMaxKey(dtg)).map(_.asInstanceOf[MinMax[Date]])
       weeks = new Duration(bounds.min.getTime, bounds.max.getTime).getStandardDays / 7
       if weeks > 1
     } yield {
@@ -343,8 +327,6 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
   }
 
   private def writeMinMax(stat: MinMax[_], sft: SimpleFeatureType, merge: Boolean = false): Unit = {
-    import GeoMesaMetadataStats.minMaxKey
-
     val key = minMaxKey(sft.getDescriptor(stat.attribute).getLocalName)
     val updated = if (merge) tryMerge(sft, key, stat) else stat
     val value = serializer(sft).serialize(updated)
@@ -353,15 +335,8 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
   private def writeHistogram(stat: RangeHistogram[_], sft: SimpleFeatureType, merge: Boolean = false): Unit = {
     import GeoMesaMetadataStats.keySafeString
-    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
-    val key = if (sft.getGeomIndex == stat.attribute) {
-      SPATIAL_HISTOGRAM_KEY
-    } else if (sft.getDtgIndex.contains(stat.attribute)) {
-      TEMPORAL_HISTOGRAM_KEY
-    } else {
-      s"$HISTOGRAM_PREFIX-${keySafeString(sft.getDescriptor(stat.attribute).getLocalName)}"
-    }
+    val key = s"$STATS_HISTOGRAM_PREFIX-${keySafeString(sft.getDescriptor(stat.attribute).getLocalName)}"
 
     val updated = if (merge) tryMerge(sft, key, stat) else stat
     val value = serializer(sft).serialize(updated)
@@ -370,14 +345,15 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
   private def writeCount(stat: CountStat, sft: SimpleFeatureType, merge: Boolean = false): Unit = {
     val updated = if (merge) {
-      val existing = ds.metadata.read(sft.getTypeName, TOTAL_COUNT_KEY, cache = false)
+      val existing = ds.metadata.read(sft.getTypeName, STATS_TOTAL_COUNT_KEY, cache = false)
       existing.map(_.toLong + stat.count).getOrElse(stat.count)
     } else {
       stat.count
     }
-    ds.metadata.insert(sft.getTypeName, TOTAL_COUNT_KEY, updated.toString)
+    ds.metadata.insert(sft.getTypeName, STATS_TOTAL_COUNT_KEY, updated.toString)
   }
 
+  // TODO if bounds don't change, don't write them
   private def tryMerge(sft: SimpleFeatureType, key: String, stat: Stat): Stat =
     readStat[Stat](sft, key).flatMap(s => Try(s + stat).toOption).getOrElse(stat)
 
