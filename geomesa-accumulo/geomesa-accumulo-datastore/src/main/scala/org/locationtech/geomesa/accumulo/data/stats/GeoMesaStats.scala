@@ -15,23 +15,22 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.{Executors, TimeUnit}
 
 import com.typesafe.scalalogging.LazyLogging
-import com.vividsolutions.jts.geom.Envelope
-import org.apache.accumulo.core.client.impl.{MasterClient, Tables}
+import com.vividsolutions.jts.geom.Geometry
 import org.apache.accumulo.core.client.mock.MockConnector
-import org.apache.accumulo.core.security.thrift.TCredentials
-import org.apache.accumulo.trace.instrument.Tracer
 import org.geotools.data.{Query, Transaction}
 import org.geotools.geometry.jts.ReferencedEnvelope
-import org.joda.time.format.ISODateTimeFormat
 import org.joda.time._
+import org.joda.time.format.ISODateTimeFormat
 import org.locationtech.geomesa.accumulo.data.GeoMesaMetadata._
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
 import org.locationtech.geomesa.accumulo.index.QueryHints
+import org.locationtech.geomesa.accumulo.iterators.KryoLazyStatsIterator
 import org.locationtech.geomesa.accumulo.util.{DistributedLocking, SelfClosingIterator}
 import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-import org.locationtech.geomesa.utils.geotools.{CRS_EPSG_4326, SimpleFeatureTypes, wholeWorldEnvelope}
+import org.locationtech.geomesa.utils.geotools.{SimpleFeatureTypes, wholeWorldEnvelope}
+import org.locationtech.geomesa.utils.geotools.CRS_EPSG_4326
 import org.locationtech.geomesa.utils.stats._
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
@@ -49,22 +48,22 @@ trait GeoMesaStats extends Closeable {
   /**
     * Gets the number of features that will be returned for a query
     *
-    * @param typeName simple feature type name
+    * @param sft simple feature type
     * @param filter cql filter
     * @param exact rough estimate, or precise count. note: precise count will likely be expensive.
     * @return count of features
     */
-  def getCount(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): Long
+  def getCount(sft: SimpleFeatureType, filter: Filter = Filter.INCLUDE, exact: Boolean = false): Long
 
   /**
     * Gets the bounds for data that will be returned for a query
     *
-    * @param typeName simple feature type name
+    * @param sft simple feature type
     * @param filter cql filter
     * @param exact rough estimate, or precise bounds. note: precise bounds will likely be expensive.
     * @return bounds
     */
-  def getBounds(typeName: String, filter: Filter = Filter.INCLUDE, exact: Boolean = false): ReferencedEnvelope
+  def getBounds(sft: SimpleFeatureType, filter: Filter = Filter.INCLUDE, exact: Boolean = false): ReferencedEnvelope
 
   // TODO for optimization, we could have a getBoundsAndCountExact method so we only scan features once
   // would that be useful though?
@@ -72,12 +71,12 @@ trait GeoMesaStats extends Closeable {
   /**
     * Gets the minimum and maximum values for the given attributes
     *
-    * @param typeName simple feature type name
+    * @param sft simple feature type
     * @param attributes attribute names to examine
     * @param exact rough estimate, or precise values. note: precise values will likely be expensive.
     * @return mix/max values. types will be consistent with the binding for each attribute
     */
-  def getMinMax(typeName: String, attributes: Seq[String], exact: Boolean = false): Seq[(Any, Any)]
+  def getMinMax(sft: SimpleFeatureType, attributes: Seq[String], exact: Boolean = false): Seq[(Any, Any)]
 
   /**
     * Gets an object to track stats as they are written
@@ -118,6 +117,9 @@ object GeoMesaStats {
     val safeName = GeoMesaTable.hexEncodeNonAlphaNumeric(typeName)
     s"/org.locationtech.geomesa/accumulo/stats/$table/$safeName"
   }
+
+  private [stats] def minMaxKey(attribute: String): String =
+    s"$MIN_MAX_PREFIX-${keySafeString(attribute)}"
 
   private [stats] def minMaxStat(sft: SimpleFeatureType): Seq[String] =
     (Option(sft.getGeomField).toSeq ++ sft.getDtgField ++ sft.getIndexedAttributes).distinct.map(Stat.MinMax)
@@ -162,59 +164,89 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
   override def getStatUpdater(sft: SimpleFeatureType): StatUpdater = new MetadataStatUpdater(this, sft)
 
-  override def getBounds(typeName: String, filter: Filter, exact: Boolean): ReferencedEnvelope = {
-    if (exact) {
+  override def getBounds(sft: SimpleFeatureType, filter: Filter, exact: Boolean): ReferencedEnvelope = {
+    val geom = sft.getGeomField
 
-    } else {
-//      readSpatialBounds(typeName)
-//          .map(new ReferencedEnvelope(_, CRS_EPSG_4326))
-//          .getOrElse(wholeWorldEnvelope)
+    if (geom == null) {
+      // geometry-less schema
+      return wholeWorldEnvelope
     }
-    ???
+
+    def minMaxToEnvelope(s: MinMax[Geometry]): ReferencedEnvelope = {
+      if (s.min == null) {
+        wholeWorldEnvelope
+      } else {
+        val env = s.min.getEnvelopeInternal
+        env.expandToInclude(s.max.getEnvelopeInternal)
+        new ReferencedEnvelope(env, CRS_EPSG_4326)
+      }
+    }
+
+    if (exact) {
+      executeStatsQuery(Stat.MinMax(geom), sft, filter) match {
+        case s: MinMax[Geometry] => minMaxToEnvelope(s)
+        case s =>
+          logger.warn(s"Got back unexpected MinMax geometry: ${if (s == null) "null" else s.toJson()}")
+          wholeWorldEnvelope
+      }
+    } else {
+      readStat[MinMax[Geometry]](sft, SPATIAL_BOUNDS_KEY).map(minMaxToEnvelope).getOrElse(wholeWorldEnvelope)
+    }
   }
 
-  override def getMinMax(typeName: String, attributes: Seq[String], exact: Boolean): Seq[(Any, Any)] = {
-    ???
+  override def getMinMax(sft: SimpleFeatureType, attributes: Seq[String], exact: Boolean): Seq[(Any, Any)] = {
+    if (attributes.isEmpty) {
+      return Seq.empty
+    }
+
+    def defaultMinMax(attribute: String): (Any, Any) = {
+      val defaults = Stat(sft, Stat.MinMax(attribute)).asInstanceOf[MinMax[Any]].defaults
+      (defaults.min, defaults.max)
+    }
+
+    if (exact) {
+      val stats = if (attributes.length > 1) {
+        executeStatsQuery(Stat.SeqStat(attributes.map(Stat.MinMax)), sft).asInstanceOf[SeqStat].stats
+      } else {
+        Seq(executeStatsQuery(Stat.MinMax(attributes.head), sft))
+      }
+
+      if (stats.length != attributes.length) {
+        logger.warn(s"Got back unexpected MinMax stat count: ${stats.map(_.toJson())}")
+        attributes.map(defaultMinMax)
+      } else {
+        attributes.zip(stats).map {
+          case (a, s: MinMax[Any]) if s.min != null => (s.min, s.max)
+          case (a, s) =>
+            logger.warn(s"Got back unexpected MinMax: ${if (s == null) "null" else s.toJson()}")
+            defaultMinMax(a)
+        }
+      }
+    } else {
+      attributes.map(a => (a, readStat[MinMax[Any]](sft, minMaxKey(a)))).map {
+        case (a, Some(s)) if s.min != null => (s.min, s.max)
+        case (a, _) => defaultMinMax(a)
+      }
+    }
   }
 
-  // Note: we don't currently filter by the cql
-  override def getCount(typeName: String, filter: Filter, exact: Boolean): Long = {
+  override def getCount(sft: SimpleFeatureType, filter: Filter, exact: Boolean): Long = {
     if (exact) {
-      SelfClosingIterator(ds.getFeatureReader(new Query(typeName, filter), Transaction.AUTO_COMMIT)).length
+      executeStatsQuery(Stat.Count(filter), sft) match {
+        case s: CountStat => s.count
+        case s =>
+          logger.warn(s"Got back unexpected Count: ${if (s == null) "null" else s.toJson()}")
+          // fall back to full scan
+          val query = new Query(sft.getTypeName, filter)
+          SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).length
+      }
+    } else if (filter == Filter.INCLUDE) {
+      ds.metadata.read(sft.getTypeName, TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(-1L)
     } else {
-      -1L
+      // TODO use the histograms to estimate counts
+//      val spatialHistogram = ds.metadata.read(sft.getTypeName, SPATIAL_HISTOGRAM_KEY, cache = false)
+      ds.metadata.read(sft.getTypeName, TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(-1L)
     }
-    ???
-    // TODO
-    // ad.getCardinality()
-//    val attrsAndCounts = filter.primary
-//        .flatMap(getAttributeProperty)
-//        .map(_.name)
-//        .groupBy((f: String) => f)
-//        .map { case (name, itr) => (name, itr.size) }
-//
-//    val cost = attrsAndCounts.map { case (attr, count) =>
-//      val descriptor = sft.getDescriptor(attr)
-//      // join queries are much more expensive than non-join queries
-//      // TODO we could consider whether a join is actually required based on the filter and transform
-//      // TODO figure out the actual cost of each additional range...I'll make it 2
-//      val additionalRangeCost = 1
-//      val joinCost = 10
-//      val multiplier = if (descriptor.getIndexCoverage() == IndexCoverage.JOIN) {
-//        joinCost + (additionalRangeCost * (count - 1))
-//      } else {
-//        1
-//      }
-//
-//      // scale attribute cost by expected cardinality
-//      hints.cardinality(descriptor) match {
-//        case Cardinality.HIGH    => 1 * multiplier
-//        case Cardinality.UNKNOWN => 101 * multiplier
-//        case Cardinality.LOW     => Int.MaxValue
-//      }
-//    }.sum
-//    if (cost == 0) Int.MaxValue else cost // cost == 0 if somehow the filters don't match anything
-    //    retrieveTableSize(getTableName(query.getTypeName, RecordTable))
   }
 
   override def close(): Unit = {
@@ -282,7 +314,6 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
     */
   private def update(typeName: String): Unit = {
 
-    import org.locationtech.geomesa.accumulo.iterators.KryoLazyStatsIterator.decodeStat
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
     val sft = ds.getSchema(typeName)
@@ -310,21 +341,34 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
     logger.debug(s"Calculating stats for ${sft.getTypeName}: $allStats")
 
-    val stats = {
-      val query = new Query(typeName, Filter.INCLUDE)
-      query.getHints.put(QueryHints.STATS_KEY, allStats)
-      query.getHints.put(QueryHints.RETURN_ENCODED_KEY, java.lang.Boolean.TRUE)
+    val stats = executeStatsQuery(allStats, sft)
 
-      val reader = ds.getFeatureReader(query, Transaction.AUTO_COMMIT)
-      try {
-        // stats should always return exactly one result, even if there are no features in the table
-        decodeStat(reader.next.getAttribute(0).asInstanceOf[String], sft)
-      } finally {
-        reader.close()
-      }
-    }
+    logger.trace(s"Stats for ${sft.getTypeName}: ${stats.toJson()}")
+    logger.debug(s"Writing stats for ${sft.getTypeName}")
 
     writeStat(stats, sft)
+  }
+
+  /**
+    * Execute a query against accumulo to calculate stats
+    *
+    * @param stats stat string
+    * @param sft simple feature type
+    * @param filter ecql filter for feature selection
+    * @return stats
+    */
+  private def executeStatsQuery(stats: String, sft: SimpleFeatureType, filter: Filter = Filter.INCLUDE): Stat = {
+    val query = new Query(sft.getTypeName, filter)
+    query.getHints.put(QueryHints.STATS_KEY, stats)
+    query.getHints.put(QueryHints.RETURN_ENCODED_KEY, java.lang.Boolean.TRUE)
+
+    val reader = ds.getFeatureReader(query, Transaction.AUTO_COMMIT)
+    try {
+      // stats should always return exactly one result, even if there are no features in the table
+      KryoLazyStatsIterator.decodeStat(reader.next.getAttribute(0).asInstanceOf[String], sft)
+    } finally {
+      reader.close()
+    }
   }
 
   /**
@@ -361,7 +405,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
   }
 
   private def writeMinMax(stat: MinMax[_], sft: SimpleFeatureType, merge: Boolean = false): Unit = {
-    val key = s"$MIN_MAX_PREFIX-${keySafeString(sft.getDescriptor(stat.attribute).getLocalName)}"
+    val key = minMaxKey(sft.getDescriptor(stat.attribute).getLocalName)
     val updated = if (merge) tryMerge(sft, key, stat) else stat
     val value = serializer(sft).serialize(updated)
     ds.metadata.insert(sft.getTypeName, key, new String(value, Utf8))
@@ -394,8 +438,10 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
   private def tryMerge(sft: SimpleFeatureType, key: String, stat: Stat): Stat =
     readStat(sft, key).flatMap(s => Try(s + stat).toOption).getOrElse(stat)
 
-  private def readStat(sft: SimpleFeatureType, key: String): Option[Stat] =
-    ds.metadata.read(sft.getTypeName, key, cache = false).map(s => serializer(sft).deserialize(s.getBytes(Utf8)))
+  private def readStat[T <: Stat](sft: SimpleFeatureType, key: String): Option[T] =
+    ds.metadata.read(sft.getTypeName, key, cache = false)
+        .flatMap(s => Try(serializer(sft).deserialize(s.getBytes(Utf8))).toOption)
+        .collect { case s: T => s }
 
   /**
     * Reads the time of the last update

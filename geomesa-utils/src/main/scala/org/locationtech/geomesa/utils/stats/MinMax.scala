@@ -23,7 +23,7 @@ import scala.reflect.ClassTag
  * @param attribute attribute index for the attribute the histogram is being made for
  * @tparam T the type of the attribute the stat is targeting (needs to be comparable)
  */
-class MinMax[T](val attribute: Int)(implicit defaults: MinMax.MinMaxDefaults[T], ct: ClassTag[T]) extends Stat {
+class MinMax[T](val attribute: Int)(implicit val defaults: MinMax.MinMaxDefaults[T], ct: ClassTag[T]) extends Stat {
 
   override type S = MinMax[T]
 

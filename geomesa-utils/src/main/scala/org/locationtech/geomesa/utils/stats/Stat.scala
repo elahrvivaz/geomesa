@@ -13,11 +13,13 @@ import java.util.Date
 
 import com.vividsolutions.jts.geom.Geometry
 import org.geotools.data.DataUtilities
+import org.geotools.filter.text.ecql.ECQL
 import org.joda.time.format.DateTimeFormat
 import org.locationtech.geomesa.utils.geohash.GeoHash
 import org.locationtech.geomesa.utils.geotools._
 import org.locationtech.geomesa.utils.text.{EnhancedTokenParsers, WKTUtils}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
+import org.opengis.filter.Filter
 
 import scala.reflect.ClassTag
 import scala.util.parsing.combinator.RegexParsers
@@ -101,6 +103,7 @@ object Stat {
 
   def apply(sft: SimpleFeatureType, s: String) = new StatParser(sft).parse(s)
 
+  def Count(ecql: Filter): String = Count(ECQL.toCQL(ecql))
   def Count(ecql: String): String = s"Count($ecql)"
   def MinMax(attribute: String): String = s"MinMax($attribute)"
   def EnumeratedHistogram(attribute: String): String = s"EnumeratedHistogram($attribute)"
