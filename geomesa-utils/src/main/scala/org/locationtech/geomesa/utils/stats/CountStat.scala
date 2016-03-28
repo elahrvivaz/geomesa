@@ -13,25 +13,18 @@ import org.opengis.feature.simple.SimpleFeature
 import org.opengis.filter.Filter
 
 /**
-  * Counts features that match the filter
-  *
-  * @param ecql filter
+  * Counts features
   */
-class CountStat(val ecql: String) extends Stat {
+class CountStat() extends Stat {
 
   override type S = CountStat
 
   var count: Long = 0L
-  private val filter: Filter = ECQL.toFilter(ecql)
 
-  override def observe(sf: SimpleFeature): Unit = {
-    if (filter.evaluate(sf)) {
-      count += 1
-    }
-  }
+  override def observe(sf: SimpleFeature): Unit = count += 1
 
   override def +(other: CountStat): CountStat = {
-    val plus = new CountStat(ecql)
+    val plus = new CountStat()
     plus.count = this.count + other.count
     plus
   }

@@ -15,8 +15,8 @@ import org.specs2.runner.JUnitRunner
 @RunWith(classOf[JUnitRunner])
 class CountStatTest extends Specification with StatTestHelper {
 
-  def newStat(cql: String, observe: Boolean = true): CountStat = {
-    val stat = Stat(sft, s"Count('$cql')")
+  def newStat(observe: Boolean = true): CountStat = {
+    val stat = Stat(sft, s"Count()")
     if (observe) {
       features.foreach { stat.observe }
     }
@@ -26,49 +26,43 @@ class CountStatTest extends Specification with StatTestHelper {
   "CountStat" should {
 
     "be empty initiallly" >> {
-      val stat = newStat("INCLUDE", observe = false)
-      stat.ecql mustEqual "INCLUDE"
+      val stat = newStat(observe = false)
       stat.count mustEqual 0L
       stat.isEmpty must beTrue
     }
 
     "observe correct values" >> {
-      val stat = newStat("INCLUDE")
+      val stat = newStat()
       stat.count mustEqual 100L
     }
 
-    "observe correct values with filters" >> {
-      val stat = newStat("intAttr > 49")
-      stat.count mustEqual 50L
-    }
-
     "serialize to json" >> {
-      val stat = newStat("INCLUDE")
+      val stat = newStat()
       stat.toJson() mustEqual """{ "count": 100 }"""
     }
 
     "serialize empty to json" >> {
-      val stat = newStat("INCLUDE", observe = false)
+      val stat = newStat(observe = false)
       stat.toJson() mustEqual """{ "count": 0 }"""
     }
 
     "serialize and deserialize" >> {
-      val stat = newStat("INCLUDE")
+      val stat = newStat()
       val packed = StatSerialization.pack(stat, sft)
       val unpacked = StatSerialization.unpack(packed, sft)
       unpacked.toJson() mustEqual stat.toJson()
     }
 
     "serialize and deserialize empty stat" >> {
-      val stat = newStat("INCLUDE", observe = false)
+      val stat = newStat(observe = false)
       val packed = StatSerialization.pack(stat, sft)
       val unpacked = StatSerialization.unpack(packed, sft)
       unpacked.toJson() mustEqual stat.toJson()
     }
 
     "combine two states" >> {
-      val stat = newStat("INCLUDE")
-      val stat2 = newStat("INCLUDE", observe = false)
+      val stat = newStat()
+      val stat2 = newStat(observe = false)
 
       features2.foreach { stat2.observe }
 
@@ -81,7 +75,7 @@ class CountStatTest extends Specification with StatTestHelper {
     }
 
     "clear" >> {
-      val stat = newStat("INCLUDE")
+      val stat = newStat()
       stat.isEmpty must beFalse
 
       stat.clear()

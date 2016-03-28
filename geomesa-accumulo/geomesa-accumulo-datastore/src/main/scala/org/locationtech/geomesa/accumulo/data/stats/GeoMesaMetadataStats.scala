@@ -150,7 +150,9 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
   override def getCount(sft: SimpleFeatureType, filter: Filter, exact: Boolean): Long = {
     def exactCount: Long = {
-      executeStatsQuery(Stat.Count(filter), sft) match {
+      // TODO stat query doesn't entirely handle duplicates - only on a per-iterator basis
+      val stat = executeStatsQuery(Stat.Count(), sft, filter)
+      stat match {
         case s: CountStat => s.count
         case s =>
           logger.warn(s"Got back unexpected Count: ${if (s == null) "null" else s.toJson()}")
@@ -240,7 +242,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
     val sft = ds.getSchema(typeName)
 
-    val count = Stat.Count("INCLUDE")
+    val count = Stat.Count()
     val geomHistogram = Option(sft.getGeomField).map(g => Stat.RangeHistogram(g, GeometryHistogramSize, MinGeom, MaxGeom))
 
     val dateHistogram = for {
@@ -414,6 +416,8 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
   * @param sft simple feature type
   */
 class MetadataStatUpdater(stats: GeoMesaMetadataStats, sft: SimpleFeatureType) extends StatUpdater {
+
+  // TODO also track histograms
 
   private val minMax = {
     val statString = Stat.SeqStat(GeoMesaMetadataStats.minMaxStat(sft))

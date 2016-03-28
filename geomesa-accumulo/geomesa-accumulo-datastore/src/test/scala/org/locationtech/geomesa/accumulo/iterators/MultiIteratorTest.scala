@@ -17,6 +17,7 @@ import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.index.IndexSchema
 import org.locationtech.geomesa.accumulo.iterators.TestData._
+import org.locationtech.geomesa.utils.geotools.Conversions._
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.SimpleFeatureType
@@ -81,8 +82,8 @@ class MultiIteratorTest extends Specification with TestWithMultipleSfts with Laz
       val indexOnlyQuery = getQuery(sft, None, indexIterator = true)
 
       val filteredCount = features.count(q.getFilter.evaluate)
-      val stQueriedCount = fs.getFeatures(q).size
-      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).size
+      val stQueriedCount = fs.getFeatures(q).features.length
+      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).features.length
 
       output(q.getFilter, filteredCount, stQueriedCount, indexOnlyCount)
 
@@ -97,8 +98,8 @@ class MultiIteratorTest extends Specification with TestWithMultipleSfts with Laz
       val indexOnlyQuery = getQuery(sft, Some(filterString), indexIterator = true)
 
       val filteredCount = features.count(q.getFilter.evaluate)
-      val stQueriedCount = fs.getFeatures(q).size
-      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).size
+      val stQueriedCount = fs.getFeatures(q).features.length
+      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).features.length
 
       output(q.getFilter, filteredCount, stQueriedCount, indexOnlyCount)
 
@@ -114,8 +115,8 @@ class MultiIteratorTest extends Specification with TestWithMultipleSfts with Laz
       val indexOnlyQuery = getQuery(sft, Some(filterString), indexIterator = true)
 
       val filteredCount = features.count(q.getFilter.evaluate)
-      val stQueriedCount = fs.getFeatures(q).size
-      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).size
+      val stQueriedCount = fs.getFeatures(q).features.length
+      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).features.length
 
       output(q.getFilter, filteredCount, stQueriedCount, indexOnlyCount)
 
@@ -137,8 +138,8 @@ class MultiIteratorTest extends Specification with TestWithMultipleSfts with Laz
       val indexOnlyQuery = getQuery(sft, None, indexIterator = true)
 
       val filteredCount = features.count(q.getFilter.evaluate)
-      val stQueriedCount = fs.getFeatures(q).size
-      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).size
+      val stQueriedCount = fs.getFeatures(q).features.length
+      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).features.length
 
       output(q.getFilter, filteredCount, stQueriedCount, indexOnlyCount)
 
@@ -161,8 +162,8 @@ class MultiIteratorTest extends Specification with TestWithMultipleSfts with Laz
       val indexOnlyQuery = getQuery(sft, None, indexIterator = true)
 
       val filteredCount = features.count(q.getFilter.evaluate)
-      val stQueriedCount = fs.getFeatures(q).size
-      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).size
+      val stQueriedCount = fs.getFeatures(q).features.length
+      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).features.length
 
       output(q.getFilter, filteredCount, stQueriedCount, indexOnlyCount)
 
@@ -186,8 +187,8 @@ class MultiIteratorTest extends Specification with TestWithMultipleSfts with Laz
       val indexOnlyQuery = getQuery(sft, Some(filterString), indexIterator = true)
 
       val filteredCount = features.count(q.getFilter.evaluate)
-      val stQueriedCount = fs.getFeatures(q).size
-      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).size
+      val stQueriedCount = fs.getFeatures(q).features.length
+      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).features.length
 
       output(q.getFilter, filteredCount, stQueriedCount, indexOnlyCount)
 
@@ -208,8 +209,8 @@ class MultiIteratorTest extends Specification with TestWithMultipleSfts with Laz
       val indexOnlyQuery = getQuery(sft, Some(filterString), dtFilter, indexIterator = true)
 
       val filteredCount = features.count(q.getFilter.evaluate)
-      val stQueriedCount = fs.getFeatures(q).size
-      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).size
+      val stQueriedCount = fs.getFeatures(q).features.length
+      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).features.length
 
       output(q.getFilter, filteredCount, stQueriedCount, indexOnlyCount)
 
@@ -226,8 +227,8 @@ class MultiIteratorTest extends Specification with TestWithMultipleSfts with Laz
       val indexOnlyQuery = getQuery(sft, Some(filterString), dtFilter, indexIterator = true)
 
       val filteredCount = features.count(q.getFilter.evaluate)
-      val stQueriedCount = fs.getFeatures(q).size
-      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).size
+      val stQueriedCount = fs.getFeatures(q).features.length
+      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).features.length
 
       output(q.getFilter, filteredCount, stQueriedCount, indexOnlyCount)
 
@@ -242,8 +243,8 @@ class MultiIteratorTest extends Specification with TestWithMultipleSfts with Laz
       val indexOnlyQuery = getQuery(sft, None, dtFilter, overrideGeometry = true, indexIterator = true)
 
       val filteredCount = features.count(q.getFilter.evaluate)
-      val stQueriedCount = fs.getFeatures(q).size
-      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).size
+      val stQueriedCount = fs.getFeatures(q).features.length
+      val indexOnlyCount = fs.getFeatures(indexOnlyQuery).features.length
 
       output(q.getFilter, filteredCount, stQueriedCount, indexOnlyCount)
 

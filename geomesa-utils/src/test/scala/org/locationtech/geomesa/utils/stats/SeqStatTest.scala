@@ -21,7 +21,7 @@ import org.specs2.runner.JUnitRunner
 class SeqStatTest extends Specification with StatTestHelper {
 
   def newStat[T](observe: Boolean = true): SeqStat = {
-    val stat = Stat(sft, "MinMax(intAttr);IteratorStackCounter;EnumeratedHistogram(longAttr);RangeHistogram(doubleAttr,20,0,200)")
+    val stat = Stat(sft, "MinMax(intAttr);IteratorStackCounter();EnumeratedHistogram(longAttr);RangeHistogram(doubleAttr,20,0,200)")
     if (observe) {
       features.foreach { stat.observe }
     }

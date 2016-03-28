@@ -121,12 +121,10 @@ object StatSerialization {
     new SeqStat(stats)
   }
 
-  private def packCount(stat: CountStat): Array[Byte] =
-    Bytes.concat(Longs.toByteArray(stat.count), stat.ecql.getBytes(Utf8))
+  private def packCount(stat: CountStat): Array[Byte] = Longs.toByteArray(stat.count)
 
   private def unpackCount(bytes: Array[Byte], offset: Int, length: Int): CountStat = {
-    val ecql = new String(bytes, offset + 8, length - 8, Utf8)
-    val stat = new CountStat(ecql)
+    val stat = new CountStat()
     stat.count = Longs.fromByteArray(bytes.slice(offset, offset + 8))
     stat
   }

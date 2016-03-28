@@ -101,15 +101,14 @@ object Stat {
 
   def apply(sft: SimpleFeatureType, s: String) = new StatParser(sft).parse(s)
 
-  def Count(ecql: Filter): String = Count(ECQL.toCQL(ecql))
-  def Count(ecql: String): String = s"Count(${safeString(ecql)})"
+  def Count(): String = "Count()"
   def MinMax(attribute: String): String = s"MinMax(${safeString(attribute)})"
   def EnumeratedHistogram(attribute: String): String = s"EnumeratedHistogram(${safeString(attribute)})"
   def RangeHistogram[T](attribute: String, bins: Int, min: T, max: T)(implicit ct: ClassTag[T]): String = {
     val stringify = stringifier(ct.runtimeClass)
     s"RangeHistogram(${safeString(attribute)},$bins,${safeString(stringify(min))},${safeString(stringify(max))})"
   }
-  def IteratorStackCounter(): String = "IteratorStackCounter"
+  def IteratorStackCounter(): String = "IteratorStackCounter()"
   def SeqStat(stats: Seq[String]): String = stats.mkString(";")
 
   private def safeString(s: String): String = s""""${StringEscapeUtils.escapeJava(s)}"""" // there's extra quotes here
@@ -173,7 +172,7 @@ object Stat {
     val argument = dequotedString | "[a-zA-Z0-9_]+".r
 
     def countParser: Parser[CountStat] = {
-      "Count(" ~> argument <~ ")" ^^ { cql => new CountStat(cql) }
+      "Count()" ^^ { _ => new CountStat() }
     }
 
     def minMaxParser: Parser[MinMax[_]] = {
@@ -204,7 +203,7 @@ object Stat {
     }
 
     def iteratorStackParser: Parser[IteratorStackCounter] = {
-      "IteratorStackCounter" ^^ { case _ => new IteratorStackCounter() }
+      "IteratorStackCounter()" ^^ { case _ => new IteratorStackCounter() }
     }
 
     def enumeratedHistogramParser: Parser[EnumeratedHistogram[_]] = {

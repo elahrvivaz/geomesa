@@ -61,7 +61,7 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
     }
 
     "work with the IteratorStackCounter stat" in {
-      val q = getQuery("IteratorStackCounter")
+      val q = getQuery("IteratorStackCounter()")
       val results = fs.getFeatures(q).features().toList
       val sf = results.head
 
@@ -97,7 +97,7 @@ class KryoLazyStatsIteratorTest extends Specification with TestWithDataStore {
     }
 
     "work with multiple stats at once" in {
-      val q = getQuery("MinMax(attr);IteratorStackCounter;EnumeratedHistogram(idt);RangeHistogram(idt,5,10,15)")
+      val q = getQuery("MinMax(attr);IteratorStackCounter();EnumeratedHistogram(idt);RangeHistogram(idt,5,10,15)")
       val results = fs.getFeatures(q).features().toList
       val sf = results.head
 

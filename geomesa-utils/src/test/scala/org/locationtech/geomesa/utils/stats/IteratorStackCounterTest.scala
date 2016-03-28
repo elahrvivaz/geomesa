@@ -18,7 +18,7 @@ class IteratorStackCounterTest extends Specification with StatTestHelper {
 
   "IteratorStackCounter stat" should {
     "create an IteratorStackCounter" in {
-      val stat = Stat(sft, "IteratorStackCounter")
+      val stat = Stat(sft, "IteratorStackCounter()")
       val isc = stat.asInstanceOf[IteratorStackCounter]
 
       isc.cnt mustEqual 1L
@@ -32,7 +32,7 @@ class IteratorStackCounterTest extends Specification with StatTestHelper {
       }
 
       "combine two IteratorStackCounters" in {
-        val stat2 = Stat(sft, "IteratorStackCounter")
+        val stat2 = Stat(sft, "IteratorStackCounter()")
         val isc2 = stat2.asInstanceOf[IteratorStackCounter]
         isc2.cnt = 5L
 

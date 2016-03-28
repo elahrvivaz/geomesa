@@ -54,7 +54,7 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
     }
 
     "work with the IteratorStackCounter stat" in {
-      val results = statsIteratorProcess.execute(fs.getFeatures(query), "IteratorStackCounter", encode = true)
+      val results = statsIteratorProcess.execute(fs.getFeatures(query), "IteratorStackCounter()", encode = true)
       val sf = results.features().next
 
       val isc = decodeStat(sf.getAttribute(0).asInstanceOf[String], sft).asInstanceOf[IteratorStackCounter]
@@ -87,7 +87,7 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
 
     "work with multiple stats at once" in {
       val results = statsIteratorProcess.execute(fs.getFeatures(query),
-        "MinMax(attr);IteratorStackCounter;EnumeratedHistogram(id);RangeHistogram(id,5,10,15)", encode = true)
+        "MinMax(attr);IteratorStackCounter();EnumeratedHistogram(id);RangeHistogram(id,5,10,15)", encode = true)
       val sf = results.features().next
 
       val seqStat = decodeStat(sf.getAttribute(0).asInstanceOf[String], sft).asInstanceOf[SeqStat]
@@ -122,7 +122,7 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
       fs.getFeatures(new Query(sftName, Filter.INCLUDE)).features().foreach(features.add)
 
       val results = statsIteratorProcess.execute(features,
-        "MinMax(attr);IteratorStackCounter;EnumeratedHistogram(id);RangeHistogram(id,5,10,15)", encode = true)
+        "MinMax(attr);IteratorStackCounter();EnumeratedHistogram(id);RangeHistogram(id,5,10,15)", encode = true)
       val sf = results.features().next
 
       val seqStat = decodeStat(sf.getAttribute(0).asInstanceOf[String], sft).asInstanceOf[SeqStat]
