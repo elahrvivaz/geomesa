@@ -8,9 +8,7 @@
 
 package org.locationtech.geomesa.utils.stats
 
-import org.geotools.filter.text.ecql.ECQL
 import org.opengis.feature.simple.SimpleFeature
-import org.opengis.filter.Filter
 
 /**
   * Counts features
@@ -36,4 +34,11 @@ class CountStat() extends Stat {
   override def isEmpty: Boolean = count == 0
 
   override def clear(): Unit = count = 0
+
+  override def equals(other: Any): Boolean = other match {
+    case that: CountStat => count == that.count
+    case _ => false
+  }
+
+  override def hashCode(): Int = count.hashCode
 }

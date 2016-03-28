@@ -9,6 +9,7 @@
 package org.locationtech.geomesa.utils.stats
 
 import java.lang.{Double => jDouble, Float => jFloat, Long => jLong}
+import java.util
 import java.util.{Date, Locale}
 
 import com.vividsolutions.jts.geom.Geometry
@@ -71,6 +72,13 @@ abstract class BinnedArray[T](val length: Int, val bounds: (T, T)) {
    * @return bin index, or -1 if value is out of bounds
    */
   def getIndex(value: T): Int
+
+  override def equals(other: Any): Boolean = other match {
+    case that: BinnedArray[_] => bounds == that.bounds && java.util.Arrays.equals(counts, that.counts)
+    case _ => false
+  }
+
+  override def hashCode(): Int = Seq(bounds, counts).map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
 }
 
 object BinnedArray {

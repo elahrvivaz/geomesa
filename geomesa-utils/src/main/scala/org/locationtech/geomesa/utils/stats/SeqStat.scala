@@ -31,4 +31,11 @@ class SeqStat(val stats: Seq[Stat]) extends Stat {
   override def isEmpty: Boolean = stats.forall(_.isEmpty)
 
   override def clear(): Unit = stats.foreach(_.clear())
+
+  override def equals(other: Any): Boolean = other match {
+    case that: SeqStat => stats == that.stats
+    case _ => false
+  }
+
+  override def hashCode(): Int = stats.map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
 }

@@ -52,4 +52,11 @@ class EnumeratedHistogram[T](val attribute: Int)(implicit ct: ClassTag[T]) exten
   override def isEmpty: Boolean = histogram.isEmpty
 
   override def clear(): Unit = histogram.clear()
+
+  override def equals(other: Any): Boolean = other match {
+    case that: EnumeratedHistogram[_] => attribute == that.attribute && histogram == that.histogram
+    case _ => false
+  }
+
+  override def hashCode(): Int = Seq(attribute, histogram).map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
 }

@@ -75,6 +75,14 @@ class MinMax[T](val attribute: Int)(implicit val defaults: MinMax.MinMaxDefaults
     minValue = defaults.min
     maxValue = defaults.max
   }
+
+  override def equals(other: Any): Boolean = other match {
+    case that: MinMax[T] => attribute == that.attribute && minValue == that.minValue && maxValue == that.maxValue
+    case _ => false
+  }
+
+  override def hashCode(): Int =
+    Seq(attribute, minValue, maxValue).map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
 }
 
 object MinMax {

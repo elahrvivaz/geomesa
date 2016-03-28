@@ -14,7 +14,7 @@ import org.opengis.feature.simple.SimpleFeature
  * The IteratorStackCounter keeps track of the number of times Accumulo sets up an iterator stack
  * as a result of a query.
  */
-class IteratorStackCounter() extends Stat {
+class IteratorStackCounter extends Stat {
 
   private [stats] var cnt: Long = 1
 
@@ -38,4 +38,11 @@ class IteratorStackCounter() extends Stat {
   override def isEmpty: Boolean = false
 
   override def clear(): Unit = cnt = 1L
+
+  override def equals(other: Any): Boolean = other match {
+    case that: IteratorStackCounter => cnt == that.cnt
+    case _ => false
+  }
+
+  override def hashCode(): Int = cnt.hashCode
 }

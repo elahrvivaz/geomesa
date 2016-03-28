@@ -53,4 +53,11 @@ class RangeHistogram[T](val attribute: Int,
   override def isEmpty: Boolean = bins.counts.forall(_ == 0)
 
   override def clear(): Unit = bins.clear()
+
+  override def equals(other: Any): Boolean = other match {
+    case that: RangeHistogram[T] => attribute == that.attribute && bins == that.bins // bins compares endpoints and length
+    case _ => false
+  }
+
+  override def hashCode(): Int = Seq(attribute, bins).map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
 }

@@ -92,7 +92,7 @@ object GeoMesaMetadataStats {
 class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10) extends
     GeoMesaStats with DistributedLocking with Runnable with LazyLogging {
 
-  import GeoMesaMetadataStats.{Utf8, dtFormat, lockKey, minMaxKey}
+  import GeoMesaMetadataStats._
 
   val connector = ds.connector
 
@@ -108,7 +108,11 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
     es.schedule(this, initialDelayMinutes, TimeUnit.MINUTES)
   }
 
-  override def getStatUpdater(sft: SimpleFeatureType): StatUpdater = new MetadataStatUpdater(this, sft)
+  override def getStatUpdater(sft: SimpleFeatureType): StatUpdater = {
+    val statString = buildStatsFor(sft, update = true)
+    val tracker: () => Option[Stat] = () => if (statString.isEmpty) None else Some(Stat(sft, statString))
+    new MetadataStatUpdater(this, sft, tracker)
+  }
 
   override def getBounds(sft: SimpleFeatureType, filter: Filter, exact: Boolean): ReferencedEnvelope = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -161,15 +165,16 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
           SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).length
       }
     }
-    if (exact) {
-      exactCount
-    } else if (filter == Filter.INCLUDE) {
+    if (!exact && filter == Filter.INCLUDE) {
       ds.metadata.read(sft.getTypeName, STATS_TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(exactCount)
     } else {
-      // TODO use the histograms to estimate counts
-//      val spatialHistogram = ds.metadata.read(sft.getTypeName, SPATIAL_HISTOGRAM_KEY, cache = false)
-      ds.metadata.read(sft.getTypeName, STATS_TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(exactCount)
+      exactCount
     }
+
+//    } else {
+//      // TODO use the histograms to estimate counts
+//      val spatialHistogram = ds.metadata.read(sft.getTypeName, SPATIAL_HISTOGRAM_KEY, cache = false)
+//    }
   }
 
   override def close(): Unit = {
@@ -236,41 +241,21 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
     * @param typeName simple feature type name
     */
   private def update(typeName: String): Unit = {
-
-    import GeoMesaMetadataStats.{GeometryHistogramSize, MaxGeom, MinGeom}
-    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-
     val sft = ds.getSchema(typeName)
+    val statString = buildStatsFor(sft)
 
-    val count = Stat.Count()
-    val geomHistogram = Option(sft.getGeomField).map(g => Stat.RangeHistogram(g, GeometryHistogramSize, MinGeom, MaxGeom))
+    if (statString.isEmpty) {
+      logger.debug(s"Not calculating any stats for sft $typeName: ${SimpleFeatureTypes.encodeType(sft)}")
+    } else {
+      logger.debug(s"Calculating stats for $typeName: $statString")
 
-    val dateHistogram = for {
-      dtg <- sft.getDtgField
-      bounds <- readStat(sft, minMaxKey(dtg)).map(_.asInstanceOf[MinMax[Date]])
-      weeks = new Duration(bounds.min.getTime, bounds.max.getTime).getStandardDays / 7
-      if weeks > 1
-    } yield {
-      Stat.RangeHistogram(dtg, weeks.toInt, bounds.min, bounds.max)
+      val stats = executeStatsQuery(statString, sft)
+
+      logger.trace(s"Stats for $typeName: ${stats.toJson()}")
+      logger.debug(s"Writing stats for $typeName")
+
+      writeStat(stats, sft)
     }
-
-    val minMax = GeoMesaMetadataStats.minMaxStat(sft)
-
-    val allStats = Stat.SeqStat(Seq(count) ++ geomHistogram ++ dateHistogram ++ minMax)
-
-    if (allStats.isEmpty) {
-      logger.debug(s"Not calculating any stats for sft ${sft.getTypeName}: ${SimpleFeatureTypes.encodeType(sft)}")
-      return
-    }
-
-    logger.debug(s"Calculating stats for ${sft.getTypeName}: $allStats")
-
-    val stats = executeStatsQuery(allStats, sft)
-
-    logger.trace(s"Stats for ${sft.getTypeName}: ${stats.toJson()}")
-    logger.debug(s"Writing stats for ${sft.getTypeName}")
-
-    writeStat(stats, sft)
   }
 
   /**
@@ -330,39 +315,67 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
   private def writeMinMax(stat: MinMax[_], sft: SimpleFeatureType, merge: Boolean = false): Unit = {
     val key = minMaxKey(sft.getDescriptor(stat.attribute).getLocalName)
-    val updated = if (merge) tryMerge(sft, key, stat) else stat
-    val value = serializer(sft).serialize(updated)
-    ds.metadata.insert(sft.getTypeName, key, new String(value, Utf8))
+
+    val existing = readStat[MinMax[_]](sft, key)
+    val updated = if (merge) tryMerge(stat, existing) else stat
+
+    if (!existing.contains(updated)) {
+      val value = serializer(sft).serialize(updated)
+      ds.metadata.insert(sft.getTypeName, key, new String(value, Utf8))
+    }
   }
 
   private def writeHistogram(stat: RangeHistogram[_], sft: SimpleFeatureType, merge: Boolean = false): Unit = {
-    import GeoMesaMetadataStats.keySafeString
-
     val key = s"$STATS_HISTOGRAM_PREFIX-${keySafeString(sft.getDescriptor(stat.attribute).getLocalName)}"
 
-    val updated = if (merge) tryMerge(sft, key, stat) else stat
-    val value = serializer(sft).serialize(updated)
-    ds.metadata.insert(sft.getTypeName, key, new String(value, Utf8))
+    val existing = readStat[RangeHistogram[Any]](sft, key)
+    val updated = if (merge) tryMerge(stat, existing) else stat
+
+    if (!existing.contains(updated)) {
+      val value = serializer(sft).serialize(updated)
+      ds.metadata.insert(sft.getTypeName, key, new String(value, Utf8))
+    }
   }
 
   private def writeCount(stat: CountStat, sft: SimpleFeatureType, merge: Boolean = false): Unit = {
-    val updated = if (merge) {
-      val existing = ds.metadata.read(sft.getTypeName, STATS_TOTAL_COUNT_KEY, cache = false)
-      existing.map(_.toLong + stat.count).getOrElse(stat.count)
-    } else {
-      stat.count
+    val existing = ds.metadata.read(sft.getTypeName, STATS_TOTAL_COUNT_KEY, cache = false).map(_.toLong)
+    val updated = if (merge) existing.map(_ + stat.count).getOrElse(stat.count) else stat.count
+    if (!existing.contains(updated)) {
+      ds.metadata.insert(sft.getTypeName, STATS_TOTAL_COUNT_KEY, updated.toString)
     }
-    ds.metadata.insert(sft.getTypeName, STATS_TOTAL_COUNT_KEY, updated.toString)
   }
 
-  // TODO if bounds don't change, don't write them
-  private def tryMerge(sft: SimpleFeatureType, key: String, stat: Stat): Stat =
-    readStat[Stat](sft, key).flatMap(s => Try(s + stat).toOption).getOrElse(stat)
+  private def tryMerge(stat: Stat, existing: Option[Stat]): Stat =
+    existing.flatMap(e => Try(stat + e).toOption).getOrElse(stat)
 
   private def readStat[T <: Stat](sft: SimpleFeatureType, key: String): Option[T] =
     ds.metadata.read(sft.getTypeName, key, cache = false)
         .flatMap(s => Try(serializer(sft).deserialize(s.getBytes(Utf8))).toOption)
-        .collect { case s: T => s }
+        .collect { case s: T if !s.isEmpty => s }
+
+  private def buildStatsFor(sft: SimpleFeatureType, update: Boolean = false): String = {
+    import GeoMesaMetadataStats.{GeometryHistogramSize, MaxGeom, MinGeom}
+    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+
+    val count = Stat.Count()
+    val geomHistogram = Option(sft.getGeomField).map(g => Stat.RangeHistogram(g, GeometryHistogramSize, MinGeom, MaxGeom))
+
+    val dateHistogram = for {
+      dtg <- sft.getDtgField
+      bounds <- readStat[MinMax[Date]](sft, minMaxKey(dtg))
+      start = bounds.min
+      // project one day into the future to account for new data being written
+      end = if (update) DateTime.now(DateTimeZone.UTC).plusDays(1).toDate else bounds.max
+      weeks = new Duration(start.getTime, end.getTime).getStandardDays / 7
+      if weeks > 1
+    } yield {
+      Stat.RangeHistogram(dtg, weeks.toInt, start, end)
+    }
+
+    val minMax = GeoMesaMetadataStats.minMaxStat(sft)
+
+    Stat.SeqStat(Seq(count) ++ geomHistogram ++ dateHistogram ++ minMax)
+  }
 
   /**
     * Reads the time of the last update
@@ -414,31 +427,44 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
   *
   * @param stats persistence
   * @param sft simple feature type
+  * @param tracker creates stats for tracking new features
   */
-class MetadataStatUpdater(stats: GeoMesaMetadataStats, sft: SimpleFeatureType) extends StatUpdater {
+class MetadataStatUpdater(stats: GeoMesaMetadataStats, sft: SimpleFeatureType, tracker: () => Option[Stat])
+    extends StatUpdater with LazyLogging {
 
-  // TODO also track histograms
+  private var currentTracker: Option[Stat] = null
+  private var updateStats: (SimpleFeature) => Unit = null
 
-  private val minMax = {
-    val statString = Stat.SeqStat(GeoMesaMetadataStats.minMaxStat(sft))
-    if (statString.isEmpty) None else Some(Stat(sft, statString))
-  }
+  reloadTracker()
 
-  private val updateStats: (SimpleFeature) => Unit = minMax match {
-    case Some(stat) => (f) => stat.observe(f)
-    case None       => (_) => Unit
+  private def reloadTracker(): Unit = {
+    currentTracker = tracker()
+    updateStats = currentTracker match {
+      case Some(stat) => (f) => stat.observe(f)
+      case None       => (_) => Unit
+    }
   }
 
   override def update(f: SimpleFeature): Unit = updateStats(f)
 
-  override def close(): Unit = flush()
+  override def close(): Unit = if (!write(1000, reload = false)) {
+    logger.warn(s"Failed to write update stats for schema ${sft.getTypeName}")
+  }
 
-  override def flush(): Unit = {
-    minMax.foreach { mm =>
-      // don't wait around if the lock isn't available...
-      if (stats.writeStatUpdate(mm, sft, 10)) {
-        mm.clear()
-      }
+  // don't wait around if the lock isn't available...
+  override def flush(): Unit = write(10, reload = true)
+
+  private def write(delay: Long, reload: Boolean): Boolean = {
+    currentTracker match {
+      case None => true
+      case Some(t) =>
+        val updated = stats.writeStatUpdate(t, sft, delay)
+        if (updated && reload) {
+          // reload the tracker
+          // for long-held updaters, this will refresh the date histogram range
+          reloadTracker()
+        }
+        updated
     }
   }
 }
