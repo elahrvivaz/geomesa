@@ -99,7 +99,7 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
         throw new IllegalArgumentException("The stats iterator is not supported for non-kryo serialization")
       }
       val iter = KryoLazyStatsIterator.configure(sft, filter.filter, hints, sft.nonPoints)
-      (Seq(iter), queryPlanner.defaultKVsToFeatures(hints), false, false)
+      (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), false, false)
     } else {
       val iteratorConfig = IteratorTrigger.chooseIterator(filter.filter.getOrElse(Filter.INCLUDE), ecql, hints, sft)
       val stiiIterCfg = getSTIIIterCfg(iteratorConfig, hints, sft, ofilter, ecql, featureEncoding, version)
