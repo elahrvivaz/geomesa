@@ -21,7 +21,7 @@ import org.locationtech.geomesa.filter.visitor.LocalNameVisitorImpl
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SftBuilder.Opts
 import org.locationtech.geomesa.utils.geotools.{SftBuilder, SimpleFeatureTypes}
-import org.locationtech.geomesa.utils.stats.{Cardinality, MinMax, Stat}
+import org.locationtech.geomesa.utils.stats.{Cardinality, MinMax, RangeHistogram, Stat}
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.{And, Filter}
 import org.specs2.mutable.Specification
@@ -58,6 +58,7 @@ class QueryStrategyDeciderTest extends Specification {
 
     override def getCount(sft: SimpleFeatureType, filter: Filter, exact: Boolean): Long = -1
     override def getBounds(sft: SimpleFeatureType, filter: Filter, exact: Boolean): ReferencedEnvelope = wholeWorldEnvelope
+    override def getHistogram[T](sft: SimpleFeatureType, attribute: String): Option[RangeHistogram[T]] = None
     override def getMinMax[T](sft: SimpleFeatureType, attribute: String, filter: Filter, exact: Boolean): (T, T) = {
       val defaults = Stat(sft, Stat.MinMax(attribute)).asInstanceOf[MinMax[T]].defaults
       (defaults.min, defaults.max)

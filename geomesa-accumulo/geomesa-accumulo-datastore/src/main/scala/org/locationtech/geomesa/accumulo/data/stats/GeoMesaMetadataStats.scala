@@ -27,6 +27,7 @@ import org.locationtech.geomesa.accumulo.index.QueryHints
 import org.locationtech.geomesa.accumulo.iterators.KryoLazyStatsIterator
 import org.locationtech.geomesa.accumulo.util.{DistributedLocking, SelfClosingIterator}
 import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.{CRS_EPSG_4326, SimpleFeatureTypes, wholeWorldEnvelope}
 import org.locationtech.geomesa.utils.stats._
 import org.locationtech.geomesa.utils.text.WKTUtils
@@ -66,16 +67,10 @@ object GeoMesaMetadataStats {
   private [stats] def minMaxKey(attribute: String): String =
     s"$STATS_BOUNDS_PREFIX-${keySafeString(attribute)}"
 
-  private [stats] def minMaxStat(sft: SimpleFeatureType): Seq[String] = {
-    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+  private [stats] def histogramKey(attribute: String): String =
+    s"$STATS_HISTOGRAM_PREFIX-${keySafeString(attribute)}"
 
-    import scala.collection.JavaConversions._
-
-    val indexed = sft.getAttributeDescriptors.filter(okForMinMax).map(_.getLocalName)
-    (Option(sft.getGeomField).toSeq ++ sft.getDtgField ++ indexed).distinct.map(Stat.MinMax)
-  }
-
-  private def okForMinMax(d: AttributeDescriptor): Boolean = {
+  private [stats] def okForMinMax(d: AttributeDescriptor): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
     // TODO support list/map types in stats
     d.isIndexed && !d.isMultiValued && d.getType.getBinding != classOf[java.lang.Boolean]
@@ -108,17 +103,29 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
     es.schedule(this, initialDelayMinutes, TimeUnit.MINUTES)
   }
 
-  override def getStatUpdater(sft: SimpleFeatureType): StatUpdater = {
-    val statString = buildStatsFor(sft, update = true)
-    val tracker: () => Option[Stat] = () => if (statString.isEmpty) None else Some(Stat(sft, statString))
-    new MetadataStatUpdater(this, sft, tracker)
+  override def getCount(sft: SimpleFeatureType, filter: Filter, exact: Boolean): Long = {
+    if (exact) {
+      // TODO stat query doesn't entirely handle duplicates - only on a per-iterator basis
+      // we could do a full scan, but is it worth it?
+      executeStatsQuery(Stat.Count(), sft, filter) match {
+        case s: CountStat => s.count
+        case s =>
+          logger.warn("Got unexpected Count result, falling back to normal full scan: " +
+              s"${if (s == null) "null" else s.toJson()}")
+          // fall back to full scan - return no properties to reduce data transferred
+          val query = new Query(sft.getTypeName, filter, Array.empty[String])
+          SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).length
+      }
+    } else if (filter == Filter.INCLUDE) {
+      ds.metadata.read(sft.getTypeName, STATS_TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(-1)
+    } else {
+      // TODO use the histograms to estimate counts
+      -1
+    }
   }
 
   override def getBounds(sft: SimpleFeatureType, filter: Filter, exact: Boolean): ReferencedEnvelope = {
-    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-
     val geom = sft.getGeomField
-
     if (geom == null) {
       // geometry-less schema
       wholeWorldEnvelope
@@ -152,29 +159,13 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
     }
   }
 
-  override def getCount(sft: SimpleFeatureType, filter: Filter, exact: Boolean): Long = {
-    def exactCount: Long = {
-      // TODO stat query doesn't entirely handle duplicates - only on a per-iterator basis
-      val stat = executeStatsQuery(Stat.Count(), sft, filter)
-      stat match {
-        case s: CountStat => s.count
-        case s =>
-          logger.warn(s"Got back unexpected Count: ${if (s == null) "null" else s.toJson()}")
-          // fall back to full scan
-          val query = new Query(sft.getTypeName, filter)
-          SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).length
-      }
-    }
-    if (!exact && filter == Filter.INCLUDE) {
-      ds.metadata.read(sft.getTypeName, STATS_TOTAL_COUNT_KEY, cache = false).map(_.toLong).getOrElse(exactCount)
-    } else {
-      exactCount
-    }
+  override def getHistogram[T](sft: SimpleFeatureType, attribute: String): Option[RangeHistogram[T]] =
+    readStat[RangeHistogram[T]](sft, histogramKey(attribute))
 
-//    } else {
-//      // TODO use the histograms to estimate counts
-//      val spatialHistogram = ds.metadata.read(sft.getTypeName, SPATIAL_HISTOGRAM_KEY, cache = false)
-//    }
+  override def getStatUpdater(sft: SimpleFeatureType): StatUpdater = {
+    val statString = buildStatsFor(sft, update = true)
+    val tracker: () => Option[Stat] = () => if (statString.isEmpty) None else Some(Stat(sft, statString))
+    new MetadataStatUpdater(this, sft, tracker)
   }
 
   override def close(): Unit = {
@@ -326,7 +317,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
   }
 
   private def writeHistogram(stat: RangeHistogram[_], sft: SimpleFeatureType, merge: Boolean = false): Unit = {
-    val key = s"$STATS_HISTOGRAM_PREFIX-${keySafeString(sft.getDescriptor(stat.attribute).getLocalName)}"
+    val key = histogramKey(sft.getDescriptor(stat.attribute).getLocalName)
 
     val existing = readStat[RangeHistogram[Any]](sft, key)
     val updated = if (merge) tryMerge(stat, existing) else stat
@@ -355,7 +346,7 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
 
   private def buildStatsFor(sft: SimpleFeatureType, update: Boolean = false): String = {
     import GeoMesaMetadataStats.{GeometryHistogramSize, MaxGeom, MinGeom}
-    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+
 
     val count = Stat.Count()
     val geomHistogram = Option(sft.getGeomField).map(g => Stat.RangeHistogram(g, GeometryHistogramSize, MinGeom, MaxGeom))
@@ -372,7 +363,11 @@ class GeoMesaMetadataStats(ds: AccumuloDataStore, initialDelayMinutes: Int = 10)
       Stat.RangeHistogram(dtg, weeks.toInt, start, end)
     }
 
-    val minMax = GeoMesaMetadataStats.minMaxStat(sft)
+    val minMax = {
+      import scala.collection.JavaConversions._
+      val indexed = sft.getAttributeDescriptors.filter(okForMinMax).map(_.getLocalName)
+      (Option(sft.getGeomField).toSeq ++ sft.getDtgField ++ indexed).distinct.map(Stat.MinMax)
+    }
 
     Stat.SeqStat(Seq(count) ++ geomHistogram ++ dateHistogram ++ minMax)
   }

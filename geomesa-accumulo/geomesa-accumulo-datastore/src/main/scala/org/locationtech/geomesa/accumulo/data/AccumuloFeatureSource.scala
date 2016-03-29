@@ -67,7 +67,16 @@ abstract class AccumuloFeatureSource(val dataStore: AccumuloDataStore, val featu
     import GeomesaSystemProperties.QueryProperties.QUERY_EXACT_COUNT
 
     val useExactCount = query.getHints.isExactCount.getOrElse(QUERY_EXACT_COUNT.get.toBoolean)
-    val count = dataStore.stats.getCount(getSchema, query.getFilter, useExactCount)
+    val count = if (useExactCount) {
+      dataStore.stats.getCount(getSchema, query.getFilter, exact = true)
+    } else {
+      val inexact = dataStore.stats.getCount(getSchema, query.getFilter, exact = false)
+      if (inexact == -1) {
+        dataStore.stats.getCount(getSchema, query.getFilter, exact = true)
+      } else {
+        inexact
+      }
+    }
     if (count > Int.MaxValue) Int.MaxValue else count.toInt
   }
 
