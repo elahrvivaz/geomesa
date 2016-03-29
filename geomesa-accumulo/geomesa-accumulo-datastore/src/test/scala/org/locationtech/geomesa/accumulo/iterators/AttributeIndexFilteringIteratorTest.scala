@@ -46,11 +46,9 @@ class AttributeIndexFilteringIteratorTest extends Specification with TestWithDat
 
   val ff = CommonFactoryFinder.getFilterFactory2
 
-  val hints = new UserDataStrategyHints()
-
   def checkStrategies[T](query: Query, clas: Class[T]) = {
     val out = new ExplainString
-    ds.explainQuery(query, out)
+    ds.getQueryPlan(query, explainer = out)
     val lines = out.toString().split("\n").map(_.trim).filter(_.startsWith("Strategy 1 of 1:"))
     lines must haveLength(1)
     lines.head must contain(clas.getSimpleName)
@@ -118,7 +116,7 @@ class AttributeIndexFilteringIteratorTest extends Specification with TestWithDat
     "handle corner case with attr idx, bbox, and no temporal filter" in {
       val filter = ff.and(ECQL.toFilter("name = 'b'"), ECQL.toFilter("BBOX(geom, 30, 30, 50, 50)"))
       val query = new Query(sftName, filter, Array("geom"))
-      QueryStrategyDecider.chooseStrategies(sft, query, hints, None).head must
+      QueryStrategyDecider.chooseStrategies(sft, query, ds.stats, None).head must
           beAnInstanceOf[STIdxStrategy]
 
       val features = fs.getFeatures(query)

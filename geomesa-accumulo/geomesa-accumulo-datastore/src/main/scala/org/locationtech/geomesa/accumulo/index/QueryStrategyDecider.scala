@@ -10,6 +10,7 @@ package org.locationtech.geomesa.accumulo.index
 
 import org.geotools.data.Query
 import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
@@ -21,7 +22,7 @@ import org.opengis.filter.Filter
 trait QueryStrategyDecider {
   def chooseStrategies(sft: SimpleFeatureType,
                        query: Query,
-                       hints: StrategyHints,
+                       stats: GeoMesaStats,
                        requested: Option[StrategyType],
                        ouptput: ExplainerOutputType): Seq[Strategy]
 }
@@ -32,15 +33,16 @@ object QueryStrategyDecider {
   private val strategies: Array[QueryStrategyDecider] =
     Array[QueryStrategyDecider](null) ++ (1 to CURRENT_SCHEMA_VERSION).map(QueryStrategyDecider.apply)
 
+  // noinspection ScalaDeprecation
   def apply(version: Int): QueryStrategyDecider =
     if (version < 6) new QueryStrategyDeciderV5 else new QueryStrategyDeciderV6
 
   def chooseStrategies(sft: SimpleFeatureType,
                        query: Query,
-                       hints: StrategyHints,
+                       stats: GeoMesaStats,
                        requested: Option[StrategyType],
                        output: ExplainerOutputType = ExplainNull): Seq[Strategy] = {
-    strategies(sft.getSchemaVersion).chooseStrategies(sft, query, hints, requested, output)
+    strategies(sft.getSchemaVersion).chooseStrategies(sft, query, stats, requested, output)
   }
 }
 
@@ -55,6 +57,7 @@ class QueryStrategyDeciderV6 extends QueryStrategyDecider with MethodProfiling {
    * Otherwise, the query will be examined for strategies that could be used to execute it. The cost of
    * executing each available strategy will be calculated, and the least expensive strategy will be used.
    *
+   * TODO update scaladocs
    * Currently, the costs are hard-coded to conform to the following priority:
    *
    *  * If an ID predicate is present, then use the record index strategy
@@ -67,7 +70,7 @@ class QueryStrategyDeciderV6 extends QueryStrategyDecider with MethodProfiling {
    */
   override def chooseStrategies(sft: SimpleFeatureType,
                                 query: Query,
-                                hints: StrategyHints,
+                                stats: GeoMesaStats,
                                 requested: Option[StrategyType],
                                 output: ExplainerOutputType): Seq[Strategy] = {
 
@@ -101,7 +104,7 @@ class QueryStrategyDeciderV6 extends QueryStrategyDecider with MethodProfiling {
           options.head
         } else {
           // choose the best option based on cost
-          val costs = options.map(o => (o, o.filters.map(getCost(_, sft, hints)).sum)).sortBy(_._2)
+          val costs = options.map(o => (o, o.filters.map(getCost(_, sft, stats)).sum)).sortBy(_._2)
           val cheapest = costs.head
           output(s"Filter plan selected: ${cheapest._1} (Cost ${cheapest._2})")
           output(s"Filter plans not used (${costs.size - 1}):", costs.drop(1).map(c => s"${c._1} (Cost ${c._2})"))
@@ -134,12 +137,12 @@ class QueryStrategyDeciderV6 extends QueryStrategyDecider with MethodProfiling {
   /**
    * Gets the estimated cost of running a particular strategy
    */
-  def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints): Int = {
+  def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats): Long = {
     filter.strategy match {
-      case StrategyType.Z3        => Z3IdxStrategy.getCost(filter, sft, hints)
-      case StrategyType.ST        => STIdxStrategy.getCost(filter, sft, hints)
-      case StrategyType.RECORD    => RecordIdxStrategy.getCost(filter, sft, hints)
-      case StrategyType.ATTRIBUTE => AttributeIdxStrategy.getCost(filter, sft, hints)
+      case StrategyType.Z3        => Z3IdxStrategy.getCost(filter, sft, stats)
+      case StrategyType.ST        => STIdxStrategy.getCost(filter, sft, stats)
+      case StrategyType.RECORD    => RecordIdxStrategy.getCost(filter, sft, stats)
+      case StrategyType.ATTRIBUTE => AttributeIdxStrategy.getCost(filter, sft, stats)
       case _ => throw new IllegalStateException(s"Unknown query plan requested: ${filter.strategy}")
     }
   }
@@ -159,14 +162,15 @@ class QueryStrategyDeciderV6 extends QueryStrategyDecider with MethodProfiling {
 }
 
 @deprecated
+// noinspection ScalaDeprecation
 class QueryStrategyDeciderV5 extends QueryStrategyDeciderV6 {
 
   // override to handle old attribute strategy
-  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints): Int = {
+  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats): Long = {
     if (filter.strategy == StrategyType.ATTRIBUTE) {
-      AttributeIdxStrategyV5.getCost(filter, sft, hints)
+      AttributeIdxStrategyV5.getCost(filter, sft, stats)
     } else {
-      super.getCost(filter, sft, hints)
+      super.getCost(filter, sft, stats)
     }
   }
 

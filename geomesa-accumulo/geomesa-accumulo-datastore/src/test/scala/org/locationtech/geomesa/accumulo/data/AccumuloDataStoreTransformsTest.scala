@@ -121,7 +121,7 @@ class AccumuloDataStoreTransformsTest extends Specification with TestWithMultipl
       val sft = createNewSchema(spec)
       val sftName = sft.getTypeName
 
-      ds.setGeomesaVersion(sftName, 2)
+      ds.metadata.insert(sftName, GeoMesaMetadata.VERSION_KEY, "2")
 
       addFeatures(sft, createFeature(sft))
 
@@ -270,8 +270,7 @@ class AccumuloDataStoreTransformsTest extends Specification with TestWithMultipl
         }
       })
       sft = SimpleFeatureTypes.createType(sftName, "dtg:Date,geom:Point:srid=4326,attr1:String")
-      ds.metadata.insert(sftName, org.locationtech.geomesa.accumulo.data.ATTRIBUTES_KEY, SimpleFeatureTypes.encodeType(sft))
-      ds.metadata.expireCache(sftName)
+      ds.metadata.insert(sftName, GeoMesaMetadata.ATTRIBUTES_KEY, SimpleFeatureTypes.encodeType(sft))
       addFeatures(sft, {
         (0 until 10).filter(_ % 2 == 1).map { i =>
           val sf = new ScalaSimpleFeature(s"f$i", sft)

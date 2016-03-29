@@ -48,16 +48,16 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
       val results = statsIteratorProcess.execute(fs.getFeatures(query), "MinMax(attr)", encode = true)
       val sf = results.features().next
 
-      val minMaxStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[MinMax[java.lang.Long]]
+      val minMaxStat = decodeStat(sf.getAttribute(0).asInstanceOf[String], sft).asInstanceOf[MinMax[java.lang.Long]]
       minMaxStat.min mustEqual 0
       minMaxStat.max mustEqual 298
     }
 
     "work with the IteratorStackCounter stat" in {
-      val results = statsIteratorProcess.execute(fs.getFeatures(query), "IteratorStackCounter", encode = true)
+      val results = statsIteratorProcess.execute(fs.getFeatures(query), "IteratorStackCounter()", encode = true)
       val sf = results.features().next
 
-      val isc = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[IteratorStackCounter]
+      val isc = decodeStat(sf.getAttribute(0).asInstanceOf[String], sft).asInstanceOf[IteratorStackCounter]
       isc.count must beGreaterThanOrEqualTo(1L)
     }
 
@@ -65,32 +65,32 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
       val results = statsIteratorProcess.execute(fs.getFeatures(query), "EnumeratedHistogram(id)", encode = true)
       val sf = results.features().next
 
-      val eh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
-      eh.frequencyMap.size mustEqual 150
-      eh.frequencyMap(0) mustEqual 1
-      eh.frequencyMap(149) mustEqual 1
-      eh.frequencyMap(150) mustEqual 0
+      val eh = decodeStat(sf.getAttribute(0).asInstanceOf[String], sft).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
+      eh.histogram.size mustEqual 150
+      eh.histogram(0) mustEqual 1
+      eh.histogram(149) mustEqual 1
+      eh.histogram(150) mustEqual 0
     }
 
     "work with the RangeHistogram stat" in {
       val results = statsIteratorProcess.execute(fs.getFeatures(query), "RangeHistogram(id,5,10,15)", encode = true)
       val sf = results.features().next
 
-      val rh = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[RangeHistogram[java.lang.Integer]]
-      rh.histogram.size mustEqual 5
-      rh.histogram(10) mustEqual 1
-      rh.histogram(11) mustEqual 1
-      rh.histogram(12) mustEqual 1
-      rh.histogram(13) mustEqual 1
-      rh.histogram(14) mustEqual 1
+      val rh = decodeStat(sf.getAttribute(0).asInstanceOf[String], sft).asInstanceOf[RangeHistogram[java.lang.Integer]]
+      rh.bins.length mustEqual 5
+      rh.bins(rh.bins.getIndex(10)) mustEqual 1
+      rh.bins(rh.bins.getIndex(11)) mustEqual 1
+      rh.bins(rh.bins.getIndex(12)) mustEqual 1
+      rh.bins(rh.bins.getIndex(13)) mustEqual 1
+      rh.bins(rh.bins.getIndex(14)) mustEqual 1
     }
 
     "work with multiple stats at once" in {
       val results = statsIteratorProcess.execute(fs.getFeatures(query),
-        "MinMax(attr);IteratorStackCounter;EnumeratedHistogram(id);RangeHistogram(id,5,10,15)", encode = true)
+        "MinMax(attr);IteratorStackCounter();EnumeratedHistogram(id);RangeHistogram(id,5,10,15)", encode = true)
       val sf = results.features().next
 
-      val seqStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[SeqStat]
+      val seqStat = decodeStat(sf.getAttribute(0).asInstanceOf[String], sft).asInstanceOf[SeqStat]
       val stats = seqStat.stats
       stats.size mustEqual 4
 
@@ -104,17 +104,17 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
 
       isc.count must beGreaterThanOrEqualTo(1L)
 
-      eh.frequencyMap.size mustEqual 150
-      eh.frequencyMap(0) mustEqual 1
-      eh.frequencyMap(149) mustEqual 1
-      eh.frequencyMap(150) mustEqual 0
+      eh.histogram.size mustEqual 150
+      eh.histogram(0) mustEqual 1
+      eh.histogram(149) mustEqual 1
+      eh.histogram(150) mustEqual 0
 
-      rh.histogram.size mustEqual 5
-      rh.histogram(10) mustEqual 1
-      rh.histogram(11) mustEqual 1
-      rh.histogram(12) mustEqual 1
-      rh.histogram(13) mustEqual 1
-      rh.histogram(14) mustEqual 1
+      rh.bins.length mustEqual 5
+      rh.bins(rh.bins.getIndex(10)) mustEqual 1
+      rh.bins(rh.bins.getIndex(11)) mustEqual 1
+      rh.bins(rh.bins.getIndex(12)) mustEqual 1
+      rh.bins(rh.bins.getIndex(13)) mustEqual 1
+      rh.bins(rh.bins.getIndex(14)) mustEqual 1
     }
 
     "work with non AccumuloFeatureCollections" in {
@@ -122,10 +122,10 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
       fs.getFeatures(new Query(sftName, Filter.INCLUDE)).features().foreach(features.add)
 
       val results = statsIteratorProcess.execute(features,
-        "MinMax(attr);IteratorStackCounter;EnumeratedHistogram(id);RangeHistogram(id,5,10,15)", encode = true)
+        "MinMax(attr);IteratorStackCounter();EnumeratedHistogram(id);RangeHistogram(id,5,10,15)", encode = true)
       val sf = results.features().next
 
-      val seqStat = decodeStat(sf.getAttribute(STATS).asInstanceOf[String]).asInstanceOf[SeqStat]
+      val seqStat = decodeStat(sf.getAttribute(0).asInstanceOf[String], sft).asInstanceOf[SeqStat]
       val stats = seqStat.stats
       stats.size mustEqual 4
 
@@ -139,17 +139,17 @@ class KryoLazyStatsIteratorProcessTest extends Specification with TestWithDataSt
 
       isc.count mustEqual 1L
 
-      eh.frequencyMap.size mustEqual 150
-      eh.frequencyMap(0) mustEqual 1
-      eh.frequencyMap(149) mustEqual 1
-      eh.frequencyMap(150) mustEqual 0
+      eh.histogram.size mustEqual 150
+      eh.histogram(0) mustEqual 1
+      eh.histogram(149) mustEqual 1
+      eh.histogram(150) mustEqual 0
 
-      rh.histogram.size mustEqual 5
-      rh.histogram(10) mustEqual 1
-      rh.histogram(11) mustEqual 1
-      rh.histogram(12) mustEqual 1
-      rh.histogram(13) mustEqual 1
-      rh.histogram(14) mustEqual 1
+      rh.bins.length mustEqual 5
+      rh.bins(rh.bins.getIndex(10)) mustEqual 1
+      rh.bins(rh.bins.getIndex(11)) mustEqual 1
+      rh.bins(rh.bins.getIndex(12)) mustEqual 1
+      rh.bins(rh.bins.getIndex(13)) mustEqual 1
+      rh.bins(rh.bins.getIndex(14)) mustEqual 1
     }
   }
 }

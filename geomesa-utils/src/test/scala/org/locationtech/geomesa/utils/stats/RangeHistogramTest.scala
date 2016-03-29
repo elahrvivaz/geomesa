@@ -10,314 +10,457 @@ package org.locationtech.geomesa.utils.stats
 
 import java.util.Date
 
+import com.vividsolutions.jts.geom.Geometry
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.utils.geotools.GeoToolsDateFormat
+import org.locationtech.geomesa.utils.text.WKTUtils
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
 class RangeHistogramTest extends Specification with StatTestHelper {
+
   sequential
 
   "RangeHistogram stat" should {
-    "create RangeHistogram stats for" in {
-      "dates" in {
-        val stat = Stat(sft, "RangeHistogram(dtg,24,2012-01-01T00:00:00.000Z,2012-01-03T00:00:00.000Z)")
-        val rh = stat.asInstanceOf[RangeHistogram[Date]]
-        val lowerEndpoint = Stat.dateFormat.parseDateTime("2012-01-01T00:00:00.000Z").toDate
-        val midpoint = Stat.dateFormat.parseDateTime("2012-01-02T00:00:00.000Z").toDate
 
+    "work with strings" >> {
+      val stat = Stat(sft, "RangeHistogram(strAttr,20,abc000,abc200)")
+      val rh = stat.asInstanceOf[RangeHistogram[String]]
+      val lowerEndpoint = "abc000"
+      val midpoint = "abc100"
+
+      val lowerIndex = rh.bins.getIndex(lowerEndpoint)
+      val middleIndex = rh.bins.getIndex(midpoint)
+
+      features.foreach { stat.observe }
+
+      "correctly bin values"  >> {
         rh.isEmpty must beFalse
-
-        features.foreach { stat.observe }
-
-        rh.histogram.size mustEqual 24
-        rh.histogram(lowerEndpoint) mustEqual 10
-        rh.histogram(midpoint) mustEqual 0
-
-        "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(rh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[RangeHistogram[Date]]
-
-          unpacked mustEqual rh
-        }
-
-        "combine two RangeHistograms" in {
-          val stat2 = Stat(sft, "RangeHistogram(dtg,24,2012-01-01T00:00:00.000Z,2012-01-03T00:00:00.000Z)")
-          val rh2 = stat2.asInstanceOf[RangeHistogram[Date]]
-
-          features2.foreach { stat2.observe }
-
-          rh2.histogram.size mustEqual 24
-          rh2.histogram(lowerEndpoint) mustEqual 0
-          rh2.histogram(midpoint) mustEqual 8
-
-          stat += stat2
-
-          rh.histogram.size mustEqual 24
-          rh.histogram(lowerEndpoint) mustEqual 10
-          rh.histogram(midpoint) mustEqual 8
-          rh2.histogram.size mustEqual 24
-          rh2.histogram(lowerEndpoint) mustEqual 0
-          rh2.histogram(midpoint) mustEqual 8
-
-          "clear them" in {
-            rh.isEmpty must beFalse
-            rh2.isEmpty must beFalse
-
-            rh.clear()
-            rh2.clear()
-
-            rh.histogram.size mustEqual 24
-            rh.histogram(lowerEndpoint) mustEqual 0
-            rh.histogram(midpoint) mustEqual 0
-            rh2.histogram.size mustEqual 24
-            rh2.histogram(lowerEndpoint) mustEqual 0
-            rh2.histogram(midpoint) mustEqual 0
-          }
-        }
+        rh.bins.length mustEqual 20
+        rh.bins(lowerIndex) mustEqual 40
+        rh.bins(middleIndex) mustEqual 0
       }
 
-      "integers" in {
-        val stat = Stat(sft, "RangeHistogram(intAttr,20,0,200)")
-        val rh = stat.asInstanceOf[RangeHistogram[java.lang.Integer]]
-        val lowerEndpoint = 0
-        val midpoint = 100
+      "serialize and deserialize" >> {
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[String]]
 
-        rh.isEmpty must beFalse
-
-        features.foreach { stat.observe }
-
-        rh.histogram.size mustEqual 20
-        rh.histogram(lowerEndpoint) mustEqual 10
-        rh.histogram(midpoint) mustEqual 0
-
-        "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(rh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[RangeHistogram[java.lang.Integer]]
-
-          unpacked mustEqual rh
-        }
-
-        "combine two RangeHistograms" in {
-          val stat2 = Stat(sft, "RangeHistogram(intAttr,20,0,200)")
-          val rh2 = stat2.asInstanceOf[RangeHistogram[java.lang.Integer]]
-
-          features2.foreach { stat2.observe }
-
-          rh2.histogram.size mustEqual 20
-          rh2.histogram(lowerEndpoint) mustEqual 0
-          rh2.histogram(midpoint) mustEqual 10
-
-          stat += stat2
-
-          rh.histogram.size mustEqual 20
-          rh.histogram(lowerEndpoint) mustEqual 10
-          rh.histogram(midpoint) mustEqual 10
-          rh2.histogram.size mustEqual 20
-          rh2.histogram(lowerEndpoint) mustEqual 0
-          rh2.histogram(midpoint) mustEqual 10
-
-          "clear them" in {
-            rh.isEmpty must beFalse
-            rh2.isEmpty must beFalse
-
-            rh.clear()
-            rh2.clear()
-
-            rh.histogram.size mustEqual 20
-            rh.histogram(lowerEndpoint) mustEqual 0
-            rh.histogram(midpoint) mustEqual 0
-            rh2.histogram.size mustEqual 20
-            rh2.histogram(lowerEndpoint) mustEqual 0
-            rh2.histogram(midpoint) mustEqual 0
-          }
-        }
+        unpacked.numBins mustEqual rh.numBins
+        unpacked.attribute mustEqual rh.attribute
+        unpacked.toJson() mustEqual rh.toJson()
       }
 
-      "longs" in {
-        val stat = Stat(sft, "RangeHistogram(longAttr,7,90,110)")
-        val rh = stat.asInstanceOf[RangeHistogram[java.lang.Long]]
-        val lowerEndpoint = 90L
-        val midpoint = 96L
-        val upperEndpoint = 102L
+      "combine two RangeHistograms" >> {
+        val stat2 = Stat(sft, "RangeHistogram(strAttr,20,abc000,abc200)")
+        val rh2 = stat2.asInstanceOf[RangeHistogram[String]]
 
-        rh.isEmpty must beFalse
+        features2.foreach { stat2.observe }
 
-        features.foreach { stat.observe }
+        rh2.bins.length mustEqual 20
+        rh2.bins(lowerIndex) mustEqual 0
+        rh2.bins(middleIndex) mustEqual 40
 
-        rh.histogram.size mustEqual 7
-        rh.histogram(lowerEndpoint) mustEqual 2L
-        rh.histogram(midpoint) mustEqual 2L
-        rh.histogram(upperEndpoint) mustEqual 0L
+        stat += stat2
 
-        "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(rh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[RangeHistogram[java.lang.Long]]
-
-          unpacked mustEqual rh
-        }
-
-        "combine two RangeHistograms" in {
-          val stat2 = Stat(sft, "RangeHistogram(longAttr,7,90,110)")
-          val rh2 = stat2.asInstanceOf[RangeHistogram[java.lang.Long]]
-
-          features2.foreach { stat2.observe }
-
-          rh2.histogram.size mustEqual 7
-          rh2.histogram(lowerEndpoint) mustEqual 0L
-          rh2.histogram(midpoint) mustEqual 0L
-          rh2.histogram(upperEndpoint) mustEqual 8L
-
-          stat += stat2
-
-          rh.histogram.size mustEqual 7
-          rh.histogram(lowerEndpoint) mustEqual 2L
-          rh.histogram(midpoint) mustEqual 2L
-          rh.histogram(upperEndpoint) mustEqual 8L
-          rh2.histogram.size mustEqual 7
-          rh2.histogram(lowerEndpoint) mustEqual 0L
-          rh2.histogram(midpoint) mustEqual 0L
-          rh2.histogram(upperEndpoint) mustEqual 8L
-
-          "clear them" in {
-            rh.isEmpty must beFalse
-            rh2.isEmpty must beFalse
-
-            rh.clear()
-            rh2.clear()
-
-            rh.histogram.size mustEqual 7
-            rh.histogram(lowerEndpoint) mustEqual 0
-            rh.histogram(midpoint) mustEqual 0
-            rh2.histogram.size mustEqual 7
-            rh2.histogram(lowerEndpoint) mustEqual 0
-            rh2.histogram(midpoint) mustEqual 0
-          }
-        }
+        rh.bins.length mustEqual 20
+        rh.bins(lowerIndex) mustEqual 40
+        rh.bins(middleIndex) mustEqual 40
+        rh2.bins.length mustEqual 20
+        rh2.bins(lowerIndex) mustEqual 0
+        rh2.bins(middleIndex) mustEqual 40
       }
 
-      "doubles" in {
-        val stat = Stat(sft, "RangeHistogram(doubleAttr,7,90,110)")
-        val rh = stat.asInstanceOf[RangeHistogram[java.lang.Double]]
-        val lowerEndpoint = 90.0
-        val midpoint = 98.57142857142857
-        val upperEndpoint = 107.14285714285714
+      "clear" >> {
+        rh.clear()
 
+        rh.isEmpty must beTrue
+        rh.bins.length mustEqual 20
+        rh.bins(lowerIndex) mustEqual 0
+        rh.bins(middleIndex) mustEqual 0
+      }
+    }
+
+    "work with integers" >> {
+      val stat = Stat(sft, "RangeHistogram(intAttr,20,0,200)")
+      val rh = stat.asInstanceOf[RangeHistogram[java.lang.Integer]]
+      val lowerEndpoint = 0
+      val midpoint = 100
+
+      val lowerIndex = rh.bins.getIndex(lowerEndpoint)
+      val middleIndex = rh.bins.getIndex(midpoint)
+
+      features.foreach { stat.observe }
+
+      "correctly bin values"  >> {
         rh.isEmpty must beFalse
-
-        features.foreach { stat.observe }
-
-        rh.histogram.size mustEqual 7
-        rh.histogram(lowerEndpoint) mustEqual 3
-        rh.histogram(midpoint) mustEqual 1
-        rh.histogram(upperEndpoint) mustEqual 0
-
-        "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(rh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[RangeHistogram[java.lang.Double]]
-
-          unpacked mustEqual rh
-        }
-
-        "combine two RangeHistograms" in {
-          val stat2 = Stat(sft, "RangeHistogram(doubleAttr,7,90,110)")
-          val rh2 = stat2.asInstanceOf[RangeHistogram[java.lang.Double]]
-
-          features2.foreach { stat2.observe }
-
-          rh2.histogram.size mustEqual 7
-          rh2.histogram(lowerEndpoint) mustEqual 0
-          rh2.histogram(midpoint) mustEqual 2
-          rh2.histogram(upperEndpoint) mustEqual 2
-
-          stat += stat2
-
-          rh.histogram.size mustEqual 7
-          rh.histogram(lowerEndpoint) mustEqual 3
-          rh.histogram(midpoint) mustEqual 3
-          rh.histogram(upperEndpoint) mustEqual 2
-          rh2.histogram.size mustEqual 7
-          rh2.histogram(lowerEndpoint) mustEqual 0
-          rh2.histogram(midpoint) mustEqual 2
-          rh2.histogram(upperEndpoint) mustEqual 2
-
-          "clear them" in {
-            rh.isEmpty must beFalse
-            rh2.isEmpty must beFalse
-
-            rh.clear()
-            rh2.clear()
-
-            rh.histogram.size mustEqual 7
-            rh.histogram(lowerEndpoint) mustEqual 0
-            rh.histogram(midpoint) mustEqual 0
-            rh2.histogram.size mustEqual 7
-            rh2.histogram(lowerEndpoint) mustEqual 0
-            rh2.histogram(midpoint) mustEqual 0
-          }
-        }
+        rh.bins.length mustEqual 20
+        rh.bins(lowerIndex) mustEqual 10
+        rh.bins(middleIndex) mustEqual 0
       }
 
-      "floats" in {
-        val stat = Stat(sft, "RangeHistogram(floatAttr,7,90,110)")
-        val rh = stat.asInstanceOf[RangeHistogram[java.lang.Float]]
-        val lowerEndpoint = 90.0f
-        val midpoint = 98.57143f
-        val upperEndpoint = 107.14285f
+      "serialize and deserialize" >> {
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[java.lang.Integer]]
 
+        unpacked.numBins mustEqual rh.numBins
+        unpacked.attribute mustEqual rh.attribute
+        unpacked.toJson() mustEqual rh.toJson()
+      }
+
+      "combine two RangeHistograms" >> {
+        val stat2 = Stat(sft, "RangeHistogram(intAttr,20,0,200)")
+        val rh2 = stat2.asInstanceOf[RangeHistogram[java.lang.Integer]]
+
+        features2.foreach { stat2.observe }
+
+        rh2.bins.length mustEqual 20
+        rh2.bins(lowerIndex) mustEqual 0
+        rh2.bins(middleIndex) mustEqual 10
+
+        stat += stat2
+
+        rh.bins.length mustEqual 20
+        rh.bins(lowerIndex) mustEqual 10
+        rh.bins(middleIndex) mustEqual 10
+        rh2.bins.length mustEqual 20
+        rh2.bins(lowerIndex) mustEqual 0
+        rh2.bins(middleIndex) mustEqual 10
+      }
+
+      "clear" >> {
+        rh.clear()
+
+        rh.isEmpty must beTrue
+        rh.bins.length mustEqual 20
+        rh.bins(lowerIndex) mustEqual 0
+        rh.bins(middleIndex) mustEqual 0
+      }
+    }
+
+    "work with longs" >> {
+      val stat = Stat(sft, "RangeHistogram(longAttr,7,90,110)")
+      val rh = stat.asInstanceOf[RangeHistogram[java.lang.Long]]
+      val lowerEndpoint = 90L
+      val midpoint = 96L
+      val upperEndpoint = 102L
+
+      val lowerIndex = rh.bins.getIndex(lowerEndpoint)
+      val middleIndex = rh.bins.getIndex(midpoint)
+      val upperIndex = rh.bins.getIndex(upperEndpoint)
+
+      rh.isEmpty must beTrue
+
+      features.foreach { stat.observe }
+
+      "correctly bin features" >> {
+        rh.bins.length mustEqual 7
+        rh.bins(lowerIndex) mustEqual 3L
+        rh.bins(middleIndex) mustEqual 3L
+        rh.bins(upperIndex) mustEqual 0L
+      }
+
+      "serialize and deserialize" >> {
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[java.lang.Long]]
+
+        unpacked.numBins mustEqual rh.numBins
+        unpacked.attribute mustEqual rh.attribute
+        unpacked.toJson() mustEqual rh.toJson()
+      }
+
+      "combine two RangeHistograms" >> {
+        val stat2 = Stat(sft, "RangeHistogram(longAttr,7,90,110)")
+        val rh2 = stat2.asInstanceOf[RangeHistogram[java.lang.Long]]
+
+        features2.foreach { stat2.observe }
+
+        rh2.bins.length mustEqual 7
+        rh2.bins(lowerIndex) mustEqual 0L
+        rh2.bins(middleIndex) mustEqual 0L
+        rh2.bins(upperIndex) mustEqual 3L
+
+        stat += stat2
+
+        rh.bins.length mustEqual 7
+        rh.bins(lowerIndex) mustEqual 3L
+        rh.bins(middleIndex) mustEqual 3L
+        rh.bins(upperIndex) mustEqual 3L
+        rh2.bins.length mustEqual 7
+        rh2.bins(lowerIndex) mustEqual 0L
+        rh2.bins(middleIndex) mustEqual 0L
+        rh2.bins(upperIndex) mustEqual 3L
+      }
+
+      "clear" >> {
+        rh.clear()
+
+        rh.isEmpty must beTrue
+        rh.bins.length mustEqual 7
+        rh.bins(lowerIndex) mustEqual 0
+        rh.bins(middleIndex) mustEqual 0
+      }
+    }
+
+    "work with floats" >> {
+      val stat = Stat(sft, "RangeHistogram(floatAttr,7,90,110)")
+      val rh = stat.asInstanceOf[RangeHistogram[java.lang.Float]]
+      val lowerEndpoint = 90.0f
+      val midpoint = 98.57143f
+      val upperEndpoint = 107.14285f
+
+      val lowerIndex = rh.bins.getIndex(lowerEndpoint)
+      val middleIndex = rh.bins.getIndex(midpoint)
+      val upperIndex = rh.bins.getIndex(upperEndpoint)
+
+      features.foreach { stat.observe }
+
+      "correctly bin values" >> {
         rh.isEmpty must beFalse
+        rh.bins.length mustEqual 7
+        rh.bins(lowerIndex) mustEqual 3
+        rh.bins(middleIndex) mustEqual 3
+        rh.bins(upperIndex) mustEqual 0
+      }
 
-        features.foreach { stat.observe }
+      "serialize and deserialize" >> {
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[java.lang.Float]]
 
-        rh.histogram.size mustEqual 7
-        rh.histogram(lowerEndpoint) mustEqual 3
-        rh.histogram(midpoint) mustEqual 1
-        rh.histogram(upperEndpoint) mustEqual 0
+        unpacked.numBins mustEqual rh.numBins
+        unpacked.attribute mustEqual rh.attribute
+        unpacked.toJson() mustEqual rh.toJson()
+      }
 
-        "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(rh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[RangeHistogram[java.lang.Float]]
+      "combine two RangeHistograms" >> {
+        val stat2 = Stat(sft, "RangeHistogram(floatAttr,7,90,110)")
+        val rh2 = stat2.asInstanceOf[RangeHistogram[java.lang.Float]]
 
-          unpacked mustEqual rh
-        }
+        features2.foreach { stat2.observe }
 
-        "combine two RangeHistograms" in {
-          val stat2 = Stat(sft, "RangeHistogram(floatAttr,7,90,110)")
-          val rh2 = stat2.asInstanceOf[RangeHistogram[java.lang.Float]]
+        rh2.bins.length mustEqual 7
+        rh2.bins(lowerIndex) mustEqual 0
+        rh2.bins(middleIndex) mustEqual 0
+        rh2.bins(upperIndex) mustEqual 3
 
-          features2.foreach { stat2.observe }
+        stat += stat2
 
-          rh2.histogram.size mustEqual 7
-          rh2.histogram(lowerEndpoint) mustEqual 0
-          rh2.histogram(midpoint) mustEqual 2
-          rh2.histogram(upperEndpoint) mustEqual 2
+        rh.bins.length mustEqual 7
+        rh.bins(lowerIndex) mustEqual 3
+        rh.bins(middleIndex) mustEqual 3
+        rh.bins(upperIndex) mustEqual 3
+        rh2.bins.length mustEqual 7
+        rh2.bins(lowerIndex) mustEqual 0
+        rh2.bins(middleIndex) mustEqual 0
+        rh2.bins(upperIndex) mustEqual 3
+      }
 
-          stat += stat2
+      "clear" >> {
+        rh.clear()
 
-          rh.histogram.size mustEqual 7
-          rh.histogram(lowerEndpoint) mustEqual 3
-          rh.histogram(midpoint) mustEqual 3
-          rh.histogram(upperEndpoint) mustEqual 2
-          rh2.histogram.size mustEqual 7
-          rh2.histogram(lowerEndpoint) mustEqual 0
-          rh2.histogram(midpoint) mustEqual 2
-          rh2.histogram(upperEndpoint) mustEqual 2
+        rh.isEmpty must beTrue
+        rh.bins.length mustEqual 7
+        rh.bins(lowerIndex) mustEqual 0
+        rh.bins(middleIndex) mustEqual 0
+      }
+    }
 
-          "clear them" in {
-            rh.isEmpty must beFalse
-            rh2.isEmpty must beFalse
+    "work with doubles" >> {
+      val stat = Stat(sft, "RangeHistogram(doubleAttr,7,90,110)")
+      val rh = stat.asInstanceOf[RangeHistogram[java.lang.Double]]
+      val lowerEndpoint = 90.0
+      val midpoint = 98.57142857142857
+      val upperEndpoint = 107.14285714285714
 
-            rh.clear()
-            rh2.clear()
+      val lowerIndex = rh.bins.getIndex(lowerEndpoint)
+      val middleIndex = rh.bins.getIndex(midpoint)
+      val upperIndex = rh.bins.getIndex(upperEndpoint)
 
-            rh.histogram.size mustEqual 7
-            rh.histogram(lowerEndpoint) mustEqual 0
-            rh.histogram(midpoint) mustEqual 0
-            rh2.histogram.size mustEqual 7
-            rh2.histogram(lowerEndpoint) mustEqual 0
-            rh2.histogram(midpoint) mustEqual 0
-          }
-        }
+      features.foreach { stat.observe }
+
+      "correctly bin values" >> {
+        rh.isEmpty must beFalse
+        rh.bins.length mustEqual 7
+        rh.bins(lowerIndex) mustEqual 3
+        rh.bins(middleIndex) mustEqual 3
+        rh.bins(upperIndex) mustEqual 0
+      }
+
+      "serialize and deserialize" >> {
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[java.lang.Double]]
+
+        unpacked.numBins mustEqual rh.numBins
+        unpacked.attribute mustEqual rh.attribute
+        unpacked.toJson() mustEqual rh.toJson()
+      }
+
+      "combine two RangeHistograms" >> {
+        val stat2 = Stat(sft, "RangeHistogram(doubleAttr,7,90,110)")
+        val rh2 = stat2.asInstanceOf[RangeHistogram[java.lang.Double]]
+
+        features2.foreach { stat2.observe }
+
+        rh2.bins.length mustEqual 7
+        rh2.bins(lowerIndex) mustEqual 0
+        rh2.bins(middleIndex) mustEqual 0
+        rh2.bins(upperIndex) mustEqual 3
+
+        stat += stat2
+
+        rh.bins.length mustEqual 7
+        rh.bins(lowerIndex) mustEqual 3
+        rh.bins(middleIndex) mustEqual 3
+        rh.bins(upperIndex) mustEqual 3
+        rh2.bins.length mustEqual 7
+        rh2.bins(lowerIndex) mustEqual 0
+        rh2.bins(middleIndex) mustEqual 0
+        rh2.bins(upperIndex) mustEqual 3
+      }
+
+      "clear" >> {
+        rh.clear()
+
+        rh.isEmpty must beTrue
+        rh.bins.length mustEqual 7
+        rh.bins(lowerIndex) mustEqual 0
+        rh.bins(middleIndex) mustEqual 0
+      }
+    }
+
+    "work with dates" >> {
+      val stat = Stat(sft, "RangeHistogram(dtg,24,\"2012-01-01T00:00:00.000Z\",\"2012-01-03T00:00:00.000Z\")")
+      val rh = stat.asInstanceOf[RangeHistogram[Date]]
+      val lowerEndpoint = GeoToolsDateFormat.parseDateTime("2012-01-01T00:00:00.000Z").toDate
+      val midpoint = GeoToolsDateFormat.parseDateTime("2012-01-02T00:00:00.000Z").toDate
+
+      val lowerIndex = rh.bins.getIndex(lowerEndpoint)
+      val middleIndex = rh.bins.getIndex(midpoint)
+
+      features.foreach { stat.observe }
+
+      "correctly bin values"  >> {
+        rh.isEmpty must beFalse
+        rh.bins.length mustEqual 24
+
+        lowerIndex mustEqual 0
+        middleIndex mustEqual 12
+
+        rh.bins(lowerIndex) mustEqual 10
+        rh.bins(middleIndex) mustEqual 0
+      }
+
+      "serialize and deserialize" >> {
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[Date]]
+
+        unpacked.numBins mustEqual rh.numBins
+        unpacked.attribute mustEqual rh.attribute
+        unpacked.toJson() mustEqual rh.toJson()
+      }
+
+      "combine two RangeHistograms" >> {
+        val stat2 = Stat(sft, "RangeHistogram(dtg,24,'2012-01-01T00:00:00.000Z','2012-01-03T00:00:00.000Z')")
+        val rh2 = stat2.asInstanceOf[RangeHistogram[Date]]
+
+        features2.foreach { stat2.observe }
+
+        rh2.bins.length mustEqual 24
+        rh2.bins(lowerIndex) mustEqual 0
+        rh2.bins(middleIndex) mustEqual 8
+
+        stat += stat2
+
+        rh.bins.length mustEqual 24
+        rh.bins(lowerIndex) mustEqual 10
+        rh.bins(middleIndex) mustEqual 8
+        rh2.bins.length mustEqual 24
+        rh2.bins(lowerIndex) mustEqual 0
+        rh2.bins(middleIndex) mustEqual 8
+      }
+
+      "clear them" >> {
+        rh.clear()
+
+        rh.isEmpty must beTrue
+        rh.bins.length mustEqual 24
+        rh.bins(lowerIndex) mustEqual 0
+        rh.bins(middleIndex) mustEqual 0
+      }
+    }
+
+    "work with geometries" >> {
+      val stat = Stat(sft, "RangeHistogram(geom,32,\"POINT(-180 -90)\",\"POINT(180 90)\")")
+      // 1024, 32
+      val rh = stat.asInstanceOf[RangeHistogram[Geometry]]
+      val lowerEndpoint = WKTUtils.read("POINT(-180 -90)")
+      val midpoint = WKTUtils.read("POINT(0 0)")
+      val upperEndpoint = WKTUtils.read("POINT(180 90)")
+
+      features.foreach { stat.observe }
+
+      "correctly bin values" >> {
+        rh.isEmpty must beFalse
+        rh.bins.length mustEqual 32
+        rh.bins(11) mustEqual 9
+        rh.bins(12) mustEqual 44
+        rh.bins(13) mustEqual 45
+        rh.bins(14) mustEqual 1
+        rh.bins(24) mustEqual 1
+        forall((0 until 32).filterNot(i => (i > 10 && i < 15) || i == 24))(rh.bins(_) mustEqual 0)
+      }
+
+      "serialize and deserialize" >> {
+        val packed   = StatSerialization.pack(rh, sft)
+        val unpacked = StatSerialization.unpack(packed, sft).asInstanceOf[RangeHistogram[Geometry]]
+
+        unpacked.numBins mustEqual rh.numBins
+        unpacked.attribute mustEqual rh.attribute
+        unpacked.toJson() mustEqual rh.toJson()
+      }
+
+      "combine two RangeHistograms" >> {
+        val stat2 = Stat(sft, "RangeHistogram(geom,32,\"POINT(-180 -90)\",\"POINT(180 90)\")")
+        val rh2 = stat2.asInstanceOf[RangeHistogram[Geometry]]
+
+        features2.foreach { stat2.observe }
+
+        rh2.bins.length mustEqual 32
+        rh2.bins(25) mustEqual 10
+        rh2.bins(28) mustEqual 20
+        rh2.bins(30) mustEqual 25
+        rh2.bins(31) mustEqual 45
+        forall((0 until 32).filterNot(i => i == 25 || i == 28 || i == 30 || i == 31))(rh2.bins(_) mustEqual 0)
+
+        stat += stat2
+
+        rh.bins.length mustEqual 32
+        rh.bins(11) mustEqual 9
+        rh.bins(12) mustEqual 44
+        rh.bins(13) mustEqual 45
+        rh.bins(14) mustEqual 1
+        rh.bins(24) mustEqual 1
+        rh.bins(25) mustEqual 10
+        rh.bins(28) mustEqual 20
+        rh.bins(30) mustEqual 25
+        rh.bins(31) mustEqual 45
+        forall((0 until 32).filterNot(i => (i > 10 && i < 15) || i == 24 || i == 25 || i == 28 || i == 30 || i == 31))(rh.bins(_) mustEqual 0)
+
+        rh2.bins.length mustEqual 32
+        rh2.bins(25) mustEqual 10
+        rh2.bins(28) mustEqual 20
+        rh2.bins(30) mustEqual 25
+        rh2.bins(31) mustEqual 45
+        forall((0 until 32).filterNot(i => i == 25 || i == 28 || i == 30 || i == 31))(rh2.bins(_) mustEqual 0)
+      }
+
+      "clear" >> {
+        rh.clear()
+
+        rh.isEmpty must beTrue
+        rh.bins.length mustEqual 32
+        rh.bins(0) mustEqual 0
+        rh.bins(14) mustEqual 0
       }
     }
   }

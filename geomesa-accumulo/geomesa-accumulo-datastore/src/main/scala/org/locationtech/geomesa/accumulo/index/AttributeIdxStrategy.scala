@@ -15,6 +15,7 @@ import org.apache.accumulo.core.data.{Range => AccRange}
 import org.geotools.data.DataUtilities
 import org.geotools.factory.Hints
 import org.geotools.temporal.`object`.DefaultPeriod
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.data.tables.{AttributeTable, RecordTable}
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.QueryPlanners.JoinFunction
@@ -24,7 +25,7 @@ import org.locationtech.geomesa.filter.FilterHelper._
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-import org.locationtech.geomesa.utils.stats.{Stat, Cardinality, IndexCoverage}
+import org.locationtech.geomesa.utils.stats.{Cardinality, IndexCoverage, Stat}
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.expression.{Literal, PropertyName}
 import org.opengis.filter.temporal.{After, Before, During, TEquals}
@@ -202,7 +203,8 @@ object AttributeIdxStrategy extends StrategyProvider {
   val FILTERING_ITER_PRIORITY = 25
   type ScanPlanFn = (SimpleFeatureType, Option[Filter], Option[(String, SimpleFeatureType)]) => BatchScanPlan
 
-  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) = {
+  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats): Long = {
+    // note: names should be only a single attribute
     val attrsAndCounts = filter.primary
       .flatMap(getAttributeProperty)
       .map(_.name)
@@ -221,7 +223,7 @@ object AttributeIdxStrategy extends StrategyProvider {
         else 1
 
       // scale attribute cost by expected cardinality
-      hints.cardinality(descriptor) match {
+      descriptor.getCardinality() match {
         case Cardinality.HIGH    => 1 * multiplier
         case Cardinality.UNKNOWN => 101 * multiplier
         case Cardinality.LOW     => Int.MaxValue

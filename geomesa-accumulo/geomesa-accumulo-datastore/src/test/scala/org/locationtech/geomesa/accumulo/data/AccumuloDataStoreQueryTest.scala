@@ -130,12 +130,12 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
 
       val explainNull = {
         val o = new ExplainString
-        ds.explainQuery(queryNull, o)
+        ds.getQueryPlan(queryNull, explainer = o)
         o.toString()
       }
       val explainEmpty = {
         val o = new ExplainString
-        ds.explainQuery(queryEmpty, o)
+        ds.getQueryPlan(queryEmpty, explainer = o)
         o.toString()
       }
 
@@ -250,7 +250,7 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
       val query = new Query(sft.getTypeName, ECQL.toFilter("BBOX(geom,40,40,50,50)"))
       query.getHints.put(BIN_TRACK_KEY, "name")
       val queryPlanner = new QueryPlanner(sft, ds.getFeatureEncoding(sft),
-        ds.getIndexSchemaFmt(sft.getTypeName), ds, ds.strategyHints(sft))
+        ds.getIndexSchemaFmt(sft.getTypeName), ds, ds.stats)
       val results = queryPlanner.runQuery(query, Some(StrategyType.ST)).map(_.getAttribute(BIN_ATTRIBUTE_INDEX)).toSeq
       forall(results)(_ must beAnInstanceOf[Array[Byte]])
       val bins = results.flatMap(_.asInstanceOf[Array[Byte]].grouped(16).map(Convert2ViewerFunction.decode))
@@ -310,7 +310,7 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
 
       def expectStrategy(strategy: String) = {
         val explain = new ExplainString
-        ds.explainQuery(query, explain)
+        ds.getQueryPlan(query, explainer = explain)
         explain.toString().split("\n").map(_.trim).filter(_.startsWith("Strategy 1 of 1:")) mustEqual Array(s"Strategy 1 of 1: $strategy")
         val res = ds.getFeatureSource(defaultSft.getTypeName).getFeatures(query).features().map(_.getID).toList
         res must containTheSameElementsAs(Seq("fid-1"))
@@ -355,7 +355,7 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
       val query = new Query(defaultSft.getTypeName, filter)
 
       val out = new ExplainString()
-      ds.explainQuery(query, out)
+      ds.getQueryPlan(query, explainer = out)
 
       val explanation = out.toString()
       explanation must not be null

@@ -100,7 +100,7 @@ class AccumuloFeatureWriterTest extends Specification with TestWithDataStore wit
       c.add(AvroSimpleFeatureFactory.buildAvroFeature(sft, Seq("karen", 50.asInstanceOf[AnyRef], dateToIndex, geomToIndex), "fid4"))
       c.add(AvroSimpleFeatureFactory.buildAvroFeature(sft, Seq("bob", 56.asInstanceOf[AnyRef], dateToIndex, geomToIndex), "fid5"))
 
-      val writer = ds.getFeatureWriter(sftName, Transaction.AUTO_COMMIT)
+      val writer = ds.getFeatureWriterAppend(sftName, Transaction.AUTO_COMMIT)
 
       c.foreach {f =>
         val writerCreatedFeature = writer.next()
@@ -362,9 +362,8 @@ class AccumuloFeatureWriterTest extends Specification with TestWithDataStore wit
 
       val filter = CQL.toFilter("name = 'will'")
 
-      val hints = ds.strategyHints(sft)
       val q = new Query(sft.getTypeName, filter)
-      QueryStrategyDecider.chooseStrategies(sft, q, hints, None).head must beAnInstanceOf[AttributeIdxStrategy]
+      QueryStrategyDecider.chooseStrategies(sft, q, ds.stats, None).head must beAnInstanceOf[AttributeIdxStrategy]
 
       import org.locationtech.geomesa.utils.geotools.Conversions._
 

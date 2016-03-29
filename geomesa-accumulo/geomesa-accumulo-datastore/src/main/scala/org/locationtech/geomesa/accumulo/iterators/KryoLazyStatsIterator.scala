@@ -8,8 +8,6 @@
 
 package org.locationtech.geomesa.accumulo.iterators
 
-import java.util.UUID
-
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.commons.codec.binary.Base64
@@ -51,7 +49,7 @@ class KryoLazyStatsIterator extends KryoLazyAggregatingIterator[Stat] {
   override def aggregateResult(sf: SimpleFeature, result: Stat): Unit = result.observe(sf)
 
   override def encodeResult(result: Stat): Array[Byte] = {
-    featureToSerialize.setAttribute(0, encodeStat(result))
+    featureToSerialize.setAttribute(0, encodeStat(result, sft))
     serializer.serialize(featureToSerialize)
   }
 }
@@ -61,8 +59,7 @@ object KryoLazyStatsIterator extends LazyLogging {
   val DEFAULT_PRIORITY = 30
   val STATS_STRING_KEY = "geomesa.stats.string"
   val STATS_FEATURE_TYPE_KEY = "geomesa.stats.featuretype"
-  val STATS = "stats"
-  val STATS_ITERATOR_SFT_STRING = s"$STATS:String,geom:Geometry"
+  val STATS_ITERATOR_SFT_STRING = "stats:String,geom:Geometry"
 
   def configure(sft: SimpleFeatureType,
                 filter: Option[Filter],
@@ -86,12 +83,11 @@ object KryoLazyStatsIterator extends LazyLogging {
     SimpleFeatureTypes.createType(outNamespace, name, KryoLazyStatsIterator.STATS_ITERATOR_SFT_STRING)
   }
 
-  def encodeStat(stat: Stat): String = Base64.encodeBase64URLSafeString(StatSerialization.pack(stat))
+  def encodeStat(stat: Stat, sft: SimpleFeatureType): String =
+    Base64.encodeBase64URLSafeString(StatSerialization.pack(stat, sft))
 
-  def decodeStat(encoded: String): Stat = {
-    val bytes = Base64.decodeBase64(encoded)
-    StatSerialization.unpack(bytes)
-  }
+  def decodeStat(encoded: String, sft: SimpleFeatureType): Stat =
+    StatSerialization.unpack(Base64.decodeBase64(encoded), sft)
 
   /**
    * Reduces computed simple features which contain stat information into one on the client
@@ -100,20 +96,22 @@ object KryoLazyStatsIterator extends LazyLogging {
    * @param query query that the stats are being run against
    * @return aggregated iterator of features
    */
-  def reduceFeatures(features: SFIter, query: Query): SFIter = {
+  def reduceFeatures(features: SFIter, query: Query, sft: SimpleFeatureType): SFIter = {
     val encode = query.getHints.containsKey(RETURN_ENCODED_KEY)
-    val sft = query.getHints.getReturnSft
+    val returnSft = query.getHints.getReturnSft
 
-    val decodedStats = features.map(f => decodeStat(f.getAttribute(STATS).toString))
+    val decodedStats = features.map(f => decodeStat(f.getAttribute(0).toString, sft))
 
-    if (decodedStats.isEmpty) {
-      Iterator.empty
+    val sum = if (decodedStats.isEmpty) {
+      // get empty stats
+      Stat(sft, query.getHints.get(STATS_KEY).asInstanceOf[String])
     } else {
       val sum = decodedStats.next()
       decodedStats.foreach(sum += _)
-      val time = if (encode) encodeStat(sum) else sum.toJson()
-      val sf = new ScalaSimpleFeature(UUID.randomUUID().toString, sft, Array(time, GeometryUtils.zeroPoint))
-      Iterator(sf)
+      sum
     }
+
+    val stats = if (encode) encodeStat(sum, sft) else sum.toJson()
+    Iterator(new ScalaSimpleFeature("stat", returnSft, Array(stats, GeometryUtils.zeroPoint)))
   }
 }

@@ -8,12 +8,20 @@
 
 package org.locationtech.geomesa.utils.stats
 
+import java.lang.{Double => jDouble, Float => jFloat, Long => jLong}
 import java.util.Date
 
-import org.joda.time.format.DateTimeFormat
-import org.locationtech.geomesa.utils.stats.MinMaxHelper._
+import com.vividsolutions.jts.geom.Geometry
+import org.apache.commons.lang.StringEscapeUtils
+import org.geotools.data.DataUtilities
+import org.geotools.filter.text.ecql.ECQL
+import org.locationtech.geomesa.utils.geohash.GeoHash
+import org.locationtech.geomesa.utils.geotools._
+import org.locationtech.geomesa.utils.text.{EnhancedTokenParsers, WKTUtils}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
+import org.opengis.filter.Filter
 
+import scala.reflect.ClassTag
 import scala.util.parsing.combinator.RegexParsers
 
 /**
@@ -32,35 +40,47 @@ trait Stat {
   def observe(sf: SimpleFeature): Unit
 
   /**
-   * Meant to be used to combine two Stats of the same subtype.
-   * Used in the "reduce" step client-side.
+   * Add another stat to this stat. Avoids allocating another object.
    *
    * @param other the other stat to add
    */
-  def +=(other: S): S
+  def +=(other: S): Unit
 
   /**
    * Non type-safe add - if stats are not the same type, will throw an exception
    *
    * @param other the other stat to add
    */
-  def +=(other: Stat)(implicit d: DummyImplicit): Stat = this.+=(other.asInstanceOf[S])
+  def +=(other: Stat)(implicit d: DummyImplicit): Unit = this += other.asInstanceOf[S]
+
+  /**
+    * Combine two stats into a new stat
+    *
+    * @param other the other stat to add
+    */
+  def +(other: S): S
+
+  /**
+    * Non type-safe add - if stats are not the same type, will throw an exception
+    *
+    * @param other the other stat to add
+    */
+  def +(other: Stat)(implicit d: DummyImplicit): Stat = this + other.asInstanceOf[S]
 
   /**
    * Serves as serialization needed for storing the computed statistic in a SimpleFeature.
    *
    * @return stat serialized as a json string
    */
+  // noinspection AccessorLikeMethodIsEmptyParen
   def toJson(): String
 
   /**
-   * Necessary method used by the StatIterator.
-   * Leaving the isEmpty as false ensures that we will always get a stat back from the query
-   * (even if the query doesn't hit any rows).
+   * Necessary method used by the StatIterator. Indicates if the stat has any values or not
    *
-   * @return boolean value
+   * @return true if stat contains values
    */
-  def isEmpty: Boolean = false
+  def isEmpty: Boolean
 
   /**
    * Clears the stat to its original state when first initialized.
@@ -79,19 +99,62 @@ trait Stat {
  */
 object Stat {
 
-  // for going from a Date's toString to a Date
-  val javaDateFormat = DateTimeFormat.forPattern("EEE MMM dd HH:mm:ss z yyyy")
-
-  // for going from a Date string formatted as what a SimpleFeature would have to a Date
-  val dateFormat = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
-
   def apply(sft: SimpleFeatureType, s: String) = new StatParser(sft).parse(s)
 
-  class StatParser(sft: SimpleFeatureType) extends RegexParsers {
-    val attributeNameRegex = """\w+""".r
-    val numBinRegex = """[1-9][0-9]*""".r // any non-zero positive int
-    val nonEmptyRegex = """[^,)]+""".r
-    val dateFormat = DateTimeFormat.forPattern("yyyy-MM-dd'T'HH:mm:ss.SSSZ")
+  def Count(): String = "Count()"
+  def MinMax(attribute: String): String = s"MinMax(${safeString(attribute)})"
+  def EnumeratedHistogram(attribute: String): String = s"EnumeratedHistogram(${safeString(attribute)})"
+  def RangeHistogram[T](attribute: String, bins: Int, min: T, max: T)(implicit ct: ClassTag[T]): String = {
+    val stringify = stringifier(ct.runtimeClass)
+    s"RangeHistogram(${safeString(attribute)},$bins,${safeString(stringify(min))},${safeString(stringify(max))})"
+  }
+  def IteratorStackCounter(): String = "IteratorStackCounter()"
+  def SeqStat(stats: Seq[String]): String = stats.mkString(";")
+
+  private def safeString(s: String): String = s""""${StringEscapeUtils.escapeJava(s)}"""" // there's extra quotes here
+
+  def getGeoHash(value: Geometry, length: Int = 2): Int = {
+    val centroid = value.getCentroid
+    GeoHash(centroid.getX, centroid.getY, 5 * length).toInt
+  }
+
+  def stringifier[T](clas: Class[T], json: Boolean = false): Any => String = {
+    val toString: (Any) => String = if (classOf[Geometry].isAssignableFrom(clas)) {
+      (v) => WKTUtils.write(v.asInstanceOf[Geometry])
+    } else if (clas == classOf[Date]) {
+      (v) => GeoToolsDateFormat.print(v.asInstanceOf[Date].getTime)
+    } else {
+      (v) => v.toString
+    }
+
+    // add quotes to json strings if needed
+    if (json && !classOf[Number].isAssignableFrom(clas)) {
+      (v) => if (v == null) "null" else s""""${toString(v)}""""
+    } else {
+      (v) => if (v == null) "null" else toString(v)
+    }
+  }
+
+  def destringifier[T](clas: Class[T]): String => T =
+    if (clas == classOf[String]) {
+      (s) => if (s == "null") null.asInstanceOf[T] else s.asInstanceOf[T]
+    } else if (clas == classOf[Integer]) {
+      (s) => if (s == "null") null.asInstanceOf[T] else s.toInt.asInstanceOf[T]
+    } else if (clas == classOf[jLong]) {
+      (s) => if (s == "null") null.asInstanceOf[T] else s.toLong.asInstanceOf[T]
+    } else if (clas == classOf[jFloat]) {
+      (s) => if (s == "null") null.asInstanceOf[T] else s.toFloat.asInstanceOf[T]
+    } else if (clas == classOf[jDouble]) {
+      (s) => if (s == "null") null.asInstanceOf[T] else s.toDouble.asInstanceOf[T]
+    } else if (classOf[Geometry].isAssignableFrom(clas)) {
+      (s) => if (s == "null") null.asInstanceOf[T] else WKTUtils.read(s).asInstanceOf[T]
+    } else if (clas == classOf[Date]) {
+      (s) => if (s == "null") null.asInstanceOf[T] else GeoToolsDateFormat.parseDateTime(s).toDate.asInstanceOf[T]
+    } else {
+      throw new RuntimeException(s"Unexpected class binding for stat attribute: $clas")
+    }
+
+  class StatParser(sft: SimpleFeatureType) extends RegexParsers with EnhancedTokenParsers {
 
     /**
      * Obtains the index of the attribute within the SFT
@@ -100,57 +163,69 @@ object Stat {
      * @return attribute index
      */
     private def getAttrIndex(attribute: String): Int = {
-      val attrIndex = sft.indexOf(attribute)
-      if (attrIndex == -1) {
-        throw new RuntimeException(s"Invalid attribute name in stat string: $attribute")
-      }
-      attrIndex
+      val i = sft.indexOf(attribute)
+      require(i != -1, s"Attribute '$attribute' does not exist in sft ${DataUtilities.encodeType(sft)}")
+      i
+    }
+
+    val numBinRegex = """[1-9][0-9]*""".r // any non-zero positive int
+    val argument = dequotedString | "[a-zA-Z0-9_]+".r
+
+    def countParser: Parser[CountStat] = {
+      "Count()" ^^ { _ => new CountStat() }
     }
 
     def minMaxParser: Parser[MinMax[_]] = {
-      "MinMax(" ~> attributeNameRegex <~ ")" ^^ {
+      "MinMax(" ~> argument <~ ")" ^^ {
         case attribute =>
           val attrIndex = getAttrIndex(attribute)
           val attrType = sft.getType(attribute).getBinding
-          val attrTypeString = attrType.getName
 
-          if (attrType == classOf[Date]) {
-            new MinMax[Date](attrIndex, attrTypeString, MinMaxDate.min, MinMaxDate.max)
-          } else if (attrType == classOf[java.lang.Long]) {
-            new MinMax[java.lang.Long](attrIndex, attrTypeString, MinMaxLong.min, MinMaxLong.max)
-          } else if (attrType == classOf[java.lang.Integer]) {
-            new MinMax[java.lang.Integer](attrIndex, attrTypeString, MinMaxInt.min, MinMaxInt.max)
-          } else if (attrType == classOf[java.lang.Double]) {
-            new MinMax[java.lang.Double](attrIndex, attrTypeString, MinMaxDouble.min, MinMaxDouble.max)
-          } else if (attrType == classOf[java.lang.Float]) {
-            new MinMax[java.lang.Float](attrIndex, attrTypeString, MinMaxFloat.min, MinMaxFloat.max)
+          if (attrType == classOf[String]) {
+            new MinMax[String](attrIndex)
+          } else if (attrType == classOf[Date]) {
+            new MinMax[Date](attrIndex)
+          } else if (attrType == classOf[jLong]) {
+            new MinMax[jLong](attrIndex)
+          } else if (attrType == classOf[Integer]) {
+            new MinMax[Integer](attrIndex)
+          } else if (attrType == classOf[jDouble]) {
+            new MinMax[jDouble](attrIndex)
+          } else if (attrType == classOf[jFloat]) {
+            new MinMax[jFloat](attrIndex)
+          } else if (classOf[Geometry].isAssignableFrom(attrType)) {
+            new MinMax[Geometry](attrIndex)
           } else {
+            println(s"\n\nCannot create stat for invalid type: $attrType for attribute: $attribute\n\n")
             throw new Exception(s"Cannot create stat for invalid type: $attrType for attribute: $attribute")
           }
       }
     }
 
     def iteratorStackParser: Parser[IteratorStackCounter] = {
-      "IteratorStackCounter" ^^ { case _ => new IteratorStackCounter() }
+      "IteratorStackCounter()" ^^ { case _ => new IteratorStackCounter() }
     }
 
     def enumeratedHistogramParser: Parser[EnumeratedHistogram[_]] = {
-      "EnumeratedHistogram(" ~> attributeNameRegex <~ ")" ^^ {
+      "EnumeratedHistogram(" ~> argument <~ ")" ^^ {
         case attribute =>
           val attrIndex = getAttrIndex(attribute)
           val attrType = sft.getType(attribute).getBinding
-          val attrTypeString = attrType.getName
 
-          if (attrType == classOf[Date]) {
-            new EnumeratedHistogram[Date](attrIndex, attrTypeString)
-          } else if (attrType == classOf[java.lang.Integer]) {
-            new EnumeratedHistogram[java.lang.Integer](attrIndex, attrTypeString)
-          } else if (attrType == classOf[java.lang.Long]) {
-            new EnumeratedHistogram[java.lang.Long](attrIndex, attrTypeString)
-          } else if (attrType == classOf[java.lang.Float]) {
-            new EnumeratedHistogram[java.lang.Float](attrIndex, attrTypeString)
-          } else if (attrType == classOf[java.lang.Double]) {
-            new EnumeratedHistogram[java.lang.Double](attrIndex, attrTypeString)
+          if (attrType == classOf[String]) {
+            new EnumeratedHistogram[String](attrIndex)
+          } else if (attrType == classOf[Date]) {
+            new EnumeratedHistogram[Date](attrIndex)
+          } else if (attrType == classOf[Integer]) {
+            new EnumeratedHistogram[Integer](attrIndex)
+          } else if (attrType == classOf[jLong]) {
+            new EnumeratedHistogram[jLong](attrIndex)
+          } else if (attrType == classOf[jFloat]) {
+            new EnumeratedHistogram[jFloat](attrIndex)
+          } else if (attrType == classOf[jDouble]) {
+            new EnumeratedHistogram[jDouble](attrIndex)
+          } else if (classOf[Geometry].isAssignableFrom(attrType )) {
+            new EnumeratedHistogram[Geometry](attrIndex)
           } else {
             throw new Exception(s"Cannot create stat for invalid type: $attrType for attribute: $attribute")
           }
@@ -158,23 +233,37 @@ object Stat {
     }
 
     def rangeHistogramParser: Parser[RangeHistogram[_]] = {
-      "RangeHistogram(" ~> attributeNameRegex ~ "," ~ numBinRegex ~ "," ~ nonEmptyRegex ~ "," ~ nonEmptyRegex <~ ")" ^^ {
+      "RangeHistogram(" ~> argument ~ "," ~ numBinRegex ~ "," ~ argument ~ "," ~ argument <~ ")" ^^ {
         case attribute ~ "," ~ numBins ~ "," ~ lowerEndpoint ~ "," ~ upperEndpoint =>
           val attrIndex = getAttrIndex(attribute)
           val attrType = sft.getType(attribute).getBinding
-          val attrTypeString = attrType.getName
 
-          if (attrType == classOf[Date]) {
-            new RangeHistogram[Date](attrIndex, attrTypeString, numBins.toInt,
-              dateFormat.parseDateTime(lowerEndpoint).toDate, dateFormat.parseDateTime(upperEndpoint).toDate)
-          } else if (attrType == classOf[java.lang.Integer]) {
-            new RangeHistogram[java.lang.Integer](attrIndex, attrTypeString, numBins.toInt, lowerEndpoint.toInt, upperEndpoint.toInt)
-          } else if (attrType == classOf[java.lang.Long]) {
-            new RangeHistogram[java.lang.Long](attrIndex, attrTypeString, numBins.toInt, lowerEndpoint.toLong, upperEndpoint.toLong)
-          } else if (attrType == classOf[java.lang.Double]) {
-            new RangeHistogram[java.lang.Double](attrIndex, attrTypeString, numBins.toInt, lowerEndpoint.toDouble, upperEndpoint.toDouble)
-          } else if (attrType == classOf[java.lang.Float]) {
-            new RangeHistogram[java.lang.Float](attrIndex, attrTypeString, numBins.toInt, lowerEndpoint.toFloat, upperEndpoint.toFloat)
+          if (attrType == classOf[String]) {
+            new RangeHistogram[String](attrIndex, numBins.toInt, (lowerEndpoint, upperEndpoint))
+          } else if (attrType == classOf[Date]) {
+            val lower = GeoToolsDateFormat.parseDateTime(lowerEndpoint).toDate
+            val upper = GeoToolsDateFormat.parseDateTime(upperEndpoint).toDate
+            new RangeHistogram[Date](attrIndex, numBins.toInt, (lower, upper))
+          } else if (attrType == classOf[Integer]) {
+            val lower = lowerEndpoint.toInt
+            val upper = upperEndpoint.toInt
+            new RangeHistogram[Integer](attrIndex, numBins.toInt, (lower, upper))
+          } else if (attrType == classOf[jLong]) {
+            val lower = lowerEndpoint.toLong
+            val upper = upperEndpoint.toLong
+            new RangeHistogram[jLong](attrIndex, numBins.toInt, (lower, upper))
+          } else if (attrType == classOf[jDouble]) {
+            val lower = lowerEndpoint.toDouble
+            val upper = upperEndpoint.toDouble
+            new RangeHistogram[jDouble](attrIndex, numBins.toInt, (lower, upper))
+          } else if (attrType == classOf[jFloat]) {
+            val lower = lowerEndpoint.toFloat
+            val upper = upperEndpoint.toFloat
+            new RangeHistogram[jFloat](attrIndex, numBins.toInt, (lower, upper))
+          } else if (classOf[Geometry].isAssignableFrom(attrType )) {
+            val lower = WKTUtils.read(lowerEndpoint)
+            val upper = WKTUtils.read(upperEndpoint)
+            new RangeHistogram[Geometry](attrIndex, numBins.toInt, (lower, upper))
           } else {
             throw new Exception(s"Cannot create stat for invalid type: $attrType for attribute: $attribute")
           }
@@ -182,7 +271,7 @@ object Stat {
     }
 
     def statParser: Parser[Stat] =
-      minMaxParser | iteratorStackParser | enumeratedHistogramParser | rangeHistogramParser
+      countParser | minMaxParser | iteratorStackParser | enumeratedHistogramParser | rangeHistogramParser
 
     def statsParser: Parser[Stat] = {
       rep1sep(statParser, ";") ^^ {
@@ -194,7 +283,7 @@ object Stat {
       parseAll(statsParser, s) match {
         case Success(result, _) => result
         case failure: NoSuccess =>
-          throw new Exception(s"Could not parse the stats string: $s")
+          throw new Exception(s"Could not parse the stats string: $s\n${failure.msg}")
       }
     }
   }

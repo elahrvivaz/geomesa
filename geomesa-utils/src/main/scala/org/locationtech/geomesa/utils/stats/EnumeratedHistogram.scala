@@ -10,46 +10,53 @@ package org.locationtech.geomesa.utils.stats
 
 import org.opengis.feature.simple.SimpleFeature
 
-import scala.util.parsing.json.JSONObject
+import scala.reflect.ClassTag
 
 /**
- * An EnumeratedHistogram is merely a HashMap mapping values to number of occurences
- * .
- * @param attrIndex attribute index for the attribute the histogram is being made for
- * @param attrType class type as a string for serialization purposes
+ * An EnumeratedHistogram is merely a HashMap mapping values to number of occurrences
+ *
+ * @param attribute attribute index for the attribute the histogram is being made for
  * @tparam T some type T (which is restricted by the stat parser upstream of EnumeratedHistogram instantiation)
  */
-class EnumeratedHistogram[T](val attrIndex: Int,
-                             val attrType: String) extends Stat {
+class EnumeratedHistogram[T](val attribute: Int)(implicit ct: ClassTag[T]) extends Stat {
 
   override type S = EnumeratedHistogram[T]
 
-  val frequencyMap = scala.collection.mutable.HashMap.empty[T, Long].withDefaultValue(0)
+  private lazy val stringify = Stat.stringifier(ct.runtimeClass)
+
+  val histogram = scala.collection.mutable.HashMap.empty[T, Long].withDefaultValue(0)
 
   override def observe(sf: SimpleFeature): Unit = {
-    val sfval = sf.getAttribute(attrIndex)
-    if (sfval != null) {
-      frequencyMap(sfval.asInstanceOf[T]) += 1
+    val value = sf.getAttribute(attribute).asInstanceOf[T]
+    if (value != null) {
+      histogram(value) += 1
     }
   }
 
-  override def +=(other: EnumeratedHistogram[T]): EnumeratedHistogram[T] = {
-    other.frequencyMap.foreach { case (key, count) => frequencyMap(key) += count }; this
+  override def +(other: EnumeratedHistogram[T]): EnumeratedHistogram[T] = {
+    val plus = new EnumeratedHistogram[T](attribute)
+    plus += this
+    plus += other
+    plus
   }
 
+  override def +=(other: EnumeratedHistogram[T]): Unit =
+    other.histogram.foreach { case (key, count) => histogram(key) += count }
 
   override def toJson(): String = {
-    val jsonMap = frequencyMap.toMap.map { case (k, v) => k.toString -> v }
-    new JSONObject(jsonMap).toString()
-  }
-
-  override def clear(): Unit = frequencyMap.clear()
-
-  override def equals(obj: Any): Boolean = {
-    obj match {
-      case eh: EnumeratedHistogram[T] =>
-        attrIndex == eh.attrIndex && attrType == eh.attrType && frequencyMap == eh.frequencyMap
-      case _ => false
+    if (histogram.isEmpty) { "{ }" } else {
+      histogram.toSeq.sortBy(_.toString).map { case (k, v) => s""""${stringify(k)}" : $v""" }.mkString("{ ", ", ", " }")
     }
   }
+
+  override def isEmpty: Boolean = histogram.isEmpty
+
+  override def clear(): Unit = histogram.clear()
+
+  override def equals(other: Any): Boolean = other match {
+    case that: EnumeratedHistogram[_] => attribute == that.attribute && histogram == that.histogram
+    case _ => false
+  }
+
+  override def hashCode(): Int = Seq(attribute, histogram).map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
 }

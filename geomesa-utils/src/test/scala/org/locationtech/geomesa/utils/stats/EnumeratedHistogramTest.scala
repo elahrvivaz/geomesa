@@ -10,271 +10,503 @@ package org.locationtech.geomesa.utils.stats
 
 import java.util.Date
 
+import com.vividsolutions.jts.geom.Geometry
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.utils.geotools.GeoToolsDateFormat
+import org.locationtech.geomesa.utils.text.WKTUtils
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
+import scala.util.parsing.json.JSON
+
 @RunWith(classOf[JUnitRunner])
 class EnumeratedHistogramTest extends Specification with StatTestHelper {
-  sequential
+
+  def newStat[T](attribute: String, observe: Boolean = true): EnumeratedHistogram[T] = {
+    val stat = Stat(sft, s"EnumeratedHistogram($attribute)")
+    if (observe) {
+      features.foreach { stat.observe }
+    }
+    stat.asInstanceOf[EnumeratedHistogram[T]]
+  }
 
   "EnumeratedHistogram stat" should {
-    "work with" in {
-      "dates" in {
-        val stat = Stat(sft, "EnumeratedHistogram(dtg)")
-        val eh = stat.asInstanceOf[EnumeratedHistogram[Date]]
 
-        val date1 = Stat.dateFormat.parseDateTime("2012-01-01T00:00:00.000Z").toDate
-        val date2 = Stat.dateFormat.parseDateTime("2012-01-01T23:00:00.000Z").toDate
-
-        eh.frequencyMap.size mustEqual 0
-        eh.isEmpty must beFalse
-
-        features.foreach { stat.observe }
-
-        eh.frequencyMap.size mustEqual 24
-        eh.frequencyMap(date1) mustEqual 5
-        eh.frequencyMap(date2) mustEqual 4
-
-        features2.foreach { stat.observe }
-
-        eh.frequencyMap.size mustEqual 48
-        eh.frequencyMap(date1) mustEqual 5
-        eh.frequencyMap(date2) mustEqual 4
-
-        "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(eh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[EnumeratedHistogram[Date]]
-
-          unpacked mustEqual eh
-        }
-
-        "combine two EnumeratedHistograms" in {
-          val stat2 = Stat(sft, "EnumeratedHistogram(dtg)")
-          val eh2 = stat2.asInstanceOf[EnumeratedHistogram[Date]]
-
-          features.foreach { stat2.observe }
-
-          stat += stat2
-
-          eh.frequencyMap.size mustEqual 48
-          eh.frequencyMap(date1) mustEqual 10
-          eh.frequencyMap(date2) mustEqual 8
-          eh2.frequencyMap.size mustEqual 24
-          eh2.frequencyMap(date1) mustEqual 5
-          eh2.frequencyMap(date2) mustEqual 4
-
-          "clear them" in {
-            eh.isEmpty must beFalse
-            eh2.isEmpty must beFalse
-
-            eh.clear()
-            eh2.clear()
-
-            eh.frequencyMap.size mustEqual 0
-            eh2.frequencyMap.size mustEqual 0
-          }
-        }
+    "work with strings" >> {
+      "be empty initiallly" >> {
+        val stat = newStat[String]("strAttr", observe = false)
+        stat.attribute mustEqual stringIndex
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
       }
 
-      "integers" in {
-        val stat = Stat(sft, "EnumeratedHistogram(intAttr)")
-        val eh = stat.asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
-
-        eh.frequencyMap.size mustEqual 0
-        eh.isEmpty must beFalse
-
-        features.foreach { stat.observe }
-
-        eh.frequencyMap.size mustEqual 100
-        eh.frequencyMap(1) mustEqual 1
-
-        features2.foreach { stat.observe }
-
-        eh.frequencyMap.size mustEqual 200
-        eh.frequencyMap(1) mustEqual 1
-
-        "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(eh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
-
-          unpacked mustEqual eh
-        }
-
-        "combine two EnumeratedHistograms" in {
-          val stat2 = Stat(sft, "EnumeratedHistogram(intAttr)")
-          val eh2 = stat2.asInstanceOf[EnumeratedHistogram[java.lang.Integer]]
-
-          features.foreach { stat2.observe }
-
-          stat += stat2
-
-          eh.frequencyMap.size mustEqual 200
-          eh.frequencyMap(1) mustEqual 2
-          eh2.frequencyMap.size mustEqual 100
-          eh2.frequencyMap(1) mustEqual 1
-
-          "clear them" in {
-            eh.isEmpty must beFalse
-            eh2.isEmpty must beFalse
-
-            eh.clear()
-            eh2.clear()
-
-            eh.frequencyMap.size mustEqual 0
-            eh2.frequencyMap.size mustEqual 0
-          }
-        }
+      "observe correct values" >> {
+        val stat = newStat[String]("strAttr")
+        stat.histogram must haveSize(100)
+        forall(0 until 100)(i => stat.histogram(f"abc$i%03d") mustEqual 1L)
       }
 
-      "longs" in {
-        val stat = Stat(sft, "EnumeratedHistogram(longAttr)")
-        val eh = stat.asInstanceOf[EnumeratedHistogram[java.lang.Long]]
-
-        eh.frequencyMap.size mustEqual 0
-        eh.isEmpty must beFalse
-
-        features.foreach { stat.observe }
-
-        eh.frequencyMap.size mustEqual 100
-        eh.frequencyMap(1L) mustEqual 1
-
-        features2.foreach { stat.observe }
-
-        eh.frequencyMap.size mustEqual 200
-        eh.frequencyMap(1L) mustEqual 1
-
-        "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(eh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[EnumeratedHistogram[java.lang.Long]]
-
-          unpacked mustEqual eh
-        }
-
-        "combine two EnumeratedHistograms" in {
-          val stat2 = Stat(sft, "EnumeratedHistogram(longAttr)")
-          val eh2 = stat2.asInstanceOf[EnumeratedHistogram[java.lang.Long]]
-
-          features.foreach { stat2.observe }
-
-          stat += stat2
-
-          eh.frequencyMap.size mustEqual 200
-          eh.frequencyMap(1L) mustEqual 2
-          eh2.frequencyMap.size mustEqual 100
-          eh2.frequencyMap(1L) mustEqual 1
-
-          "clear them" in {
-            eh.isEmpty must beFalse
-            eh2.isEmpty must beFalse
-
-            eh.clear()
-            eh2.clear()
-
-            eh.frequencyMap.size mustEqual 0
-            eh2.frequencyMap.size mustEqual 0
-          }
-        }
+      "serialize to json" >> {
+        val stat = newStat[String]("strAttr")
+        JSON.parseFull(stat.toJson()) must beSome(stat.histogram)
       }
 
-      "doubles" in {
-        val stat = Stat(sft, "EnumeratedHistogram(doubleAttr)")
-        val eh = stat.asInstanceOf[EnumeratedHistogram[java.lang.Double]]
-
-        eh.frequencyMap.size mustEqual 0
-        eh.isEmpty must beFalse
-
-        features.foreach { stat.observe }
-
-        eh.frequencyMap.size mustEqual 100
-        eh.frequencyMap(1.0) mustEqual 1
-
-        features2.foreach { stat.observe }
-
-        eh.frequencyMap.size mustEqual 200
-        eh.frequencyMap(1.0) mustEqual 1
-
-        "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(eh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[EnumeratedHistogram[java.lang.Double]]
-
-          unpacked mustEqual eh
-        }
-
-        "combine two EnumeratedHistograms" in {
-          val stat2 = Stat(sft, "EnumeratedHistogram(doubleAttr)")
-          val eh2 = stat2.asInstanceOf[EnumeratedHistogram[java.lang.Double]]
-
-          features.foreach { stat2.observe }
-
-          stat += stat2
-
-          eh.frequencyMap.size mustEqual 200
-          eh.frequencyMap(1.0) mustEqual 2
-          eh2.frequencyMap.size mustEqual 100
-          eh2.frequencyMap(1.0) mustEqual 1
-
-          "clear them" in {
-            eh.isEmpty must beFalse
-            eh2.isEmpty must beFalse
-
-            eh.clear()
-            eh2.clear()
-
-            eh.frequencyMap.size mustEqual 0
-            eh2.frequencyMap.size mustEqual 0
-          }
-        }
+      "serialize empty to json" >> {
+        val stat = newStat[String]("strAttr", observe = false)
+        stat.toJson() mustEqual "{ }"
       }
 
-      "floats" in {
-        val stat = Stat(sft, "EnumeratedHistogram(floatAttr)")
-        val eh = stat.asInstanceOf[EnumeratedHistogram[java.lang.Float]]
+      "serialize and deserialize" >> {
+        val stat = newStat[String]("strAttr")
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
 
-        eh.frequencyMap.size mustEqual 0
-        eh.isEmpty must beFalse
+      "serialize and deserialize empty stat" >> {
+        val stat = newStat[String]("strAttr", observe = false)
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
 
-        features.foreach { stat.observe }
+      "combine two states" >> {
+        val stat = newStat[String]("strAttr")
+        val stat2 = newStat[String]("strAttr", observe = false)
 
-        eh.frequencyMap.size mustEqual 100
-        eh.frequencyMap(1.0f) mustEqual 1
+        features2.foreach { stat2.observe }
 
-        features2.foreach { stat.observe }
+        stat2.histogram must haveSize(100)
+        forall(100 until 200)(i => stat2.histogram(f"abc$i%03d") mustEqual 1L)
 
-        eh.frequencyMap.size mustEqual 200
-        eh.frequencyMap(1.0f) mustEqual 1
+        stat += stat2
 
-        "serialize and deserialize" in {
-          val packed   = StatSerialization.pack(eh)
-          val unpacked = StatSerialization.unpack(packed).asInstanceOf[EnumeratedHistogram[java.lang.Float]]
+        stat.histogram must haveSize(200)
+        forall(0 until 200)(i => stat.histogram(f"abc$i%03d") mustEqual 1L)
+        stat2.histogram must haveSize(100)
+        forall(100 until 200)(i => stat2.histogram(f"abc$i%03d") mustEqual 1L)
+      }
 
-          unpacked mustEqual eh
-        }
+      "clear" >> {
+        val stat = newStat[String]("strAttr")
+        stat.isEmpty must beFalse
 
-        "combine two EnumeratedHistograms" in {
-          val stat2 = Stat(sft, "EnumeratedHistogram(floatAttr)")
-          val eh2 = stat2.asInstanceOf[EnumeratedHistogram[java.lang.Float]]
+        stat.clear()
 
-          features.foreach { stat2.observe }
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
+      }
+    }
 
-          stat += stat2
+    "work with ints" >> {
+      "be empty initiallly" >> {
+        val stat = newStat[java.lang.Integer]("intAttr", observe = false)
+        stat.attribute mustEqual intIndex
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
+      }
 
-          eh.frequencyMap.size mustEqual 200
-          eh.frequencyMap(1.0f) mustEqual 2
-          eh2.frequencyMap.size mustEqual 100
-          eh2.frequencyMap(1.0f) mustEqual 1
+      "observe correct values" >> {
+        val stat = newStat[java.lang.Integer]("intAttr")
+        forall(0 until 100)(i => stat.histogram(i) mustEqual 1)
+      }
 
-          "clear them" in {
-            eh.isEmpty must beFalse
-            eh2.isEmpty must beFalse
+      "serialize to json" >> {
+        val stat = newStat[java.lang.Integer]("intAttr")
+        val s = Stat.stringifier(classOf[java.lang.Integer])
+        val expected = stat.histogram.map { case (k, v) => (s(k), v)}
+        JSON.parseFull(stat.toJson()) must beSome(expected)
+      }
 
-            eh.clear()
-            eh2.clear()
+      "serialize empty to json" >> {
+        val stat = newStat[java.lang.Integer]("intAttr", observe = false)
+        stat.toJson() mustEqual "{ }"
+      }
 
-            eh.frequencyMap.size mustEqual 0
-            eh2.frequencyMap.size mustEqual 0
-          }
-        }
+      "serialize and deserialize" >> {
+        val stat = newStat[java.lang.Integer]("intAttr")
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
+
+      "serialize and deserialize empty stat" >> {
+        val stat = newStat[java.lang.Integer]("intAttr", observe = false)
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
+
+      "combine two states" >> {
+        val stat = newStat[java.lang.Integer]("intAttr")
+        val stat2 = newStat[java.lang.Integer]("intAttr", observe = false)
+
+        features2.foreach { stat2.observe }
+
+        stat2.histogram must haveSize(100)
+        forall(100 until 200)(i => stat2.histogram(i) mustEqual 1L)
+
+        stat += stat2
+
+        stat.histogram must haveSize(200)
+        forall(0 until 200)(i => stat.histogram(i) mustEqual 1L)
+        stat2.histogram must haveSize(100)
+        forall(100 until 200)(i => stat2.histogram(i) mustEqual 1L)
+      }
+
+      "clear" >> {
+        val stat = newStat[java.lang.Integer]("intAttr")
+        stat.isEmpty must beFalse
+
+        stat.clear()
+
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
+      }
+    }
+
+    "work with longs" >> {
+      "be empty initiallly" >> {
+        val stat = newStat[java.lang.Long]("longAttr", observe = false)
+        stat.attribute mustEqual longIndex
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
+      }
+
+      "observe correct values" >> {
+        val stat = newStat[java.lang.Long]("longAttr")
+        forall(0 until 100)(i => stat.histogram(i.toLong) mustEqual 1)
+      }
+
+      "serialize to json" >> {
+        val stat = newStat[java.lang.Long]("longAttr")
+        val s = Stat.stringifier(classOf[java.lang.Long])
+        val expected = stat.histogram.map { case (k, v) => (s(k), v)}
+        JSON.parseFull(stat.toJson()) must beSome(expected)
+      }
+
+      "serialize empty to json" >> {
+        val stat = newStat[java.lang.Long]("longAttr", observe = false)
+        stat.toJson() mustEqual "{ }"
+      }
+
+      "serialize and deserialize" >> {
+        val stat = newStat[java.lang.Long]("longAttr")
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
+
+      "serialize and deserialize empty stat" >> {
+        val stat = newStat[java.lang.Long]("longAttr", observe = false)
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
+
+      "combine two states" >> {
+        val stat = newStat[java.lang.Long]("longAttr")
+        val stat2 = newStat[java.lang.Long]("longAttr", observe = false)
+
+        features2.foreach { stat2.observe }
+
+        stat2.histogram must haveSize(100)
+        forall(100 until 200)(i => stat2.histogram(i.toLong) mustEqual 1L)
+
+        stat += stat2
+
+        stat.histogram must haveSize(200)
+        forall(0 until 200)(i => stat.histogram(i.toLong) mustEqual 1L)
+        stat2.histogram must haveSize(100)
+        forall(100 until 200)(i => stat2.histogram(i.toLong) mustEqual 1L)
+      }
+
+      "clear" >> {
+        val stat = newStat[java.lang.Long]("longAttr")
+        stat.isEmpty must beFalse
+
+        stat.clear()
+
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
+      }
+    }
+
+    "work with floats" >> {
+      "be empty initiallly" >> {
+        val stat = newStat[java.lang.Float]("floatAttr", observe = false)
+        stat.attribute mustEqual floatIndex
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
+      }
+
+      "observe correct values" >> {
+        val stat = newStat[java.lang.Float]("floatAttr")
+        forall(0 until 100)(i => stat.histogram(i.toFloat) mustEqual 1)
+      }
+
+      "serialize to json" >> {
+        val stat = newStat[java.lang.Float]("floatAttr")
+        val s = Stat.stringifier(classOf[java.lang.Float])
+        val expected = stat.histogram.map { case (k, v) => (s(k), v)}
+        JSON.parseFull(stat.toJson()) must beSome(expected)
+      }
+
+      "serialize empty to json" >> {
+        val stat = newStat[java.lang.Float]("floatAttr", observe = false)
+        stat.toJson() mustEqual "{ }"
+      }
+
+      "serialize and deserialize" >> {
+        val stat = newStat[java.lang.Float]("floatAttr")
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
+
+      "serialize and deserialize empty stat" >> {
+        val stat = newStat[java.lang.Float]("floatAttr", observe = false)
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
+
+      "combine two states" >> {
+        val stat = newStat[java.lang.Float]("floatAttr")
+        val stat2 = newStat[java.lang.Float]("floatAttr", observe = false)
+
+        features2.foreach { stat2.observe }
+
+        stat2.histogram must haveSize(100)
+        forall(100 until 200)(i => stat2.histogram(i.toFloat) mustEqual 1L)
+
+        stat += stat2
+
+        stat.histogram must haveSize(200)
+        forall(0 until 200)(i => stat.histogram(i.toFloat) mustEqual 1L)
+        stat2.histogram must haveSize(100)
+        forall(100 until 200)(i => stat2.histogram(i.toFloat) mustEqual 1L)
+      }
+
+      "clear" >> {
+        val stat = newStat[java.lang.Float]("floatAttr")
+        stat.isEmpty must beFalse
+
+        stat.clear()
+
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
+      }
+    }
+
+    "work with doubles" >> {
+      "be empty initiallly" >> {
+        val stat = newStat[java.lang.Double]("doubleAttr", observe = false)
+        stat.attribute mustEqual doubleIndex
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
+      }
+
+      "observe correct values" >> {
+        val stat = newStat[java.lang.Double]("doubleAttr")
+        forall(0 until 100)(i => stat.histogram(i.toDouble) mustEqual 1)
+      }
+
+      "serialize to json" >> {
+        val stat = newStat[java.lang.Double]("doubleAttr")
+        val s = Stat.stringifier(classOf[java.lang.Double])
+        val expected = stat.histogram.map { case (k, v) => (s(k), v)}
+        JSON.parseFull(stat.toJson()) must beSome(expected)
+      }
+
+      "serialize empty to json" >> {
+        val stat = newStat[java.lang.Double]("doubleAttr", observe = false)
+        stat.toJson() mustEqual "{ }"
+      }
+
+      "serialize and deserialize" >> {
+        val stat = newStat[java.lang.Double]("doubleAttr")
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
+
+      "serialize and deserialize empty stat" >> {
+        val stat = newStat[java.lang.Double]("doubleAttr", observe = false)
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
+
+      "combine two states" >> {
+        val stat = newStat[java.lang.Double]("doubleAttr")
+        val stat2 = newStat[java.lang.Double]("doubleAttr", observe = false)
+
+        features2.foreach { stat2.observe }
+
+        stat2.histogram must haveSize(100)
+        forall(100 until 200)(i => stat2.histogram(i.toDouble) mustEqual 1L)
+
+        stat += stat2
+
+        stat.histogram must haveSize(200)
+        forall(0 until 200)(i => stat.histogram(i.toDouble) mustEqual 1L)
+        stat2.histogram must haveSize(100)
+        forall(100 until 200)(i => stat2.histogram(i.toDouble) mustEqual 1L)
+      }
+
+      "clear" >> {
+        val stat = newStat[java.lang.Double]("doubleAttr")
+        stat.isEmpty must beFalse
+
+        stat.clear()
+
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
+      }
+    }
+
+    "work with dates" >> {
+      "be empty initiallly" >> {
+        val stat = newStat[Date]("dtg", observe = false)
+        stat.attribute mustEqual dateIndex
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
+      }
+
+      "observe correct values" >> {
+        val stat = newStat[Date]("dtg")
+        val dates = (0 until 24).map(i => GeoToolsDateFormat.parseDateTime(f"2012-01-01T$i%02d:00:00.000Z").toDate)
+        forall(dates.take(4))(d => stat.histogram(d) mustEqual 5)
+        forall(dates.drop(4))(d => stat.histogram(d) mustEqual 4)
+      }
+
+      "serialize to json" >> {
+        val stat = newStat[Date]("dtg")
+        val s = Stat.stringifier(classOf[Date])
+        val expected = stat.histogram.map { case (k, v) => (s(k), v)}
+        JSON.parseFull(stat.toJson()) must beSome(expected)
+      }
+
+      "serialize empty to json" >> {
+        val stat = newStat[Date]("dtg", observe = false)
+        stat.toJson() mustEqual "{ }"
+      }
+
+      "serialize and deserialize" >> {
+        val stat = newStat[Date]("dtg")
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
+
+      "serialize and deserialize empty stat" >> {
+        val stat = newStat[Date]("dtg", observe = false)
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
+
+      "combine two states" >> {
+        val stat = newStat[Date]("dtg")
+        val stat2 = newStat[Date]("dtg", observe = false)
+
+        features2.foreach { stat2.observe }
+
+        val dates = (0 until 24).map(i => GeoToolsDateFormat.parseDateTime(f"2012-01-01T$i%02d:00:00.000Z").toDate)
+        val dates2 = (0 until 24).map(i => GeoToolsDateFormat.parseDateTime(f"2012-01-02T$i%02d:00:00.000Z").toDate)
+
+        stat2.histogram must haveSize(24)
+        forall(dates2.slice(4, 8))(d => stat2.histogram(d) mustEqual 5)
+        forall(dates2.take(4) ++ dates2.drop(8))(d => stat2.histogram(d) mustEqual 4)
+
+        stat += stat2
+
+        stat.histogram must haveSize(48)
+        forall(dates.take(4) ++ dates2.slice(4, 8))(d => stat.histogram(d) mustEqual 5)
+        forall(dates.drop(4) ++ dates2.take(4) ++ dates2.drop(8))(d => stat.histogram(d) mustEqual 4)
+        stat2.histogram must haveSize(24)
+        forall(dates2.slice(4, 8))(d => stat2.histogram(d) mustEqual 5)
+        forall(dates2.take(4) ++ dates2.drop(8))(d => stat2.histogram(d) mustEqual 4)
+      }
+
+      "clear" >> {
+        val stat = newStat[Date]("dtg")
+        stat.isEmpty must beFalse
+
+        stat.clear()
+
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
+      }
+    }
+
+    "work with geometries" >> {
+      "be empty initiallly" >> {
+        val stat = newStat[Geometry]("geom", observe = false)
+        stat.attribute mustEqual geomIndex
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
+      }
+
+      "observe correct values" >> {
+        val stat = newStat[Geometry]("geom")
+        forall(0 until 100)(i => stat.histogram(WKTUtils.read(s"POINT(-$i ${i / 2})")) mustEqual 1)
+      }
+
+      "serialize to json" >> {
+        val stat = newStat[Geometry]("geom")
+        val s = Stat.stringifier(classOf[Geometry])
+        val expected = stat.histogram.map { case (k, v) => (s(k), v)}
+        JSON.parseFull(stat.toJson()) must beSome(expected)
+      }
+
+      "serialize empty to json" >> {
+        val stat = newStat[Geometry]("geom", observe = false)
+        stat.toJson() mustEqual "{ }"
+      }
+
+      "serialize and deserialize" >> {
+        val stat = newStat[Geometry]("geom")
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
+
+      "serialize and deserialize empty stat" >> {
+        val stat = newStat[Geometry]("geom", observe = false)
+        val packed = StatSerialization.pack(stat, sft)
+        val unpacked = StatSerialization.unpack(packed, sft)
+        unpacked.toJson() mustEqual stat.toJson()
+      }
+
+      "combine two states" >> {
+        val stat = newStat[Geometry]("geom")
+        val stat2 = newStat[Geometry]("geom", observe = false)
+
+        features2.foreach { stat2.observe }
+
+        stat2.histogram must haveSize(100)
+        forall(100 until 200)(i => stat2.histogram(WKTUtils.read(s"POINT(${i -20} ${i / 2 - 20})")) mustEqual 1)
+
+        stat += stat2
+
+        stat.histogram must haveSize(200)
+        forall(0 until 100)(i => stat.histogram(WKTUtils.read(s"POINT(-$i ${i / 2})")) mustEqual 1)
+        forall(100 until 200)(i => stat.histogram(WKTUtils.read(s"POINT(${i -20} ${i / 2 - 20})")) mustEqual 1)
+
+        stat2.histogram must haveSize(100)
+        forall(100 until 200)(i => stat2.histogram(WKTUtils.read(s"POINT(${i -20} ${i / 2 - 20})")) mustEqual 1)
+      }
+
+      "clear" >> {
+        val stat = newStat[Geometry]("geom")
+        stat.isEmpty must beFalse
+
+        stat.clear()
+
+        stat.histogram must beEmpty
+        stat.isEmpty must beTrue
       }
     }
   }
