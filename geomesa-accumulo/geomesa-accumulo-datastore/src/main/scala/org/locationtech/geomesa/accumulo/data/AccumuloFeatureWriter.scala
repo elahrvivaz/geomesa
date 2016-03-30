@@ -135,6 +135,8 @@ abstract class AccumuloFeatureWriter(sft: SimpleFeatureType,
     AccumuloFeatureWriter.featureWriter(writers)
   }
 
+  protected val statsTracker = ds.stats.getStatUpdater(sft)
+
   // returns a temporary id - we will replace it just before write
   protected def nextFeatureId = AccumuloFeatureWriter.tempFeatureIds.getAndIncrement().toString
 
@@ -142,15 +144,22 @@ abstract class AccumuloFeatureWriter(sft: SimpleFeatureType,
     // see if there's a suggested ID to use for this feature, else create one based on the feature
     val featureWithFid = AccumuloFeatureWriter.featureWithFid(sft, feature)
     writer(new FeatureToWrite(featureWithFid, defaultVisibility, encoder, indexValueEncoder, binEncoder))
+    statsTracker.update(featureWithFid)
   }
 
   override def getFeatureType: SimpleFeatureType = sft
 
   override def hasNext: Boolean = false
 
-  override def flush(): Unit = multiBWWriter.flush()
+  override def flush(): Unit = {
+    multiBWWriter.flush()
+    statsTracker.flush()
+  }
 
-  override def close(): Unit = multiBWWriter.close()
+  override def close(): Unit = {
+    multiBWWriter.close()
+    statsTracker.close()
+  }
 }
 
 /**

@@ -10,6 +10,7 @@ package org.locationtech.geomesa.tools
 
 import java.io.File
 import java.text.SimpleDateFormat
+import java.util.Date
 
 import com.google.common.io.Files
 import com.vividsolutions.jts.geom.Coordinate
@@ -17,6 +18,7 @@ import org.geotools.data.Transaction
 import org.geotools.data.shapefile.ShapefileDataStoreFactory
 import org.geotools.factory.Hints
 import org.geotools.geometry.jts.JTSFactoryFinder
+import org.joda.time.{DateTime, DateTimeZone}
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.tools.commands.IngestCommand.IngestParameters
 import org.locationtech.geomesa.utils.geotools.Conversions._
@@ -85,6 +87,8 @@ class ShpIngestTest extends Specification {
       bounds.getMinY mustEqual minY
       bounds.getMaxY mustEqual maxY
 
+      ds.stats.getMinMax[Date](ds.getSchema("shpingest"), "dtg") mustEqual (minDate, maxDate)
+
       val result = fs.getFeatures.features().toList
       result.length mustEqual 2
     }
@@ -94,6 +98,8 @@ class ShpIngestTest extends Specification {
       GeneralShapefileIngest.shpToDataStore(ingestParams.files(0), ds, ingestParams.featureName)
 
       val fs = ds.getFeatureSource("changed")
+
+      ds.stats.getMinMax[Date](ds.getSchema("changed"), "dtg") mustEqual (minDate, maxDate)
 
       val bounds = fs.getBounds
       bounds.getMinX mustEqual minX

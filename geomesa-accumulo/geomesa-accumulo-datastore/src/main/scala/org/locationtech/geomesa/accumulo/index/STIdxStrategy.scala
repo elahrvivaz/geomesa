@@ -16,6 +16,7 @@ import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.accumulo.GEOMESA_ITERATORS_IS_DENSITY_TYPE
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
@@ -252,5 +253,6 @@ object STIdxStrategy extends StrategyProvider {
    *
    * Eventually cost will be computed based on dynamic metadata and the query.
    */
-  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) = 400
+  // TODO implement this
+  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats) = 400
 }

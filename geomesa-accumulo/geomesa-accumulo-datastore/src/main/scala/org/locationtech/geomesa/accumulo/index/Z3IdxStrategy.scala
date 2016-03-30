@@ -14,6 +14,7 @@ import com.vividsolutions.jts.geom.{Geometry, GeometryCollection}
 import org.apache.accumulo.core.data.Range
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.iterators._
@@ -183,7 +184,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       val endBytes = Longs.toByteArray(indexRange.upper)
       prefixes.map { prefix =>
         val start = new Text(Bytes.concat(prefix, startBytes))
-        val end   = Range.followingPrefix(new Text(Bytes.concat(prefix, endBytes)))
+        val end = Range.followingPrefix(new Text(Bytes.concat(prefix, endBytes)))
         new Range(start, true, end, false)
       }
     }
@@ -214,7 +215,8 @@ object Z3IdxStrategy extends StrategyProvider {
    *
    * Eventually cost will be computed based on dynamic metadata and the query.
    */
-  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) =
+  // TODO impl this
+  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats) =
     if (filter.primary.length > 1) 200 else 400
 
   def isComplicatedSpatialFilter(f: Filter): Boolean = {

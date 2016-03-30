@@ -71,8 +71,7 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
 
   addFeatures(features)
 
-  val queryPlanner = new QueryPlanner(sft, ds.getFeatureEncoding(sft), ds.getIndexSchemaFmt(sftName), ds,
-    ds.strategyHints(sft))
+  val queryPlanner = new QueryPlanner(sft, ds.getFeatureEncoding(sft), ds.getIndexSchemaFmt(sftName), ds, ds.stats)
 
   def execute(filter: String): List[String] = {
     val query = new Query(sftName, ECQL.toFilter(filter))

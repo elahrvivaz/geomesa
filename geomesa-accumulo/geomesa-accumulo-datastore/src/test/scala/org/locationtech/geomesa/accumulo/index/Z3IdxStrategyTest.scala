@@ -62,7 +62,7 @@ class Z3IdxStrategyTest extends Specification with TestWithDataStore {
 
   implicit val ff = CommonFactoryFinder.getFilterFactory2
   val strategy = StrategyType.Z3
-  val queryPlanner = new QueryPlanner(sft, SerializationType.KRYO, null, ds, NoOpHints)
+  val queryPlanner = new QueryPlanner(sft, SerializationType.KRYO, null, ds, ds.stats)
   val output = ExplainNull
 
   "Z3IdxStrategy" should {

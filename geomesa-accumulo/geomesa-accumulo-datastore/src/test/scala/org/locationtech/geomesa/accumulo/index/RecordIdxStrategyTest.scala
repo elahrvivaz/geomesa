@@ -68,7 +68,7 @@ class RecordIdxStrategyTest extends Specification with TestWithDataStore {
       query.getHints.put(BIN_TRACK_KEY, "name")
       query.getHints.put(BIN_BATCH_SIZE_KEY, 1000)
       val queryPlanner = new QueryPlanner(sft, ds.getFeatureEncoding(sft),
-        ds.getIndexSchemaFmt(sftName), ds, ds.strategyHints(sft))
+        ds.getIndexSchemaFmt(sftName), ds, ds.stats)
       val results = queryPlanner.runQuery(query, Some(StrategyType.RECORD)).map(_.getAttribute(BIN_ATTRIBUTE_INDEX)).toSeq
       forall(results)(_ must beAnInstanceOf[Array[Byte]])
       val bins = results.flatMap(_.asInstanceOf[Array[Byte]].grouped(16).map(Convert2ViewerFunction.decode))
