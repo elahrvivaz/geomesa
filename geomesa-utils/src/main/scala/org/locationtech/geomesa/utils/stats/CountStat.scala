@@ -23,6 +23,8 @@ class CountStat() extends Stat {
 
   override def observe(sf: SimpleFeature): Unit = counter += 1
 
+  override def unobserve(sf: SimpleFeature): Unit = counter -=1
+
   override def +(other: CountStat): CountStat = {
     val plus = new CountStat()
     plus.counter = this.counter + other.counter

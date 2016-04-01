@@ -12,6 +12,7 @@ import java.lang.{Double => jDouble, Float => jFloat, Long => jLong}
 import java.util.Date
 
 import com.vividsolutions.jts.geom.Geometry
+import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.utils.geotools.GeoToolsDateFormat
 import org.locationtech.geomesa.utils.text.WKTUtils
@@ -151,6 +152,17 @@ class RangeHistogramTest extends Specification with StatTestHelper {
         stat.length mustEqual 20
         forall(0 until 10)(stat.count(_) mustEqual 10)
         forall(10 until 20)(stat.count(_) mustEqual 0)
+      }
+
+      "correctly remove values"  >> {
+        val stat = intStat(20, 0, 199)
+        stat.isEmpty must beFalse
+        stat.length mustEqual 20
+        forall(0 until 10)(stat.count(_) mustEqual 10)
+        forall(10 until 20)(stat.count(_) mustEqual 0)
+        features.take(50).foreach(stat.unobserve)
+        forall(5 until 10)(stat.count(_) mustEqual 10)
+        forall((0 until 5) ++ (10 until 20))(stat.count(_) mustEqual 0)
       }
 
       "serialize and deserialize" >> {
@@ -557,6 +569,42 @@ class RangeHistogramTest extends Specification with StatTestHelper {
         forall(0 until 12)(stat2.count(_) mustEqual 0)
         forall((12 until 14) ++ (16 until 24))(stat2.count(_) mustEqual 8)
         forall(15 until 16)(stat2.count(_) mustEqual 10)
+      }
+
+      "combine two RangeHistograms with weekly splits" >> {
+        // simulates the way date histograms will be gathered as we track stats dynamically
+        val stat = dateStat(4, "2012-01-01T00:00:00.000Z", "2012-01-29T00:00:00.000Z", observe = false)
+        val stat2 = dateStat(5, "2012-01-01T00:00:00.000Z", "2012-02-05T00:00:00.000Z", observe = false)
+
+        val attributes = Array.ofDim[AnyRef](7)
+        (1 to 28).foreach { i =>
+          attributes(6) = f"2012-01-$i%02dT12:00:00.000Z"
+          stat.observe(SimpleFeatureBuilder.build(sft, attributes, ""))
+        }
+        (29 to 31).foreach { i =>
+          attributes(6) = f"2012-01-$i%02dT12:00:00.000Z"
+          stat2.observe(SimpleFeatureBuilder.build(sft, attributes, ""))
+        }
+        (1 to 4).foreach { i =>
+          attributes(6) = f"2012-02-$i%02dT12:00:00.000Z"
+          stat2.observe(SimpleFeatureBuilder.build(sft, attributes, ""))
+        }
+
+        stat.length mustEqual 4
+        forall(0 until 4)(stat.count(_) mustEqual 7)
+
+        stat2.length mustEqual 5
+        forall(0 until 4)(stat2.count(_) mustEqual 0)
+        stat2.count(4) mustEqual 7
+
+        stat += stat2
+
+        stat.length mustEqual 5
+        forall(0 until 5)(stat.count(_) mustEqual 7)
+
+        stat2.length mustEqual 5
+        forall(0 until 4)(stat2.count(_) mustEqual 0)
+        stat2.count(4) mustEqual 7
       }
 
       "clear" >> {

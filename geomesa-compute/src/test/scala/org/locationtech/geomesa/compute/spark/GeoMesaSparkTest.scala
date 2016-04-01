@@ -17,17 +17,14 @@ import org.apache.accumulo.core.client.mock.MockInstance
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.security.Authorizations
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.io.Text
 import org.apache.spark.{SparkConf, SparkContext}
 import org.geotools.data.collection.ListFeatureCollection
 import org.geotools.data.simple.SimpleFeatureStore
 import org.geotools.data.{DataStore, DataStoreFinder, DataUtilities, Query}
 import org.geotools.factory.Hints
 import org.joda.time.{DateTime, DateTimeZone}
-import org.junit
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloDataStoreFactory, AccumuloFeatureStore}
-import org.locationtech.geomesa.accumulo.index.Constants
+import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloFeatureStore}
 import org.locationtech.geomesa.features.ScalaSimpleFeatureFactory
 import org.locationtech.geomesa.security.SecurityUtils
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -48,22 +45,19 @@ class GeoMesaSparkTest extends Specification with LazyLogging {
 
   var sc: SparkContext = null
 
-  @junit.After
-  def shutdown(): Unit = {
-    Option(sc).foreach(_.stop())
-  }
-
   "GeoMesaSpark" should {
+
     val testData: Map[String, String] = {
       val dataFile = new Properties
       dataFile.load(getClass.getClassLoader.getResourceAsStream("polygons.properties"))
       dataFile.toMap
     }
 
+    val spec = "id:Integer,map:Map[String,Integer],dtg:Date,geom:Geometry:srid=4326"
     val TEST_TABLE_NAME = "geomesa_spark_test"
 
     import org.locationtech.geomesa.accumulo.data.AccumuloDataStoreParams._
-    lazy val dsParams = Map[String, String](
+    val dsParams = Map[String, String](
       zookeepersParam.key -> "dummy",
       instanceIdParam.key -> "dummy",
       userParam.key -> "user",
@@ -71,20 +65,7 @@ class GeoMesaSparkTest extends Specification with LazyLogging {
       tableNameParam.key -> TEST_TABLE_NAME,
       mockParam.key -> "true")
 
-    lazy val ds: DataStore = {
-      val mockInstance = new MockInstance("dummy")
-      val c = mockInstance.getConnector("user", new PasswordToken("pass".getBytes))
-      c.tableOperations.create(TEST_TABLE_NAME)
-      val splits = (0 to 99).map(s => "%02d".format(s)).map(new Text(_))
-      c.tableOperations().addSplits(TEST_TABLE_NAME, new java.util.TreeSet[Text](splits.asJava))
-
-      val dsf = new AccumuloDataStoreFactory
-
-      val ds = dsf.createDataStore(dsParams.mapValues(_.asInstanceOf[JSerializable]).asJava)
-      ds
-    }
-
-    lazy val spec = "id:Integer,map:Map[String,Integer],dtg:Date,geom:Geometry:srid=4326"
+    val ds: DataStore = DataStoreFinder.getDataStore(dsParams.mapValues(_.asInstanceOf[JSerializable]).asJava)
 
     def createFeatures(ds: DataStore, sft: SimpleFeatureType, encodedFeatures: Array[_ <: Array[_]]): Seq[SimpleFeature] = {
       val builder = ScalaSimpleFeatureFactory.featureBuilder(sft)
@@ -98,21 +79,15 @@ class GeoMesaSparkTest extends Specification with LazyLogging {
       features
     }
 
-    def createTypeName() = s"sparktest${UUID.randomUUID().toString}"
-    def createSFT(typeName: String) = {
-      val t = SimpleFeatureTypes.createType(typeName, spec)
-      t.getUserData.put(Constants.SF_PROPERTY_START_TIME, "dtg")
-      t
-    }
+    def createSFT(typeName: String) = SimpleFeatureTypes.createType(typeName, spec)
 
     val random = new Random(83)
-    val encodedFeatures = (0 until 150).toArray.map {
-      i =>
-        Array(
-          i.toString,
-          Map("a" -> i, "b" -> i * 2, (if (random.nextBoolean()) "c" else "d") -> random.nextInt(10)).asJava,
-          new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate,
-          "POINT(-77 38)")
+    val encodedFeatures = (0 until 150).toArray.map { i =>
+      Array(
+        i.toString,
+        Map("a" -> i, "b" -> i * 2, (if (random.nextBoolean()) "c" else "d") -> random.nextInt(10)).asJava,
+        new DateTime("2012-01-01T19:00:00", DateTimeZone.UTC).toDate,
+        "POINT(-77 38)")
     }
 
     "Read data" in {
@@ -240,4 +215,7 @@ class GeoMesaSparkTest extends Specification with LazyLogging {
     }
   }
 
+  step {
+    Option(sc).foreach(_.stop())
+  }
 }

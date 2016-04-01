@@ -41,6 +41,8 @@ class MinMax[T](val attribute: Int)(implicit val defaults: MinMax.MinMaxDefaults
     }
   }
 
+  override def unobserve(sf: SimpleFeature): Unit = {}
+
   override def +(other: MinMax[T]): MinMax[T] = {
     val plus = new MinMax(attribute)
     plus.min = this.min

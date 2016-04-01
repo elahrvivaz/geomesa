@@ -12,6 +12,7 @@ import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.data.{Range => aRange}
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.data.tables.RecordTable
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.Strategy._
@@ -27,16 +28,15 @@ import scala.collection.JavaConversions._
 object RecordIdxStrategy extends StrategyProvider {
 
   // record searches are the least expensive as they are single row lookups (per id)
-  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) = 1
+  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats) = 1
 
-  def intersectIdFilters(filters: Seq[Filter]): Option[Id] = {
+  def intersectIdFilters(filters: Seq[Filter]): Set[String] = {
     if (filters.length < 2) {
-      filters.headOption.map(_.asInstanceOf[Id])
+      filters.map(_.asInstanceOf[Id]).flatMap(_.getIDs.map(_.toString)).toSet
     } else {
       // get the Set of IDs in *each* filter and convert to a Scala immutable Set
       // take the intersection of all sets, since the filters and joined with 'and'
-      val ids = filters.map(_.asInstanceOf[Id].getIDs.map(_.toString).toSet).reduceLeft(_ intersect _)
-      if (ids.nonEmpty) Some(ff.id(ids.map(ff.featureId))) else None
+      filters.map(_.asInstanceOf[Id].getIDs.map(_.toString).toSet).reduceLeft(_ intersect _)
     }
   }
 }
@@ -60,11 +60,10 @@ class RecordIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLoggi
     } else {
       // Multiple sets of IDs in a ID Filter are ORs. ANDs of these call for the intersection to be taken.
       // intersect together all groups of ID Filters, producing Some[Id] if the intersection returns something
-      val combinedIdFilter = RecordIdxStrategy.intersectIdFilters(filter.primary)
-      val identifiers = combinedIdFilter.toSeq.flatMap(_.getIdentifiers.map(_.toString))
+      val identifiers = RecordIdxStrategy.intersectIdFilters(filter.primary)
       output(s"Extracted ID filter: ${identifiers.mkString(", ")}")
       if (identifiers.nonEmpty) {
-        identifiers.map(id => aRange.exact(RecordTable.getRowKey(prefix, id)))
+        identifiers.toSeq.map(id => aRange.exact(RecordTable.getRowKey(prefix, id)))
       } else {
         // TODO GEOMESA-347 instead pass empty query plan
         Seq.empty

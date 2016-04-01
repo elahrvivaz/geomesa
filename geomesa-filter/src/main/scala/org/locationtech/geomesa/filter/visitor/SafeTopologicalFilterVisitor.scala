@@ -17,11 +17,11 @@ trait SafeTopologicalFilterVisitor extends DuplicatingFilterVisitor {
 
   def sft: SimpleFeatureType
 
-  override def visit(dw: DWithin, data: AnyRef) = FilterHelper.rewriteDwithin(dw)
-  override def visit(op: BBOX, data: AnyRef) = FilterHelper.visitBBOX(op, sft)
-  override def visit(op: Within, data: AnyRef) = FilterHelper.visitBinarySpatialOp(op, sft)
+  override def visit(op: BBOX, data: AnyRef)       = FilterHelper.visitBBOX(op, sft)
+  override def visit(op: DWithin, data: AnyRef)    = FilterHelper.visitDwithin(op, sft)
+  override def visit(op: Within, data: AnyRef)     = FilterHelper.visitBinarySpatialOp(op, sft)
   override def visit(op: Intersects, data: AnyRef) = FilterHelper.visitBinarySpatialOp(op, sft)
-  override def visit(op: Overlaps, data: AnyRef) = FilterHelper.visitBinarySpatialOp(op, sft)
+  override def visit(op: Overlaps, data: AnyRef)   = FilterHelper.visitBinarySpatialOp(op, sft)
 }
 
 class SafeTopologicalFilterVisitorImpl(val sft: SimpleFeatureType) extends SafeTopologicalFilterVisitor

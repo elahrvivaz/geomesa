@@ -9,6 +9,8 @@
 package org.locationtech.geomesa.accumulo.index
 
 import org.geotools.data.Query
+import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
@@ -20,7 +22,7 @@ import org.opengis.filter.Filter
 trait QueryStrategyDecider {
   def chooseStrategies(sft: SimpleFeatureType,
                        query: Query,
-                       hints: StrategyHints,
+                       stats: GeoMesaStats,
                        requested: Option[StrategyType],
                        output: ExplainerOutputType = ExplainNull): Seq[Strategy]
 }
@@ -50,7 +52,7 @@ object QueryStrategyDecider extends QueryStrategyDecider with MethodProfiling {
    */
   override def chooseStrategies(sft: SimpleFeatureType,
                                 query: Query,
-                                hints: StrategyHints,
+                                stats: GeoMesaStats,
                                 requested: Option[StrategyType],
                                 output: ExplainerOutputType): Seq[Strategy] = {
 
@@ -84,7 +86,7 @@ object QueryStrategyDecider extends QueryStrategyDecider with MethodProfiling {
           options.head
         } else {
           // choose the best option based on cost
-          val costs = options.map(o => (o, o.filters.map(getCost(_, sft, hints)).sum)).sortBy(_._2)
+          val costs = options.map(o => (o, o.filters.map(getCost(_, sft, stats)).sum)).sortBy(_._2)
           val cheapest = costs.head
           output(s"Filter plan selected: ${cheapest._1} (Cost ${cheapest._2})")
           output(s"Filter plans not used (${costs.size - 1}):", costs.drop(1).map(c => s"${c._1} (Cost ${c._2})"))
@@ -118,14 +120,14 @@ object QueryStrategyDecider extends QueryStrategyDecider with MethodProfiling {
    * Gets the estimated cost of running a particular strategy
    */
   // noinspection ScalaDeprecation
-  private def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints): Int = {
+  private def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats): Long = {
     filter.strategy match {
-      case StrategyType.Z3        => Z3IdxStrategy.getCost(filter, sft, hints)
-      case StrategyType.ST        => STIdxStrategy.getCost(filter, sft, hints)
-      case StrategyType.RECORD    => RecordIdxStrategy.getCost(filter, sft, hints)
+      case StrategyType.Z3        => Z3IdxStrategy.getCost(filter, sft, stats)
+      case StrategyType.ST        => STIdxStrategy.getCost(filter, sft, stats)
+      case StrategyType.RECORD    => RecordIdxStrategy.getCost(filter, sft, stats)
       case StrategyType.ATTRIBUTE if sft.getSchemaVersion < ImplVersionChange =>
-        AttributeIdxStrategyV5.getCost(filter, sft, hints)
-      case StrategyType.ATTRIBUTE => AttributeIdxStrategy.getCost(filter, sft, hints)
+        AttributeIdxStrategyV5.getCost(filter, sft, stats)
+      case StrategyType.ATTRIBUTE => AttributeIdxStrategy.getCost(filter, sft, stats)
       case _ => throw new IllegalStateException(s"Unknown query plan requested: ${filter.strategy}")
     }
   }

@@ -19,6 +19,7 @@ import org.geotools.filter.text.ecql.ECQL
 import org.geotools.temporal.`object`.DefaultPeriod
 import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.data._
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.data.tables.{AttributeTable, AttributeTableV5, RecordTable}
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
@@ -208,18 +209,8 @@ class AttributeIdxStrategyV5(val filter: QueryFilter) extends Strategy with Lazy
 @deprecated
 object AttributeIdxStrategyV5 extends StrategyProvider {
 
-  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) = {
-    val cost = filter.primary.flatMap(getAttributeProperty).map { p =>
-      val descriptor = sft.getDescriptor(p.name)
-      val multiplier = if (descriptor.getIndexCoverage() == IndexCoverage.JOIN) 2 else 1
-      hints.cardinality(descriptor) match {
-        case Cardinality.HIGH    => 1 * multiplier
-        case Cardinality.UNKNOWN => 999 * multiplier
-        case Cardinality.LOW     => Int.MaxValue
-      }
-    }.sum
-    if (cost == 0) Int.MaxValue else cost // cost == 0 if somehow the filters don't match anything
-  }
+  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats) =
+    AttributeIdxStrategy.getCost(filter, sft, stats)
 
   /**
    * Gets a row key that can used as a range for an attribute query.

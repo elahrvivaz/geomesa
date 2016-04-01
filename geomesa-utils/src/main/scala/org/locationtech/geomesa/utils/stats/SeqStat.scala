@@ -21,6 +21,8 @@ class SeqStat(val stats: Seq[Stat]) extends Stat {
 
   override def observe(sf: SimpleFeature): Unit = stats.foreach(_.observe(sf))
 
+  override def unobserve(sf: SimpleFeature): Unit = stats.foreach(_.unobserve(sf))
+
   override def +(other: SeqStat): SeqStat =
     new SeqStat(stats.zip(other.stats).map { case (l, r) => l + r })
 

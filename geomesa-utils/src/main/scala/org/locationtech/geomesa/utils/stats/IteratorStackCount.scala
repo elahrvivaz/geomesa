@@ -24,6 +24,8 @@ class IteratorStackCount extends Stat {
 
   override def observe(sf: SimpleFeature): Unit = {}
 
+  override def unobserve(sf: SimpleFeature): Unit = {}
+
   override def +(other: IteratorStackCount): IteratorStackCount = {
     val plus = new IteratorStackCount()
     plus.counter += this.counter

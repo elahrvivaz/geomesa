@@ -10,10 +10,10 @@ package org.locationtech.geomesa.accumulo.index
 
 import com.google.common.primitives.{Bytes, Longs, Shorts}
 import com.typesafe.scalalogging.LazyLogging
-import com.vividsolutions.jts.geom.{Geometry, GeometryCollection}
 import org.apache.accumulo.core.data.Range
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.data.tables.Z3Table
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.iterators._
@@ -53,18 +53,12 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
     output(s"Temporal filters: ${filtersToString(temporalFilters)}")
 
     // standardize the two key query arguments:  polygon and date-range
-    val geomsToCover = tryReduceGeometryFilter(geomFilters).flatMap(decomposeToGeometry)
-
-    val collectionToCover: Geometry = geomsToCover match {
-      case Nil => null
-      case seq: Seq[Geometry] => new GeometryCollection(geomsToCover.toArray, geomsToCover.head.getFactory)
-    }
+    val geometryToCover = extractSingleGeometry(tryReduceGeometryFilter(geomFilters))
 
     // since we don't apply a temporal filter, we pass offsetDuring to
     // make sure we exclude the non-inclusive endpoints of a during filter.
     // note that this isn't completely accurate, as we only index down to the second
     val interval = extractInterval(temporalFilters, dtgField, exclusive = true)
-    val geometryToCover = netGeom(collectionToCover)
 
     output(s"GeomsToCover: $geometryToCover")
     output(s"Interval:  $interval")
@@ -172,7 +166,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       val endBytes = Longs.toByteArray(indexRange.upper)
       prefixes.map { prefix =>
         val start = new Text(Bytes.concat(prefix, startBytes))
-        val end   = Range.followingPrefix(new Text(Bytes.concat(prefix, endBytes)))
+        val end = Range.followingPrefix(new Text(Bytes.concat(prefix, endBytes)))
         new Range(start, true, end, false)
       }
     }
@@ -203,7 +197,7 @@ object Z3IdxStrategy extends StrategyProvider {
    *
    * Eventually cost will be computed based on dynamic metadata and the query.
    */
-  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) =
+  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats) =
     if (filter.primary.length > 1) 200 else 400
 
   def isComplicatedSpatialFilter(f: Filter): Boolean = {

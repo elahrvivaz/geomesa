@@ -158,7 +158,7 @@ class BinnedLongArray(length: Int, bounds: (jLong, jLong)) extends BinnedArray[j
   require(bounds._1 < bounds._2,
     s"Upper bound must be greater than lower bound: lower=${bounds._1} upper=${bounds._2}")
 
-  private val binSize = math.max(1, (bounds._2 - bounds._1).toFloat / length)
+  private val binSize = math.max(1, (bounds._2 - bounds._1).toDouble / length)
 
   override def indexOf(value: jLong): Int = {
     if (value < bounds._1 || value > bounds._2) { -1 } else {
@@ -280,11 +280,9 @@ class BinnedStringArray(length: Int, bounds: (String, String)) extends BinnedArr
     } else {
       jLong.parseLong(base36, 36)
     }
-
   }
 
-  def longToString(l: Long): String =
-    start.substring(0, firstDiff) + jLong.toString(l, 36)
+  def longToString(l: Long): String = start.substring(0, firstDiff) + jLong.toString(l, 36)
 
   private val min = stringToLong(start)
   private val max = stringToLong(end)
@@ -321,7 +319,7 @@ class BinnedDateArray(length: Int, bounds: (Date, Date)) extends BinnedArray[Dat
 
   private val min = bounds._1.getTime
   private val max = bounds._2.getTime
-  private val binSize = math.max(1, (max - min).toFloat / length)
+  private val binSize = math.max(1, (max - min).toDouble / length)
 
   require(min < bounds._2.getTime,
     s"Upper bound must be after lower bound: lower=${bounds._1} upper=${bounds._2}")

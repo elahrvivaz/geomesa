@@ -38,6 +38,15 @@ trait Stat {
   def observe(sf: SimpleFeature): Unit
 
   /**
+    * Tries to remove the given simple feature from the compiled statistics.
+    * Note: may not be possible to un-observe a feature, in which case this method will
+    * have no effect.
+    *
+    * @param sf feature to un-evaluate
+    */
+  def unobserve(sf: SimpleFeature): Unit
+
+  /**
    * Add another stat to this stat. Avoids allocating another object.
    *
    * @param other the other stat to add

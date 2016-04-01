@@ -9,13 +9,13 @@
 package org.locationtech.geomesa.accumulo.index
 
 import com.typesafe.scalalogging.LazyLogging
-import com.vividsolutions.jts.geom.{Geometry, GeometryCollection}
 import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.iterators.user.RegExFilter
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.accumulo.GEOMESA_ITERATORS_IS_DENSITY_TYPE
+import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
@@ -53,17 +53,8 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
     output(s"Temporal filters: ${filtersToString(temporalFilters)}")
 
     // standardize the two key query arguments:  polygon and date-range
-    val geomsToCover = geomFilters.flatMap(decomposeToGeometry)
-
-    output(s"GeomsToCover: $geomsToCover")
-
-    val collectionToCover: Geometry = geomsToCover match {
-      case Nil => null
-      case seq: Seq[Geometry] => new GeometryCollection(geomsToCover.toArray, geomsToCover.head.getFactory)
-    }
-
+    val geometryToCover = extractSingleGeometry(tryReduceGeometryFilter(geomFilters))
     val interval = extractInterval(temporalFilters, dtgField)
-    val geometryToCover = netGeom(collectionToCover)
 
     val keyPlanningFilter = buildFilter(geometryToCover, interval)
     // This catches the case when a whole world query slips through DNF/CNF
@@ -258,5 +249,5 @@ object STIdxStrategy extends StrategyProvider {
    *
    * Eventually cost will be computed based on dynamic metadata and the query.
    */
-  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, hints: StrategyHints) = 400
+  override def getCost(filter: QueryFilter, sft: SimpleFeatureType, stats: GeoMesaStats) = 400
 }

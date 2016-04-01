@@ -38,10 +38,26 @@ class RangeHistogram[T](val attribute: Int, initialBins: Int, initialEndpoints: 
   def endpoints: (T, T) = bins.bounds
   def medianValue(i: Int): T = bins.medianValue(i)
 
+  def isBelow(value: T): Boolean = value match {
+    case c: Comparable[T] => c.compareTo(endpoints._1) < 0
+    case _ => false
+  }
+  def isAbove(value: T): Boolean = value match {
+    case c: Comparable[T] => c.compareTo(endpoints._2) > 0
+    case _ => false
+  }
+
   override def observe(sf: SimpleFeature): Unit = {
     val value = sf.getAttribute(attribute)
     if (value != null) {
       bins.add(value.asInstanceOf[T])
+    }
+  }
+
+  override def unobserve(sf: SimpleFeature): Unit = {
+    val value = sf.getAttribute(attribute)
+    if (value != null) {
+      bins.add(value.asInstanceOf[T], -1)
     }
   }
 
@@ -128,6 +144,8 @@ object RangeHistogram {
       if (count > 0) {
         val (min, max) = from.bounds(i)
         val (lo, hi) = (to.indexOf(min), to.indexOf(max))
+        val t1 = to.bounds(lo)
+        val t2 = to.bounds(hi)
         if (lo == hi) {
           to.counts(lo) += count
         } else {

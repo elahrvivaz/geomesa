@@ -33,6 +33,18 @@ class Histogram[T](val attribute: Int)(implicit ct: ClassTag[T]) extends Stat {
     }
   }
 
+  override def unobserve(sf: SimpleFeature): Unit = {
+    val value = sf.getAttribute(attribute).asInstanceOf[T]
+    if (value != null) {
+      val current = histogram(value)
+      if (current == 1) {
+        histogram.remove(value)
+      } else {
+        histogram(value) = current - 1
+      }
+    }
+  }
+
   override def +(other: Histogram[T]): Histogram[T] = {
     val plus = new Histogram[T](attribute)
     plus += this
