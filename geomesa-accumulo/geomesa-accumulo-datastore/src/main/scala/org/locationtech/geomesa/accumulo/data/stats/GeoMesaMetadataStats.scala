@@ -106,7 +106,22 @@ class GeoMesaMetadataStats(val ds: AccumuloDataStore, statsTable: String)
     } else if (clas == classOf[RangeHistogram[_]]) {
       toRetrieve.flatMap(a => readStat[RangeHistogram[Any]](sft, histogramKey(a)))
     } else if (clas == classOf[Frequency[_]]) {
-      toRetrieve.flatMap(a => readStat[Frequency[Any]](sft, frequencyKey(a)))
+      // find the relevant weeks to retrieve
+      val weeks: Seq[Short] = sft.getDtgField match {
+        case None => Seq(Frequency.DefaultWeek)
+        case Some(dtg) if options.nonEmpty => options.map(_.asInstanceOf[Short])
+        case Some(dtg) =>
+          readStat[MinMax[Date]](sft, minMaxKey(dtg)).map { bounds =>
+            val lt = Frequency.getWeek(bounds.min)
+            val ut = Frequency.getWeek(bounds.max)
+            Range.inclusive(lt, ut).map(_.toShort)
+          }.getOrElse(Seq(Frequency.DefaultWeek))
+      }
+
+      val frequencies = toRetrieve.flatMap { a =>
+        weeks.map(frequencyKey(a, _)).flatMap(readStat[Frequency[Any]](sft, _))
+      }
+      Frequency.combine(frequencies).toSeq
     } else if (clas == classOf[Z3RangeHistogram]) {
       val z = for {
         geom <- Option(sft.getGeomField)
@@ -201,7 +216,11 @@ class GeoMesaMetadataStats(val ds: AccumuloDataStore, statsTable: String)
       case s: CountStat         => writeStat(s, sft, countKey(), merge)
       case s: MinMax[_]         => writeStat(s, sft, minMaxKey(name(s.attribute)), merge)
       case s: RangeHistogram[_] => writeStat(s, sft, histogramKey(name(s.attribute)), merge)
-      case s: Frequency[_]      => writeStat(s, sft, frequencyKey(name(s.attribute)), merge)
+
+      case s: Frequency[_]      =>
+        val attribute = name(s.attribute)
+        s.splitByWeek.foreach { case (w, f) => writeStat(f, sft, frequencyKey(attribute, w), merge) }
+
       case s: Z3RangeHistogram  =>
         val geom = name(s.geomIndex)
         val dtg  = name(s.dtgIndex)
@@ -287,7 +306,11 @@ class GeoMesaMetadataStats(val ds: AccumuloDataStore, statsTable: String)
 
     val frequencies = {
       val indexed = attributes.filter { case (a, _) => a != sft.getGeomField && !sft.getDtgField.contains(a) }
-      indexed.map { case (attribute, binding) => Stat.Frequency(attribute, defaultPrecision(binding)) }
+      val toFrequency: (String, Class[_]) => String = sft.getDtgField match {
+        case None => (attribute, binding) => Stat.Frequency(attribute, defaultPrecision(binding))
+        case Some(dtg) => (attribute, binding) => Stat.Frequency(attribute, dtg, defaultPrecision(binding))
+      }
+      indexed.map { case (attribute, binding) => toFrequency(attribute, binding) }
     }
 
     val histograms = attributes.map { case (attribute, binding) =>
@@ -421,7 +444,8 @@ object GeoMesaMetadataStats {
   private [stats] def minMaxKey(attribute: String): String = s"$BoundsKeyPrefix-$attribute"
 
   // gets the key for storing a frequency attribute
-  private [stats] def frequencyKey(attribute: String): String = s"$FrequencyKeyPrefix-$attribute"
+  private [stats] def frequencyKey(attribute: String, week: Short): String =
+    s"$FrequencyKeyPrefix-$attribute-$week"
 
   // gets the key for storing a histogram
   private [stats] def histogramKey(attribute: String): String = s"$HistogramKeyPrefix-$attribute"

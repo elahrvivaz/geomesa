@@ -25,14 +25,9 @@ import org.opengis.filter._
 
 import scala.collection.JavaConversions._
 
-/**
-  * Estimates counts based on stored statistics
-  */
-trait StatsBasedEstimator extends LazyLogging {
+trait StatsBasedEstimator {
 
   this: GeoMesaStats =>
-
-  import StatsBasedEstimator.{ZHistogramPrecision, bounds}
 
   /**
     * Estimates the count for a given filter, based off the per-attribute metadata we have stored
@@ -41,21 +36,45 @@ trait StatsBasedEstimator extends LazyLogging {
     * @param filter filter to apply - should have been run through QueryPlanFilterVisitor so all props are right
     * @return estimated count, if available
     */
-  private [stats] def estimateCount(sft: SimpleFeatureType, filter: Filter): Option[Long] ={
+  private [stats] def estimateCount(sft: SimpleFeatureType, filter: Filter): Option[Long] = {
+    // TODO currently we don't consider if the dates are actually ANDed with everything else
+    val dates = CountEstimator.extractDates(sft, filter)
+    new CountEstimator(sft, this).estimateCount(filter, dates._1, dates._2)
+  }
+}
+
+/**
+  * Estimates counts based on stored statistics
+  */
+class CountEstimator(sft: SimpleFeatureType, stats: GeoMesaStats) extends LazyLogging {
+
+  import CountEstimator.{ZHistogramPrecision, bounds}
+  import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableOnce
+
+  /**
+    * Estimates the count for a given filter, based off the per-attribute metadata we have stored
+    *
+    * @param filter filter to apply - should have been run through QueryPlanFilterVisitor so all props are right
+    * @param loDate bounds on the dates to be queried, if any
+    * @param hiDate bounds on the dates to be queried, if any
+    * @return estimated count, if available
+    */
+  def estimateCount(filter: Filter, loDate: Option[Date], hiDate: Option[Date]): Option[Long] = {
     import Filter.{EXCLUDE, INCLUDE}
 
     filter match {
       case EXCLUDE => Some(0L)
-      case INCLUDE => getStats[CountStat](sft).headOption.map(_.count)
+      case INCLUDE => stats.getStats[CountStat](sft).headOption.map(_.count)
 
-      case a: And  => estimateAndCount(sft, a)
-      case o: Or   => estimateOrCount(sft, o)
-      case n: Not  => estimateNotCount(sft, n)
+      case a: And  => estimateAndCount(a, loDate, hiDate)
+      case o: Or   => estimateOrCount(o, loDate, hiDate)
+      case n: Not  => estimateNotCount(n, loDate, hiDate)
 
       case i: Id   => Some(RecordIdxStrategy.intersectIdFilters(Seq(i)).size)
       case _       =>
         // single filter - equals, between, less than, etc
-        FilterHelper.propertyNames(filter, sft).headOption.flatMap(estimateAttributeCount(sft, filter, _))
+        val attribute = FilterHelper.propertyNames(filter, sft).headOption
+        attribute.flatMap(estimateAttributeCount(filter, _, loDate, hiDate))
     }
   }
 
@@ -65,45 +84,46 @@ trait StatsBasedEstimator extends LazyLogging {
     *
     * We check for spatio-temporal filters first, as those are the only ones that operate on 2+ properties.
     *
-    * @param sft simple feature type
     * @param filter AND filter
+    * @param loDate bounds on the dates to be queried, if any
+    * @param hiDate bounds on the dates to be queried, if any
     * @return estimated count, if available
     */
-  private def estimateAndCount(sft: SimpleFeatureType, filter: And): Option[Long] = {
-    import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableOnce
-
-    val stCount = estimateSpatioTemporalCount(sft, filter)
+  private def estimateAndCount(filter: And, loDate: Option[Date], hiDate: Option[Date]): Option[Long] = {
+    val stCount = estimateSpatioTemporalCount(filter)
     // note: we might over count if we get bbox1 AND bbox2, as we don't intersect them
-    val individualCounts = filter.getChildren.flatMap(estimateCount(sft, _))
+    val individualCounts = filter.getChildren.flatMap(estimateCount(_, loDate, hiDate))
     (stCount ++ individualCounts).minOption
   }
 
   /**
     * Estimate counts for OR filters. Because this is an OR, we sum up the child counts
     *
-    * @param sft simple feature type
     * @param filter OR filter
+    * @param loDate bounds on the dates to be queried, if any
+    * @param hiDate bounds on the dates to be queried, if any
     * @return estimated count, if available
     */
-  private def estimateOrCount(sft: SimpleFeatureType, filter: Or): Option[Long] = {
+  private def estimateOrCount(filter: Or, loDate: Option[Date], hiDate: Option[Date]): Option[Long] = {
     import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableOnce
 
     // estimate for each child separately and sum
     // note that we might double count some values if the filter is complex
-    filter.getChildren.flatMap(estimateCount(sft, _)).sumOption
+    filter.getChildren.flatMap(estimateCount(_, loDate, hiDate)).sumOption
   }
 
   /**
     * Estimates the count for NOT filters
     *
-    * @param sft simple feature type
     * @param filter filter
+    * @param loDate bounds on the dates to be queried, if any
+    * @param hiDate bounds on the dates to be queried, if any
     * @return count, if available
     */
-  private def estimateNotCount(sft: SimpleFeatureType, filter: Not): Option[Long] = {
+  private def estimateNotCount(filter: Not, loDate: Option[Date], hiDate: Option[Date]): Option[Long] = {
     for {
-      all <- estimateCount(sft, Filter.INCLUDE)
-      neg <- estimateCount(sft, filter.getFilter)
+      all <- estimateCount(Filter.INCLUDE, None, None)
+      neg <- estimateCount(filter.getFilter, loDate, hiDate)
     } yield {
       math.max(0, all - neg)
     }
@@ -112,11 +132,10 @@ trait StatsBasedEstimator extends LazyLogging {
   /**
     * Estimate spatio-temporal counts for an AND filter.
     *
-    * @param sft simple feature type
     * @param filter complex filter
     * @return count, if available
     */
-  private def estimateSpatioTemporalCount(sft: SimpleFeatureType, filter: And): Option[Long] = {
+  private def estimateSpatioTemporalCount(filter: And): Option[Long] = {
     // currently we don't consider if the spatial predicate is actually AND'd with the temporal predicate...
     // TODO add filterhelper method that accurately pulls out the st values
     for {
@@ -124,7 +143,7 @@ trait StatsBasedEstimator extends LazyLogging {
       dateField <- sft.getDtgField
       geometry  <- FilterHelper.extractSingleGeometry(filter, geomField)
       intervals <- Option(FilterHelper.extractIntervals(filter, dateField)).filter(_.nonEmpty)
-      bounds    <- getStats[MinMax[Date]](sft, Seq(dateField)).headOption
+      bounds    <- stats.getStats[MinMax[Date]](sft, Seq(dateField)).headOption
     } yield {
       val inRangeIntervals = {
         val minTime = bounds.min.getTime
@@ -132,7 +151,7 @@ trait StatsBasedEstimator extends LazyLogging {
         intervals.filter(i => i._1.getMillis <= maxTime && i._2.getMillis >= minTime)
       }
       if (inRangeIntervals.isEmpty) { 0L } else {
-        estimateSpatioTemporalCount(sft, geomField, dateField, geometry, inRangeIntervals)
+        estimateSpatioTemporalCount(geomField, dateField, geometry, inRangeIntervals)
       }
     }
   }
@@ -140,15 +159,13 @@ trait StatsBasedEstimator extends LazyLogging {
   /**
     * Estimates counts based on a combination of spatial and temporal values.
     *
-    * @param sft simple feature type
     * @param geomField geometry attribute name for the simple feature type
     * @param dateField date attribute name for the simple feature type
     * @param geometry geometry to evaluate
     * @param intervals intervals to evaluate
     * @return
     */
-  private def estimateSpatioTemporalCount(sft: SimpleFeatureType,
-                                          geomField: String,
+  private def estimateSpatioTemporalCount(geomField: String,
                                           dateField: String,
                                           geometry: Geometry,
                                           intervals: Seq[(DateTime, DateTime)]): Long = {
@@ -160,7 +177,7 @@ trait StatsBasedEstimator extends LazyLogging {
     }
     val allWeeks = weeksAndOffsets.flatMap(_._1).distinct
 
-    getStats[Z3RangeHistogram](sft, Seq(geomField, dateField), allWeeks).headOption match {
+    stats.getStats[Z3RangeHistogram](sft, Seq(geomField, dateField), allWeeks).headOption match {
       case None => 0L
       case Some(histogram) =>
         // time range for a chunk is 0 to 1 week (in seconds)
@@ -198,37 +215,41 @@ trait StatsBasedEstimator extends LazyLogging {
   /**
     * Estimates the count for attribute filters (equals, less than, during, etc)
     *
-    * @param sft simple feature type
     * @param filter filter
     * @param attribute attribute name to estimate
+    * @param loDate bounds on the dates to be queried, if any
+    * @param hiDate bounds on the dates to be queried, if any
     * @return count, if available
     */
-  private def estimateAttributeCount(sft: SimpleFeatureType, filter: Filter, attribute: String): Option[Long] = {
+  private def estimateAttributeCount(filter: Filter,
+                                     attribute: String,
+                                     loDate: Option[Date],
+                                     hiDate: Option[Date]): Option[Long] = {
     import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 
     if (attribute == sft.getGeomField) {
-      estimateSpatialCount(sft, filter)
+      estimateSpatialCount(filter)
     } else if (sft.getDtgField.contains(attribute)) {
-      estimateTemporalCount(sft, filter)
+      estimateTemporalCount(filter)
     } else {
       // we have an attribute filter
       val extractedBounds = for {
         descriptor <- Option(sft.getDescriptor(attribute))
-        binding    = descriptor.getListType().getOrElse(descriptor.getType.getBinding)
+        binding    =  descriptor.getListType().getOrElse(descriptor.getType.getBinding)
         bounds     <- FilterHelper.extractAttributeBounds(filter, attribute, binding.asInstanceOf[Class[Any]])
       } yield {
         bounds.bounds.map(_.bounds)
       }
       extractedBounds.flatMap { bounds =>
         if (bounds.contains((None, None))) {
-          estimateCount(sft, Filter.INCLUDE) // inclusive filter
+          estimateCount(Filter.INCLUDE, None, None) // inclusive filter
         } else {
           val (equalsBounds, rangeBounds) = bounds.partition { case (l, r) => l == r }
           val equalsCount = if (equalsBounds.isEmpty) { Some(0L) } else {
-            estimateEqualsCount(sft, attribute, equalsBounds.map(_._1.get))
+            estimateEqualsCount(attribute, equalsBounds.map(_._1.get), loDate, hiDate)
           }
           val rangeCount = if (rangeBounds.isEmpty) { Some(0L) } else {
-            estimateRangeCount(sft, attribute, rangeBounds)
+            estimateRangeCount(attribute, rangeBounds)
           }
           for { e <- equalsCount; r <- rangeCount } yield { e + r }
         }
@@ -239,16 +260,15 @@ trait StatsBasedEstimator extends LazyLogging {
   /**
     * Estimates counts from spatial predicates. Non-spatial predicates will be ignored.
     *
-    * @param sft simple feature type
     * @param filter filter to evaluate
     * @return estimated count, if available
     */
-  private def estimateSpatialCount(sft: SimpleFeatureType, filter: Filter): Option[Long] = {
+  private def estimateSpatialCount(filter: Filter): Option[Long] = {
     import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableOnce
 
     for {
       geometry  <- FilterHelper.extractSingleGeometry(filter, sft.getGeomField)
-      histogram <- getStats[RangeHistogram[Geometry]](sft, Seq(sft.getGeomField)).headOption
+      histogram <- stats.getStats[RangeHistogram[Geometry]](sft, Seq(sft.getGeomField)).headOption
     } yield {
       val (zLo, zHi) = {
         val (xmin, ymin, _, _) = bounds(histogram.min)
@@ -271,17 +291,16 @@ trait StatsBasedEstimator extends LazyLogging {
   /**
     * Estimates counts from temporal predicates. Non-temporal predicates will be ignored.
     *
-    * @param sft simple feature type
     * @param filter filter to evaluate
     * @return estimated count, if available
     */
-  private def estimateTemporalCount(sft: SimpleFeatureType, filter: Filter): Option[Long] = {
+  private def estimateTemporalCount(filter: Filter): Option[Long] = {
     import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableOnce
 
     for {
       dateField <- sft.getDtgField
       intervals <- Option(FilterHelper.extractIntervals(filter, dateField)).filter(_.nonEmpty)
-      histogram <- getStats[RangeHistogram[Date]](sft, Seq(dateField)).headOption
+      histogram <- stats.getStats[RangeHistogram[Date]](sft, Seq(dateField)).headOption
     } yield {
       def inRange(interval: (DateTime, DateTime)) =
         interval._1.getMillis <= histogram.max.getTime && interval._2.getMillis >= histogram.min.getTime
@@ -302,28 +321,32 @@ trait StatsBasedEstimator extends LazyLogging {
     * Note: in our current stats, frequency has ~0.5% error rate based on the total number of features in the data set.
     * The error will be multiplied by the number of values you are evaluating, which can lead to large error rates.
     *
-    * @param sft simple feature type
     * @param attribute attribute to evaluate
     * @param values values to be estimated
+    * @param loDate bounds on the dates to be queried, if any
+    * @param hiDate bounds on the dates to be queried, if any
     * @return estimated count, if available.
     */
-  private def estimateEqualsCount(sft: SimpleFeatureType, attribute: String, values: Seq[Any]): Option[Long] =
-    getStats[Frequency[Any]](sft, Seq(attribute)).headOption.map(f => values.map(f.count).sum)
+  private def estimateEqualsCount(attribute: String,
+                                  values: Seq[Any],
+                                  loDate: Option[Date],
+                                  hiDate: Option[Date]): Option[Long] = {
+    val weeks = for { dtg <- sft.getDtgField; d1  <- loDate; d2  <- hiDate } yield {
+      Range.inclusive(Frequency.getWeek(d1), Frequency.getWeek(d2)).map(_.toShort)
+    }
+    val options = weeks.getOrElse(Seq.empty)
+    stats.getStats[Frequency[Any]](sft, Seq(attribute), options).headOption.map(f => values.map(f.count).sum)
+  }
 
   /**
     * Estimates a potentially unbounded range predicate. Uses a binned histogram for estimated value.
     *
-    * @param sft simple feature type
     * @param attribute attribute to evaluate
     * @param ranges ranges of values - may be unbounded (indicated by a None)
     * @return estimated count, if available
     */
-  private def estimateRangeCount(sft: SimpleFeatureType,
-                                 attribute: String,
-                                 ranges: Seq[(Option[Any], Option[Any])]): Option[Long] = {
-    import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableOnce
-
-    getStats[RangeHistogram[Any]](sft, Seq(attribute)).headOption.map { histogram =>
+  private def estimateRangeCount(attribute: String, ranges: Seq[(Option[Any], Option[Any])]): Option[Long] = {
+    stats.getStats[RangeHistogram[Any]](sft, Seq(attribute)).headOption.map { histogram =>
       val inRangeRanges = ranges.filter {
         case (None, None)         => true // inclusive filter
         case (Some(lo), None)     => histogram.defaults.min(lo, histogram.max) == lo
@@ -341,7 +364,7 @@ trait StatsBasedEstimator extends LazyLogging {
   }
 }
 
-object StatsBasedEstimator {
+object CountEstimator {
 
   // we only need enough precision to cover the number of bins (e.g. 2^n == bins), plus 2 for unused bits
   val ZHistogramPrecision = math.ceil(math.log(GeoMesaStats.MaxHistogramSize) / math.log(2)).toInt + 2
@@ -349,5 +372,27 @@ object StatsBasedEstimator {
   private [stats] def bounds(geometry: Geometry): (Double, Double, Double, Double) = {
     val env = geometry.getEnvelopeInternal
     (env.getMinX, env.getMinY, env.getMaxX, env.getMaxY)
+  }
+
+  /**
+    * Extracts date bounds from a filter.
+    *
+    * @param sft simple feature type
+    * @param filter filter
+    * @return date bounds, if any
+    */
+  private [stats] def extractDates(sft: SimpleFeatureType, filter: Filter): (Option[Date], Option[Date]) = {
+    val intervals = sft.getDtgField.toSeq.flatMap(FilterHelper.extractIntervals(filter, _))
+    val dateTimes = intervals.reduceOption[(DateTime, DateTime)] { case (left, right) =>
+      val lower = if (left._1.isAfter(right._1)) right._1 else left._1
+      val upper = if (left._2.isBefore(right._2)) right._2 else left._2
+      (lower, upper)
+    }
+    val dateOptions = dateTimes.map { case (lower, upper) =>
+      val lowerOption = if (lower == FilterHelper.MinDateTime) None else Some(lower.toDate)
+      val upperOption = if (upper == FilterHelper.MaxDateTime) None else Some(upper.toDate)
+      (lowerOption, upperOption)
+    }
+    dateOptions.getOrElse((None, None))
   }
 }
