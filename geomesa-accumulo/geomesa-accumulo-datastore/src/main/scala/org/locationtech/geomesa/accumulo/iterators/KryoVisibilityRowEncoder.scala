@@ -58,11 +58,16 @@ class KryoVisibilityRowEncoder extends RowEncodingIterator {
   }
 
   override def rowEncoder(keys: java.util.List[Key], values: java.util.List[Value]): Value = {
-    val allValues = Array.ofDim[Array[Byte]](sft.getAttributeCount)
+    if (values.size() == 1) {
+      return values.get(0)
+    }
 
+    val allValues = Array.ofDim[Array[Byte]](sft.getAttributeCount)
     var i = 0
     while (i < keys.size) {
-      val indices = keys.get(i).getColumnQualifier.getBytes.map(_.toInt)
+      val cq = keys.get(i).getColumnQualifier
+      val comma = cq.find(",")
+      val indices = if (comma == -1) cq.getBytes.map(_.toInt) else cq.getBytes.drop(comma + 1).map(_.toInt)
       val input = KryoFeatureSerializer.getInput(values.get(i).get)
       indices.foreach { i =>
         val value = Array.ofDim[Byte](input.readInt(true))

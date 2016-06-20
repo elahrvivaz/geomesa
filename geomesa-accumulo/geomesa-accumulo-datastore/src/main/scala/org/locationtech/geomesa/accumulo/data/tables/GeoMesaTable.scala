@@ -77,10 +77,13 @@ object GeoMesaTable {
   val AllTables = Seq(RecordTable, SpatioTemporalTable, AttributeTableV5, AttributeTable, Z2Table, Z3Table)
 
   val FullColumnFamily      = new Text("F")
+  val IndexColumnFamily     = new Text("I")
   val BinColumnFamily       = new Text("B")
   val AttributeColumnFamily = new Text("A")
 
   val EmptyColumnQualifier  = new Text()
+
+  val NullByte = Array(0.toByte)
 
   def getTables(sft: SimpleFeatureType): Seq[GeoMesaTable] = {
     val enabled = sft.getEnabledTables.collect {

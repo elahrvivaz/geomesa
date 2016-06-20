@@ -36,7 +36,7 @@ class Z3DensityIterator extends KryoLazyDensityIterator {
                     jOptions: jMap[String, String],
                     env: IteratorEnvironment): Unit = {
     super.init(src, jOptions, env)
-
+    // TODO weights + per attribute values
     if (sft.isPoints) {
       normalizeWeight = (weight) => weight
     } else {

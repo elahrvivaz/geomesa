@@ -21,12 +21,11 @@ import org.apache.accumulo.core.data.{Mutation, Range => AccRange}
 import org.apache.hadoop.io.Text
 import org.calrissian.mango.types.{LexiTypeEncoders, SimpleTypeEncoders, TypeEncoder}
 import org.joda.time.format.ISODateTimeFormat
-import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.{FeatureToMutations, FeatureToWrite}
+import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
-import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.locationtech.geomesa.utils.stats.IndexCoverage
 import org.opengis.feature.`type`.AttributeDescriptor
 import org.opengis.feature.simple.SimpleFeatureType
@@ -49,79 +48,79 @@ object AttributeTable extends GeoMesaTable with LazyLogging {
 
   private type TryEncoder = Try[(TypeEncoder[Any, String], TypeEncoder[_, String])]
 
-  override def supports(sft: SimpleFeatureType) = {
-    val ok = sft.getSchemaVersion > 5 && sft.getAttributeDescriptors.exists(_.isIndexed)
-    if (ok && sft.getVisibilityLevel == VisibilityLevel.Attribute &&
-        !sft.getAttributeDescriptors.filter(_.isIndexed).forall(_.getIndexCoverage() == IndexCoverage.FULL)) {
-      // TODO GEOMESA-1254 support index values
-      throw new IllegalArgumentException("Attribute level visibility is currently only supported for fully" +
-          " covering attribute indices. Use e.g. 'foo:String:index=full'.")
-    }
-    ok
-  }
+  override def supports(sft: SimpleFeatureType) =
+    sft.getSchemaVersion > 5 && sft.getAttributeDescriptors.exists(_.isIndexed)
 
   override val suffix: String = "attr"
 
   override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val getRows = getRowKeys(sft)
-    sft.getVisibilityLevel match {
-      case VisibilityLevel.Feature =>
-        (fw) => {
-          getRows(fw).map { case (descriptor, row) =>
-            val mutation = new Mutation(row)
-            val value = descriptor.getIndexCoverage() match {
-              case IndexCoverage.FULL => fw.dataValue
-              case IndexCoverage.JOIN => fw.indexValue
-            }
-            mutation.put(EMPTY_TEXT, EMPTY_TEXT, fw.columnVisibility, value)
-            mutation
+    if (sft.getSchemaVersion < 9) {
+      (wf: WritableFeature) => {
+        getRows(wf).map { case (descriptor, row) =>
+          val mutation = new Mutation(row)
+          val value = descriptor.getIndexCoverage() match {
+            case IndexCoverage.FULL => wf.fullValues.head
+            case IndexCoverage.JOIN => wf.indexValues.head
           }
+          mutation.put(EMPTY_TEXT, EMPTY_TEXT, value.vis, value.value)
+          mutation
         }
-      case VisibilityLevel.Attribute =>
-        (fw) => {
-          getRows(fw).map { case (descriptor, row) =>
-            val mutation = new Mutation(row)
-            // TODO GEOMESA-1254 support index values
-            fw.perAttributeValues.foreach(v => mutation.put(v.cf, v.cq, v.vis, v.value))
-            mutation
+      }
+    } else {
+      (wf: WritableFeature) => {
+        getRows(wf).map { case (descriptor, row) =>
+          val mutation = new Mutation(row)
+          val values = descriptor.getIndexCoverage() match {
+            case IndexCoverage.FULL => wf.fullValues
+            case IndexCoverage.JOIN => wf.indexValues
           }
+          values.foreach(value => mutation.put(value.cf, value.cq, value.vis, value.value))
+          mutation
         }
+      }
     }
   }
 
   override def remover(sft: SimpleFeatureType): FeatureToMutations = {
     val getRows = getRowKeys(sft)
-    sft.getVisibilityLevel match {
-      case VisibilityLevel.Feature =>
-        (fw) => {
-          getRows(fw).map { case (descriptor, row) =>
-            val mutation = new Mutation(row)
-            mutation.putDelete(EMPTY_TEXT, EMPTY_TEXT, fw.columnVisibility)
-            mutation
+    if (sft.getSchemaVersion < 9) {
+      (wf: WritableFeature) => {
+        getRows(wf).map { case (descriptor, row) =>
+          val mutation = new Mutation(row)
+          val value = descriptor.getIndexCoverage() match {
+            case IndexCoverage.FULL => wf.fullValues.head
+            case IndexCoverage.JOIN => wf.indexValues.head
           }
+          mutation.putDelete(EMPTY_TEXT, EMPTY_TEXT, value.vis)
+          mutation
         }
-      case VisibilityLevel.Attribute =>
-        (fw) => {
-          getRows(fw).map { case (descriptor, row) =>
-            val mutation = new Mutation(row)
-            // TODO GEOMESA-1254 support index values
-            fw.perAttributeValues.foreach(v => mutation.putDelete(v.cf, v.cq, v.vis))
-            mutation
+      }
+    } else {
+      (wf: WritableFeature) => {
+        getRows(wf).map { case (descriptor, row) =>
+          val mutation = new Mutation(row)
+          val values = descriptor.getIndexCoverage() match {
+            case IndexCoverage.FULL => wf.fullValues
+            case IndexCoverage.JOIN => wf.indexValues
           }
+          values.foreach(value => mutation.putDelete(value.cf, value.cq, value.vis))
+          mutation
         }
+      }
     }
   }
 
-  private def getRowKeys(sft: SimpleFeatureType): (FeatureToWrite) => Seq[(AttributeDescriptor, Array[Byte])] = {
+  private def getRowKeys(sft: SimpleFeatureType): (WritableFeature) => Seq[(AttributeDescriptor, Array[Byte])] = {
     val indexedAttributes = SimpleFeatureTypes.getSecondaryIndexedAttributes(sft).map { d =>
       val i = sft.indexOf(d.getName)
       (d, i, indexToBytes(i))
     }
     val prefix = sft.getTableSharingPrefix.getBytes(UTF8)
-    val getSuffix: (FeatureToWrite) => Array[Byte] = sft.getDtgIndex match {
-      case None => (fw: FeatureToWrite) => fw.feature.getID.getBytes(UTF8)
+    val getSuffix: (WritableFeature) => Array[Byte] = sft.getDtgIndex match {
+      case None => (fw: WritableFeature) => fw.feature.getID.getBytes(UTF8)
       case Some(dtgIndex) =>
-        (fw: FeatureToWrite) => {
+        (fw: WritableFeature) => {
           val dtg = fw.feature.getAttribute(dtgIndex).asInstanceOf[Date]
           val timeBytes = timeToBytes(if (dtg == null) 0L else dtg.getTime)
           val idBytes = fw.feature.getID.getBytes(UTF8)
@@ -143,8 +142,8 @@ object AttributeTable extends GeoMesaTable with LazyLogging {
    */
   private def getRowKeys(indexedAttributes: Seq[(AttributeDescriptor, Int, Array[Byte])],
                          prefix: Array[Byte],
-                         suffix: (FeatureToWrite) => Array[Byte])
-                        (fw: FeatureToWrite): Seq[(AttributeDescriptor, Array[Byte])] = {
+                         suffix: (WritableFeature) => Array[Byte])
+                        (fw: WritableFeature): Seq[(AttributeDescriptor, Array[Byte])] = {
     val suffixBytes = suffix(fw)
     indexedAttributes.flatMap { case (descriptor, idx, idxBytes) =>
       val attributes = encodeForIndex(fw.feature.getAttribute(idx), descriptor)
