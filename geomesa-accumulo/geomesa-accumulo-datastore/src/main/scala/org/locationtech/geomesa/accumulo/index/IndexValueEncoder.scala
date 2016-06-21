@@ -101,15 +101,17 @@ object IndexValueEncoder {
    */
   protected[index] def getIndexValueAttributes(sft: SimpleFeatureType): Seq[AttributeDescriptor] = {
     val geom = sft.getGeometryDescriptor
-    sft.getDtgField match {
-      case None => Seq(geom)
-      case Some(dtg) =>
-        if (sft.indexOf(dtg) > sft.indexOf(geom.getLocalName)) {
-          Seq(geom, sft.getDescriptor(dtg))
-        } else {
-          Seq(sft.getDescriptor(dtg), geom)
-        }
+    val dtg = sft.getDtgField
+    val attributes = scala.collection.mutable.Buffer.empty[AttributeDescriptor]
+    var i = 0
+    while (i < sft.getAttributeCount) {
+      val ad = sft.getDescriptor(i)
+      if (ad == geom || dtg.exists(_ == ad.getLocalName) || ad.isIndexValue()) {
+        attributes.append(ad)
+      }
+      i += 1
     }
+    attributes
   }
 
   /**
@@ -217,7 +219,7 @@ class OldIndexValueEncoder(sft: SimpleFeatureType, encodedSft: SimpleFeatureType
 
   val geomField = sft.getGeometryDescriptor.getLocalName
   val dtgField = sft.getDtgField
-
+//  BatchScanPlan(Z3[BBOX(geom, -121.0,44.0,-119.0,48.0) AND dtg DURING 2014-01-01T00:00:00+00:00/2014-01-04T00:00:00+00:00]
   /**
    * Decodes a byte array into a map of attribute name -> attribute value pairs
    *

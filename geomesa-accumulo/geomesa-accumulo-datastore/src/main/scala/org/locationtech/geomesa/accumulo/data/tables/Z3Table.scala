@@ -21,7 +21,7 @@ import org.apache.accumulo.core.data.{Mutation, Value, Range => aRange}
 import org.apache.hadoop.io.Text
 import org.joda.time.{DateTime, DateTimeZone, Seconds, Weeks}
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
-import org.locationtech.geomesa.accumulo.data.EMPTY_TEXT
+import org.locationtech.geomesa.accumulo.data.{EMPTY_TEXT, WritableFeature}
 import org.locationtech.geomesa.curve.Z3SFC
 import org.locationtech.geomesa.utils.geotools.Conversions._
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
