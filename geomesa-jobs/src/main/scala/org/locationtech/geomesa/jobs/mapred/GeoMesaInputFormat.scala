@@ -26,7 +26,7 @@ import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloDataStoreParams}
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.features.SerializationType.SerializationType
-import org.locationtech.geomesa.features.{ScalaSimpleFeature, SimpleFeatureDeserializer, SimpleFeatureDeserializers}
+import org.locationtech.geomesa.features.{ScalaSimpleFeature, SimpleFeatureDeserializers, SimpleFeatureSerializer}
 import org.locationtech.geomesa.jobs.{GeoMesaConfigurator, JobUtils}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
@@ -173,7 +173,7 @@ class GeoMesaInputFormat extends InputFormat[Text, SimpleFeature] with LazyLoggi
  * simple features.
  */
 class GeoMesaRecordReader(sft: SimpleFeatureType,
-                          decoder: SimpleFeatureDeserializer,
+                          decoder: SimpleFeatureSerializer,
                           readers: Iterator[RecordReader[Key, Value]],
                           numReaders: Int) extends RecordReader[Text, SimpleFeature] {
 

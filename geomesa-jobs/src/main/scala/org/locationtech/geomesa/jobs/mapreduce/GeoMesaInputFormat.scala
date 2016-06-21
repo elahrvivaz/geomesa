@@ -200,7 +200,7 @@ class GeoMesaInputFormat extends InputFormat[Text, SimpleFeature] with LazyLoggi
  *
  * @param readers
  */
-class GeoMesaRecordReader(readers: Array[RecordReader[Key, Value]], decoder: org.locationtech.geomesa.features.SimpleFeatureDeserializer)
+class GeoMesaRecordReader(readers: Array[RecordReader[Key, Value]], decoder: org.locationtech.geomesa.features.SimpleFeatureSerializer)
     extends RecordReader[Text, SimpleFeature] {
 
   var currentFeature: SimpleFeature = null
