@@ -86,7 +86,7 @@ class IndexValueEncoderTest extends Specification {
       // requirements
       decoded must not(beNull)
       decoded.getAttributeCount mustEqual 2
-      decoded.getID mustEqual id
+      decoded.getID mustEqual ""
       decoded.getAttribute("geom") mustEqual geom
       decoded.getAttribute("dtg") mustEqual dt
     }
@@ -111,8 +111,8 @@ class IndexValueEncoderTest extends Specification {
       // requirements
       decoded must not(beNull)
       decoded.getAttribute("dtg") must beNull
-      decoded.getAttribute("geom") mustEqual(geom)
-      decoded.getID mustEqual(id)
+      decoded.getAttribute("geom") mustEqual geom
+      decoded.getID mustEqual ""
     }
 
     "encode and decode custom fields" in {
@@ -142,7 +142,7 @@ class IndexValueEncoderTest extends Specification {
       decoded must not(beNull)
       decoded.getAttributeCount mustEqual 7
       decoded.getAttribute("geom") mustEqual geom
-      decoded.getID mustEqual id
+      decoded.getID mustEqual ""
       decoded.getAttribute("dtg") mustEqual dt
       decoded.getAttribute("d") mustEqual d
       decoded.getAttribute("f") mustEqual f
@@ -176,7 +176,7 @@ class IndexValueEncoderTest extends Specification {
       decoded must not(beNull)
       decoded.getAttributeCount mustEqual 7
       decoded.getAttribute("geom") mustEqual geom
-      decoded.getID mustEqual id
+      decoded.getID mustEqual ""
       decoded.getAttribute("d") mustEqual d
       decoded.getAttribute("f") mustEqual f
       decoded.getAttribute("i") mustEqual i

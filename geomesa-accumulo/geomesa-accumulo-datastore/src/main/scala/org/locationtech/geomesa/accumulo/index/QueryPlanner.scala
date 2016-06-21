@@ -195,7 +195,7 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
 
   // This function decodes/transforms that Iterator of Accumulo Key-Values into an Iterator of SimpleFeatures
   def kvsToFeatures(sft: SimpleFeatureType, table: GeoMesaTable): FeatureFunction = {
-            import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
     // Perform a projecting decode of the simple feature
     if (sft.getSchemaVersion < 9) {
       val deserializer = SimpleFeatureDeserializers(sft, serializationType)
@@ -214,7 +214,6 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
         sf
       }
     }
-
   }
 }
 

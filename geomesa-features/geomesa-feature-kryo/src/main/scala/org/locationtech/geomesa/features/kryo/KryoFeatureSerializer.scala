@@ -156,7 +156,8 @@ trait KryoSimpleFeatureDeserialization extends SimpleFeatureSerializer {
     (input) => new jHashMap[AnyRef, AnyRef]
   }
 
-  def getReusableFeature: KryoBufferSimpleFeature = new KryoBufferSimpleFeature(deserializeSft, readers, lazyUserData)
+  def getReusableFeature: KryoBufferSimpleFeature =
+    new KryoBufferSimpleFeature(deserializeSft, readers, lazyUserData, options)
 
   override def deserialize(bytes: Array[Byte]): SimpleFeature = doRead(bytes)
 
@@ -417,7 +418,6 @@ class ProjectingKryoFeatureDeserializer(original: SimpleFeatureType,
 
   import KryoFeatureSerializer._
 
-  require(!options.withUserData, "User data serialization not supported")
   override private [kryo] def serializeSft = original
 
   private val numProjectedAttributes = projected.getAttributeCount
@@ -471,6 +471,19 @@ class ProjectingKryoFeatureDeserializer(original: SimpleFeatureType,
       }
       i += 1
     }
-    new ScalaSimpleFeature(id, projected, attributes)
+    val sf = new ScalaSimpleFeature(id, projected, attributes)
+    if (options.withUserData) {
+      // skip offset data
+      input.setPosition(offsetStart)
+      var i = 0
+      while (i < original.getAttributeCount) {
+        input.readInt(true)
+        i += 1
+      }
+      val ud = kryoReader.readGenericMap(VERSION)(input)
+      sf.getUserData.putAll(ud)
+      sf
+    }
+    sf
   }
 }

@@ -22,6 +22,7 @@ import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIt
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.QueryPlanners._
+import org.locationtech.geomesa.features.SerializationOption.SerializationOptions
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features.kryo.KryoBufferSimpleFeature
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, SimpleFeatureDeserializers}
@@ -441,7 +442,11 @@ object BinAggregatingIterator extends LazyLogging {
 
     // don't use return sft from query hints, as it will be bin_sft
     val returnSft = hints.getTransformSchema.getOrElse(sft)
-    val deserializer = SimpleFeatureDeserializers(returnSft, serializationType)
+    val deserializer = if (sft.getSchemaVersion < 9) {
+      SimpleFeatureDeserializers(returnSft, serializationType)
+    } else {
+      SimpleFeatureDeserializers(returnSft, serializationType, SerializationOptions.withoutId)
+    }
     val trackIdIndex = returnSft.indexOf(hints.getBinTrackIdField)
     val geomIndex = hints.getBinGeomField.map(returnSft.indexOf).getOrElse(returnSft.getGeomIndex)
     val dtgIndex= hints.getBinDtgField.map(returnSft.indexOf).getOrElse(returnSft.getDtgIndex.get)
