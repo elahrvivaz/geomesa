@@ -58,12 +58,39 @@ class KryoVisibilityRowEncoder extends RowEncodingIterator {
   }
 
   override def rowEncoder(keys: java.util.List[Key], values: java.util.List[Value]): Value = {
-    val allValues = Array.ofDim[Array[Byte]](sft.getAttributeCount)
+    if (values.size() == 1) {
+      return values.get(0)
+    }
 
+    val allValues = Array.ofDim[Array[Byte]](sft.getAttributeCount)
     var i = 0
     while (i < keys.size) {
-      val indices = keys.get(i).getColumnQualifier.getBytes.map(_.toInt)
-      val input = KryoFeatureSerializer.getInput(values.get(i).get)
+      val cq = keys.get(i).getColumnQualifier
+      val comma = cq.find(",")
+      val indices = if (comma == -1) cq.getBytes.map(_.toInt) else cq.getBytes.drop(comma + 1).map(_.toInt)
+      val bytes = values.get(i).get
+      val input = KryoFeatureSerializer.getInput(bytes)
+      // reset our offsets
+      input.setPosition(1) // skip version
+      val offsetStart = input.readInt()
+      input.setPosition(offsetStart) // set to offsets start
+      var j = 0
+      while (j < offsets.length) {
+        offsets(j) = if (input.position < input.limit) input.readInt(true) else -1
+        j += 1
+      }
+
+      // set the non-null values
+      j = 0
+      while (j < offsets.length - 1) {
+        val endIndex = offsets.indexWhere(_ != -1, j)
+        val end = if (endIndex == -1) offsetStart else offsets(endIndex)
+        if (allValues(j) == null || notEquals(allValues(j), bytes, offsets(j), end)) {
+
+        }
+        val length = offsets(j + 1) - offsets(j)
+        j += 1
+      }
       indices.foreach { i =>
         val value = Array.ofDim[Byte](input.readInt(true))
         input.readBytes(value)
