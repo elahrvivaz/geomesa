@@ -11,6 +11,7 @@ package org.locationtech.geomesa.accumulo.data.tables
 
 import java.nio.charset.StandardCharsets
 
+import com.google.common.base.Charsets
 import com.google.common.collect.{ImmutableSet, ImmutableSortedSet}
 import com.google.common.primitives.{Bytes, Longs}
 import com.vividsolutions.jts.geom.{Geometry, GeometryCollection, LineString, Point}
@@ -59,12 +60,8 @@ object Z2Table extends GeoMesaTable {
         val cq = if (rows.length > 1) new Text(Integer.toHexString(rows.length)) else EMPTY_TEXT
         rows.map { row =>
           val mutation = new Mutation(row)
-          wf.fullValues.foreach { case RowValue(_, _, vis, value) =>
-            mutation.put(FULL_CF, cq, vis, value)
-          }
-          wf.binValues.foreach { case RowValue(_, _, vis, value) =>
-            mutation.put(BIN_CF, cq, vis, value)
-          }
+          wf.fullValues.foreach(value => mutation.put(FULL_CF, cq, value.vis, value.value))
+          wf.binValues.foreach(value => mutation.put(BIN_CF, cq, value.vis, value.value))
           mutation
         }
       }
@@ -125,9 +122,9 @@ object Z2Table extends GeoMesaTable {
     }
   }
 
-  override def getIdFromRow(sft: SimpleFeatureType): (Array[Byte]) => String = {
+  override def getIdFromRow(sft: SimpleFeatureType): (Text) => String = {
     val offset = getIdRowOffset(sft)
-    (row: Array[Byte]) => new String(row, offset, row.length - offset, StandardCharsets.UTF_8)
+    (row: Text) => new String(row.getBytes, offset, row.getLength - offset, Charsets.UTF_8)
   }
 
   // split(1 byte), z value (8 bytes), id (n bytes)

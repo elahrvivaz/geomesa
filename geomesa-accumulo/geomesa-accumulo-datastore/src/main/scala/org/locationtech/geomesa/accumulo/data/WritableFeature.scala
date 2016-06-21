@@ -12,6 +12,7 @@ import org.apache.accumulo.core.data.Value
 import org.apache.accumulo.core.security.ColumnVisibility
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
+import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable._
 import org.locationtech.geomesa.accumulo.index.BinEncoder
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, SimpleFeatureSerializer}
 import org.locationtech.geomesa.security.SecurityUtils._
@@ -118,17 +119,20 @@ class WritableAttributeLevelFeature(val feature: SimpleFeature,
                                     indexSerializer: SimpleFeatureSerializer,
                                     binEncoder: Option[BinEncoder]) extends WritableFeature {
 
-  private lazy val indexGroups: Seq[(ColumnVisibility, Array[Byte])] = {
+  private lazy val visibilities: Array[String] = {
     import org.locationtech.geomesa.utils.geotools.Conversions.RichSimpleFeature
-
     val count = feature.getFeatureType.getAttributeCount
-    val visibilities = feature.userData[String](FEATURE_VISIBILITY).map(_.split(","))
-        .getOrElse(Array.fill(count)(defaultVisibility))
-    require(visibilities.length == count, "Per-attribute visibilities do not match feature type")
+    val userData = feature.userData[String](FEATURE_VISIBILITY)
+    val visibilities = userData.map(_.split(",")).getOrElse(Array.fill(count)(defaultVisibility))
+    require(visibilities.length == count,
+      s"Per-attribute visibilities do not match feature type ($count values expected): ${userData.getOrElse("")}")
+    visibilities
+  }
+
+  private lazy val indexGroups: Seq[(ColumnVisibility, Array[Byte])] =
     visibilities.zipWithIndex.groupBy(_._1).map { case (vis, indices) =>
       (new ColumnVisibility(vis), indices.map(_._2.toByte).sorted)
     }.toSeq
-  }
 
   override lazy val fullValues: Seq[RowValue] = indexGroups.map { case (vis, indices) =>
     val sf = new ScalaSimpleFeature("", sft)
@@ -142,7 +146,23 @@ class WritableAttributeLevelFeature(val feature: SimpleFeature,
     new RowValue(GeoMesaTable.AttributeColumnFamily, new Text(indices), vis, new Value(indexSerializer.serialize(sf)))
   }
 
-  override lazy val binValues: Seq[RowValue] = ??? // TODO
+  override lazy val binValues: Seq[RowValue] = {
+    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+    val rowOpt = for {
+      encoder <- binEncoder
+      trackId <- sft.getBinTrackId
+      trackIndex = sft.indexOf(trackId)
+      if trackIndex != -1
+    } yield {
+      // merge the visibilities for the individual fields
+      val dateVis = sft.getDtgIndex.map(visibilities.apply)
+      val geomVis = visibilities(sft.getGeomIndex)
+      val trackVis = visibilities(trackIndex)
+      val vis = (Seq(geomVis, trackVis) ++ dateVis).flatMap(_.split("&")).distinct.mkString("&")
+      new RowValue(BinColumnFamily, EmptyColumnQualifier, new ColumnVisibility(vis), new Value(encoder.encode(feature)))
+    }
+    rowOpt.toSeq
+  }
 
   override lazy val idHash: Int = Math.abs(MurmurHash3.stringHash(feature.getID))
 }

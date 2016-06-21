@@ -57,7 +57,7 @@ trait GeoMesaTable {
     * @param sft simple feature type
     * @return a function to retrieve an ID from a row
     */
-  def getIdFromRow(sft: SimpleFeatureType): (Array[Byte]) => String
+  def getIdFromRow(sft: SimpleFeatureType): (Text) => String
 
   /**
    * Deletes all features from the table

@@ -81,12 +81,8 @@ object Z3Table extends GeoMesaTable {
         val cq = if (rows.length > 1) new Text(Integer.toHexString(rows.length)) else EMPTY_TEXT
         rows.map { row =>
           val mutation = new Mutation(row)
-          wf.fullValues.foreach { case RowValue(_, _, vis, value) =>
-            mutation.put(FULL_CF, cq, vis, value)
-          }
-          wf.binValues.foreach { case RowValue(_, _, vis, value) =>
-            mutation.put(BIN_CF, cq, vis, value)
-          }
+          wf.fullValues.foreach(value => mutation.put(FULL_CF, cq, value.vis, value.value))
+          wf.binValues.foreach(value => mutation.put(BIN_CF, cq, value.vis, value.value))
           mutation
         }
       }
@@ -155,9 +151,9 @@ object Z3Table extends GeoMesaTable {
     }
   }
 
-  override def getIdFromRow(sft: SimpleFeatureType): (Array[Byte]) => String = {
+  override def getIdFromRow(sft: SimpleFeatureType): (Text) => String = {
     val offset = getIdRowOffset(sft)
-    (row: Array[Byte]) => new String(row, offset, row.length - offset, Charsets.UTF_8)
+    (row: Text) => new String(row.getBytes, offset, row.getLength - offset, Charsets.UTF_8)
   }
 
   override def deleteFeaturesForType(sft: SimpleFeatureType, bd: BatchDeleter): Unit = {

@@ -76,7 +76,7 @@ class AttributeIdxStrategyV5(val filter: QueryFilter) extends Strategy with Lazy
       // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
       BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, hints, encoding)
     } else {
-      queryPlanner.defaultKVsToFeatures(hints)
+      queryPlanner.defaultKVsToFeatures(hints, AttributeTableV5)
     }
 
     // choose which iterator we want to use - joining iterator or attribute only iterator

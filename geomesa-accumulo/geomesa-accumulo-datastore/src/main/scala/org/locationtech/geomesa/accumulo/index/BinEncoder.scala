@@ -20,8 +20,6 @@ import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
  */
 class BinEncoder(sft: SimpleFeatureType, trackIdField: String) {
 
-  // TODO support per-attribute visibilities
-
   private val trackIdIndex = sft.indexOf(trackIdField)
   private val geomIndex = sft.getGeomIndex
   private val dtgIndex = sft.getDtgIndex.getOrElse(-1)

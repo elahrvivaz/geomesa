@@ -100,6 +100,7 @@ object IndexValueEncoder {
    * @return
    */
   protected[index] def getIndexValueAttributes(sft: SimpleFeatureType): Seq[AttributeDescriptor] = {
+    import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
     val geom = sft.getGeometryDescriptor
     val dtg = sft.getDtgField
     val attributes = scala.collection.mutable.Buffer.empty[AttributeDescriptor]

@@ -8,8 +8,7 @@
 
 package org.locationtech.geomesa.accumulo.data.tables
 
-import java.nio.charset.StandardCharsets
-
+import com.google.common.base.Charsets
 import com.google.common.collect.ImmutableSortedSet
 import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
@@ -66,13 +65,9 @@ object RecordTable extends GeoMesaTable {
     }
   }
 
-  override def getIdFromRow(sft: SimpleFeatureType): (Array[Byte]) => String = {
+  override def getIdFromRow(sft: SimpleFeatureType): (Text) => String = {
     val offset = sft.getTableSharingPrefix.length
-    if (offset == 0) {
-      (row) => new String(row, StandardCharsets.UTF_8)
-    } else {
-      (row) => new String(row.drop(offset), StandardCharsets.UTF_8)
-    }
+    (row: Text) => new String(row.getBytes, offset, row.getLength - offset, Charsets.UTF_8)
   }
 
   def getRowKey(rowIdPrefix: String, id: String): String = rowIdPrefix + id

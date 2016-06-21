@@ -9,7 +9,7 @@
 
 package org.locationtech.geomesa.accumulo.data.tables
 
-import java.nio.charset.Charset
+import java.nio.charset.StandardCharsets
 import java.util.{Date, Locale, Collection => JCollection}
 
 import com.google.common.collect.ImmutableSortedSet
@@ -39,8 +39,8 @@ import scala.util.{Failure, Success, Try}
  */
 object AttributeTable extends GeoMesaTable with LazyLogging {
 
-  private val UTF8 = Charset.forName("UTF-8")
-  private val NULLBYTE = "\u0000".getBytes(UTF8)
+  private val NullByte = "\u0000"
+  private val NullByteArray = NullByte.getBytes(StandardCharsets.UTF_8)
 
   private val typeRegistry   = LexiTypeEncoders.LEXI_TYPES
   private val simpleEncoders = SimpleTypeEncoders.SIMPLE_TYPES.getAllEncoders
@@ -116,14 +116,14 @@ object AttributeTable extends GeoMesaTable with LazyLogging {
       val i = sft.indexOf(d.getName)
       (d, i, indexToBytes(i))
     }
-    val prefix = sft.getTableSharingPrefix.getBytes(UTF8)
+    val prefix = sft.getTableSharingPrefix.getBytes(StandardCharsets.UTF_8)
     val getSuffix: (WritableFeature) => Array[Byte] = sft.getDtgIndex match {
-      case None => (fw: WritableFeature) => fw.feature.getID.getBytes(UTF8)
+      case None => (fw: WritableFeature) => fw.feature.getID.getBytes(StandardCharsets.UTF_8)
       case Some(dtgIndex) =>
         (fw: WritableFeature) => {
           val dtg = fw.feature.getAttribute(dtgIndex).asInstanceOf[Date]
           val timeBytes = timeToBytes(if (dtg == null) 0L else dtg.getTime)
-          val idBytes = fw.feature.getID.getBytes(UTF8)
+          val idBytes = fw.feature.getID.getBytes(StandardCharsets.UTF_8)
           Bytes.concat(timeBytes, idBytes)
         }
     }
@@ -147,7 +147,7 @@ object AttributeTable extends GeoMesaTable with LazyLogging {
     val suffixBytes = suffix(fw)
     indexedAttributes.flatMap { case (descriptor, idx, idxBytes) =>
       val attributes = encodeForIndex(fw.feature.getAttribute(idx), descriptor)
-      attributes.map(a => (descriptor, Bytes.concat(prefix, idxBytes, a.getBytes(UTF8), NULLBYTE, suffixBytes)))
+      attributes.map(a => (descriptor, Bytes.concat(prefix, idxBytes, a.getBytes(StandardCharsets.UTF_8), NullByteArray, suffixBytes)))
     }
   }
 
@@ -155,7 +155,7 @@ object AttributeTable extends GeoMesaTable with LazyLogging {
   def indexToBytes(i: Int) = Array((i << 8).asInstanceOf[Byte], i.asInstanceOf[Byte])
 
   // store the first 12 hex chars of the time - that is roughly down to the minute interval
-  def timeToBytes(t: Long) = typeRegistry.encode(t).substring(0, 12).getBytes(UTF8)
+  def timeToBytes(t: Long) = typeRegistry.encode(t).substring(0, 12).getBytes(StandardCharsets.UTF_8)
 
   // rounds up the time to ensure our range covers all possible times given our time resolution
   private def roundUpTime(time: Array[Byte]): Array[Byte] = {
@@ -176,7 +176,7 @@ object AttributeTable extends GeoMesaTable with LazyLogging {
    * Gets a prefix for an attribute row - this includes the sft and the attribute index only
    */
   def getRowPrefix(sft: SimpleFeatureType, i: Int): Array[Byte] =
-    Bytes.concat(sft.getTableSharingPrefix.getBytes(UTF8), indexToBytes(i))
+    Bytes.concat(sft.getTableSharingPrefix.getBytes(StandardCharsets.UTF_8), indexToBytes(i))
 
   // ranges for querying - equals
   def equals(sft: SimpleFeatureType, i: Int, value: Any, times: Option[(Long, Long)]): AccRange = {
@@ -185,11 +185,11 @@ object AttributeTable extends GeoMesaTable with LazyLogging {
     times match {
       case None =>
         // if no time, use a prefix range terminated with a null byte to match all times
-        AccRange.prefix(new Text(Bytes.concat(prefix, encoded, NULLBYTE)))
+        AccRange.prefix(new Text(Bytes.concat(prefix, encoded, NullByteArray)))
       case Some((t1, t2)) =>
         val (t1Bytes, t2Bytes) = (timeToBytes(t1), roundUpTime(timeToBytes(t2)))
-        val start = new Text(Bytes.concat(prefix, encoded, NULLBYTE, t1Bytes))
-        val end = new Text(Bytes.concat(prefix, encoded, NULLBYTE, t2Bytes))
+        val start = new Text(Bytes.concat(prefix, encoded, NullByteArray, t1Bytes))
+        val end = new Text(Bytes.concat(prefix, encoded, NullByteArray, t2Bytes))
         new AccRange(start, true, end, true)
     }
   }
@@ -238,11 +238,11 @@ object AttributeTable extends GeoMesaTable with LazyLogging {
     val encoded = encodeForQuery(value, sft.getDescriptor(i))
     val timeBytes = time.map(timeToBytes).getOrElse(Array.empty)
     if (inclusive) {
-      new Text(Bytes.concat(prefix, encoded, NULLBYTE, timeBytes))
+      new Text(Bytes.concat(prefix, encoded, NullByteArray, timeBytes))
     } else {
       // get the next row, then append the time
       val following = AccRange.followingPrefix(new Text(Bytes.concat(prefix, encoded))).getBytes
-      new Text(Bytes.concat(following, NULLBYTE, timeBytes))
+      new Text(Bytes.concat(following, NullByteArray, timeBytes))
     }
   }
 
@@ -253,10 +253,10 @@ object AttributeTable extends GeoMesaTable with LazyLogging {
     if (inclusive) {
       // append time, then get the next row - this will match anything with the same value, up to the time
       val timeBytes = time.map(t => roundUpTime(timeToBytes(t))).getOrElse(Array.empty)
-      AccRange.followingPrefix(new Text(Bytes.concat(prefix, encoded, NULLBYTE, timeBytes)))
+      AccRange.followingPrefix(new Text(Bytes.concat(prefix, encoded, NullByteArray, timeBytes)))
     } else {
       // can't use time on an exclusive upper, as there aren't any methods to calculate previous rows
-      new Text(Bytes.concat(prefix, encoded, NULLBYTE))
+      new Text(Bytes.concat(prefix, encoded, NullByteArray))
     }
   }
 
@@ -273,20 +273,20 @@ object AttributeTable extends GeoMesaTable with LazyLogging {
   def decodeRow(sft: SimpleFeatureType, i: Int, row: Array[Byte]): Try[Any] = Try {
     val from = if (sft.isTableSharing) 3 else 2 // exclude feature byte and index bytes
     // null byte indicates end of value
-    val encodedValue = row.slice(from, row.indexOf(NULLBYTE(0), from + 1))
-    decode(new String(encodedValue, UTF8), sft.getDescriptor(i))
+    val encodedValue = row.slice(from, row.indexOf(NullByteArray(0), from + 1))
+    decode(new String(encodedValue, StandardCharsets.UTF_8), sft.getDescriptor(i))
   }
 
   /**
    * Returns a function to get the feature ID from the row key
    */
-  override def getIdFromRow(sft: SimpleFeatureType): (Array[Byte]) => String = {
-    val from = if (sft.isTableSharing) 3 else 2  // exclude feature byte and index bytes
+  override def getIdFromRow(sft: SimpleFeatureType): (Text) => String = {
     // drop the encoded value and the date field (12 bytes) if it's present - the rest of the row is the ID
-    if (sft.getDtgField.isDefined) {
-      (row) => new String(row.drop(row.indexOf(NULLBYTE(0), from) + 13), UTF8)
-    } else {
-      (row) => new String(row.drop(row.indexOf(NULLBYTE(0), from) + 1), UTF8)
+    val from = if (sft.isTableSharing) 3 else 2  // exclude feature byte and index bytes
+    val prefix = if (sft.getDtgField.isDefined) 13 else 1
+    (row: Text) => {
+      val offset = row.find(NullByte, from) + prefix
+      new String(row.getBytes, offset, row.getLength - offset, StandardCharsets.UTF_8)
     }
   }
 
@@ -319,7 +319,7 @@ object AttributeTable extends GeoMesaTable with LazyLogging {
       if (encoded == null || encoded.isEmpty) {
         Array.empty
       } else {
-        encoded.getBytes(UTF8)
+        encoded.getBytes(StandardCharsets.UTF_8)
       }
     }
 

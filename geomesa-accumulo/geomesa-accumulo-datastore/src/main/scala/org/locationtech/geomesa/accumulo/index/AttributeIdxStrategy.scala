@@ -83,7 +83,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLo
       val iter = KryoLazyFilterTransformIterator.configure(schema, ecql, transform, sampling).toSeq
       val iters = perAttributeIter ++ iter
       // need to use transform to convert key/values if it's defined
-      val kvsToFeatures = queryPlanner.kvsToFeatures(transform.map(_._2).getOrElse(schema))
+      val kvsToFeatures = queryPlanner.kvsToFeatures(transform.map(_._2).getOrElse(schema), AttributeTable)
       BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDupes)
     }
 
@@ -93,7 +93,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLo
         AttrKeyPlusValueIterator.configure(sft, schema, sft.indexOf(attribute), ecql, transform, sampling, priority)
 
       // need to use transform to convert key/values if it's defined
-      val kvsToFeatures = queryPlanner.kvsToFeatures(transform.map(_._2).getOrElse(schema))
+      val kvsToFeatures = queryPlanner.kvsToFeatures(transform.map(_._2).getOrElse(schema), AttributeTable)
       BatchScanPlan(filter, attrTable, ranges, Seq(iters), Seq.empty, kvsToFeatures, attrThreads, hasDupes)
     }
 
@@ -184,7 +184,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLo
     } else if (hints.isStatsIteratorQuery) {
       KryoLazyStatsIterator.kvsToFeatures(sft)
     } else {
-      queryPlanner.defaultKVsToFeatures(hints)
+      queryPlanner.defaultKVsToFeatures(hints, AttributeTable)
     }
 
     // function to join the attribute index scan results to the record table
@@ -192,7 +192,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLo
     val prefix = sft.getTableSharingPrefix
     val getIdFromRow = AttributeTable.getIdFromRow(sft)
     val joinFunction: JoinFunction =
-      (kv) => new AccRange(RecordTable.getRowKey(prefix, getIdFromRow(kv.getKey.getRow.getBytes)))
+      (kv) => new AccRange(RecordTable.getRowKey(prefix, getIdFromRow(kv.getKey.getRow)))
 
     val recordTable = queryPlanner.ds.getTableName(sft.getTypeName, RecordTable)
     val recordThreads = queryPlanner.ds.getSuggestedThreads(sft.getTypeName, RecordTable)

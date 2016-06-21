@@ -225,6 +225,7 @@ class PrecomputedBinAggregatingIterator extends BinAggregatingIterator {
     val gf = new GeometryFactory
 
     val idOffset = options(BinAggregatingIterator.ID_OFFSET_OPT).toInt
+    // TODO use table method
     val getId = (row: Array[Byte]) => new String(row, idOffset, row.length - idOffset, StandardCharsets.UTF_8)
 
     // we only need to decode the parts required for the filter/dedupe/sampling check

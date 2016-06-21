@@ -23,7 +23,7 @@ import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.index.{IndexEntryDecoder, IndexSchema, Strategy}
 import org.locationtech.geomesa.accumulo.iterators.KryoLazyDensityIterator.DensityResult
 import org.locationtech.geomesa.features.SerializationType.SerializationType
-import org.locationtech.geomesa.features.{SerializationType, SimpleFeatureDeserializer, SimpleFeatureDeserializers}
+import org.locationtech.geomesa.features.{SerializationType, SimpleFeatureDeserializers, SimpleFeatureSerializer}
 import org.locationtech.geomesa.utils.geotools.Conversions.{RichSimpleFeature, toRichSimpleFeatureIterator}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
@@ -35,7 +35,7 @@ import scala.collection.JavaConverters._
  */
 class DensityIterator extends KryoLazyDensityIterator with LazyLogging {
 
-  var deserializer: SimpleFeatureDeserializer = null
+  var deserializer: SimpleFeatureSerializer = null
   var indexDecoder: IndexEntryDecoder = null
 
   override def init(src: SortedKeyValueIterator[Key, Value],

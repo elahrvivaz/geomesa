@@ -96,12 +96,6 @@ trait KryoSimpleFeatureSerialization extends SimpleFeatureSerializer {
 
   override def serialize(sf: SimpleFeature): Array[Byte] = doWrite(sf)
 
-  override def serialize(i: Int, value: AnyRef): Array[Byte] = {
-    val output = getOutput()
-    writers(i)(output, value)
-    output.toBytes
-  }
-
   private val doWrite: (SimpleFeature) => Array[Byte] = if (options.withUserData) writeWithUserData else write
 
   private def write(sf: SimpleFeature): Array[Byte] = writeSf(sf).toBytes
