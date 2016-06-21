@@ -41,7 +41,7 @@ object IndexValueEncoder {
 
     if (sft.getSchemaVersion < 4) { // kryo encoding introduced in version 4
       OldIndexValueEncoder(sft, transform.getOrElse(indexSft))
-    } else if (sft.getSchemaVersion < 8) {
+    } else if (sft.getSchemaVersion < 9) {
       val encoder = new KryoFeatureSerializer(indexSft)
       val decoder = transform match {
         case None    => new KryoFeatureSerializer(indexSft)

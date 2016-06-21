@@ -111,7 +111,7 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
         (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), false, false)
       } else {
         val iters = KryoLazyFilterTransformIterator.configure(sft, filter.filter, hints).toSeq
-        (iters, queryPlanner.defaultKVsToFeatures(hints, SpatioTemporalTable), false, sft.nonPoints)
+        (iters, queryPlanner.kvsToFeatures(sft, hints.getReturnSft, SpatioTemporalTable), false, sft.nonPoints)
       }
     } else {
       // legacy iterators
@@ -127,7 +127,7 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       val kvs = if (hints.isBinQuery) {
         BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, hints, featureEncoding)
       } else {
-        queryPlanner.defaultKVsToFeatures(hints, SpatioTemporalTable)
+        queryPlanner.kvsToFeatures(sft, hints.getReturnSft, SpatioTemporalTable)
       }
       (iters, kvs, indexEntries, sft.nonPoints)
     }

@@ -97,10 +97,10 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z2Table.FULL_CF, false)
     } else if (hints.isMapAggregatingQuery) {
       val iter = KryoLazyMapAggregatingIterator.configure(sft, ecql, hints, sft.nonPoints)
-      (Seq(iter), queryPlanner.defaultKVsToFeatures(hints, Z2Table), Z2Table.FULL_CF, false)
+      (Seq(iter), queryPlanner.kvsToFeatures(sft, hints.getReturnSft, Z2Table), Z2Table.FULL_CF, false)
     } else {
       val iters = KryoLazyFilterTransformIterator.configure(sft, ecql, hints).toSeq
-      (iters, queryPlanner.defaultKVsToFeatures(hints, Z2Table), Z2Table.FULL_CF, sft.nonPoints)
+      (iters, queryPlanner.kvsToFeatures(sft, hints.getReturnSft, Z2Table), Z2Table.FULL_CF, sft.nonPoints)
     }
 
     val z2table = ds.getTableName(sft.getTypeName, Z2Table)

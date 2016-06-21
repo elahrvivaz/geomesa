@@ -190,23 +190,19 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
     Key.toPrintableString(k.getRow.getBytes, 0, k.getRow.getLength, k.getRow.getLength)
 
   // This function decodes/transforms that Iterator of Accumulo Key-Values into an Iterator of SimpleFeatures
-  def defaultKVsToFeatures(hints: Hints, table: GeoMesaTable): FeatureFunction =
-    kvsToFeatures(hints.getReturnSft, table)
-
-  // This function decodes/transforms that Iterator of Accumulo Key-Values into an Iterator of SimpleFeatures
-  def kvsToFeatures(sft: SimpleFeatureType, table: GeoMesaTable): FeatureFunction = {
+  def kvsToFeatures(sft: SimpleFeatureType, returnSft: SimpleFeatureType, table: GeoMesaTable): FeatureFunction = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
     // Perform a projecting decode of the simple feature
     if (sft.getSchemaVersion < 9) {
-      val deserializer = SimpleFeatureDeserializers(sft, serializationType)
+      val deserializer = SimpleFeatureDeserializers(returnSft, serializationType)
       (kv: Entry[Key, Value]) => {
         val sf = deserializer.deserialize(kv.getValue.get)
         applyVisibility(sf, kv.getKey)
         sf
       }
     } else {
-      val deserializer = SimpleFeatureDeserializers(sft, serializationType, SerializationOptions.withoutId)
       val getId = table.getIdFromRow(sft)
+      val deserializer = SimpleFeatureDeserializers(returnSft, serializationType, SerializationOptions.withoutId)
       (kv: Entry[Key, Value]) => {
         val sf = deserializer.deserialize(kv.getValue.get)
         sf.getIdentifier.asInstanceOf[FeatureIdImpl].setID(getId(kv.getKey.getRow))

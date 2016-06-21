@@ -8,7 +8,7 @@
 
 package org.locationtech.geomesa.accumulo.iterators
 
-import java.util.{Map => jMap, UUID}
+import java.util.{UUID, Map => jMap}
 
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.client.IteratorSetting
@@ -19,6 +19,7 @@ import org.locationtech.geomesa.accumulo.index.QueryPlanner.SFIter
 import org.locationtech.geomesa.accumulo.sumNumericValueMutableMaps
 import org.locationtech.geomesa.accumulo.util.CloseableIterator
 import org.locationtech.geomesa.features.ScalaSimpleFeature
+import org.locationtech.geomesa.features.SerializationOption.SerializationOptions
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes.AttributeSpecFactory
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, SimpleFeatureTypes}
@@ -38,10 +39,13 @@ class KryoLazyMapAggregatingIterator extends KryoLazyAggregatingIterator[mutable
   var featureToSerialize: SimpleFeature = null
 
   override def init(options: Map[String, String]): mutable.Map[AnyRef, Int] = {
+    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+
     val attributeName = options(MAP_ATTRIBUTE)
     mapAttribute = sft.indexOf(attributeName)
     val mapSft = SimpleFeatureTypes.createType("", createMapSft(sft, attributeName))
-    serializer = new KryoFeatureSerializer(mapSft)
+    val kryoOptions = if (sft.getSchemaVersion < 9) SerializationOptions.none else SerializationOptions.withoutId
+    serializer = new KryoFeatureSerializer(mapSft, kryoOptions)
     featureToSerialize = new ScalaSimpleFeature("", mapSft, Array(null, GeometryUtils.zeroPoint))
     mutable.Map.empty[AnyRef, Int]
   }

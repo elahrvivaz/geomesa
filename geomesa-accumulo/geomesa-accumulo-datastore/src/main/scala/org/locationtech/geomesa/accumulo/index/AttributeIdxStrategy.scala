@@ -88,7 +88,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLo
       val iter = KryoLazyFilterTransformIterator.configure(schema, ecql, transform, sampling)
       val iters = visibilityIter(schema) ++ iter.toSeq
       // need to use transform to convert key/values if it's defined
-      val kvsToFeatures = queryPlanner.kvsToFeatures(transform.map(_._2).getOrElse(schema), AttributeTable)
+      val kvsToFeatures = queryPlanner.kvsToFeatures(sft, transform.map(_._2).getOrElse(schema), AttributeTable)
       BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDupes)
     }
 
@@ -193,7 +193,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLo
     } else if (hints.isStatsIteratorQuery) {
       KryoLazyStatsIterator.kvsToFeatures(sft)
     } else {
-      queryPlanner.defaultKVsToFeatures(hints, RecordTable)
+      queryPlanner.kvsToFeatures(sft, hints.getReturnSft, RecordTable)
     }
 
     // function to join the attribute index scan results to the record table
@@ -351,7 +351,8 @@ object AttributeIdxStrategy extends StrategyProvider {
     import scala.collection.JavaConversions._
     val attributeIndex = sft.indexOf(attribute)
     val returnIndex = returnSft.indexOf(attribute)
-    val translateIndices = indexSft.getAttributeDescriptors.map(d => returnSft.indexOf(d.getLocalName)).zipWithIndex
+    val translateIndices =
+      indexSft.getAttributeDescriptors.map(d => returnSft.indexOf(d.getLocalName)).zipWithIndex.filter(_._1 != -1)
     // Perform a projecting decode of the simple feature
     if (sft.getSchemaVersion < 9) {
       val kryoFeature = new KryoFeatureSerializer(indexSft).getReusableFeature

@@ -75,7 +75,7 @@ class QueryPlannerTest extends Specification with Mockito with TestWithDataStore
         new SimpleEntry[Key, Value](key, value)
       }
 
-      val expectedResult = kvs.map(planner.defaultKVsToFeatures(query.getHints, RecordTable)).map(_.visibility)
+      val expectedResult = kvs.map(planner.kvsToFeatures(sft, sft, RecordTable)).map(_.visibility)
 
       expectedResult must haveSize(kvs.length)
       expectedResult mustEqual expectedVis

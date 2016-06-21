@@ -148,7 +148,7 @@ object KryoLazyAggregatingIterator extends LazyLogging {
                 filter: Option[Filter],
                 deduplicate: Boolean,
                 maxDuplicates: Option[Int]): Unit = {
-    is.addOption(SFT_OPT, SimpleFeatureTypes.encodeType(sft))
+    is.addOption(SFT_OPT, SimpleFeatureTypes.encodeType(sft, includeUserData = true))
     filter.foreach(f => is.addOption(CQL_OPT, ECQL.toCQL(f)))
     is.addOption(DUPE_OPT, deduplicate.toString)
     maxDuplicates.foreach(m => is.addOption(MAX_DUPE_OPT, m.toString))
