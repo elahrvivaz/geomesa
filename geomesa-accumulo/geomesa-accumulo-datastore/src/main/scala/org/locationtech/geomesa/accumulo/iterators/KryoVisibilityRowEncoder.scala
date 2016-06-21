@@ -61,22 +61,19 @@ class KryoVisibilityRowEncoder extends RowEncodingIterator {
       val cq = keys.get(i).getColumnQualifier
       val comma = cq.find(",")
       val indices = if (comma == -1) cq.getBytes.map(_.toInt) else cq.getBytes.drop(comma + 1).map(_.toInt)
+
       val bytes = values.get(i).get
 
       val offsetStart = readOffsets(bytes)
 
       // set the non-null values
-      var j = 0
-      while (j < offsets.length - 1) {
-        val endIndex = offsets.indexWhere(_ != -1, j)
+      indices.foreach { index =>
+        val endIndex = offsets.indexWhere(_ != -1, index + 1)
         val end = if (endIndex == -1) offsetStart else offsets(endIndex)
-        val length = end - offsets(j)
-        if (allValues(j) == null || KryoVisibilityRowEncoder.notNull(bytes, offsets(j), length, nullBytes(j))) {
-          val values = Array.ofDim[Byte](length)
-          System.arraycopy(bytes, offsets(j), values, 0, length)
-          allValues(j) = values
-        }
-        j += 1
+        val length = end - offsets(index)
+        val values = Array.ofDim[Byte](length)
+        System.arraycopy(bytes, offsets(index), values, 0, length)
+        allValues(index) = values
       }
 
       i += 1
@@ -106,10 +103,10 @@ class KryoVisibilityRowEncoder extends RowEncodingIterator {
     input.setPosition(1) // skip version
     val offsetStart = input.readInt()
     input.setPosition(offsetStart) // set to offsets start
-    var j = 0
-    while (j < offsets.length) {
-      offsets(j) = if (input.position < input.limit) input.readInt(true) else -1
-      j += 1
+    var i = 0
+    while (i < offsets.length) {
+      offsets(i) = if (input.position < input.limit) input.readInt(true) else -1
+      i += 1
     }
     offsetStart
   }
