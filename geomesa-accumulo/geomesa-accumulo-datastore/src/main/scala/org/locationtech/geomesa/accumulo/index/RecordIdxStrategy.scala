@@ -88,14 +88,14 @@ class RecordIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLoggi
       // optimized path when we know we're using kryo serialization
       val perAttributeIter = sft.getVisibilityLevel match {
         case VisibilityLevel.Feature   => Seq.empty
-        case VisibilityLevel.Attribute => Seq(KryoVisibilityRowEncoder.configure(sft, RecordTable))
+        case VisibilityLevel.Attribute => Seq(KryoVisibilityRowEncoder.configure(sft))
       }
       val (iters, kvsToFeatures) = if (hints.isBinQuery) {
         // use the server side aggregation
-        val iter = BinAggregatingIterator.configureDynamic(sft, filter.secondary, hints, deduplicate = false)
+        val iter = BinAggregatingIterator.configureDynamic(sft, RecordTable, filter.secondary, hints, deduplicate = false)
         (Seq(iter), BinAggregatingIterator.kvsToFeatures())
       } else if (hints.isStatsIteratorQuery) {
-        val iter = KryoLazyStatsIterator.configure(sft, filter.secondary, hints, deduplicate = false)
+        val iter = KryoLazyStatsIterator.configure(sft, RecordTable, filter.secondary, hints, deduplicate = false)
         (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft))
       } else {
         val iter = KryoLazyFilterTransformIterator.configure(sft, filter.secondary, hints)
@@ -109,7 +109,7 @@ class RecordIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLoggi
         Seq.empty
       }
       val kvsToFeatures = if (hints.isBinQuery) {
-        BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, hints, featureEncoding)
+        BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, RecordTable, hints, featureEncoding)
       } else {
         queryPlanner.kvsToFeatures(sft, hints.getReturnSft, RecordTable)
       }

@@ -80,7 +80,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLo
 
     def visibilityIter(schema: SimpleFeatureType): Seq[IteratorSetting] = sft.getVisibilityLevel match {
       case VisibilityLevel.Feature   => Seq.empty
-      case VisibilityLevel.Attribute => Seq(KryoVisibilityRowEncoder.configure(schema, AttributeTable))
+      case VisibilityLevel.Attribute => Seq(KryoVisibilityRowEncoder.configure(schema))
     }
 
     // query against the attribute table
@@ -95,7 +95,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLo
     if (hints.isBinQuery) {
       if (descriptor.getIndexCoverage() == IndexCoverage.FULL) {
         // can apply the bin aggregating iterator directly to the sft
-        val iter = BinAggregatingIterator.configureDynamic(sft, filter.secondary, hints, hasDupes)
+        val iter = BinAggregatingIterator.configureDynamic(sft, AttributeTable, filter.secondary, hints, hasDupes)
         val iters = visibilityIter(sft) :+ iter
         val kvsToFeatures = BinAggregatingIterator.kvsToFeatures()
         BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDupes)
@@ -105,7 +105,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLo
         if (indexSft.indexOf(hints.getBinTrackIdField) != -1 &&
             hints.getBinLabelField.forall(indexSft.indexOf(_) != -1) &&
             filter.secondary.forall(IteratorTrigger.supportsFilter(indexSft, _))) {
-          val iter = BinAggregatingIterator.configureDynamic(indexSft, filter.secondary, hints, hasDupes)
+          val iter = BinAggregatingIterator.configureDynamic(indexSft, AttributeTable, filter.secondary, hints, hasDupes)
           val iters = visibilityIter(indexSft) :+ iter
           val kvsToFeatures = BinAggregatingIterator.kvsToFeatures()
           BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDupes)
@@ -117,7 +117,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLo
     } else if (hints.isStatsIteratorQuery) {
       val kvsToFeatures = KryoLazyStatsIterator.kvsToFeatures(sft)
       if (descriptor.getIndexCoverage() == IndexCoverage.FULL) {
-        val iter = KryoLazyStatsIterator.configure(sft, filter.secondary, hints, hasDupes)
+        val iter = KryoLazyStatsIterator.configure(sft, AttributeTable, filter.secondary, hints, hasDupes)
         val iters = visibilityIter(sft) :+ iter
         BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDuplicates = false)
       } else {
@@ -125,7 +125,7 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLo
         val indexSft = IndexValueEncoder.getIndexSft(sft)
         if (Try(Stat(indexSft, hints.getStatsIteratorQuery)).isSuccess &&
             filter.secondary.forall(IteratorTrigger.supportsFilter(indexSft, _))) {
-          val iter = KryoLazyStatsIterator.configure(indexSft, filter.secondary, hints, hasDupes)
+          val iter = KryoLazyStatsIterator.configure(indexSft, AttributeTable, filter.secondary, hints, hasDupes)
           val iters = visibilityIter(indexSft) :+ iter
           BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDuplicates = false)
         } else {
@@ -177,19 +177,19 @@ class AttributeIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLo
 
     // apply any secondary filters or transforms against the record table
     val recordIter = if (hints.isStatsIteratorQuery) {
-      Seq(KryoLazyStatsIterator.configure(sft, ecqlFilter, hints, deduplicate = false))
+      Seq(KryoLazyStatsIterator.configure(sft, RecordTable, ecqlFilter, hints, deduplicate = false))
     } else {
       KryoLazyFilterTransformIterator.configure(sft, ecqlFilter, hints).toSeq
     }
     val visibilityIter = sft.getVisibilityLevel match {
       case VisibilityLevel.Feature   => Seq.empty
-      case VisibilityLevel.Attribute => Seq(KryoVisibilityRowEncoder.configure(sft, RecordTable))
+      case VisibilityLevel.Attribute => Seq(KryoVisibilityRowEncoder.configure(sft))
     }
     val recordIterators = visibilityIter ++ recordIter
 
     val kvsToFeatures = if (hints.isBinQuery) {
       // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
-      BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, hints, queryPlanner.ds.getFeatureEncoding(sft))
+      BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, RecordTable, hints, queryPlanner.ds.getFeatureEncoding(sft))
     } else if (hints.isStatsIteratorQuery) {
       KryoLazyStatsIterator.kvsToFeatures(sft)
     } else {

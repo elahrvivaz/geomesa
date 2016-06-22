@@ -95,8 +95,8 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       val envelope = hints.getDensityEnvelope.get
       val weight = hints.getDensityWeight
       val p = iteratorPriority_AnalysisIterator
-      val iter =
-        DensityIterator.configure(sft, featureEncoding, schema, filter.filter, envelope, width, height, weight, p)
+      val iter = DensityIterator.configure(sft, SpatioTemporalTable, featureEncoding, schema,
+        filter.filter, envelope, width, height, weight, p)
       (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), false, false)
     } else if (featureEncoding == SerializationType.KRYO &&
         // we have some special handling for bin line dates not implemented in the bin iter yet
@@ -104,10 +104,10 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       // TODO GEOMESA-822 add bin line dates to distributed bin aggregation
       if (hints.isBinQuery) {
         // use the server side aggregation
-        val iter = BinAggregatingIterator.configureDynamic(sft, filter.filter, hints, sft.nonPoints)
+        val iter = BinAggregatingIterator.configureDynamic(sft, SpatioTemporalTable, filter.filter, hints, sft.nonPoints)
         (Seq(iter), BinAggregatingIterator.kvsToFeatures(), false, false)
       } else if (hints.isStatsIteratorQuery) {
-        val iter = KryoLazyStatsIterator.configure(sft, filter.filter, hints, sft.nonPoints)
+        val iter = KryoLazyStatsIterator.configure(sft, SpatioTemporalTable, filter.filter, hints, sft.nonPoints)
         (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), false, false)
       } else {
         val iters = KryoLazyFilterTransformIterator.configure(sft, filter.filter, hints).toSeq
@@ -125,7 +125,7 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       }
       val iters = Seq(stiiIterCfg) ++ aggIterCfg
       val kvs = if (hints.isBinQuery) {
-        BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, hints, featureEncoding)
+        BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, SpatioTemporalTable, hints, featureEncoding)
       } else {
         queryPlanner.kvsToFeatures(sft, hints.getReturnSft, SpatioTemporalTable)
       }

@@ -100,11 +100,9 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
         if (filter.secondary.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
-          // TODO GEOMESA-1254 per-attribute vis + bins
-          val idOffset = Z3Table.getIdRowOffset(sft)
-          (Seq(BinAggregatingIterator.configurePrecomputed(sft, ecql, hints, idOffset, sft.nonPoints)), Z3Table.BIN_CF)
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, Z3Table, ecql, hints, sft.nonPoints)), Z3Table.BIN_CF)
         } else {
-          val iter = BinAggregatingIterator.configureDynamic(sft, ecql, hints, sft.nonPoints)
+          val iter = BinAggregatingIterator.configureDynamic(sft, Z3Table, ecql, hints, sft.nonPoints)
           (Seq(iter), Z3Table.FULL_CF)
         }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf, false)
@@ -112,10 +110,10 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       val iter = Z3DensityIterator.configure(sft, ecql, hints)
       (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z3Table.FULL_CF, false)
     } else if (hints.isStatsIteratorQuery) {
-      val iter = KryoLazyStatsIterator.configure(sft, ecql, hints, sft.nonPoints)
+      val iter = KryoLazyStatsIterator.configure(sft, Z3Table, ecql, hints, sft.nonPoints)
       (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z3Table.FULL_CF, false)
     } else if (hints.isMapAggregatingQuery) {
-      val iter = KryoLazyMapAggregatingIterator.configure(sft, ecql, hints, sft.nonPoints)
+      val iter = KryoLazyMapAggregatingIterator.configure(sft, Z3Table, ecql, hints, sft.nonPoints)
       (Seq(iter), queryPlanner.kvsToFeatures(sft, hints.getReturnSft, Z3Table), Z3Table.FULL_CF, false)
     } else {
       val iters = KryoLazyFilterTransformIterator.configure(sft, ecql, hints).toSeq
@@ -177,7 +175,7 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
 
     val perAttributeIter = sft.getVisibilityLevel match {
       case VisibilityLevel.Feature   => Seq.empty
-      case VisibilityLevel.Attribute => Seq(KryoVisibilityRowEncoder.configure(sft, Z3Table))
+      case VisibilityLevel.Attribute => Seq(KryoVisibilityRowEncoder.configure(sft))
     }
     val cf = if (perAttributeIter.isEmpty) colFamily else GeoMesaTable.AttributeColumnFamily
 

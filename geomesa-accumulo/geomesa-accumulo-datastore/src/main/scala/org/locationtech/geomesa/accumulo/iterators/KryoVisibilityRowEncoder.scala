@@ -13,7 +13,6 @@ import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.accumulo.core.iterators.user.RowEncodingIterator
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
-import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.features.serialization.CacheKeyGenerator
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -129,14 +128,12 @@ class KryoVisibilityRowEncoder extends RowEncodingIterator {
 object KryoVisibilityRowEncoder {
 
   val SftOpt   = "sft"
-  val TableOpt = "table"
 
   val DefaultPriority = 21 // needs to be first thing that runs after the versioning iterator at 20
 
-  def configure(sft: SimpleFeatureType, table: GeoMesaTable, priority: Int = DefaultPriority): IteratorSetting = {
+  def configure(sft: SimpleFeatureType, priority: Int = DefaultPriority): IteratorSetting = {
     val is = new IteratorSetting(priority, "feature-merge-iter", classOf[KryoVisibilityRowEncoder])
     is.addOption(SftOpt, SimpleFeatureTypes.encodeType(sft, includeUserData = true)) // need user data for id calc
-    is.addOption(TableOpt, table.getClass.getSimpleName)
     is
   }
 

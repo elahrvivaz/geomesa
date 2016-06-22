@@ -74,7 +74,7 @@ class AttributeIdxStrategyV5(val filter: QueryFilter) extends Strategy with Lazy
 
     val kvsToFeatures = if (hints.isBinQuery) {
       // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
-      BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, hints, encoding)
+      BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, AttributeTableV5, hints, encoding)
     } else {
       queryPlanner.kvsToFeatures(sft, hints.getReturnSft, AttributeTableV5)
     }

@@ -14,6 +14,7 @@ import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.client.IteratorSetting
 import org.geotools.data.Query
 import org.geotools.factory.Hints
+import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanner.SFIter
 import org.locationtech.geomesa.accumulo.sumNumericValueMutableMaps
@@ -70,13 +71,14 @@ object KryoLazyMapAggregatingIterator extends LazyLogging {
    * Creates an iterator config for the z3 density iterator
    */
   def configure(sft: SimpleFeatureType,
+                table: GeoMesaTable,
                 filter: Option[Filter],
                 hints: Hints,
                 deduplicate: Boolean,
                 priority: Int = DEFAULT_PRIORITY): IteratorSetting = {
     val mapAttribute = hints.getMapAggregatingAttribute
     val is = new IteratorSetting(priority, "map-aggregate-iter", classOf[KryoLazyMapAggregatingIterator])
-    KryoLazyAggregatingIterator.configure(is, sft, filter, deduplicate, None)
+    KryoLazyAggregatingIterator.configure(is, sft, table, filter, deduplicate, None)
     is.addOption(MAP_ATTRIBUTE, mapAttribute)
     is
   }
