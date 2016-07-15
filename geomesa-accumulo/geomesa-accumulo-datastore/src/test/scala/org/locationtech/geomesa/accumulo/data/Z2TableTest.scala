@@ -20,6 +20,7 @@ class Z2TableTest extends Specification {
 
   "Z2Table" should {
     "decompose geometries" in {
+      println
       val geom = WKTUtils.read("POLYGON ((42.3 23.9, 41.7 20.0, 48.9 23.0, 42.3 23.9))")
       val zs = Z2Table.zBox(geom).map(z => Longs.toByteArray(z).take(Z2Table.GEOM_Z_NUM_BYTES)).toSeq
       val ranges = Z2SFC.ranges((43.0, 43.0), (23.0, 23.0), 8 * Z2Table.GEOM_Z_NUM_BYTES).map { r =>
@@ -27,12 +28,12 @@ class Z2TableTest extends Specification {
         val endBytes = Longs.toByteArray(r.upper).take(Z2Table.GEOM_Z_NUM_BYTES)
         (startBytes, endBytes)
       }
-      println
-      println("ZS " + zs.length)
-      zs.map(toString).sorted.foreach(println)
-      println("RANGE")
-      println(ranges.headOption.map(r => (toString(r._1), toString(r._2))).get)
+//      println("ZS " + zs.length)
+//      zs.map(toString).sorted.foreach(println)
+//      println("RANGE")
+//      println(ranges.headOption.map(r => (toString(r._1), toString(r._2))).get)
       zs.map(toString) must contain(===(toString(ranges.head._1))).atLeastOnce
+//      ok
     }
   }
 }
