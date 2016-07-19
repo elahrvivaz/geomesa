@@ -19,19 +19,22 @@ class XZ2SFC(g: Short) {
   // require(g < 13, "precision > 12 is not supported by Ints")
 
   def index(xmin: Double, ymin: Double, xmax: Double, ymax: Double): Long = {
-    val xlo = normalizeLon(xmin)
-    val xhi = normalizeLon(xmax)
-    val ylo = normalizeLat(ymin)
-    val yhi = normalizeLat(ymax)
+    validateBounds(xmin, ymin, xmax, ymax)
+    val bounds = Bounds(normalizeLon(xmin),  normalizeLat(ymin), normalizeLon(xmax),normalizeLat(ymax))
+    index(bounds)
+  }
 
-    val w = xhi - xlo
-    val h = yhi - ylo
+  private def index(bounds: Bounds): Long = {
+    val w = bounds.xmax - bounds.xmin
+    val h = bounds.ymax - bounds.ymin
 
     val l1 = math.floor(math.log(math.max(w, h)) / math.log(0.5)).toInt
 
-    val l = if (math.floor((xlo / l1) + 2) * l1 <= xlo + w || math.floor((ylo / l1) + 2) * l1 <= ylo + h) l1 else l1 + 1
+    def predicate(value: Double, wh: Double): Boolean = math.floor((value / l1) + 2) * l1 <= value + wh
 
-    sequenceCode(xlo, ylo, l)
+    val l = if (predicate(bounds.xmin, w) && predicate(bounds.ymin, h)) l1 else l1 + 1
+
+    sequenceCode(bounds.xmin, bounds.ymin, l)
   }
 
   // normalize to [0, 1]
@@ -122,8 +125,11 @@ class XZ2SFC(g: Short) {
     def checkValue(quad: Bounds, level: Short): Unit = {
       if (isContained(quad)) {
         // whole range matches, happy day
+        // TODO these values aren't right - we need to determine all sequence codes that start with this quadrant sequence
+        // there should be this many values starting with this prefix: (math.pow(4, g - level).toLong - 1L) / 3L
+        // so take the minimum sequnce code and add this?
         val min = sequenceCode(quad.xmin, quad.ymin, level)
-        val max = sequenceCode(quad.xmax, quad.ymax, level)
+        val max = min + (math.pow(4, g - level).toLong - 1L) / 3L
         ranges.add(IndexRange(min, max, contained = true))
       } else if (isOverlapped(quad)) {
         // some portion of this range is excluded
@@ -167,7 +173,7 @@ class XZ2SFC(g: Short) {
     // TODO we could use the algorithm from the XZ paper instead
     // we've got all our ranges - now reduce them down by merging overlapping values
     ranges.sort(IndexRange.IndexRangeIsOrdered)
-println(ranges)
+
     var current = ranges.get(0) // note: should always be at least one range
     val result = ArrayBuffer.empty[IndexRange]
     var i = 1
@@ -215,7 +221,9 @@ println(ranges)
 }
 
 object XZ2SFC {
+
   val DefaultRecurse = 7
+
   // indicator that we have searched a full level of the quad/oct tree
   private val LevelTerminator = Bounds(-1.0, -1.0, -1.0, -1.0)
 
@@ -232,7 +240,6 @@ object XZ2SFC {
       val c1 = copy(xmin = xCenter, ymax = yCenter)
       val c2 = copy(xmax = xCenter, ymin = yCenter)
       val c3 = copy(xmin = xCenter, ymin = yCenter)
-println((c0, c1, c2, c3))
       Seq(c0, c1, c2, c3)
     }
   }
