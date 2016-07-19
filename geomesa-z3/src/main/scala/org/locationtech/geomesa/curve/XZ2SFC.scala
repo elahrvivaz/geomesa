@@ -32,9 +32,11 @@ class XZ2SFC(g: Short) {
 
     def predicate(value: Double, wh: Double): Boolean = math.floor((value / l1) + 2) * l1 <= value + wh
 
-    val l = if (predicate(bounds.xmin, w) && predicate(bounds.ymin, h)) l1 else l1 + 1
+    val xl = if (predicate(bounds.xmin, w)) 0 else 1
+    val yl = if (predicate(bounds.ymin, h)) 0 else 1
+    val length = l1 + xl + yl
 
-    sequenceCode(bounds.xmin, bounds.ymin, l)
+    sequenceCode(bounds.xmin, bounds.ymin, length)
   }
 
   // normalize to [0, 1]
@@ -125,7 +127,6 @@ class XZ2SFC(g: Short) {
     def checkValue(quad: Bounds, level: Short): Unit = {
       if (isContained(quad)) {
         // whole range matches, happy day
-        // TODO these values aren't right - we need to determine all sequence codes that start with this quadrant sequence
         // there should be this many values starting with this prefix: (math.pow(4, g - level).toLong - 1L) / 3L
         // so take the minimum sequnce code and add this?
         val min = sequenceCode(quad.xmin, quad.ymin, level)
@@ -160,12 +161,12 @@ class XZ2SFC(g: Short) {
 
     // bottom out and get all the ranges that partially overlapped but we didn't fully process
     while (!remaining.isEmpty) {
-      val next = remaining.poll
-      if (next.eq(LevelTerminator)) {
+      val quad = remaining.poll
+      if (quad.eq(LevelTerminator)) {
         level = (level + 1).toShort
       } else {
-        val min = sequenceCode(next.xmin, next.ymin, level)
-        val max = sequenceCode(next.xmax, next.ymax, level)
+        val min = sequenceCode(quad.xmin, quad.ymin, level)
+        val max = min + (math.pow(4, g - level).toLong - 1L) / 3L
         ranges.add(IndexRange(min, max, contained = false))
       }
     }
