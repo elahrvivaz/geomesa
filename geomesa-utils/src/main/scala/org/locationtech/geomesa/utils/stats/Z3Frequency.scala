@@ -42,7 +42,6 @@ class Z3Frequency(val geomIndex: Int,
   private [stats] val sketches = scala.collection.mutable.Map.empty[Short, CountMinSketch]
   private [stats] def newSketch: CountMinSketch = new CountMinSketch(eps, confidence, Frequency.Seed)
 
-
   private def toKey(geom: Geometry, dtg: Date): (Short, Long) = {
     val BinnedTime(b, o) = timeToBin(dtg.getTime)
     val centroid = geom.getCentroid
