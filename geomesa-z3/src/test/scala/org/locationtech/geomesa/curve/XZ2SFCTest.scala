@@ -24,7 +24,6 @@ class XZ2SFCTest extends Specification {
     "index polygons and query them" >> {
       val poly = sfc.index(10, 10, 12, 12)
       println(poly)
-      val matches = (poly, poly).zip(beLessThanOrEqualTo[Long], beGreaterThanOrEqualTo[Long])
 
       val containing = Seq(
         (9.0, 9.0, 13.0, 13.0),
@@ -45,14 +44,58 @@ class XZ2SFCTest extends Specification {
         (12.5, 12.5, 13.5, 13.5),
         (20.0, 20.0, 180.0, 90.0)
       )
-      forall(/*containing ++ */overlapping) { bbox =>
+      forall(containing ++ overlapping) { bbox =>
         val ranges = sfc.ranges(Seq(bbox)).map(r => (r.lower, r.upper))
-        ranges must contain(matches)
+        println(bbox + " " + ranges.length)
+        val matches = ranges.exists(r => r._1 <= poly && r._2 >= poly)
+        if (!matches) {
+          println(s"$bbox - no match")
+          ranges.filter(_._1.toString.matches("^1684[01].*")).foreach(println)
+        }
+        matches must beTrue
       }
       forall(disjoint) { bbox =>
         val ranges = sfc.ranges(Seq(bbox)).map(r => (r.lower, r.upper))
-        ranges must not(contain(matches))
+        val matches = ranges.exists(r => r._1 <= poly && r._2 >= poly)
+        if (matches) {
+          println(s"$bbox - invalid match")
+        }
+        matches must beFalse
       }
     }
+
+//    "index points and query them" >> {
+//      val poly = sfc.index(11, 11, 11, 11)
+//      println(poly)
+//      val matches = (poly, poly).zip(beLessThanOrEqualTo[Long], beGreaterThanOrEqualTo[Long])
+//
+//      val containing = Seq(
+//        (9.0, 9.0, 13.0, 13.0),
+//        (-180.0, -90.0, 180.0, 90.0),
+//        (0.0, 0.0, 180.0, 90.0),
+//        (0.0, 0.0, 20.0, 20.0)
+//      )
+//      val overlapping = Seq(
+//        (11.0, 11.0, 13.0, 13.0),
+//        (9.0, 9.0, 11.0, 11.0),
+//        (10.5, 10.5, 11.5, 11.5),
+//        (11.0, 11.0, 11.0, 11.0)
+//      )
+//      val disjoint = Seq(
+//        (-180.0, -90.0, 8.0, 8.0),
+//        (0.0, 0.0, 8.0, 8.0),
+//        (9.0, 9.0, 9.5, 9.5),
+//        (12.5, 12.5, 13.5, 13.5),
+//        (20.0, 20.0, 180.0, 90.0)
+//      )
+//      forall(containing ++ overlapping) { bbox =>
+//        val ranges = sfc.ranges(Seq(bbox)).map(r => (r.lower, r.upper))
+//        ranges must contain(matches)
+//      }
+//      forall(disjoint) { bbox =>
+//        val ranges = sfc.ranges(Seq(bbox)).map(r => (r.lower, r.upper))
+//        ranges must not(contain(matches))
+//      }
+//    }
   }
 }

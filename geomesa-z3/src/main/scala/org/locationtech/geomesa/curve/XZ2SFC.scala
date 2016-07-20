@@ -20,7 +20,7 @@ class XZ2SFC(g: Short) {
 
   def index(xmin: Double, ymin: Double, xmax: Double, ymax: Double): Long = {
     validateBounds(xmin, ymin, xmax, ymax)
-    val bounds = Bounds(normalizeLon(xmin),  normalizeLat(ymin), normalizeLon(xmax),normalizeLat(ymax))
+    val bounds = Bounds(normalizeLon(xmin),  normalizeLat(ymin), normalizeLon(xmax), normalizeLat(ymax))
     index(bounds)
   }
 
@@ -28,13 +28,11 @@ class XZ2SFC(g: Short) {
     val w = bounds.xmax - bounds.xmin
     val h = bounds.ymax - bounds.ymin
 
-    val l1 = math.floor(math.log(math.max(w, h)) / math.log(0.5)).toInt
+    val l1 = math.min(g, math.floor(math.log(math.max(w, h)) / math.log(0.5)).toInt)
 
     def predicate(value: Double, wh: Double): Boolean = math.floor((value / l1) + 2) * l1 <= value + wh
 
-    val xl = if (predicate(bounds.xmin, w)) 0 else 1
-    val yl = if (predicate(bounds.ymin, h)) 0 else 1
-    val length = l1 + xl + yl
+    val length = if (predicate(bounds.xmin, w) && predicate(bounds.ymin, h)) l1 else l1 + 1
 
     sequenceCode(bounds.xmin, bounds.ymin, length)
   }
@@ -56,18 +54,19 @@ class XZ2SFC(g: Short) {
     var xmax = 1.0
     var ymax = 1.0
 
-    var cs = 0L
+    var cs = 1L
 
     var i = 0
     while (i < length) {
       val xCenter = (xmin + xmax) / 2.0
       val yCenter = (ymin + ymax) / 2.0
       (x < xCenter, y < yCenter) match {
-        case (true,  true)  => cs +=                                              1L; xmax = xCenter; ymax = yCenter
-        case (false, true)  => cs +=      (math.pow(4, g - i).toLong - 1L) / 3L + 1L; xmin = xCenter; ymax = yCenter
-        case (true,  false) => cs += 2L * (math.pow(4, g - i).toLong - 1L) / 3L + 1L; xmax = xCenter; ymin = yCenter
-        case (false, false) => cs += 3L * (math.pow(4, g - i).toLong - 1L) / 3L + 1L; xmin = xCenter; ymin = yCenter
+        case (true,  true)  => /* cs += 0L                                    */ xmax = xCenter; ymax = yCenter
+        case (false, true)  => cs += 1L * (math.pow(4, g - i).toLong - 1L) / 3L; xmin = xCenter; ymax = yCenter
+        case (true,  false) => cs += 2L * (math.pow(4, g - i).toLong - 1L) / 3L; xmax = xCenter; ymin = yCenter
+        case (false, false) => cs += 3L * (math.pow(4, g - i).toLong - 1L) / 3L; xmin = xCenter; ymin = yCenter
       }
+      require((math.pow(4, g - i).toLong - 1L) % 3L == 0)
       i += 1
     }
 
@@ -130,7 +129,7 @@ class XZ2SFC(g: Short) {
         // there should be this many values starting with this prefix: (math.pow(4, g - level).toLong - 1L) / 3L
         // so take the minimum sequnce code and add this?
         val min = sequenceCode(quad.xmin, quad.ymin, level)
-        val max = min + (math.pow(4, g - level).toLong - 1L) / 3L
+        val max = min + countForLevel(level)
         ranges.add(IndexRange(min, max, contained = true))
       } else if (isOverlapped(quad)) {
         // some portion of this range is excluded
@@ -140,11 +139,11 @@ class XZ2SFC(g: Short) {
     }
 
     // initial level
-    Bounds(0.0, 0.0, 1.0, 1.0).children.foreach(remaining.add)
+    remaining.add(Bounds(0.0, 0.0, 1.0, 1.0))
     remaining.add(LevelTerminator)
 
     // level of recursion
-    var level: Short = 1
+    var level: Short = 0
 
     while (level <= recurseStop && !remaining.isEmpty && ranges.size < rangeStop) {
       val next = remaining.poll
@@ -166,7 +165,7 @@ class XZ2SFC(g: Short) {
         level = (level + 1).toShort
       } else {
         val min = sequenceCode(quad.xmin, quad.ymin, level)
-        val max = min + (math.pow(4, g - level).toLong - 1L) / 3L
+        val max = min + countForLevel(level)
         ranges.add(IndexRange(min, max, contained = false))
       }
     }
@@ -196,6 +195,8 @@ class XZ2SFC(g: Short) {
     result
   }
 
+  private def countForLevel(level: Short): Long = (math.pow(4, g - level).toLong - 1L) / 3L
+
 //  private def quadrantSequence(x: Double, y: Double, length: Int): Array[Short] = {
 //    var xmin = 0.0
 //    var xmax = 360.0
@@ -223,7 +224,7 @@ class XZ2SFC(g: Short) {
 
 object XZ2SFC {
 
-  val DefaultRecurse = 7
+  val DefaultRecurse = 10
 
   // indicator that we have searched a full level of the quad/oct tree
   private val LevelTerminator = Bounds(-1.0, -1.0, -1.0, -1.0)
