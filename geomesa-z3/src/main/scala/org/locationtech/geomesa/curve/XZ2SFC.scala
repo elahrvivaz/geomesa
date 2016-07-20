@@ -126,24 +126,31 @@ class XZ2SFC(g: Short) {
     def checkValue(quad: Bounds, level: Short): Unit = {
       if (isContained(quad)) {
         // whole range matches, happy day
-        // there should be this many values starting with this prefix: (math.pow(4, g - level).toLong - 1L) / 3L
-        // so take the minimum sequnce code and add this?
-        val min = sequenceCode(quad.xmin, quad.ymin, level)
-        val max = min + countForLevel(level)
+        val (min, max) = sequenceInterval(quad.xmin, quad.ymin, level, partial = false)
         ranges.add(IndexRange(min, max, contained = true))
       } else if (isOverlapped(quad)) {
         // some portion of this range is excluded
-        // queue up each sub-range for processing
+        // add the partial match and queue up each sub-range for processing
+        val (min, max) = sequenceInterval(quad.xmin, quad.ymin, level, partial = true)
+        ranges.add(IndexRange(min, max, contained = false))
         quad.children.foreach(remaining.add)
       }
     }
 
+    def sequenceInterval(x: Double, y: Double, level: Short, partial: Boolean): (Long, Long) = {
+      val min = sequenceCode(x, y, level)
+      // there should be this many values starting with this prefix: (math.pow(4, g - level + 1).toLong - 1L) / 3L
+      // so take the minimum sequnce code and add this?
+      val max = if (partial) { min } else { min + (math.pow(4, g - level + 1).toLong - 1L) / 3L }
+      (min, max)
+    }
+
     // initial level
-    remaining.add(Bounds(0.0, 0.0, 1.0, 1.0))
+    Bounds(0.0, 0.0, 1.0, 1.0).children.foreach(remaining.add)
     remaining.add(LevelTerminator)
 
     // level of recursion
-    var level: Short = 0
+    var level: Short = 1
 
     while (level <= recurseStop && !remaining.isEmpty && ranges.size < rangeStop) {
       val next = remaining.poll
@@ -164,8 +171,7 @@ class XZ2SFC(g: Short) {
       if (quad.eq(LevelTerminator)) {
         level = (level + 1).toShort
       } else {
-        val min = sequenceCode(quad.xmin, quad.ymin, level)
-        val max = min + countForLevel(level)
+        val (min, max) = sequenceInterval(quad.xmin, quad.ymin, level, partial = false)
         ranges.add(IndexRange(min, max, contained = false))
       }
     }
@@ -194,32 +200,6 @@ class XZ2SFC(g: Short) {
 
     result
   }
-
-  private def countForLevel(level: Short): Long = (math.pow(4, g - level).toLong - 1L) / 3L
-
-//  private def quadrantSequence(x: Double, y: Double, length: Int): Array[Short] = {
-//    var xmin = 0.0
-//    var xmax = 360.0
-//    var ymin = 0.0
-//    var ymax = 180.0
-//
-//    val result = Array.ofDim[Short](length)
-//
-//    var i = 0
-//    while (i < length) {
-//      val xCenter = xmax - xmin
-//      val yCenter = ymax - ymin
-//      (x < xCenter, y < yCenter) match {
-//        case (true, true)   => result(i) = 0; xmax = xCenter; ymax = yCenter
-//        case (false, true)  => result(i) = 1; xmin = xCenter; ymax = yCenter
-//        case (true, false)  => result(i) = 2; xmax = xCenter; ymin = yCenter
-//        case (false, false) => result(i) = 3; xmin = xCenter; ymin = yCenter
-//      }
-//      i += 1
-//    }
-//
-//    result
-//  }
 }
 
 object XZ2SFC {
