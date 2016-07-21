@@ -201,7 +201,7 @@ class XZ2SFC(g: Short) {
     // level of recursion
     var level: Short = 1
 
-    while (level <= g && !remaining.isEmpty && ranges.size < rangeStop) {
+    while (level < g && !remaining.isEmpty && ranges.size < rangeStop) {
       val next = remaining.poll
       if (next.eq(LevelTerminator)) {
         // we've fully processed a level, increment our state

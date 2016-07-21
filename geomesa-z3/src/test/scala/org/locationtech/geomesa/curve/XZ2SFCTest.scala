@@ -17,7 +17,7 @@ import scala.io.Source
 @RunWith(classOf[JUnitRunner])
 class XZ2SFCTest extends Specification {
 
-  val sfc = new XZ2SFC(6)
+  val sfc = new XZ2SFC(12)
 
   "XZ2" should {
     "index polygons and query them" >> {
@@ -35,6 +35,13 @@ class XZ2SFCTest extends Specification {
         (10.5, 10.5, 11.5, 11.5),
         (11.0, 11.0, 11.0, 11.0)
       )
+      // note: in general, some disjoint ranges will match due to false positives
+      val disjoint = Seq(
+        (-180.0, -90.0, 8.0, 8.0),
+        (0.0, 0.0, 8.0, 8.0),
+        (9.0, 9.0, 9.5, 9.5),
+        (20.0, 20.0, 180.0, 90.0)
+      )
       forall(containing ++ overlapping) { bbox =>
         val ranges = sfc.ranges(Seq(bbox)).map(r => (r.lower, r.upper))
         val matches = ranges.exists(r => r._1 <= poly && r._2 >= poly)
@@ -42,6 +49,14 @@ class XZ2SFCTest extends Specification {
           println(s"$bbox - no match")
         }
         matches must beTrue
+      }
+      forall(disjoint) { bbox =>
+        val ranges = sfc.ranges(Seq(bbox)).map(r => (r.lower, r.upper))
+        val matches = ranges.exists(r => r._1 <= poly && r._2 >= poly)
+        if (matches) {
+          println(s"$bbox - invalid match")
+        }
+        matches must beFalse
       }
     }
 
@@ -60,6 +75,14 @@ class XZ2SFCTest extends Specification {
         (10.5, 10.5, 11.5, 11.5),
         (11.0, 11.0, 11.0, 11.0)
       )
+      // note: in general, some disjoint ranges will match due to false positives
+      val disjoint = Seq(
+        (-180.0, -90.0, 8.0, 8.0),
+        (0.0, 0.0, 8.0, 8.0),
+        (9.0, 9.0, 9.5, 9.5),
+        (12.5, 12.5, 13.5, 13.5),
+        (20.0, 20.0, 180.0, 90.0)
+      )
       forall(containing ++ overlapping) { bbox =>
         val ranges = sfc.ranges(Seq(bbox)).map(r => (r.lower, r.upper))
         val matches = ranges.exists(r => r._1 <= poly && r._2 >= poly)
@@ -67,6 +90,14 @@ class XZ2SFCTest extends Specification {
           println(s"$bbox - no match")
         }
         matches must beTrue
+      }
+      forall(disjoint) { bbox =>
+        val ranges = sfc.ranges(Seq(bbox)).map(r => (r.lower, r.upper))
+        val matches = ranges.exists(r => r._1 <= poly && r._2 >= poly)
+        if (matches) {
+          println(s"$bbox - invalid match")
+        }
+        matches must beFalse
       }
     }
 
@@ -84,7 +115,7 @@ class XZ2SFCTest extends Specification {
         source.close()
       }
 
-      val ranges = sfc.ranges(Seq((45.0, 23.0, 48.0, 27.0)))
+      val ranges = sfc.ranges(45.0, 23.0, 48.0, 27.0)
       forall(geoms) { geom =>
         val index = sfc.index(geom)
         val matches = ranges.exists(r => r.lower <= index && r.upper >= index)
