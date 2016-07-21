@@ -308,8 +308,8 @@ class XZ2SFC(g: Short) {
 object XZ2SFC {
 
   val QueryMinX = -180.0
-  val QueryMaxX = 180.0
   val QueryMinY = -90.0
+  val QueryMaxX = 180.0
   val QueryMaxY = 90.0
 
   private val QueryRangeX = QueryMaxX - QueryMinX
