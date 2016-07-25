@@ -18,6 +18,7 @@ import com.typesafe.scalalogging.LazyLogging
 import com.vividsolutions.jts.geom.Coordinate
 import de.topobyte.osm4j.core.model.iface._
 import de.topobyte.osm4j.core.model.impl.Node
+import de.topobyte.osm4j.pbf.seq.PbfIterator
 import de.topobyte.osm4j.xml.dynsax.OsmXmlIterator
 import org.geotools.geometry.jts.JTSFactoryFinder
 import org.locationtech.geomesa.convert.Transformers.{EvaluationContext, Expr}
@@ -31,6 +32,7 @@ class OsmWaysConverter(val targetSFT: SimpleFeatureType,
                        val inputFields: IndexedSeq[Field],
                        val userDataBuilder: Map[String, Expr],
                        val validating: Boolean,
+                       val pbf: Boolean,
                        val needsMetadata: Boolean) extends ToSimpleFeatureConverter[OsmWay] with LazyLogging {
 
   private def gf = JTSFactoryFinder.getGeometryFactory
@@ -47,6 +49,7 @@ class OsmWaysConverter(val targetSFT: SimpleFeatureType,
   val insertStatement = connection.prepareStatement("INSERT INTO nodes(id, lon, lat) VALUES (?, ?, ?);")
 
   override def fromInputType(i: OsmWay): Seq[Array[Any]] = {
+    // TODO some ways are marked as 'area' and should be polygons?
     // note: nodes may occur more than once in the way
     val nodeIds = Seq.range(0, i.getNumberOfNodes).map(i.getNodeId)
     val selected = selectNodes(nodeIds)
@@ -65,7 +68,7 @@ class OsmWaysConverter(val targetSFT: SimpleFeatureType,
   }
 
   override def process(is: InputStream, ec: EvaluationContext = createEvaluationContext()): Iterator[SimpleFeature] = {
-    val iterator = new OsmXmlIterator(is, needsMetadata) // TODO handle PBF else new PbfIterator(is, needsMetadata)
+    val iterator = if (pbf) new PbfIterator(is, needsMetadata) else new OsmXmlIterator(is, needsMetadata)
     def nextElement = if (iterator.hasNext) iterator.next else null
     var element = nextElement
     // first read in all the elements and store them for later lookup
@@ -144,8 +147,9 @@ class OsmWaysConverterFactory extends AbstractSimpleFeatureConverterFactory[OsmW
                                         fields: IndexedSeq[Field],
                                         userDataBuilder: Map[String, Expr],
                                         validating: Boolean): SimpleFeatureConverter[OsmWay] = {
+    val pbf = if (conf.hasPath("format")) conf.getString("format").toLowerCase.trim.equals("pbf") else false
     val needsMetadata = fields.exists { case OsmField(_, tag, _) => OsmField.requiresMetadata(tag); case _ => false }
-    new OsmWaysConverter(sft, idBuilder, fields, userDataBuilder, validating, needsMetadata)
+    new OsmWaysConverter(sft, idBuilder, fields, userDataBuilder, validating, pbf, needsMetadata)
   }
 
   override protected def buildField(field: Config): Field = {

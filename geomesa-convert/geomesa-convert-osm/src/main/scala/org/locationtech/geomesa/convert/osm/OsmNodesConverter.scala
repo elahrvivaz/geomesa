@@ -14,6 +14,7 @@ import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
 import com.vividsolutions.jts.geom.Coordinate
 import de.topobyte.osm4j.core.model.iface._
+import de.topobyte.osm4j.pbf.seq.PbfIterator
 import de.topobyte.osm4j.xml.dynsax.OsmXmlIterator
 import org.geotools.geometry.jts.JTSFactoryFinder
 import org.locationtech.geomesa.convert.Transformers.{EvaluationContext, Expr}
@@ -27,6 +28,7 @@ class OsmNodesConverter(val targetSFT: SimpleFeatureType,
                         val inputFields: IndexedSeq[Field],
                         val userDataBuilder: Map[String, Expr],
                         val validating: Boolean,
+                        val pbf: Boolean,
                         val needsMetadata: Boolean) extends ToSimpleFeatureConverter[OsmNode] with LazyLogging {
 
   private def gf = JTSFactoryFinder.getGeometryFactory
@@ -36,7 +38,7 @@ class OsmNodesConverter(val targetSFT: SimpleFeatureType,
     Seq(toArray(i, gf.createPoint(new Coordinate(i.getLongitude, i.getLatitude))))
 
   override def process(is: InputStream, ec: EvaluationContext = createEvaluationContext()): Iterator[SimpleFeature] = {
-    val iterator = new OsmXmlIterator(is, needsMetadata) // TODO figure out if input is PBF - else new PbfIterator(is, metadata)
+    val iterator = if (pbf) new PbfIterator(is, needsMetadata) else new OsmXmlIterator(is, needsMetadata)
     val entities = new Iterator[OsmNode] {
       var element = if (iterator.hasNext) iterator.next else null
       // nodes are first in the file, so we can stop when we hit another element type
@@ -61,8 +63,9 @@ class OsmNodesConverterFactory extends AbstractSimpleFeatureConverterFactory[Osm
                                         fields: IndexedSeq[Field],
                                         userDataBuilder: Map[String, Expr],
                                         validating: Boolean): SimpleFeatureConverter[OsmNode] = {
+    val pbf = if (conf.hasPath("format")) conf.getString("format").toLowerCase.trim.equals("pbf") else false
     val needsMetadata = fields.exists { case OsmField(_, tag, _) => OsmField.requiresMetadata(tag); case _ => false }
-    new OsmNodesConverter(sft, idBuilder, fields, userDataBuilder, validating, needsMetadata)
+    new OsmNodesConverter(sft, idBuilder, fields, userDataBuilder, validating, pbf, needsMetadata)
   }
 
   override protected def buildField(field: Config): Field = {

@@ -53,6 +53,7 @@ class OsmWaysConverterTest extends Specification {
         """
           | {
           |   type         = "osm-ways"
+          |   format       = "xml" // or pbf
           |   id-field     = "$id"
           |   fields = [
           |     { name = "id", attribute = "id", transform = "toString($0)" }
@@ -81,6 +82,7 @@ class OsmWaysConverterTest extends Specification {
         """
           | {
           |   type         = "osm-ways"
+          |   format       = "xml" // or pbf
           |   id-field     = "$id"
           |   fields = [
           |     { name = "id", attribute = "id", transform = "toString($0)" }
@@ -120,6 +122,7 @@ class OsmWaysConverterTest extends Specification {
         """
           | {
           |   type         = "osm-ways"
+          |   format       = "xml" // or pbf
           |   id-field     = "$id"
           |   user-data    = {
           |     my.user.key  = "$id"
