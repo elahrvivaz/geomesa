@@ -10,9 +10,10 @@ package org.locationtech.geomesa.accumulo.index
 
 import org.apache.hadoop.io.Text
 import org.joda.time.DateTime
-import org.locationtech.geomesa.accumulo.data.tables.SpatioTemporalTable
+import org.locationtech.geomesa.accumulo.index.geohash.SpatioTemporalTable
 import org.locationtech.geomesa.utils.geohash.GeoHash
 import org.opengis.feature.simple.SimpleFeature
+
 import scala.util.hashing.MurmurHash3
 
 trait TextFormatter {

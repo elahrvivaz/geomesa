@@ -16,7 +16,7 @@ import org.apache.accumulo.core.client.IteratorSetting
 import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.geotools.factory.Hints
-import org.locationtech.geomesa.accumulo.data.tables.Z3Table
+import org.locationtech.geomesa.accumulo.index.z3.{Z3Index, Z3Table}
 import org.locationtech.geomesa.accumulo.iterators.KryoLazyDensityIterator.DensityResult
 import org.locationtech.geomesa.curve.Z3SFC
 import org.locationtech.sfcurve.zorder.Z3
@@ -84,7 +84,7 @@ object Z3DensityIterator {
                   filter: Option[Filter],
                   hints: Hints,
                   priority: Int = KryoLazyDensityIterator.DEFAULT_PRIORITY): IteratorSetting = {
-      val is = KryoLazyDensityIterator.configure(sft, Z3Table, filter, hints, priority)
+      val is = KryoLazyDensityIterator.configure(sft, Z3Index, filter, hints, priority)
       is.setIteratorClass(classOf[Z3DensityIterator].getName)
       is
     }

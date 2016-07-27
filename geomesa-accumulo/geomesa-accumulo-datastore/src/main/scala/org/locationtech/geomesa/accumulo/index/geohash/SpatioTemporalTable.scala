@@ -6,7 +6,7 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.data.tables
+package org.locationtech.geomesa.accumulo.index.geohash
 
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.client.BatchDeleter
@@ -24,18 +24,13 @@ import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.collection.JavaConversions._
 
-object SpatioTemporalTable extends GeoMesaTable with LazyLogging {
+object SpatioTemporalTable extends AccumuloMutableIndex with LazyLogging {
 
   val INDEX_FLAG = "0"
   val DATA_FLAG = "1"
 
   val INDEX_CHECK = s"~$INDEX_FLAG~"
   val DATA_CHECK = s"~$DATA_FLAG~"
-
-  override def supports(sft: SimpleFeatureType): Boolean =
-    sft.getGeometryDescriptor != null && sft.getSchemaVersion < 8
-
-  override val suffix: String = "st_idx"
 
   override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val stEncoder = IndexSchema.buildKeyEncoder(sft, sft.getStIndexSchema)
@@ -92,10 +87,9 @@ object SpatioTemporalTable extends GeoMesaTable with LazyLogging {
     bd.close()
   }
 
-
   override def configureTable(sft: SimpleFeatureType, tableName: String, tableOps: TableOperations): Unit = {
     val maxShard = IndexSchema.maxShard(sft.getStIndexSchema)
-    val splits = (1 to maxShard - 1).map(i => new Text(s"%0${maxShard.toString.length}d".format(i)))
+    val splits = (1 until maxShard).map(i => new Text(s"%0${maxShard.toString.length}d".format(i)))
     tableOps.addSplits(tableName, new java.util.TreeSet(splits))
 
     // enable the column-family functor

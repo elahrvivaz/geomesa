@@ -7,7 +7,7 @@
 *************************************************************************/
 
 
-package org.locationtech.geomesa.accumulo.data.tables
+package org.locationtech.geomesa.accumulo.index.attribute
 
 import com.google.common.collect.ImmutableSortedSet
 import com.typesafe.scalalogging.LazyLogging
@@ -17,6 +17,7 @@ import org.apache.accumulo.core.data.Mutation
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
 import org.locationtech.geomesa.accumulo.data._
+import org.locationtech.geomesa.accumulo.index.AccumuloMutableIndex
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -30,12 +31,7 @@ import scala.util.Try
  * Contains logic for converting between accumulo and geotools for the attribute index
  */
 @deprecated
-object AttributeTableV5 extends GeoMesaTable with LazyLogging {
-
-  override def supports(sft: SimpleFeatureType) =
-    sft.getSchemaVersion < 6 && SimpleFeatureTypes.getSecondaryIndexedAttributes(sft).nonEmpty
-
-  override val suffix: String = "attr"
+object AttributeTableV5 extends AccumuloMutableIndex with LazyLogging {
 
   override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val indexedAttributes = SimpleFeatureTypes.getSecondaryIndexedAttributes(sft)
@@ -53,7 +49,7 @@ object AttributeTableV5 extends GeoMesaTable with LazyLogging {
     (toWrite: WritableFeature) => getAttributeIndexMutations(toWrite, attributesToIdx, rowIdPrefix, delete = true)
   }
 
-  override def getIdFromRow(sft: SimpleFeatureType): (Text) => String = ???
+  override def getIdFromRow(sft: SimpleFeatureType): (Text) => String = (_) => ""
 
   private val NULLBYTE = "\u0000"
 

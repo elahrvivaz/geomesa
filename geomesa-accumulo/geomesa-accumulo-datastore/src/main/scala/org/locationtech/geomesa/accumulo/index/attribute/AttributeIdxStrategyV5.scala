@@ -6,7 +6,7 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.index
+package org.locationtech.geomesa.accumulo.index.attribute
 
 import java.util.Date
 
@@ -20,20 +20,20 @@ import org.geotools.temporal.`object`.DefaultPeriod
 import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
-import org.locationtech.geomesa.accumulo.data.tables.{AttributeTable, AttributeTableV5, RecordTable}
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
 import org.locationtech.geomesa.accumulo.index.QueryPlanners.JoinFunction
-import org.locationtech.geomesa.accumulo.index.Strategy.CostEvaluation._
 import org.locationtech.geomesa.accumulo.index.Strategy._
+import org.locationtech.geomesa.accumulo.index._
+import org.locationtech.geomesa.accumulo.index.id.{RecordIndex, RecordTable}
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.filter.FilterHelper._
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+import org.locationtech.geomesa.utils.stats.IndexCoverage
 import org.locationtech.geomesa.utils.stats.IndexCoverage._
-import org.locationtech.geomesa.utils.stats.{Cardinality, IndexCoverage}
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter._
 import org.opengis.filter.expression.{Literal, PropertyName}
@@ -42,27 +42,25 @@ import org.opengis.filter.temporal.{After, Before, During, TEquals}
 import scala.collection.JavaConverters._
 
 @deprecated
-class AttributeIdxStrategyV5(val filter: QueryFilter) extends Strategy with LazyLogging {
+object AttributeIdxStrategyV5 extends AccumuloQueryableIndex with LazyLogging {
 
-  import org.locationtech.geomesa.accumulo.index.AttributeIdxStrategyV5._
-
-  /**
-   * Perform scan against the Attribute Index Table and get an iterator returning records from the Record table
-   */
-  override def getQueryPlan(queryPlanner: QueryPlanner, hints: Hints, output: ExplainerOutputType) = {
+  override def getQueryPlan(ds: AccumuloDataStore,
+                            sft: SimpleFeatureType,
+                            filter: FilterStrategy,
+                            hints: Hints,
+                            explain: ExplainerOutputType = ExplainNull): QueryPlan = {
     import scala.collection.JavaConversions._
+
     val propsAndRanges = filter.primary.collect {
-      case or: Or => or.getChildren.map(getPropertyAndRange(_, queryPlanner.sft))
-      case f => Seq(getPropertyAndRange(f, queryPlanner.sft))
+      case or: Or => or.getChildren.map(getPropertyAndRange(_, sft))
+      case f => Seq(getPropertyAndRange(f, sft))
     }.getOrElse(Seq.empty)
     val attributeName = propsAndRanges.head._1
     val ranges = propsAndRanges.map(_._2)
     // ensure we only have 1 prop we're working on
     assert(propsAndRanges.forall(_._1 == attributeName))
 
-    val sft = queryPlanner.sft
-    val acc = queryPlanner.ds
-    val encoding = queryPlanner.ds.getFeatureEncoding(sft)
+    val encoding = ds.getFeatureEncoding(sft)
     val version = sft.getSchemaVersion
     val hasDupes = sft.getDescriptor(attributeName).isMultiValued
 
@@ -78,9 +76,9 @@ class AttributeIdxStrategyV5(val filter: QueryFilter) extends Strategy with Lazy
 
     val kvsToFeatures = if (hints.isBinQuery) {
       // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
-      BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, AttributeTableV5, hints, encoding)
+      BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, AttributeIndex, hints, encoding)
     } else {
-      queryPlanner.kvsToFeatures(sft, hints.getReturnSft, AttributeTableV5)
+      AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, AttributeTableV5)
     }
 
     // choose which iterator we want to use - joining iterator or attribute only iterator
@@ -100,7 +98,7 @@ class AttributeIdxStrategyV5(val filter: QueryFilter) extends Strategy with Lazy
         }
 
         // there won't be any non-date/time-filters if the index only iterator has been selected
-        val table = acc.getTableName(sft.getTypeName, AttributeTableV5)
+        val table = ds.getTableName(sft.getTypeName, AttributeIndex)
         BatchScanPlan(filter, table, ranges, attributeIterators.toSeq, Seq.empty, kvsToFeatures, 1, hasDupes)
 
       case RecordJoinIterator =>
@@ -122,14 +120,14 @@ class AttributeIdxStrategyV5(val filter: QueryFilter) extends Strategy with Lazy
         val joinFunction: JoinFunction =
           (kv) => new AccRange(RecordTable.getRowKey(prefix, kv.getKey.getColumnQualifier.toString))
 
-        val recordTable = acc.getTableName(sft.getTypeName, RecordTable)
-        val recordThreads = acc.getSuggestedThreads(sft.getTypeName, RecordTable)
+        val recordTable = ds.getTableName(sft.getTypeName, RecordIndex)
+        val recordThreads = ds.getSuggestedThreads(sft.getTypeName, RecordIndex)
         val recordRanges = Seq(new AccRange()) // this will get overwritten in the join method
         val joinQuery = BatchScanPlan(filter, recordTable, recordRanges, recordIterators.toSeq, Seq.empty,
           kvsToFeatures, recordThreads, hasDupes)
 
-        val attrTable = acc.getTableName(sft.getTypeName, AttributeTableV5)
-        val attrThreads = acc.getSuggestedThreads(sft.getTypeName, AttributeTableV5)
+        val attrTable = ds.getTableName(sft.getTypeName, AttributeIndex)
+        val attrThreads = ds.getSuggestedThreads(sft.getTypeName, AttributeIndex)
         val attrIters = attributeIterators.toSeq
         JoinPlan(filter, attrTable, ranges, attrIters, Seq.empty, attrThreads, hasDupes, joinFunction, joinQuery)
     }
@@ -209,28 +207,14 @@ class AttributeIdxStrategyV5(val filter: QueryFilter) extends Strategy with Lazy
       classOf[UniqueAttributeIterator].getSimpleName,
       classOf[UniqueAttributeIterator]
     )
-}
 
-@deprecated
-object AttributeIdxStrategyV5 extends StrategyProvider {
+
+  override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = ???
 
   override def getCost(sft: SimpleFeatureType,
-                       filter: QueryFilter,
-                       transform: Option[SimpleFeatureType],
-                       stats: GeoMesaStats,
-                       evaluation: CostEvaluation) =
-    AttributeIdxStrategy.getCost(sft, filter, transform, stats, evaluation)
-
-  // note: won't get called as we override getCost method, above
-  override protected def statsBasedCost(sft: SimpleFeatureType,
-                                        filter: QueryFilter,
-                                        transform: Option[SimpleFeatureType],
-                                        stats: GeoMesaStats): Option[Long] = ???
-
-  // note: won't get called as we override getCost method, above
-  override protected def indexBasedCost(sft: SimpleFeatureType,
-                                        filter: QueryFilter,
-                                        transform: Option[SimpleFeatureType]): Long = ???
+                       stats: Option[GeoMesaStats],
+                       filter: FilterStrategy,
+                       transform: Option[SimpleFeatureType]): Long = ???
 
   /**
    * Gets a row key that can used as a range for an attribute query.

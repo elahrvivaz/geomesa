@@ -21,11 +21,15 @@ import org.geotools.feature.{FeatureTypes, NameImpl}
 import org.joda.time.DateTimeUtils
 import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
 import org.locationtech.geomesa.accumulo.data.GeoMesaMetadata._
-import org.locationtech.geomesa.accumulo.data.stats.usage.{GeoMesaUsageStats, GeoMesaUsageStatsImpl, HasGeoMesaUsageStats}
 import org.locationtech.geomesa.accumulo.data.stats._
+import org.locationtech.geomesa.accumulo.data.stats.usage.{GeoMesaUsageStats, GeoMesaUsageStatsImpl, HasGeoMesaUsageStats}
 import org.locationtech.geomesa.accumulo.data.tables._
-import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
 import org.locationtech.geomesa.accumulo.index._
+import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
+import org.locationtech.geomesa.accumulo.index.geohash.GeoHashIndex
+import org.locationtech.geomesa.accumulo.index.id.RecordIndex
+import org.locationtech.geomesa.accumulo.index.z2.Z2Index
+import org.locationtech.geomesa.accumulo.index.z3.Z3Index
 import org.locationtech.geomesa.accumulo.util.{DistributedLocking, GeoMesaBatchWriterConfig, Releasable}
 import org.locationtech.geomesa.accumulo.{AccumuloVersion, GeomesaSystemProperties}
 import org.locationtech.geomesa.features.SerializationOption.SerializationOptions
@@ -130,10 +134,10 @@ class AccumuloDataStore(val connector: Connector,
               .foreach(k => reloadedSft.getUserData.put(k, sft.getUserData.get(k)))
 
           // create the tables in accumulo
-          GeoMesaTable.getTables(reloadedSft).foreach { table =>
-            val name = table.formatTableName(catalogTable, reloadedSft)
+          IndexManager.indices(reloadedSft).foreach { index =>
+            val name = GeoMesaTable.formatTableName(catalogTable, index.name, reloadedSft)
             AccumuloVersion.ensureTableExists(connector, name)
-            table.configureTable(reloadedSft, name, tableOps)
+            index.configureTable(reloadedSft, name, tableOps)
           }
         }
       } finally {
@@ -470,19 +474,17 @@ class AccumuloDataStore(val connector: Connector,
    * @see org.locationtech.geomesa.accumulo.data.AccumuloConnectorCreator#getTableName(java.lang.String,
    *          org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable)
    * @param featureName feature type name
-   * @param table table
+   * @param index table
    * @return accumulo table name
    */
-  override def getTableName(featureName: String, table: GeoMesaTable): String = {
-    val key = table match {
-      case RecordTable         => RECORD_TABLE_KEY
-      case Z2Table             => Z2_TABLE_KEY
-      case Z3Table             => Z3_TABLE_KEY
-      case AttributeTable      => ATTR_IDX_TABLE_KEY
+  override def getTableName(featureName: String, index: AccumuloFeatureIndex): String = {
+    val key = index match {
+      case RecordIndex    => RECORD_TABLE_KEY
+      case Z2Index        => Z2_TABLE_KEY
+      case Z3Index        => Z3_TABLE_KEY
+      case AttributeIndex => ATTR_IDX_TABLE_KEY
       // noinspection ScalaDeprecation
-      case AttributeTableV5    => ATTR_IDX_TABLE_KEY
-      // noinspection ScalaDeprecation
-      case SpatioTemporalTable => ST_IDX_TABLE_KEY
+      case GeoHashIndex   => ST_IDX_TABLE_KEY
       case _ => throw new NotImplementedError("Unknown table")
     }
     metadata.readRequired(featureName, key)
@@ -492,18 +494,17 @@ class AccumuloDataStore(val connector: Connector,
    * @see org.locationtech.geomesa.accumulo.data.AccumuloConnectorCreator#getSuggestedThreads(java.lang.String,
    *          org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable)
    * @param featureName feature type name
-   * @param table table
+   * @param index table
    * @return threads to use in scanning
    */
-  override def getSuggestedThreads(featureName: String, table: GeoMesaTable): Int = {
-    table match {
-      case RecordTable         => config.recordThreads
-      case Z2Table             => config.queryThreads
-      case Z3Table             => config.queryThreads
-      case AttributeTable      => config.queryThreads
+  override def getSuggestedThreads(featureName: String, index: AccumuloFeatureIndex): Int = {
+    index match {
+      case RecordIndex    => config.recordThreads
+      case Z2Index        => config.queryThreads
+      case Z3Index        => config.queryThreads
+      case AttributeIndex => config.queryThreads
       // noinspection ScalaDeprecation
-      case AttributeTableV5    => 1
-      case SpatioTemporalTable => config.queryThreads
+      case GeoHashIndex   => config.queryThreads
       case _ => throw new NotImplementedError("Unknown table")
     }
   }
@@ -518,7 +519,7 @@ class AccumuloDataStore(val connector: Connector,
    * NB: We are *not* currently deleting the query table and/or query information.
    */
   def delete() = {
-    val indexTables = getTypeNames.map(getSchema).flatMap(GeoMesaTable.getTableNames(_, this)).distinct
+    val indexTables = getTypeNames.map(getSchema).flatMap(sft => IndexManager.indices(sft).map(getTableName(sft.getTypeName, _))).distinct
     val metadataTables = Seq(statsTable, catalogTable)
     // Delete index tables first then catalog table in case of error
     val allTables = indexTables ++ metadataTables
@@ -562,8 +563,8 @@ class AccumuloDataStore(val connector: Connector,
 
     // reconfigure the splits on the attribute table
     val sft = getSchema(typeName)
-    val table = getTableName(typeName, AttributeTable)
-    AttributeTable.configureTable(sft, table, tableOps)
+    val table = getTableName(typeName, AttributeIndex)
+    AttributeIndex.configureTable(sft, table, tableOps)
   }
 
   /**
@@ -571,11 +572,11 @@ class AccumuloDataStore(val connector: Connector,
    * required to run a query against accumulo.
    *
    * @param query query to execute
-   * @param strategy hint on the index to use to satisfy the query
+   * @param index hint on the index to use to satisfy the query
    * @return query plans
    */
   def getQueryPlan(query: Query,
-                   strategy: Option[StrategyType] = None,
+                   index: Option[AccumuloFeatureIndex] = None,
                    explainer: ExplainerOutputType = ExplainNull): Seq[QueryPlan] = {
     require(query.getTypeName != null, "Type name is required in the query")
     getQueryPlanner(query.getTypeName).planQuery(query, None, explainer)
@@ -638,21 +639,13 @@ class AccumuloDataStore(val connector: Connector,
       sft.getUserData.put(SimpleFeatureTypes.ENABLED_INDEXES, old)
     }
 
-    // only set spatio-temporal fields if z2 isn't supported
-    val stTable = if (sft.getSchemaVersion > 7) { None } else {
-      // get the requested index schema or build the default
-      if (sft.getStIndexSchema == null) {
-        sft.setStIndexSchema(buildDefaultSpatioTemporalSchema(sft.getTypeName))
-      }
-      Some(SpatioTemporalTable.formatTableName(catalogTable, sft))
-    }
-
     // compute the metadata values - IMPORTANT: encode type has to be called after all user data is set
     val attributesValue   = SimpleFeatureTypes.encodeType(sft, includeUserData = true)
-    val z2TableValue      = Z2Table.formatTableName(catalogTable, sft)
-    val z3TableValue      = Z3Table.formatTableName(catalogTable, sft)
-    val attrIdxTableValue = AttributeTable.formatTableName(catalogTable, sft)
-    val recordTableValue  = RecordTable.formatTableName(catalogTable, sft)
+    val z2TableValue      = GeoMesaTable.formatTableName(catalogTable, Z2Index.name, sft)
+    // z3 always needs a separate table since we don't include the feature name in the row key
+    val z3TableValue      = GeoMesaTable.formatSoloTableName(catalogTable, Z3Index.name, sft.getTypeName)
+    val attrIdxTableValue = GeoMesaTable.formatTableName(catalogTable, AttributeIndex.name, sft)
+    val recordTableValue  = GeoMesaTable.formatTableName(catalogTable, RecordIndex.name, sft)
     val statDateValue     = GeoToolsDateFormat.print(DateTimeUtils.currentTimeMillis())
     val dataStoreVersion  = sft.getSchemaVersion.toString
 
@@ -665,14 +658,8 @@ class AccumuloDataStore(val connector: Connector,
       RECORD_TABLE_KEY      -> recordTableValue,
       STATS_GENERATION_KEY  -> statDateValue,
       VERSION_KEY           -> dataStoreVersion,
-      SCHEMA_ID_KEY         -> schemaIdString,
-      // noinspection ScalaDeprecation
-      ST_IDX_TABLE_KEY      -> stTable
-    ).collect {
-      case (k: String, v: String) => (k, v)
-      case (k: String, v: Some[String]) => (k, v.get)
-    }
-
+      SCHEMA_ID_KEY         -> schemaIdString
+    )
     metadata.insert(sft.getTypeName, metadataMap)
 
     // configure the stats combining iterator on the table for this sft
@@ -681,14 +668,14 @@ class AccumuloDataStore(val connector: Connector,
 
   private def deleteSharedTables(sft: SimpleFeatureType) = {
     val auths = authProvider.getAuthorizations
-    GeoMesaTable.getTables(sft).par.foreach { table =>
-      val name = getTableName(sft.getTypeName, table)
+    IndexManager.indices(sft).par.foreach { index =>
+      val name = getTableName(sft.getTypeName, index)
       if (tableOps.exists(name)) {
-        if (table == Z3Table) {
+        if (index == Z3Index) {
           tableOps.delete(name)
         } else {
           val deleter = connector.createBatchDeleter(name, auths, config.queryThreads, defaultBWConfig)
-          table.deleteFeaturesForType(sft, deleter)
+          index.deleteFeaturesForType(sft, deleter)
           deleter.close()
         }
       }
@@ -697,7 +684,7 @@ class AccumuloDataStore(val connector: Connector,
 
   // NB: We are *not* currently deleting the query table and/or query information.
   private def deleteStandAloneTables(sft: SimpleFeatureType) =
-    GeoMesaTable.getTableNames(sft, this).filter(tableOps.exists).foreach(tableOps.delete)
+    IndexManager.indices(sft).map(getTableName(sft.getTypeName, _)).filter(tableOps.exists).foreach(tableOps.delete)
 
   /**
    * Acquires a distributed lock for all accumulo data stores sharing this catalog table.

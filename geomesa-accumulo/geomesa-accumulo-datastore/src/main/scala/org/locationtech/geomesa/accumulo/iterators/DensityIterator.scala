@@ -21,7 +21,7 @@ import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIt
 import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
-import org.locationtech.geomesa.accumulo.index.{IndexEntryDecoder, IndexSchema, Strategy}
+import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, IndexEntryDecoder, IndexSchema, Strategy}
 import org.locationtech.geomesa.accumulo.iterators.KryoLazyDensityIterator.DensityResult
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features.{SerializationType, SimpleFeatureDeserializers, SimpleFeatureSerializer}
@@ -108,7 +108,7 @@ object DensityIterator extends LazyLogging {
    * Creates an iterator config that expects entries to be precomputed bin values
    */
   def configure(sft: SimpleFeatureType,
-                table: GeoMesaTable,
+                index: AccumuloFeatureIndex,
                 serializationType: SerializationType,
                 schema: String,
                 filter: Option[Filter],
@@ -120,6 +120,6 @@ object DensityIterator extends LazyLogging {
     val is = new IteratorSetting(priority, "density-iter", classOf[DensityIterator])
     Strategy.configureFeatureEncoding(is, serializationType)
     is.addOption(DEFAULT_SCHEMA_NAME, schema)
-    KryoLazyDensityIterator.configure(is, sft, table, filter, envelope, gridWidth, gridHeight, weightAttribute)
+    KryoLazyDensityIterator.configure(is, sft, index, filter, envelope, gridWidth, gridHeight, weightAttribute)
   }
 }

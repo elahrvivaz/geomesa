@@ -18,7 +18,6 @@ import org.joda.time.{DateTime, DateTimeZone}
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.index.Strategy.CostEvaluation
 import org.locationtech.geomesa.accumulo.index.Strategy.CostEvaluation.CostEvaluation
-import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType._
 import org.opengis.feature.simple.SimpleFeatureType
 import org.slf4j.LoggerFactory
 
@@ -36,7 +35,7 @@ package object index {
 
   object QueryHints {
     val RETURN_SFT_KEY       = new ClassKey(classOf[SimpleFeatureType])
-    val QUERY_STRATEGY_KEY   = new ClassKey(classOf[StrategyType])
+    val QUERY_INDEX_KEY      = new ClassKey(classOf[AccumuloFeatureIndex])
     val COST_EVALUATION_KEY  = new ClassKey(classOf[CostEvaluation])
 
     val DENSITY_BBOX_KEY     = new ClassKey(classOf[ReferencedEnvelope])
@@ -67,8 +66,8 @@ package object index {
       import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties.QUERY_COST_TYPE
 
       def getReturnSft: SimpleFeatureType = hints.get(RETURN_SFT_KEY).asInstanceOf[SimpleFeatureType]
-      def getRequestedStrategy: Option[StrategyType] =
-        Option(hints.get(QUERY_STRATEGY_KEY).asInstanceOf[StrategyType])
+      def getRequestedIndex: Option[AccumuloFeatureIndex] =
+        Option(hints.get(QUERY_INDEX_KEY).asInstanceOf[AccumuloFeatureIndex])
       def getCostEvaluation: CostEvaluation = {
         Option(hints.get(COST_EVALUATION_KEY).asInstanceOf[CostEvaluation])
             .orElse(QUERY_COST_TYPE.option.flatMap(t => CostEvaluation.values.find(_.toString.equalsIgnoreCase(t))))

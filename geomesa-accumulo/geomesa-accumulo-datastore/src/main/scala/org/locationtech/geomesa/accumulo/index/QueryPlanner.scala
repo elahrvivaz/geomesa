@@ -19,21 +19,16 @@ import org.geotools.factory.Hints
 import org.geotools.feature.AttributeTypeBuilder
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder
 import org.geotools.filter.FunctionExpressionImpl
-import org.geotools.filter.identity.FeatureIdImpl
 import org.geotools.filter.visitor.BindingFilterVisitor
 import org.geotools.geometry.jts.ReferencedEnvelope
 import org.geotools.process.vector.TransformProcess
 import org.geotools.process.vector.TransformProcess.Definition
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
 import org.locationtech.geomesa.accumulo.index.QueryHints._
-import org.locationtech.geomesa.accumulo.index.QueryPlanners.FeatureFunction
-import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
+import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.accumulo.util.{CloseableIterator, SelfClosingIterator}
-import org.locationtech.geomesa.features.SerializationOption.SerializationOptions
-import org.locationtech.geomesa.features._
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.visitor.QueryPlanFilterVisitor
 import org.locationtech.geomesa.security.SecurityUtils
@@ -50,7 +45,6 @@ import org.opengis.geometry.BoundingBox
 
 import scala.collection.JavaConverters._
 import scala.reflect.ClassTag
-import scala.util.Try
 
 /**
  * Executes a query against geomesa
@@ -66,18 +60,18 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
    * Plan the query, but don't execute it - used for m/r jobs and explain query
    */
   def planQuery(query: Query,
-                strategy: Option[StrategyType] = None,
+                index: Option[AccumuloFeatureIndex] = None,
                 output: ExplainerOutputType = new ExplainLogging): Seq[QueryPlan] = {
-    getQueryPlans(query, strategy, output).toList // toList forces evaluation of entire iterator
+    getQueryPlans(query, index, output).toList // toList forces evaluation of entire iterator
   }
 
   /**
    * Execute a query against geomesa
    */
   def runQuery(query: Query,
-               strategy: Option[StrategyType] = None,
+               index: Option[AccumuloFeatureIndex] = None,
                output: ExplainerOutputType = new ExplainLogging): SFIter = {
-    val plans = getQueryPlans(query, strategy, output)
+    val plans = getQueryPlans(query, index, output)
     executePlans(query, plans, output)
   }
 
@@ -116,7 +110,7 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
    * Returns the strategy plans and the number of distinct OR clauses, needed for determining deduplication
    */
   private def getQueryPlans(query: Query,
-                            requested: Option[StrategyType],
+                            requested: Option[AccumuloFeatureIndex],
                             output: ExplainerOutputType): Iterator[QueryPlan] = {
 
     configureQuery(query, sft) // configure the query - set hints that we'll need later on
@@ -134,18 +128,18 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
     output(s"Transforms: ${q.getHints.getTransformDefinition.getOrElse("None")}")
 
     output.pushLevel("Strategy selection:")
-    val requestedStrategy = requested.orElse(hints.getRequestedStrategy)
-    val strategies = QueryStrategyDecider.chooseStrategies(sft, q, stats, requestedStrategy, output)
+    val requestedIndex = requested.orElse(hints.getRequestedIndex)
+    val filterPlan = QueryStrategyDecider.chooseFilterPlan(sft, q, stats, requestedIndex, output)
     output.popLevel()
 
     var strategyCount = 1
-    strategies.iterator.flatMap { strategy =>
-      output.pushLevel(s"Strategy $strategyCount of ${strategies.length}: ${strategy.getClass.getSimpleName}")
+    filterPlan.strategies.iterator.flatMap { strategy =>
+      output.pushLevel(s"Strategy $strategyCount of ${filterPlan.strategies.length}: ${strategy.index.name}")
       strategyCount += 1
       output(s"Strategy filter: ${strategy.filter}")
 
       implicit val timing = new Timing
-      val plan = profile(strategy.getQueryPlan(this, hints, output))
+      val plan = profile(strategy.index.getQueryPlan(ds, sft, strategy, hints, output))
       outputPlan(plan, output.popLevel())
       output(s"Query planning took ${timing.time}ms")
 
@@ -189,29 +183,6 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
   // converts a key to a printable string - only includes the row
   private def keyToString(k: Key): String =
     Key.toPrintableString(k.getRow.getBytes, 0, k.getRow.getLength, k.getRow.getLength)
-
-  // This function decodes/transforms that Iterator of Accumulo Key-Values into an Iterator of SimpleFeatures
-  def kvsToFeatures(sft: SimpleFeatureType, returnSft: SimpleFeatureType, table: GeoMesaTable): FeatureFunction = {
-    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-    // Perform a projecting decode of the simple feature
-    if (sft.getSchemaVersion < 9) {
-      val deserializer = SimpleFeatureDeserializers(returnSft, serializationType)
-      (kv: Entry[Key, Value]) => {
-        val sf = deserializer.deserialize(kv.getValue.get)
-        applyVisibility(sf, kv.getKey)
-        sf
-      }
-    } else {
-      val getId = table.getIdFromRow(sft)
-      val deserializer = SimpleFeatureDeserializers(returnSft, serializationType, SerializationOptions.withoutId)
-      (kv: Entry[Key, Value]) => {
-        val sf = deserializer.deserialize(kv.getValue.get)
-        sf.getIdentifier.asInstanceOf[FeatureIdImpl].setID(getId(kv.getKey.getRow))
-        applyVisibility(sf, kv.getKey)
-        sf
-      }
-    }
-  }
 }
 
 object QueryPlanner extends LazyLogging {
@@ -250,7 +221,7 @@ object QueryPlanner extends LazyLogging {
       threadedHints.clear()
     }
     // handle any params passed in through geoserver
-    QueryPlanner.handleGeoServerParams(query)
+    QueryPlanner.handleGeoServerParams(query, sft)
     // set transformations in the query
     QueryPlanner.setQueryTransforms(query, sft)
     // set return SFT in the query
@@ -307,22 +278,24 @@ object QueryPlanner extends LazyLogging {
    *
    * Note - keys in the map are always uppercase.
    */
-  def handleGeoServerParams(query: Query): Unit = {
+  def handleGeoServerParams(query: Query, sft: SimpleFeatureType): Unit = {
     val viewParams = query.getHints.get(Hints.VIRTUAL_TABLE_PARAMETERS).asInstanceOf[jMap[String, String]]
     if (viewParams != null) {
       def withName(name: String) = {
-        val value = Try(Strategy.StrategyType.withName(name.toUpperCase(Locale.US)))
-        if (value.isFailure) {
+        // rename of strategy from 'attribute' to 'attr' - back compatible check for both
+        val check = if (name.equalsIgnoreCase("attribute")) AttributeIndex.name else name.toLowerCase(Locale.US)
+        val value = IndexManager.indices(sft).find(_.name.toLowerCase(Locale.US) == check)
+        if (value.isEmpty) {
           logger.error(s"Ignoring invalid strategy name from view params: $name. Valid values " +
-              s"are ${Strategy.StrategyType.values.mkString(", ")}")
+              s"are ${IndexManager.indices(sft).map(_.name).mkString(", ")}")
         }
-        value.toOption
+        value
       }
       Option(viewParams.get("STRATEGY")).flatMap(withName).foreach { strategy =>
-        val old = query.getHints.get(QUERY_STRATEGY_KEY)
+        val old = query.getHints.get(QUERY_INDEX_KEY)
         if (old == null) {
           logger.debug(s"Using strategy $strategy from view params")
-          query.getHints.put(QUERY_STRATEGY_KEY, strategy)
+          query.getHints.put(QUERY_INDEX_KEY, strategy)
         } else if (old != strategy) {
           logger.warn("Ignoring query hint from geoserver in favor of hint directly set in query. " +
               s"Using $old and disregarding $strategy")

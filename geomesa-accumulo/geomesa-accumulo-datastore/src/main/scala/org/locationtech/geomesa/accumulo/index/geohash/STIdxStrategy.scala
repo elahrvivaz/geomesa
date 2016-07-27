@@ -6,7 +6,7 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.index
+package org.locationtech.geomesa.accumulo.index.geohash
 
 import com.typesafe.scalalogging.LazyLogging
 import com.vividsolutions.jts.geom.GeometryCollection
@@ -17,34 +17,43 @@ import org.geotools.factory.Hints
 import org.geotools.filter.text.ecql.ECQL
 import org.joda.time.{DateTime, Interval}
 import org.locationtech.geomesa.accumulo.GEOMESA_ITERATORS_IS_DENSITY_TYPE
+import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
-import org.locationtech.geomesa.accumulo.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
 import org.locationtech.geomesa.accumulo.index.Strategy._
+import org.locationtech.geomesa.accumulo.index._
+import org.locationtech.geomesa.accumulo.index.z2.Z2IdxStrategy
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.features.SerializationType
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.filter.FilterHelper._
+import org.locationtech.geomesa.filter.visitor.FilterExtractingVisitor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools._
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
-@deprecated("z2")
-class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging with IndexFilterHelpers {
+object STIdxStrategy extends AccumuloQueryableIndex with LazyLogging with IndexFilterHelpers {
 
-  override def getQueryPlan(queryPlanner: QueryPlanner, hints: Hints, output: ExplainerOutputType) = {
-    val acc             = queryPlanner.ds
-    val sft             = queryPlanner.sft
+  /**
+    * Plans the query - strategy implementations need to define this
+    */
+  override def getQueryPlan(ds: AccumuloDataStore,
+                            sft: SimpleFeatureType,
+                            filter: FilterStrategy,
+                            hints: Hints,
+                            explain: ExplainerOutputType = ExplainNull): QueryPlan = {
+
+    val acc             = ds
     val version         = sft.getSchemaVersion
     val schema          = Option(sft.getStIndexSchema).getOrElse("")
-    val featureEncoding = queryPlanner.ds.getFeatureEncoding(sft)
+    val featureEncoding = ds.getFeatureEncoding(sft)
     val keyPlanner      = IndexSchema.buildKeyPlanner(schema)
     val cfPlanner       = IndexSchema.buildColumnFamilyPlanner(schema)
 
-    output(s"Scanning ST index table for feature type ${sft.getTypeName}")
-    output(s"Filter: ${filter.primary} ${filter.secondary.map(_.toString).getOrElse("")}")
+    explain(s"Scanning ST index table for feature type ${sft.getTypeName}")
+    explain(s"Filter: ${filter.primary} ${filter.secondary.map(_.toString).getOrElse("")}")
 
     if (filter.primary.isEmpty) {
       logger.warn(s"Querying Accumulo without SpatioTemporal filter.")
@@ -72,23 +81,23 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       reduced.map { case (start, end) => new Interval(start, end) }.orNull
     }
 
-    output(s"Geometry to cover: $geometryToCover")
-    output(s"Interval to cover: $interval")
+    explain(s"Geometry to cover: $geometryToCover")
+    explain(s"Interval to cover: $interval")
 
     val keyPlanningFilter = buildFilter(geometryToCover, interval)
 
     val oint  = IndexSchema.somewhen(interval)
 
-    output(s"STII Filter: ${filter.primary.getOrElse("No STII Filter")}")
-    output(s"Interval:  ${oint.getOrElse("No interval")}")
-    output(s"Filter: ${Option(keyPlanningFilter).getOrElse("No Filter")}")
+    explain(s"STII Filter: ${filter.primary.getOrElse("No STII Filter")}")
+    explain(s"Interval:  ${oint.getOrElse("No interval")}")
+    explain(s"Filter: ${Option(keyPlanningFilter).getOrElse("No Filter")}")
 
     val (iterators, kvsToFeatures, useIndexEntries, hasDupes) = if (hints.isDensityQuery) {
       val (width, height) = hints.getDensityBounds.get
       val envelope = hints.getDensityEnvelope.get
       val weight = hints.getDensityWeight
       val p = iteratorPriority_AnalysisIterator
-      val iter = DensityIterator.configure(sft, SpatioTemporalTable, featureEncoding, schema,
+      val iter = DensityIterator.configure(sft, GeoHashIndex, featureEncoding, schema,
         filter.filter, envelope, width, height, weight, p)
       (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), false, false)
     } else if (featureEncoding == SerializationType.KRYO &&
@@ -97,14 +106,14 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       // TODO GEOMESA-822 add bin line dates to distributed bin aggregation
       if (hints.isBinQuery) {
         // use the server side aggregation
-        val iter = BinAggregatingIterator.configureDynamic(sft, SpatioTemporalTable, filter.filter, hints, sft.nonPoints)
+        val iter = BinAggregatingIterator.configureDynamic(sft, GeoHashIndex, filter.filter, hints, sft.nonPoints)
         (Seq(iter), BinAggregatingIterator.kvsToFeatures(), false, false)
       } else if (hints.isStatsIteratorQuery) {
-        val iter = KryoLazyStatsIterator.configure(sft, SpatioTemporalTable, filter.filter, hints, sft.nonPoints)
+        val iter = KryoLazyStatsIterator.configure(sft, GeoHashIndex, filter.filter, hints, sft.nonPoints)
         (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), false, false)
       } else {
         val iters = KryoLazyFilterTransformIterator.configure(sft, filter.filter, hints).toSeq
-        (iters, queryPlanner.kvsToFeatures(sft, hints.getReturnSft, SpatioTemporalTable), false, sft.nonPoints)
+        (iters, AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, SpatioTemporalTable), false, sft.nonPoints)
       }
     } else {
       // legacy iterators
@@ -119,18 +128,18 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       }
       val iters = Seq(stiiIterCfg) ++ aggIterCfg
       val kvs = if (hints.isBinQuery) {
-        BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, SpatioTemporalTable, hints, featureEncoding)
+        BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, GeoHashIndex, hints, featureEncoding)
       } else {
-        queryPlanner.kvsToFeatures(sft, hints.getReturnSft, SpatioTemporalTable)
+        AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, SpatioTemporalTable)
       }
       (iters, kvs, indexEntries, sft.nonPoints)
     }
 
     // set up row ranges and regular expression filter
-    val qp = planQuery(filter, keyPlanningFilter, useIndexEntries, output, keyPlanner, cfPlanner)
+    val qp = planQuery(filter, keyPlanningFilter, useIndexEntries, explain, keyPlanner, cfPlanner)
 
-    val table = acc.getTableName(sft.getTypeName, SpatioTemporalTable)
-    val numThreads = acc.getSuggestedThreads(sft.getTypeName, SpatioTemporalTable)
+    val table = acc.getTableName(sft.getTypeName, GeoHashIndex)
+    val numThreads = acc.getSuggestedThreads(sft.getTypeName, GeoHashIndex)
     qp.copy(table = table, iterators = iterators, kvsToFeatures = kvsToFeatures,
       numThreads = numThreads, hasDuplicates = hasDupes)
   }
@@ -222,15 +231,15 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
     cfg
   }
 
-  def planQuery(qf: QueryFilter,
+  def planQuery(qf: FilterStrategy,
                 filter: KeyPlanningFilter,
                 useIndexEntries: Boolean,
-                output: ExplainerOutputType,
+                explain: ExplainerOutputType,
                 keyPlanner: KeyPlanner,
                 cfPlanner: ColumnFamilyPlanner): BatchScanPlan = {
-    output(s"Planning query")
+    explain(s"Planning query")
 
-    val keyPlan = keyPlanner.getKeyPlan(filter, useIndexEntries, output)
+    val keyPlan = keyPlanner.getKeyPlan(filter, useIndexEntries, explain)
 
     val columnFamilies = cfPlanner.getColumnFamiliesToFetch(filter)
 
@@ -249,23 +258,29 @@ class STIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
     // partially fill in, rest will be filled in later
     BatchScanPlan(qf, null, accRanges, null, cf, null, -1, hasDuplicates = false)
   }
-}
 
-@deprecated("z2")
-object STIdxStrategy extends StrategyProvider {
+  override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
+    import org.locationtech.geomesa.filter._
 
-  override protected def statsBasedCost(sft: SimpleFeatureType,
-                                        filter: QueryFilter,
-                                        transform: Option[SimpleFeatureType],
-                                        stats: GeoMesaStats): Option[Long] = {
-    filter.primary match {
-      case Some(f) => stats.getCount(sft, f, exact = false)
-      case None    => Some(Long.MaxValue)
+    val (spatial, nonSpatial) = FilterExtractingVisitor(filter, sft.getGeomField, sft, Z2IdxStrategy.spatialCheck)
+    val (temporal, others) = (sft.getDtgField, nonSpatial) match {
+      case (Some(dtg), Some(ns)) => FilterExtractingVisitor(ns, dtg, sft)
+      case _ => (None, nonSpatial)
+    }
+    if (spatial.isDefined) {
+      Seq(FilterStrategy(GeoHashIndex, andOption((spatial ++ temporal).toSeq), others))
+    } else {
+      Seq(FilterStrategy(GeoHashIndex, None, Some(filter).filterNot(_ == Filter.INCLUDE)))
     }
   }
 
-  // slots in between high- and low-cardinality attributes
-  override protected def indexBasedCost(sft: SimpleFeatureType,
-                                        filter: QueryFilter,
-                                        transform: Option[SimpleFeatureType]): Long = 400L
+  override def getCost(sft: SimpleFeatureType,
+                       stats: Option[GeoMesaStats],
+                       filter: FilterStrategy,
+                       transform: Option[SimpleFeatureType]): Long = {
+    filter.primary match {
+      case None    => Long.MaxValue
+      case Some(f) => stats.flatMap(_.getCount(sft, f, exact = false)).getOrElse(400L)
+    }
+  }
 }

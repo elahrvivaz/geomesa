@@ -12,7 +12,7 @@ import org.apache.accumulo.core.data._
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder
 import org.locationtech.geomesa.accumulo._
-import org.locationtech.geomesa.accumulo.data.tables.AttributeTableV5
+import org.locationtech.geomesa.accumulo.index.attribute.AttributeTableV5
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.stats.IndexCoverage

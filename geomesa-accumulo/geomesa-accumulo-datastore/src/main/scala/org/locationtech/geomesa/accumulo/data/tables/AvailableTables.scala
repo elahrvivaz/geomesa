@@ -8,7 +8,13 @@
 
 package org.locationtech.geomesa.accumulo.data.tables
 
+import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
+import org.locationtech.geomesa.accumulo.index.id.RecordIndex
+import org.locationtech.geomesa.accumulo.index.z2.Z2Index
+import org.locationtech.geomesa.accumulo.index.z3.Z3Index
+
 object AvailableTables {
-  val Z3TableScheme: List[String] = List(AttributeTable, RecordTable, Z3Table).map(_.suffix)
-  val Z2TableScheme: List[String] = List(AttributeTable, RecordTable, Z2Table).map(_.suffix)
+  // TODO move this
+  val Z3TableScheme: List[String] = List(AttributeIndex, RecordIndex, Z3Index).map(_.name)
+  val Z2TableScheme: List[String] = List(AttributeIndex, RecordIndex, Z2Index).map(_.name)
 }

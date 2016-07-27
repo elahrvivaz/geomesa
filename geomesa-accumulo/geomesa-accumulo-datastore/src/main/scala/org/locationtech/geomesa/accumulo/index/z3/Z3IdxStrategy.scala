@@ -6,7 +6,7 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.index
+package org.locationtech.geomesa.accumulo.index.z3
 
 import com.google.common.primitives.{Bytes, Longs, Shorts}
 import com.typesafe.scalalogging.LazyLogging
@@ -14,30 +14,31 @@ import org.apache.accumulo.core.data.{Range => aRange}
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
+import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
-import org.locationtech.geomesa.accumulo.data.tables.{GeoMesaTable, Z3Table}
+import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
+import org.locationtech.geomesa.accumulo.index._
+import org.locationtech.geomesa.accumulo.index.z2.Z2IdxStrategy
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.{BinnedTime, Z3SFC}
 import org.locationtech.geomesa.filter._
+import org.locationtech.geomesa.filter.visitor.FilterExtractingVisitor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools._
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.opengis.feature.simple.SimpleFeatureType
+import org.opengis.filter.Filter
 
-class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging with IndexFilterHelpers  {
+object Z3IdxStrategy extends AccumuloQueryableIndex with LazyLogging {
 
-  /**
-   * Plans the query - strategy implementations need to define this
-   */
-  override def getQueryPlan(queryPlanner: QueryPlanner, hints: Hints, output: ExplainerOutputType): QueryPlan = {
-
-    import QueryHints.{LOOSE_BBOX, RichHints}
-    import Z3IdxStrategy._
+  override def getQueryPlan(ds: AccumuloDataStore,
+                            sft: SimpleFeatureType,
+                            filter: FilterStrategy,
+                            hints: Hints,
+                            explain: ExplainerOutputType): QueryPlan = {
     import Z3Table.GEOM_Z_NUM_BYTES
+    import org.locationtech.geomesa.accumulo.index.QueryHints.{LOOSE_BBOX, RichHints}
     import org.locationtech.geomesa.filter.FilterHelper._
-
-    val ds  = queryPlanner.ds
-    val sft = queryPlanner.sft
 
     // note: z3 requires a date field
     val dtgField = sft.getDtgField.getOrElse {
@@ -60,8 +61,8 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
     // note that this isn't completely accurate, as we only index down to the second
     val intervals = filter.primary.map(extractIntervals(_, dtgField, handleExclusiveBounds = true)).getOrElse(Seq.empty)
 
-    output(s"Geometries: $geometries")
-    output(s"Intervals: $intervals")
+    explain(s"Geometries: $geometries")
+    explain(s"Intervals: $intervals")
 
     val looseBBox = if (hints.containsKey(LOOSE_BBOX)) Boolean.unbox(hints.get(LOOSE_BBOX)) else ds.config.looseBBox
     val hasSplits = Z3Table.hasSplits(sft)
@@ -83,9 +84,9 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
         if (filter.secondary.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
-          (Seq(BinAggregatingIterator.configurePrecomputed(sft, Z3Table, ecql, hints, sft.nonPoints)), Z3Table.BIN_CF)
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, Z3Index, ecql, hints, sft.nonPoints)), Z3Table.BIN_CF)
         } else {
-          val iter = BinAggregatingIterator.configureDynamic(sft, Z3Table, ecql, hints, sft.nonPoints)
+          val iter = BinAggregatingIterator.configureDynamic(sft, Z3Index, ecql, hints, sft.nonPoints)
           (Seq(iter), Z3Table.FULL_CF)
         }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf, false)
@@ -93,18 +94,18 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       val iter = Z3DensityIterator.configure(sft, ecql, hints)
       (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z3Table.FULL_CF, false)
     } else if (hints.isStatsIteratorQuery) {
-      val iter = KryoLazyStatsIterator.configure(sft, Z3Table, ecql, hints, sft.nonPoints)
+      val iter = KryoLazyStatsIterator.configure(sft, Z3Index, ecql, hints, sft.nonPoints)
       (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z3Table.FULL_CF, false)
     } else if (hints.isMapAggregatingQuery) {
-      val iter = KryoLazyMapAggregatingIterator.configure(sft, Z3Table, ecql, hints, sft.nonPoints)
-      (Seq(iter), queryPlanner.kvsToFeatures(sft, hints.getReturnSft, Z3Table), Z3Table.FULL_CF, false)
+      val iter = KryoLazyMapAggregatingIterator.configure(sft, Z3Index, ecql, hints, sft.nonPoints)
+      (Seq(iter), AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, Z3Table), Z3Table.FULL_CF, false)
     } else {
       val iters = KryoLazyFilterTransformIterator.configure(sft, ecql, hints).toSeq
-      (iters, queryPlanner.kvsToFeatures(sft, hints.getReturnSft, Z3Table), Z3Table.FULL_CF, sft.nonPoints)
+      (iters, AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, Z3Table), Z3Table.FULL_CF, sft.nonPoints)
     }
 
-    val z3table = ds.getTableName(sft.getTypeName, Z3Table)
-    val numThreads = ds.getSuggestedThreads(sft.getTypeName, Z3Table)
+    val z3table = ds.getTableName(sft.getTypeName, Z3Index)
+    val numThreads = ds.getSuggestedThreads(sft.getTypeName, Z3Index)
 
     val sfc = Z3SFC(sft.getZ3Interval)
     val minTime = sfc.time.min.toLong
@@ -170,34 +171,51 @@ class Z3IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
     val iters = perAttributeIter ++ zIterator.toSeq ++ iterators
     BatchScanPlan(filter, z3table, ranges, iters, Seq(cf), kvsToFeatures, numThreads, hasDupes)
   }
-}
 
-object Z3IdxStrategy extends StrategyProvider {
+  override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
+    import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
+    // we know it's set due to our 'supported' check
+    val dtg = sft.getDtgField.getOrElse {
+      throw new RuntimeException("Trying to plan a z3 query but the schema does not have a date")
+    }
 
-  val Z3_ITER_PRIORITY = 23
-  val FILTERING_ITER_PRIORITY = 25
+    val (temporal, nonTemporal) = FilterExtractingVisitor(filter, dtg, sft)
+    val (spatial, others) = nonTemporal match {
+      case None => (None, None)
+      case Some(nt) => FilterExtractingVisitor(nt, sft.getGeomField, sft, Z2IdxStrategy.spatialCheck)
+    }
 
-  override protected def statsBasedCost(sft: SimpleFeatureType,
-                                        filter: QueryFilter,
-                                        transform: Option[SimpleFeatureType],
-                                        stats: GeoMesaStats): Option[Long] = {
-    // https://geomesa.atlassian.net/browse/GEOMESA-1166
-    // TODO check date range and use z2 instead if too big
-    // TODO also if very small bbox, z2 has ~10 more bits of lat/lon info
-    filter.primary match {
-      case Some(f) => stats.getCount(sft, f, exact = false)
-      case None    => Some(Long.MaxValue)
+    if (temporal.exists(isBounded(_, dtg)) && (spatial.isDefined || !sft.getDescriptor(dtg).isIndexed)) {
+      Seq(FilterStrategy(Z3Index, andOption((spatial ++ temporal).toSeq), others))
+    } else {
+      Seq(FilterStrategy(Z3Index, None, Some(filter).filterNot(_ == Filter.INCLUDE)))
     }
   }
 
   /**
-    * More than id lookups (at 1), high-cardinality attributes (at 1).
-    * Less than unknown cardinality attributes (at 999).
-    * With a spatial component, less than z2, otherwise more than z2 (at 400)
-    */
-  override protected def indexBasedCost(sft: SimpleFeatureType,
-                                        filter: QueryFilter,
-                                        transform: Option[SimpleFeatureType]): Long = {
-    if (filter.primary.exists(isSpatialFilter)) 200L else 401L
+   * Returns true if the temporal filters create a range with an upper and lower bound
+   */
+  private def isBounded(temporalFilter: Filter, dtg: String): Boolean = {
+    import FilterHelper.{MaxDateTime, MinDateTime}
+    val intervals = FilterHelper.extractIntervals(temporalFilter, dtg)
+    intervals.nonEmpty && intervals.forall { case (start, end) => start != MinDateTime && end != MaxDateTime }
+  }
+
+  val Z3_ITER_PRIORITY = 23
+  val FILTERING_ITER_PRIORITY = 25
+
+  override def getCost(sft: SimpleFeatureType,
+                       stats: Option[GeoMesaStats],
+                       filter: FilterStrategy,
+                       transform: Option[SimpleFeatureType]): Long = {
+    // https://geomesa.atlassian.net/browse/GEOMESA-1166
+    // TODO check date range and use z2 instead if too big
+    // TODO also if very small bbox, z2 has ~10 more bits of lat/lon info
+    filter.primary match {
+      case None    => Long.MaxValue
+      case Some(f) => stats.flatMap(_.getCount(sft, f, exact = false)).getOrElse {
+        if (filter.primary.exists(isSpatialFilter)) 200L else 401L
+      }
+    }
   }
 }

@@ -18,9 +18,8 @@ import org.geotools.filter.text.ecql.ECQL
 import org.joda.time.format.ISODateTimeFormat
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithDataStore
-import org.locationtech.geomesa.accumulo.data.tables.AttributeTable
 import org.locationtech.geomesa.accumulo.index.QueryHints._
-import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
+import org.locationtech.geomesa.accumulo.index.attribute.{AttributeIdxStrategy, AttributeIndex, AttributeTable}
 import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
 import org.locationtech.geomesa.accumulo.util.SelfClosingIterator
 import org.locationtech.geomesa.features.ScalaSimpleFeature
@@ -28,7 +27,7 @@ import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.function.Convert2ViewerFunction
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.SimpleFeature
-import org.opengis.filter.{Filter, Or}
+import org.opengis.filter.Filter
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
@@ -73,20 +72,20 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
 
   def execute(filter: String, explain: ExplainerOutputType = ExplainNull): List[String] = {
     val query = new Query(sftName, ECQL.toFilter(filter))
-    forall(ds.getQueryPlan(query, explainer = explain))(_.filter.strategy mustEqual StrategyType.ATTRIBUTE)
+    forall(ds.getQueryPlan(query, explainer = explain))(_.filter.index mustEqual AttributeIndex)
     val results = SelfClosingIterator(ds.getFeatureSource(sftName).getFeatures(query).features())
     results.map(_.getAttribute("name").toString).toList
   }
 
   def runQuery(query: Query): Iterator[SimpleFeature] = {
-    forall(ds.getQueryPlan(query))(_.filter.strategy mustEqual StrategyType.ATTRIBUTE)
+    forall(ds.getQueryPlan(query))(_.filter.index mustEqual AttributeIndex)
     SelfClosingIterator(ds.getFeatureSource(sftName).getFeatures(query).features())
   }
 
   "AttributeIndexStrategy" should {
     "print values" in {
       skipped("used for debugging")
-      val scanner = connector.createScanner(ds.getTableName(sftName, AttributeTable), new Authorizations())
+      val scanner = connector.createScanner(ds.getTableName(sftName, AttributeIndex), new Authorizations())
       val prefix = AttributeTable.getRowPrefix(sft, sft.indexOf("fingers"))
       scanner.setRange(AccRange.prefix(new Text(prefix)))
       scanner.asScala.foreach(println)
@@ -743,51 +742,47 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
     "merge PropertyIsEqualTo primary filters" >> {
       val q1 = ff.equals(ff.property("prop"), ff.literal("1"))
       val q2 = ff.equals(ff.property("prop"), ff.literal("2"))
-      val qf1 = new QueryFilter(StrategyType.ATTRIBUTE, Some(q1), None)
-      val qf2 = new QueryFilter(StrategyType.ATTRIBUTE, Some(q2), None)
+      val qf1 = FilterStrategy(AttributeIndex, Some(q1), None)
+      val qf2 = FilterStrategy(AttributeIndex, Some(q2), None)
       val res = AttributeIdxStrategy.tryMergeAttrStrategy(qf1, qf2)
       res must not(beNull)
       res.primary must beSome(ff.or(q1, q2))
     }
 
     "merge PropertyIsEqualTo on multiple ORs" >> {
-      import AttributeIdxStrategy._
 
       val q1 = ff.equals(ff.property("prop"), ff.literal("1"))
       val q2 = ff.equals(ff.property("prop"), ff.literal("2"))
       val q3 = ff.equals(ff.property("prop"), ff.literal("3"))
-      val qf1 = new QueryFilter(StrategyType.ATTRIBUTE, Some(q1), None)
-      val qf2 = new QueryFilter(StrategyType.ATTRIBUTE, Some(q2), None)
-      val qf3 = new QueryFilter(StrategyType.ATTRIBUTE, Some(q3), None)
-      val res = tryMergeAttrStrategy(tryMergeAttrStrategy(qf1, qf2), qf3)
+      val qf1 = FilterStrategy(AttributeIndex, Some(q1), None)
+      val qf2 = FilterStrategy(AttributeIndex, Some(q2), None)
+      val qf3 = FilterStrategy(AttributeIndex, Some(q3), None)
+      val res = AttributeIdxStrategy.tryMergeAttrStrategy(AttributeIdxStrategy.tryMergeAttrStrategy(qf1, qf2), qf3)
       res must not(beNull)
       res.primary.map(decomposeOr) must beSome(containTheSameElementsAs(Seq[Filter](q1, q2, q3)))
     }
 
     "merge PropertyIsEqualTo when secondary matches" >> {
-      import AttributeIdxStrategy._
-
       val bbox = ff.bbox("geom", 1, 2, 3, 4, "EPSG:4326")
       val q1 = ff.equals(ff.property("prop"), ff.literal("1"))
       val q2 = ff.equals(ff.property("prop"), ff.literal("2"))
       val q3 = ff.equals(ff.property("prop"), ff.literal("3"))
-      val qf1 = new QueryFilter(StrategyType.ATTRIBUTE, Some(q1), Some(bbox))
-      val qf2 = new QueryFilter(StrategyType.ATTRIBUTE, Some(q2), Some(bbox))
-      val qf3 = new QueryFilter(StrategyType.ATTRIBUTE, Some(q3), Some(bbox))
-      val res = tryMergeAttrStrategy(tryMergeAttrStrategy(qf1, qf2), qf3)
+      val qf1 = FilterStrategy(AttributeIndex, Some(q1), Some(bbox))
+      val qf2 = FilterStrategy(AttributeIndex, Some(q2), Some(bbox))
+      val qf3 = FilterStrategy(AttributeIndex, Some(q3), Some(bbox))
+      val res = AttributeIdxStrategy.tryMergeAttrStrategy(AttributeIdxStrategy.tryMergeAttrStrategy(qf1, qf2), qf3)
       res must not(beNull)
       res.primary.map(decomposeOr) must beSome(containTheSameElementsAs(Seq[Filter](q1, q2, q3)))
       res.secondary must beSome(bbox)
     }
 
     "not merge PropertyIsEqualTo when secondary does not match" >> {
-      import AttributeIdxStrategy._
       val bbox = ff.bbox("geom", 1, 2, 3, 4, "EPSG:4326")
       val q1 = ff.equals(ff.property("prop"), ff.literal("1"))
       val q2 = ff.equals(ff.property("prop"), ff.literal("2"))
-      val qf1 = new QueryFilter(StrategyType.ATTRIBUTE, Some(q1), Some(bbox))
-      val qf2 = new QueryFilter(StrategyType.ATTRIBUTE, Some(q2), None)
-      val res = tryMergeAttrStrategy(qf1, qf2)
+      val qf1 = FilterStrategy(AttributeIndex, Some(q1), Some(bbox))
+      val qf2 = FilterStrategy(AttributeIndex, Some(q2), None)
+      val res = AttributeIdxStrategy.tryMergeAttrStrategy(qf1, qf2)
       res must beNull
     }
 

@@ -22,7 +22,10 @@ import org.joda.time.{DateTime, DateTimeZone}
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
 import org.locationtech.geomesa.accumulo.index.QueryHints._
-import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
+import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
+import org.locationtech.geomesa.accumulo.index.id.RecordIndex
+import org.locationtech.geomesa.accumulo.index.z2.Z2Index
+import org.locationtech.geomesa.accumulo.index.z3.Z3Index
 import org.locationtech.geomesa.accumulo.index.{ExplainString, JoinPlan, QueryHints, QueryPlanner}
 import org.locationtech.geomesa.accumulo.iterators.{BinAggregatingIterator, TestData}
 import org.locationtech.geomesa.features.ScalaSimpleFeature
@@ -240,10 +243,10 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
       val nStrategies = negatives.map(ds.getQueryPlan(_))
 
       forall(pStrategies ++ nStrategies)(_ must haveLength(1))
-      pStrategies.map(_.head.filter.strategy) mustEqual
-          Seq(StrategyType.ATTRIBUTE, StrategyType.RECORD, StrategyType.Z2, StrategyType.Z3)
-      nStrategies.map(_.head.filter.strategy) mustEqual
-          Seq(StrategyType.ATTRIBUTE, StrategyType.RECORD, StrategyType.Z2, StrategyType.Z3)
+      pStrategies.map(_.head.filter.index) mustEqual
+          Seq(AttributeIndex, RecordIndex, Z2Index, Z3Index)
+      nStrategies.map(_.head.filter.index) mustEqual
+          Seq(AttributeIndex, RecordIndex, Z2Index, Z3Index)
 
       forall(positives) { query =>
         val result = ds.getFeatureSource(sftName).getFeatures(query).features().toList
@@ -286,7 +289,7 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
       query.getHints.put(BIN_TRACK_KEY, "name")
       query.getHints.put(BIN_BATCH_SIZE_KEY, 1000)
       val queryPlanner = new QueryPlanner(sft, ds)
-      val results = queryPlanner.runQuery(query, Some(StrategyType.Z2)).map(_.getAttribute(BIN_ATTRIBUTE_INDEX)).toSeq
+      val results = queryPlanner.runQuery(query, Some(Z2Index)).map(_.getAttribute(BIN_ATTRIBUTE_INDEX)).toSeq
       forall(results)(_ must beAnInstanceOf[Array[Byte]])
       val bins = results.flatMap(_.asInstanceOf[Array[Byte]].grouped(16).map(Convert2ViewerFunction.decode))
       bins must haveSize(2)
@@ -378,34 +381,34 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
         res must containTheSameElementsAs(Seq("fid-1"))
       }
 
-      query.getHints.put(QUERY_STRATEGY_KEY, StrategyType.ATTRIBUTE)
+      query.getHints.put(QUERY_INDEX_KEY, AttributeIndex)
       expectStrategy("AttributeIdxStrategy")
 
-      query.getHints.put(QUERY_STRATEGY_KEY, StrategyType.Z2)
+      query.getHints.put(QUERY_INDEX_KEY, Z2Index)
       expectStrategy("Z2IdxStrategy")
 
-      query.getHints.put(QUERY_STRATEGY_KEY, StrategyType.Z3)
+      query.getHints.put(QUERY_INDEX_KEY, Z3Index)
       expectStrategy("Z3IdxStrategy")
 
-      query.getHints.put(QUERY_STRATEGY_KEY, StrategyType.RECORD)
+      query.getHints.put(QUERY_INDEX_KEY, RecordIndex)
       expectStrategy("RecordIdxStrategy")
 
       val viewParams =  new java.util.HashMap[String, String]
       query.getHints.put(Hints.VIRTUAL_TABLE_PARAMETERS, viewParams)
 
-      query.getHints.remove(QUERY_STRATEGY_KEY)
+      query.getHints.remove(QUERY_INDEX_KEY)
       viewParams.put("STRATEGY", "attribute")
       expectStrategy("AttributeIdxStrategy")
 
-      query.getHints.remove(QUERY_STRATEGY_KEY)
+      query.getHints.remove(QUERY_INDEX_KEY)
       viewParams.put("STRATEGY", "Z2")
       expectStrategy("Z2IdxStrategy")
 
-      query.getHints.remove(QUERY_STRATEGY_KEY)
+      query.getHints.remove(QUERY_INDEX_KEY)
       viewParams.put("STRATEGY", "Z3")
       expectStrategy("Z3IdxStrategy")
 
-      query.getHints.remove(QUERY_STRATEGY_KEY)
+      query.getHints.remove(QUERY_INDEX_KEY)
       viewParams.put("STRATEGY", "RECORD")
       expectStrategy("RecordIdxStrategy")
 

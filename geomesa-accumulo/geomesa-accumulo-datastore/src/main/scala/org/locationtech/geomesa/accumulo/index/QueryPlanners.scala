@@ -17,7 +17,6 @@ import org.apache.accumulo.core.data.{Key, Value, Range => AccRange}
 import org.apache.hadoop.io.Text
 import org.joda.time.format.DateTimeFormatter
 import org.joda.time.{DateTime, DateTimeZone}
-import org.locationtech.geomesa.accumulo.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.accumulo.index.KeyUtils._
 import org.locationtech.geomesa.accumulo.index.QueryPlanners.{FeatureFunction, JoinFunction}
 import org.locationtech.geomesa.utils.CartesianProductIterable
@@ -30,7 +29,7 @@ object QueryPlanners {
 }
 
 sealed trait QueryPlan {
-  def filter: QueryFilter
+  def filter: FilterStrategy
   def table: String
   def ranges: Seq[AccRange]
   def iterators: Seq[IteratorSetting]
@@ -43,7 +42,7 @@ sealed trait QueryPlan {
 }
 
 // plan that will not actually scan anything
-case class EmptyPlan(filter: QueryFilter) extends QueryPlan {
+case class EmptyPlan(filter: FilterStrategy) extends QueryPlan {
   override val table: String = ""
   override val iterators: Seq[IteratorSetting] = Seq.empty
   override val kvsToFeatures: FeatureFunction = (_) => null
@@ -54,7 +53,7 @@ case class EmptyPlan(filter: QueryFilter) extends QueryPlan {
 }
 
 // single scan plan
-case class ScanPlan(filter: QueryFilter,
+case class ScanPlan(filter: FilterStrategy,
                     table: String,
                     range: AccRange,
                     iterators: Seq[IteratorSetting],
@@ -66,7 +65,7 @@ case class ScanPlan(filter: QueryFilter,
 }
 
 // batch scan plan
-case class BatchScanPlan(filter: QueryFilter,
+case class BatchScanPlan(filter: FilterStrategy,
                          table: String,
                          ranges: Seq[AccRange],
                          iterators: Seq[IteratorSetting],
@@ -76,7 +75,7 @@ case class BatchScanPlan(filter: QueryFilter,
                          hasDuplicates: Boolean) extends QueryPlan
 
 // join on multiple tables - requires multiple scans
-case class JoinPlan(filter: QueryFilter,
+case class JoinPlan(filter: FilterStrategy,
                     table: String,
                     ranges: Seq[AccRange],
                     iterators: Seq[IteratorSetting],
@@ -429,8 +428,8 @@ case class ConstStringPlanner(cstr: String) extends KeyPlanner {
 }
 
 case class IndexOrDataPlanner() extends KeyPlanner {
-  val indexEntry = List(SpatioTemporalTable.INDEX_FLAG)
-  val dataEntry = List(SpatioTemporalTable.DATA_FLAG)
+  val indexEntry = List(/*SpatioTemporalTable.INDEX_FLAG*/) // TODO
+  val dataEntry = List(/*SpatioTemporalTable.DATA_FLAG*/)
   def getKeyPlan(filter:KeyPlanningFilter, indexOnly: Boolean, output: ExplainerOutputType) = {
     val k = if (indexOnly) indexEntry else dataEntry
     output(s"IndexOrDataPlanner: ${k.head}")

@@ -53,7 +53,9 @@ trait TestWithMultipleSfts extends Specification {
   // after all tests, drop the tables we created to free up memory
   override def map(fragments: => Fragments) = fragments ^ Step {
     val to = connector.tableOperations()
-    val tables = Seq(sftBaseName) ++ sfts.flatMap(sft => Try(GeoMesaTable.getTableNames(sft, ds)).getOrElse(Seq.empty))
+    val tables = Seq(sftBaseName) ++ sfts.flatMap { sft =>
+      Try(IndexManager.indices(sft).map(ds.getTableName(sft.getTypeName, _))).getOrElse(Seq.empty)
+    }
     tables.toSet.filter(to.exists).foreach(to.delete)
   }
 

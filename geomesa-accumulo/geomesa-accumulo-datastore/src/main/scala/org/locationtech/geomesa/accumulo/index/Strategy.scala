@@ -15,11 +15,8 @@ import org.geotools.factory.Hints
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
-import org.locationtech.geomesa.accumulo.index.Strategy.CostEvaluation
-import org.locationtech.geomesa.accumulo.index.Strategy.CostEvaluation.CostEvaluation
 import org.locationtech.geomesa.accumulo.iterators.{FEATURE_ENCODING, _}
 import org.locationtech.geomesa.accumulo.util.{BatchMultiScanner, CloseableIterator, SelfClosingIterator}
 import org.locationtech.geomesa.features.SerializationType.SerializationType
@@ -30,29 +27,7 @@ import org.opengis.filter.Filter
 import scala.collection.JavaConversions._
 import scala.util.Random
 
-trait Strategy extends LazyLogging {
-
-  /**
-   * The filter this strategy will execute
-   */
-  def filter: QueryFilter
-
-  /**
-   * Plans the query - strategy implementations need to define this
-   */
-  def getQueryPlan(queryPlanner: QueryPlanner, hints: Hints, output: ExplainerOutputType): QueryPlan
-}
-
-
 object Strategy extends LazyLogging {
-
-  // enumeration of the various strategies we implement - don't forget to add new impls here
-  object StrategyType extends Enumeration {
-    type StrategyType = Value
-    val Z2, Z3, RECORD, ATTRIBUTE = Value
-    @deprecated("z2")
-    val ST = Value
-  }
 
   object CostEvaluation extends Enumeration {
     type CostEvaluation = Value
@@ -206,34 +181,4 @@ object Strategy extends LazyLogging {
       Some(cfg)
     case _ => None
   }
-}
-
-trait StrategyProvider {
-
-  /**
-   * Gets the estimated cost of running the query. In general, this is the estimated
-   * number of features that will have to be scanned.
-   */
-  def getCost(sft: SimpleFeatureType,
-              filter: QueryFilter,
-              transform: Option[SimpleFeatureType],
-              stats: GeoMesaStats,
-              eval: CostEvaluation): Long = {
-    if (eval == CostEvaluation.Stats) {
-      statsBasedCost(sft, filter, transform, stats).getOrElse(indexBasedCost(sft, filter, transform))
-    } else if (eval == CostEvaluation.Index) {
-      indexBasedCost(sft, filter, transform)
-    } else {
-      throw new NotImplementedError(s"Unknown cost evaluation type $eval")
-    }
-  }
-
-  protected def statsBasedCost(sft: SimpleFeatureType,
-                               filter: QueryFilter,
-                               transform: Option[SimpleFeatureType],
-                               stats: GeoMesaStats): Option[Long]
-
-  protected def indexBasedCost(sft: SimpleFeatureType,
-                               filter: QueryFilter,
-                               transform: Option[SimpleFeatureType]): Long
 }

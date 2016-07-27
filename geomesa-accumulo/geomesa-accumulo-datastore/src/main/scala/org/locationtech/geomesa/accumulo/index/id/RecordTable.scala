@@ -6,7 +6,7 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.data.tables
+package org.locationtech.geomesa.accumulo.index.id
 
 import com.google.common.base.Charsets
 import com.google.common.collect.ImmutableSortedSet
@@ -17,19 +17,16 @@ import org.apache.accumulo.core.file.keyfunctor.RowFunctor
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter._
 import org.locationtech.geomesa.accumulo.data._
+import org.locationtech.geomesa.accumulo.index.AccumuloMutableIndex
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeatureType
 
 // TODO: Implement as traits and cache results to gain flexibility and speed-up.
 // https://geomesa.atlassian.net/browse/GEOMESA-344
-object RecordTable extends GeoMesaTable {
+object RecordTable extends AccumuloMutableIndex {
 
   private val SFT_CF = new Text("SFT")
-
-  override def supports(sft: SimpleFeatureType) = true
-
-  override val suffix: String = "records"
 
   override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val rowIdPrefix = sft.getTableSharingPrefix

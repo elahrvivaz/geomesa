@@ -7,7 +7,7 @@
 *************************************************************************/
 
 
-package org.locationtech.geomesa.accumulo.data.tables
+package org.locationtech.geomesa.accumulo.index.attribute
 
 import java.nio.charset.StandardCharsets
 import java.util.{Date, Locale, Collection => JCollection}
@@ -23,6 +23,7 @@ import org.calrissian.mango.types.{LexiTypeEncoders, SimpleTypeEncoders, TypeEnc
 import org.joda.time.format.ISODateTimeFormat
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
 import org.locationtech.geomesa.accumulo.data._
+import org.locationtech.geomesa.accumulo.index.AccumuloMutableIndex
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -37,7 +38,7 @@ import scala.util.{Failure, Success, Try}
 /**
  * Contains logic for converting between accumulo and geotools for the attribute index
  */
-object AttributeTable extends GeoMesaTable with LazyLogging {
+object AttributeTable extends AccumuloMutableIndex with LazyLogging {
 
   private val NullByte = "\u0000"
   private val NullByteArray = NullByte.getBytes(StandardCharsets.UTF_8)
@@ -47,11 +48,6 @@ object AttributeTable extends GeoMesaTable with LazyLogging {
   private val dateFormat     = ISODateTimeFormat.dateTime()
 
   private type TryEncoder = Try[(TypeEncoder[Any, String], TypeEncoder[_, String])]
-
-  override def supports(sft: SimpleFeatureType) =
-    sft.getSchemaVersion > 5 && sft.getAttributeDescriptors.exists(_.isIndexed)
-
-  override val suffix: String = "attr"
 
   override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val getRows = getRowKeys(sft)

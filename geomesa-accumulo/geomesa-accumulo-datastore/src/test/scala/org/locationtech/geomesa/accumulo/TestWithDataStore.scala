@@ -108,7 +108,7 @@ trait TestWithDataStore extends Specification {
 
   def explain(filter: String): String = explain(new Query(sftName, ECQL.toFilter(filter)))
 
-  def scanner(table: GeoMesaTable): Scanner =
+  def scanner(table: AccumuloFeatureIndex): Scanner =
     connector.createScanner(ds.getTableName(sftName, table), new Authorizations())
 
   def rowToString(key: Key) = bytesToString(key.getRow.copyBytes())

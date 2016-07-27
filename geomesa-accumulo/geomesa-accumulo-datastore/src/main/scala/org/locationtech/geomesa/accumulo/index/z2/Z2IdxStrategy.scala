@@ -6,7 +6,7 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.index
+package org.locationtech.geomesa.accumulo.index.z2
 
 import java.nio.charset.StandardCharsets
 
@@ -16,32 +16,31 @@ import org.apache.accumulo.core.data.{Range => aRange}
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
+import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
-import org.locationtech.geomesa.accumulo.data.tables.Z3Table._
-import org.locationtech.geomesa.accumulo.data.tables.{GeoMesaTable, Z2Table}
+import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
+import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.Z2SFC
 import org.locationtech.geomesa.filter._
+import org.locationtech.geomesa.filter.visitor.FilterExtractingVisitor
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, WholeWorldPolygon}
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.{And, Filter, Or}
 
-class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging with IndexFilterHelpers {
+object Z2IdxStrategy extends AccumuloQueryableIndex with LazyLogging {
 
-  /**
-    * Plans the query - strategy implementations need to define this
-    */
-  override def getQueryPlan(queryPlanner: QueryPlanner, hints: Hints, output: ExplainerOutputType): QueryPlan = {
+  override def getQueryPlan(ds: AccumuloDataStore,
+                            sft: SimpleFeatureType,
+                            filter: FilterStrategy,
+                            hints: Hints,
+                            explain: ExplainerOutputType): QueryPlan = {
 
     import QueryHints.{LOOSE_BBOX, RichHints}
-    import Z2IdxStrategy._
     import org.locationtech.geomesa.filter.FilterHelper._
     import org.locationtech.geomesa.filter._
-    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType._
-
-    val ds  = queryPlanner.ds
-    val sft = queryPlanner.sft
+    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
     if (filter.primary.isEmpty) {
       filter.secondary.foreach { f =>
@@ -52,7 +51,7 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
     val geometries = filter.primary.map(extractGeometries(_, sft.getGeomField, sft.isPoints))
         .filter(_.nonEmpty).getOrElse(Seq(WholeWorldPolygon))
 
-    output(s"Geometries: $geometries")
+    explain(s"Geometries: $geometries")
 
     val looseBBox = if (hints.containsKey(LOOSE_BBOX)) Boolean.unbox(hints.get(LOOSE_BBOX)) else ds.config.looseBBox
 
@@ -73,9 +72,9 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
         if (filter.secondary.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
-          (Seq(BinAggregatingIterator.configurePrecomputed(sft, Z2Table, ecql, hints, sft.nonPoints)), Z2Table.BIN_CF)
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, Z2Index, ecql, hints, sft.nonPoints)), Z2Table.BIN_CF)
         } else {
-          val iter = BinAggregatingIterator.configureDynamic(sft, Z2Table, ecql, hints, sft.nonPoints)
+          val iter = BinAggregatingIterator.configureDynamic(sft, Z2Index, ecql, hints, sft.nonPoints)
           (Seq(iter), Z2Table.FULL_CF)
         }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf, false)
@@ -83,18 +82,18 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       val iter = Z2DensityIterator.configure(sft, ecql, hints)
       (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z2Table.FULL_CF, false)
     } else if (hints.isStatsIteratorQuery) {
-      val iter = KryoLazyStatsIterator.configure(sft, Z2Table, ecql, hints, sft.nonPoints)
+      val iter = KryoLazyStatsIterator.configure(sft, Z2Index, ecql, hints, sft.nonPoints)
       (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z2Table.FULL_CF, false)
     } else if (hints.isMapAggregatingQuery) {
-      val iter = KryoLazyMapAggregatingIterator.configure(sft, Z2Table, ecql, hints, sft.nonPoints)
-      (Seq(iter), queryPlanner.kvsToFeatures(sft, hints.getReturnSft, Z2Table), Z2Table.FULL_CF, false)
+      val iter = KryoLazyMapAggregatingIterator.configure(sft, Z2Index, ecql, hints, sft.nonPoints)
+      (Seq(iter), AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, Z2Table), Z2Table.FULL_CF, false)
     } else {
       val iters = KryoLazyFilterTransformIterator.configure(sft, ecql, hints).toSeq
-      (iters, queryPlanner.kvsToFeatures(sft, hints.getReturnSft, Z2Table), Z2Table.FULL_CF, sft.nonPoints)
+      (iters, AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, Z2Table), Z2Table.FULL_CF, sft.nonPoints)
     }
 
-    val z2table = ds.getTableName(sft.getTypeName, Z2Table)
-    val numThreads = ds.getSuggestedThreads(sft.getTypeName, Z2Table)
+    val z2table = ds.getTableName(sft.getTypeName, Z2Index)
+    val numThreads = ds.getSuggestedThreads(sft.getTypeName, Z2Index)
 
     val (ranges, z2Iter) = if (filter.primary.isEmpty) {
       val range = if (sft.isTableSharing) {
@@ -105,6 +104,7 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
       (Seq(range), None)
     } else {
       // setup Z2 iterator
+      import Z2Table.GEOM_Z_NUM_BYTES
       val xy = geometries.map(GeometryUtils.bounds)
       val rangeTarget = QueryProperties.SCAN_RANGES_TARGET.option.map(_.toInt)
       val zRanges = if (sft.isPoints) {
@@ -144,31 +144,33 @@ class Z2IdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging w
     val iters = perAttributeIter ++ iterators ++ z2Iter
     BatchScanPlan(filter, z2table, ranges, iters, Seq(cf), kvsToFeatures, numThreads, hasDupes)
   }
-}
 
-object Z2IdxStrategy extends StrategyProvider {
+  override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
+    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
-  val Z2_ITER_PRIORITY = 23
-  val FILTERING_ITER_PRIORITY = 25
-
-  override protected def statsBasedCost(sft: SimpleFeatureType,
-                                        filter: QueryFilter,
-                                        transform: Option[SimpleFeatureType],
-                                        stats: GeoMesaStats): Option[Long] = {
-    filter.primary match {
-      case None => Some(Long.MaxValue)
-      // add one so that we prefer the z3 index even if geometry is the limiting factor, resulting in the same count
-      case Some(f) => stats.getCount(sft, f, exact = false).map(c => if (c == 0L) 0L else c + 1L)
+    val (spatial, nonSpatial) = FilterExtractingVisitor(filter, sft.getGeomField, sft, spatialCheck)
+    if (spatial.nonEmpty) {
+      Seq(FilterStrategy(Z2Index, spatial, nonSpatial))
+    } else {
+      Seq(FilterStrategy(Z2Index, None, Some(filter).filterNot(_ == Filter.INCLUDE)))
     }
   }
 
-  /**
-    * More than id lookups (at 1), high-cardinality attributes (at 1), z3 (at 200).
-    * Less than spatial-only z3 (at 401), unknown cardinality attributes (at 999).
-    */
-  override protected def indexBasedCost(sft: SimpleFeatureType,
-                                        filter: QueryFilter,
-                                        transform: Option[SimpleFeatureType]): Long = 400L
+
+  override def getCost(sft: SimpleFeatureType,
+                       stats: Option[GeoMesaStats],
+                       filter: FilterStrategy,
+                       transform: Option[SimpleFeatureType]): Long = {
+    filter.primary match {
+      case None => Long.MaxValue
+      // add one so that we prefer the z3 index even if geometry is the limiting factor, resulting in the same count
+      case Some(f) =>
+        stats.flatMap(_.getCount(sft, f, exact = false).map(c => if (c == 0L) 0L else c + 1L)).getOrElse(400L) // 400 = old index based cost
+    }
+  }
+
+  val Z2_ITER_PRIORITY = 23
+  val FILTERING_ITER_PRIORITY = 25
 
   /**
     * Evaluates filters that we can handle with the z-index strategies
@@ -184,4 +186,3 @@ object Z2IdxStrategy extends StrategyProvider {
     }
   }
 }
-

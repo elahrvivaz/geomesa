@@ -6,18 +6,20 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.index
+package org.locationtech.geomesa.accumulo.index.id
 
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.data.{Range => aRange}
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
+import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
-import org.locationtech.geomesa.accumulo.data.tables.RecordTable
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.Strategy._
+import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators.{BinAggregatingIterator, KryoLazyDensityIterator, KryoLazyFilterTransformIterator, KryoLazyStatsIterator, KryoVisibilityRowEncoder}
 import org.locationtech.geomesa.filter._
+import org.locationtech.geomesa.filter.visitor.IdExtractingVisitor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.opengis.feature.simple.SimpleFeatureType
@@ -26,21 +28,14 @@ import org.opengis.filter.{And, Filter, Id, Or}
 import scala.collection.JavaConversions._
 
 
-object RecordIdxStrategy extends StrategyProvider {
+object RecordIdxStrategy extends AccumuloQueryableIndex with LazyLogging {
 
   // top-priority index - always 1 if there are actually ID filters
-  override protected def statsBasedCost(sft: SimpleFeatureType,
-                                        filter: QueryFilter,
-                                        transform: Option[SimpleFeatureType],
-                                        stats: GeoMesaStats): Option[Long] = {
-    if (filter.primary.isDefined) Some(1L) else Some(Long.MaxValue)
-  }
-
-  // top-priority index - always 1
-  override protected def indexBasedCost(sft: SimpleFeatureType,
-                                        filter: QueryFilter,
-                                        transform: Option[SimpleFeatureType]): Long =
-  if (filter.primary.isDefined) 1 else Long.MaxValue
+  override def getCost(sft: SimpleFeatureType,
+                       stats: Option[GeoMesaStats],
+                       filter: FilterStrategy,
+                       transform: Option[SimpleFeatureType]): Long =
+    if (filter.primary.isDefined) 1 else Long.MaxValue
 
   def intersectIdFilters(filter: Filter): Set[String] = {
     filter match {
@@ -50,14 +45,22 @@ object RecordIdxStrategy extends StrategyProvider {
       case _ => throw new IllegalArgumentException(s"Expected ID filter, got ${filterToString(filter)}")
     }
   }
-}
 
-class RecordIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLogging {
+  override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
+    val (ids, notIds) = IdExtractingVisitor(filter)
+    if (ids.isDefined) {
+      Seq(FilterStrategy(RecordIndex, ids, notIds))
+    } else {
+      Seq(FilterStrategy(RecordIndex, None, Some(filter).filterNot(_ == Filter.INCLUDE)))
+    }
+  }
 
-  override def getQueryPlan(queryPlanner: QueryPlanner, hints: Hints, output: ExplainerOutputType) = {
-    val ds = queryPlanner.ds
-    val sft = queryPlanner.sft
-    val featureEncoding = queryPlanner.ds.getFeatureEncoding(sft)
+  override def getQueryPlan(ds: AccumuloDataStore,
+                            sft: SimpleFeatureType,
+                            filter: FilterStrategy,
+                            hints: Hints,
+                            explain: ExplainerOutputType = ExplainNull): QueryPlan = {
+    val featureEncoding = ds.getFeatureEncoding(sft)
     val prefix = sft.getTableSharingPrefix
 
     val ranges = filter.primary match {
@@ -73,13 +76,13 @@ class RecordIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLoggi
         // Multiple sets of IDs in a ID Filter are ORs. ANDs of these call for the intersection to be taken.
         // intersect together all groups of ID Filters, producing a set of IDs
         val identifiers = RecordIdxStrategy.intersectIdFilters(primary)
-        output(s"Extracted ID filter: ${identifiers.mkString(", ")}")
+        explain(s"Extracted ID filter: ${identifiers.mkString(", ")}")
         identifiers.toSeq.map(id => aRange.exact(RecordTable.getRowKey(prefix, id)))
     }
 
     if (ranges.isEmpty) { EmptyPlan(filter) } else {
-      val table = ds.getTableName(sft.getTypeName, RecordTable)
-      val threads = ds.getSuggestedThreads(sft.getTypeName, RecordTable)
+      val table = ds.getTableName(sft.getTypeName, RecordIndex)
+      val threads = ds.getSuggestedThreads(sft.getTypeName, RecordIndex)
       val dupes = false // record table never has duplicate entries
 
       if (sft.getSchemaVersion > 5) {
@@ -90,17 +93,17 @@ class RecordIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLoggi
         }
         val (iters, kvsToFeatures) = if (hints.isBinQuery) {
           // use the server side aggregation
-          val iter = BinAggregatingIterator.configureDynamic(sft, RecordTable, filter.secondary, hints, dupes)
+          val iter = BinAggregatingIterator.configureDynamic(sft, RecordIndex, filter.secondary, hints, dupes)
           (Seq(iter), BinAggregatingIterator.kvsToFeatures())
         } else if (hints.isDensityQuery) {
-          val iter = KryoLazyDensityIterator.configure(sft, RecordTable, filter.secondary, hints)
+          val iter = KryoLazyDensityIterator.configure(sft, RecordIndex, filter.secondary, hints)
           (Seq(iter), KryoLazyDensityIterator.kvsToFeatures())
         } else if (hints.isStatsIteratorQuery) {
-          val iter = KryoLazyStatsIterator.configure(sft, RecordTable, filter.secondary, hints, dupes)
+          val iter = KryoLazyStatsIterator.configure(sft, RecordIndex, filter.secondary, hints, dupes)
           (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft))
         } else {
           val iter = KryoLazyFilterTransformIterator.configure(sft, filter.secondary, hints)
-          (iter.toSeq, queryPlanner.kvsToFeatures(sft, hints.getReturnSft, RecordTable))
+          (iter.toSeq, AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, RecordIndex))
         }
         BatchScanPlan(filter, table, ranges, iters ++ perAttributeIter, Seq.empty, kvsToFeatures, threads, dupes)
       } else {
@@ -110,9 +113,9 @@ class RecordIdxStrategy(val filter: QueryFilter) extends Strategy with LazyLoggi
           Seq.empty
         }
         val kvsToFeatures = if (hints.isBinQuery) {
-          BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, RecordTable, hints, featureEncoding)
+          BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, RecordIndex, hints, featureEncoding)
         } else {
-          queryPlanner.kvsToFeatures(sft, hints.getReturnSft, RecordTable)
+          AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, RecordIndex)
         }
         BatchScanPlan(filter, table, ranges, iters, Seq.empty, kvsToFeatures, threads, dupes)
       }

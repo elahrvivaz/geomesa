@@ -21,7 +21,6 @@ import org.geotools.factory.Hints
 import org.geotools.filter.identity.FeatureIdImpl
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.FeatureIdProperties.FEATURE_ID_GENERATOR
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureWriterFn
-import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.util.{GeoMesaBatchWriterConfig, Z3FeatureIdGenerator}
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, ScalaSimpleFeatureFactory, SimpleFeatureSerializer}
@@ -51,13 +50,13 @@ object AccumuloFeatureWriter extends LazyLogging {
    * Gets writers and table names for each table (e.g. index) that supports the sft
    */
   def getTablesAndWriters(sft: SimpleFeatureType, ds: AccumuloConnectorCreator): Seq[TableAndWriter] =
-    GeoMesaTable.getTables(sft).map(table => (ds.getTableName(sft.getTypeName, table), table.writer(sft)))
+    IndexManager.indices(sft).map(index => (ds.getTableName(sft.getTypeName, index), index.writer(sft)))
 
   /**
    * Gets removers and table names for each table (e.g. index) that supports the sft
    */
   def getTablesAndRemovers(sft: SimpleFeatureType, ds: AccumuloConnectorCreator): Seq[TableAndWriter] =
-    GeoMesaTable.getTables(sft).map(table => (ds.getTableName(sft.getTypeName, table), table.remover(sft)))
+    IndexManager.indices(sft).map(index => (ds.getTableName(sft.getTypeName, index), index.remover(sft)))
 
   private val idGenerator: FeatureIdGenerator =
     try {
