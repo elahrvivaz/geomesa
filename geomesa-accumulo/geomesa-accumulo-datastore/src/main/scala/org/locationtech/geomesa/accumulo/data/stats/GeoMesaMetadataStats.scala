@@ -26,6 +26,7 @@ import org.locationtech.geomesa.accumulo.data.GeoMesaMetadata._
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.index.QueryHints
 import org.locationtech.geomesa.accumulo.iterators.KryoLazyStatsIterator
+import org.locationtech.geomesa.api.stats.{GeoMesaStats, StatsBasedEstimator}
 import org.locationtech.geomesa.curve.BinnedTime
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.visitor.{BoundsFilterVisitor, QueryPlanFilterVisitor}

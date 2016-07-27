@@ -6,16 +6,11 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.index
+package org.locationtech.geomesa.api.index
 
 import com.typesafe.scalalogging.LazyLogging
-import org.locationtech.geomesa.accumulo.data.tables._
-import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType
-import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
 import org.locationtech.geomesa.filter._
-import org.locationtech.geomesa.filter.visitor.{FilterExtractingVisitor, IdDetectingFilterVisitor, IdExtractingVisitor}
-import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
-import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+import org.locationtech.geomesa.filter.visitor.IdDetectingFilterVisitor
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter._
 
@@ -25,11 +20,9 @@ import scala.collection.mutable.ArrayBuffer
 /**
  * Class for splitting queries up based on Boolean clauses and the available query strategies.
  */
-class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
+class QueryFilterSplitter[T](sft: SimpleFeatureType, supported: Seq[QueryableIndex[T]]) extends LazyLogging {
 
   import QueryFilterSplitter._
-
-  val supported = GeoMesaTable.getTables(sft).toSet
 
   /**
     * Splits the query up into different filter plans to be evaluated. Each filter plan will consist of one or
@@ -61,7 +54,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
     * note: ORs will not be split if they operate on a single attribute
     *
     */
-  def getQueryOptions(filter: Filter): Seq[FilterPlan] = {
+  def getQueryOptions(filter: Filter): Seq[FilterPlan[T]] = {
     // cnf gives us a top level AND with ORs as first children
     rewriteFilterInCNF(filter) match {
       case a: And =>
@@ -73,7 +66,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
         } else if (simple.nonEmpty) {
           logger.warn("Not considering complex OR predicates in query planning: " +
               s"${complex.map(filterToString).mkString("(", ") AND (", ")")}")
-          def addComplexPredicates(qf: QueryFilter) = qf.copy(secondary = andOption(qf.secondary.toSeq ++ complex))
+          def addComplexPredicates(qf: QueryFilter[T]) = qf.copy(secondary = andOption(qf.secondary.toSeq ++ complex))
           getSimpleQueryOptions(andFilters(simple)).map(addComplexPredicates).map(FilterPlan.apply)
         } else {
           logger.warn(s"Falling back to expand/reduce query splitting for filter ${filterToString(filter)}")
@@ -95,7 +88,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
         }
         if (perAttributeOptions.exists(_.primary.isEmpty)) {
           // we have to do a full table scan for part of the query, just append everything to that
-          Seq(FilterPlan(fullTableScanOption(o)))
+          fullTableScanOption(o)
         } else {
           Seq(makeDisjoint(FilterPlan(perAttributeOptions)))
         }
@@ -118,110 +111,53 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
     * @param filter input filter
     * @return sequence of options, any of which can satisfy the query
     */
-  private def getSimpleQueryOptions(filter: Filter): Seq[QueryFilter] = {
-
-    if (filter == Filter.INCLUDE) {
-      return Seq(fullTableScanOption(filter))
-    } else if (filter == Filter.EXCLUDE) {
+  private def getSimpleQueryOptions(filter: Filter): Seq[QueryFilter[T]] = {
+    if (filter == Filter.EXCLUDE) {
       return Seq.empty
     }
 
-    // buffer to store our results
-    val options = ArrayBuffer.empty[QueryFilter]
+    val options = supported.flatMap(_.getSimpleQueryFilter(filter))
 
-    val attributes = FilterHelper.propertyNames(filter, sft)
-    lazy val temporalIndexed = sft.getDtgField.map(sft.getDescriptor).exists(_.isIndexed)
-
-    // record index check - ID filters
-    if (supported.contains(RecordTable)) {
-      val (ids, notIds) = IdExtractingVisitor(filter)
-      if (ids.isDefined) {
-        options.append(QueryFilter(StrategyType.RECORD, ids, notIds))
-      }
-    }
-
-    // z2 (or ST) and z3 index check - spatial and spatio-temporal filters
-    if (attributes.contains(sft.getGeomField)) {
-      // check for spatial index - either z2 or ST (for old schemas)
-      val (spatial, nonSpatial) = FilterExtractingVisitor(filter, sft.getGeomField, sft, Z2IdxStrategy.spatialCheck)
-      val (temporal, others) = (sft.getDtgField, nonSpatial) match {
-        case (Some(dtg), Some(ns)) => FilterExtractingVisitor(ns, dtg, sft)
-        case _ => (None, nonSpatial)
-      }
-      lazy val spatioTemporal = andOption((spatial ++ temporal).toSeq)
-
-      if (spatial.isDefined) {
-        if (supported.contains(Z2Table)) {
-          options.append(QueryFilter(StrategyType.Z2, spatial, nonSpatial))
-        } else if (supported.contains(SpatioTemporalTable)) {
-          // noinspection ScalaDeprecation
-          options.append(QueryFilter(StrategyType.ST, spatioTemporal, others))
-        }
-      }
-      // use z3 if we have both spatial and temporal predicates,
-      // or if we just have a temporal predicate and the date is not attribute indexed
-      if (supported.contains(Z3Table) && temporal.exists(isBounded) &&
-          (spatial.isDefined || !supported.contains(AttributeTable) || !temporalIndexed)) {
-        options.append(QueryFilter(StrategyType.Z3, spatioTemporal, others))
-      }
-    } else if (sft.getDtgField.exists(attributes.contains)) {
-      // check for z3 without a geometry
-      lazy val (temporal, others) = sft.getDtgField match {
-        case None => (None, Some(filter))
-        case Some(dtg) => FilterExtractingVisitor(filter, dtg, sft)
-      }
-      // use z3 if we just have a temporal predicate and the date is not attribute indexed
-      if (supported.contains(Z3Table) && temporal.exists(isBounded) &&
-          !(supported.contains(AttributeTable) && temporalIndexed)) {
-        options.append(QueryFilter(StrategyType.Z3, temporal, others))
-      }
-    }
-
-    // attribute index check
-    if (supported.contains(AttributeTable)) {
-      val indexedAttributes = attributes.filter(a => Option(sft.getDescriptor(a)).exists(_.isIndexed))
-      indexedAttributes.foreach { attribute =>
-        val (primary, secondary) = FilterExtractingVisitor(filter, attribute, sft, AttributeIdxStrategy.attributeCheck)
-        if (primary.isDefined) {
-          options.append(QueryFilter(StrategyType.ATTRIBUTE, primary, secondary))
-        }
-      }
-    }
-
-    // fall back - full table scan
     if (options.isEmpty) {
-      options.append(fullTableScanOption(filter))
+      logger.warn(s"No valid query options found for filter ${filterToString(filter)}")
+      return Seq.empty
     }
 
-    options
+    val (fullScans, filteredScans) = options.partition(_.primary.isEmpty)
+
+    if (filteredScans.isEmpty) {
+      Seq(fullScans.head)
+    } else {
+      filteredScans
+    }
   }
 
   /**
     * Calculates all possible options for each part of the filter, then determines all permutations of
     * the options. This can end up being expensive (O(2&#94;n)), so is only used as a fall-back.
     */
-  private def expandReduceOrOptions(filter: Or): Seq[FilterPlan] = {
+  private def expandReduceOrOptions(filter: Or): Seq[FilterPlan[T]] = {
 
     // for each child of the or, get the query options
     // each filter plan should only have a single query filter
-    def getChildOptions: Seq[Seq[FilterPlan]] =
+    def getChildOptions: Seq[Seq[FilterPlan[T]]] =
       filter.getChildren.map(getSimpleQueryOptions(_).map(qf => FilterPlan(Seq(qf))))
 
     // combine the filter plans so that each plan has multiple query filters
     // use the permutations of the different options for each child
     // TODO GEOMESA-941 Fix algorithmically dangerous (2^N exponential runtime)
-    def reduceChildOptions(childOptions: Seq[Seq[FilterPlan]]): Seq[FilterPlan] =
+    def reduceChildOptions(childOptions: Seq[Seq[FilterPlan[T]]]): Seq[FilterPlan[T]] =
       childOptions.reduce { (left, right) =>
         left.flatMap(l => right.map(r => FilterPlan(l.filters ++ r.filters)))
       }
 
     // try to combine query filters in each filter plan if they have the same primary filter
     // this avoids scanning the same ranges twice with different secondary predicates
-    def combineSecondaryFilters(options: Seq[FilterPlan]): Seq[FilterPlan] = options.map { r =>
+    def combineSecondaryFilters(options: Seq[FilterPlan[T]]): Seq[FilterPlan[T]] = options.map { r =>
       // build up the result array instead of using a group by to preserve filter order
-      val groups = ArrayBuffer.empty[QueryFilter]
+      val groups = ArrayBuffer.empty[QueryFilter[T]]
       r.filters.distinct.foreach { f =>
-        val i = groups.indexWhere(g => g.strategy == f.strategy && g.primary == f.primary)
+        val i = groups.indexWhere(g => g.index == f.index && g.primary == f.primary)
         if (i == -1) {
           groups.append(f)
         } else {
@@ -238,9 +174,9 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
 
     // if a filter plan has any query filters that scan a subset of the range of a different query filter,
     // then we can combine them, as we have to scan the larger range anyway
-    def mergeOverlappedFilters(options: Seq[FilterPlan]): Seq[FilterPlan] = options.map { filterPlan =>
+    def mergeOverlappedFilters(options: Seq[FilterPlan[T]]): Seq[FilterPlan[T]] = options.map { filterPlan =>
       val filters = ArrayBuffer(filterPlan.filters: _*)
-      var merged: QueryFilter = null
+      var merged: QueryFilter[T] = null
       var i = 0
       while (i < filters.length) {
         val toMerge = filters(i)
@@ -281,7 +217,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
     if (merged.nonEmpty) {
       merged
     } else {
-      Seq(FilterPlan(Seq(fullTableScanOption(filter))))
+      fullTableScanOption(filter)
     }
   }
 
@@ -289,12 +225,10 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
     * Will perform a full table scan - used when we don't have anything better. Currently z3, z2 and record
     * tables support full table scans.
     */
-  private def fullTableScanOption(filter: Filter): QueryFilter = {
-    val strategy = fullTableScanOptions.find(o => supported.contains(o._1)).map(_._2).getOrElse {
-      throw new UnsupportedOperationException(s"Configured indices do not support the query ${filterToString(filter)}")
-    }
+  private def fullTableScanOption(filter: Filter): Seq[FilterPlan[T]] = {
     val secondary = if (filter == Filter.INCLUDE) None else Some(filter)
-    QueryFilter(strategy, None, secondary)
+    val option = supported.toStream.flatMap(_.getSimpleQueryFilter(Filter.INCLUDE)).headOption
+    option.map(_.copy(secondary = secondary)).map(FilterPlan.apply).toSeq
   }
 
 
@@ -307,32 +241,18 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
     attributeCount + idCount
   }
 
-  /**
-    * Returns true if the temporal filters create a range with an upper and lower bound
-    */
-  private def isBounded(temporalFilter: Filter): Boolean = {
-    import FilterHelper.{MaxDateTime, MinDateTime}
-    val intervals = sft.getDtgField.map(FilterHelper.extractIntervals(temporalFilter, _)).getOrElse(Seq.empty)
-    intervals.nonEmpty && intervals.forall { case (start, end) => start != MinDateTime && end != MaxDateTime }
-  }
 }
 
 object QueryFilterSplitter {
 
-  // strategies that support full table scans, in priority order of which to use
-  private val fullTableScanOptions =
-    Seq((Z3Table, StrategyType.Z3), (Z2Table, StrategyType.Z2), (RecordTable, StrategyType.RECORD))
-
   /**
    * Try to merge the two query filters. Return the merged query filter if successful, else null.
    */
-  private def tryMerge(toMerge: QueryFilter, mergeTo: QueryFilter): QueryFilter = {
+  private def tryMerge[T](toMerge: QueryFilter[T], mergeTo: QueryFilter[T]): QueryFilter[T] = {
     if (mergeTo.primary.forall(_ == Filter.INCLUDE)) {
       // this is a full table scan, we can just append the OR to the secondary filter
       val secondary = orOption(mergeTo.secondary.toSeq ++ toMerge.filter)
       mergeTo.copy(secondary = secondary)
-    } else if (toMerge.strategy == StrategyType.ATTRIBUTE && mergeTo.strategy == StrategyType.ATTRIBUTE) {
-      AttributeIdxStrategy.tryMergeAttrStrategy(toMerge, mergeTo)
     } else {
       // overlapping geoms, date ranges, attribute ranges, etc will be handled when extracting bounds
       null
@@ -345,12 +265,12 @@ object QueryFilterSplitter {
     * @param option filter plan
     * @return same filter plan with disjoint ORs
     */
-  private def makeDisjoint(option: FilterPlan): FilterPlan = {
+  private def makeDisjoint[T](option: FilterPlan[T]): FilterPlan[T] = {
     if (option.filters.length < 2) {
       option
     } else {
       // A OR B OR C becomes... A OR (B NOT A) OR (C NOT A and NOT B)
-      def extractNot(qp: QueryFilter) = qp.filter.map(ff.not)
+      def extractNot(qp: QueryFilter[T]) = qp.filter.map(ff.not)
       // keep track of our current disjoint clause
       val nots = ArrayBuffer[Filter]()
       extractNot(option.filters.head).foreach(nots.append(_))

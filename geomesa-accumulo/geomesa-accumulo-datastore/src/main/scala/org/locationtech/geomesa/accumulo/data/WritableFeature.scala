@@ -13,58 +13,14 @@ import org.apache.accumulo.core.security.ColumnVisibility
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
 import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable._
-import org.locationtech.geomesa.accumulo.index.BinEncoder
+import org.locationtech.geomesa.accumulo.index.{BinEncoder, RowValue}
+import org.locationtech.geomesa.api.index.WritableFeature
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, SimpleFeatureSerializer}
 import org.locationtech.geomesa.security.SecurityUtils._
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.util.hashing.MurmurHash3
-
-/**
-  * Feature for writing to accumulo
-  */
-trait WritableFeature {
-
-  /**
-    * Raw feature being written
-    *
-    * @return
-    */
-  def feature: SimpleFeature
-
-  /**
-    * Main data values
-    *
-    * @return
-    */
-  def fullValues: Seq[RowValue]
-
-  /**
-    * Index values - e.g. a trimmed down feature with only date and geometry
-    *
-    * @return
-    */
-  def indexValues: Seq[RowValue]
-
-  /**
-    * Pre-computed BIN values
-    *
-    * @return
-    */
-  def binValues: Seq[RowValue]
-
-  /**
-    * Hash of the feature ID
-    *
-    * @return
-    */
-  def idHash: Int
-}
-
-class RowValue(val cf: Text, val cq: Text, val vis: ColumnVisibility, toValue: => Value) {
-  lazy val value: Value = toValue
-}
 
 object WritableFeature {
 
@@ -73,7 +29,7 @@ object WritableFeature {
             defaultVisibility: String,
             serializer: SimpleFeatureSerializer,
             indexSerializer: SimpleFeatureSerializer,
-            binEncoder: Option[BinEncoder]): WritableFeature = {
+            binEncoder: Option[BinEncoder]): WritableFeature[RowValue] = {
 
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
@@ -91,7 +47,7 @@ class WritableFeatureLevelFeature(val feature: SimpleFeature,
                                   defaultVisibility: String,
                                   serializer: SimpleFeatureSerializer,
                                   indexSerializer: SimpleFeatureSerializer,
-                                  binEncoder: Option[BinEncoder]) extends WritableFeature {
+                                  binEncoder: Option[BinEncoder]) extends WritableFeature[RowValue] {
 
   import GeoMesaTable.{BinColumnFamily, EmptyColumnQualifier, FullColumnFamily, IndexColumnFamily}
   import org.locationtech.geomesa.utils.geotools.Conversions.RichSimpleFeature
@@ -117,7 +73,7 @@ class WritableAttributeLevelFeature(val feature: SimpleFeature,
                                     defaultVisibility: String,
                                     serializer: SimpleFeatureSerializer,
                                     indexSerializer: SimpleFeatureSerializer,
-                                    binEncoder: Option[BinEncoder]) extends WritableFeature {
+                                    binEncoder: Option[BinEncoder]) extends WritableFeature[RowValue] {
 
   private lazy val visibilities: Array[String] = {
     import org.locationtech.geomesa.utils.geotools.Conversions.RichSimpleFeature

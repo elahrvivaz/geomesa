@@ -8,87 +8,15 @@
 
 package org.locationtech.geomesa.accumulo.index
 
-import java.util.Map.Entry
-
 import com.typesafe.scalalogging.LazyLogging
 import com.vividsolutions.jts.geom.Geometry
-import org.apache.accumulo.core.client.IteratorSetting
-import org.apache.accumulo.core.data.{Key, Value, Range => AccRange}
-import org.apache.hadoop.io.Text
+import org.apache.accumulo.core.data.{Range => AccRange}
 import org.joda.time.format.DateTimeFormatter
 import org.joda.time.{DateTime, DateTimeZone}
 import org.locationtech.geomesa.accumulo.data.tables.SpatioTemporalTable
 import org.locationtech.geomesa.accumulo.index.KeyUtils._
-import org.locationtech.geomesa.accumulo.index.QueryPlanners.{FeatureFunction, JoinFunction}
 import org.locationtech.geomesa.utils.CartesianProductIterable
 import org.locationtech.geomesa.utils.geohash.{GeoHash, GeohashUtils}
-import org.opengis.feature.simple.SimpleFeature
-
-object QueryPlanners {
-  type JoinFunction = (java.util.Map.Entry[Key, Value]) => AccRange
-  type FeatureFunction = (Entry[Key, Value]) => SimpleFeature
-}
-
-sealed trait QueryPlan {
-  def filter: QueryFilter
-  def table: String
-  def ranges: Seq[AccRange]
-  def iterators: Seq[IteratorSetting]
-  def columnFamilies: Seq[Text]
-  def numThreads: Int
-  def hasDuplicates: Boolean
-  def kvsToFeatures: FeatureFunction
-
-  def join: Option[(JoinFunction, QueryPlan)] = None
-}
-
-// plan that will not actually scan anything
-case class EmptyPlan(filter: QueryFilter) extends QueryPlan {
-  override val table: String = ""
-  override val iterators: Seq[IteratorSetting] = Seq.empty
-  override val kvsToFeatures: FeatureFunction = (_) => null
-  override val ranges: Seq[AccRange] = Seq.empty
-  override val columnFamilies: Seq[Text] = Seq.empty
-  override val hasDuplicates: Boolean = false
-  override val numThreads: Int = 0
-}
-
-// single scan plan
-case class ScanPlan(filter: QueryFilter,
-                    table: String,
-                    range: AccRange,
-                    iterators: Seq[IteratorSetting],
-                    columnFamilies: Seq[Text],
-                    kvsToFeatures: FeatureFunction,
-                    hasDuplicates: Boolean) extends QueryPlan {
-  override val numThreads = 1
-  override val ranges = Seq(range)
-}
-
-// batch scan plan
-case class BatchScanPlan(filter: QueryFilter,
-                         table: String,
-                         ranges: Seq[AccRange],
-                         iterators: Seq[IteratorSetting],
-                         columnFamilies: Seq[Text],
-                         kvsToFeatures: FeatureFunction,
-                         numThreads: Int,
-                         hasDuplicates: Boolean) extends QueryPlan
-
-// join on multiple tables - requires multiple scans
-case class JoinPlan(filter: QueryFilter,
-                    table: String,
-                    ranges: Seq[AccRange],
-                    iterators: Seq[IteratorSetting],
-                    columnFamilies: Seq[Text],
-                    numThreads: Int,
-                    hasDuplicates: Boolean,
-                    joinFunction: JoinFunction,
-                    joinQuery: BatchScanPlan) extends QueryPlan {
-  override def kvsToFeatures: FeatureFunction = joinQuery.kvsToFeatures
-  override val join = Some((joinFunction, joinQuery))
-}
-
 
 trait KeyPlanningFilter
 

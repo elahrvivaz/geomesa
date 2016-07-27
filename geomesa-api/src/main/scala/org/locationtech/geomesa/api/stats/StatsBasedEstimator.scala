@@ -6,14 +6,13 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.data.stats
+package org.locationtech.geomesa.api.stats
 
 import java.util.Date
 
 import com.typesafe.scalalogging.LazyLogging
 import com.vividsolutions.jts.geom.Geometry
 import org.joda.time.DateTime
-import org.locationtech.geomesa.accumulo.index.RecordIdxStrategy
 import org.locationtech.geomesa.curve.{BinnedTime, Z2SFC, Z3SFC}
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.utils.geotools.GeometryUtils
@@ -70,7 +69,7 @@ class CountEstimator(sft: SimpleFeatureType, stats: GeoMesaStats) extends LazyLo
       case o: Or   => estimateOrCount(o, loDate, hiDate)
       case n: Not  => estimateNotCount(n, loDate, hiDate)
 
-      case i: Id   => Some(RecordIdxStrategy.intersectIdFilters(i).size)
+      case i: Id   => Some(i.getIdentifiers.size())
       case _       =>
         // single filter - equals, between, less than, etc
         val attribute = FilterHelper.propertyNames(filter, sft).headOption
