@@ -17,7 +17,7 @@ import org.apache.accumulo.core.data.Mutation
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.MutableFeatureIndex
+import org.locationtech.geomesa.accumulo.index.AccumuloIndexWritable
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -31,7 +31,7 @@ import scala.util.Try
  * Contains logic for converting between accumulo and geotools for the attribute index
  */
 @deprecated
-object AttributeTableV5 extends MutableFeatureIndex with LazyLogging {
+object AttributeIndexWritableV5 extends AccumuloIndexWritable with LazyLogging {
 
   override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val indexedAttributes = SimpleFeatureTypes.getSecondaryIndexedAttributes(sft)
@@ -96,7 +96,7 @@ object AttributeTableV5 extends MutableFeatureIndex with LazyLogging {
                             descriptor: AttributeDescriptor,
                             value: Any): Seq[String] = {
     val prefix = getAttributeIndexRowPrefix(rowIdPrefix, descriptor)
-    AttributeTable.encodeForIndex(value, descriptor).map(prefix + _)
+    AttributeIndexWritable.encodeForIndex(value, descriptor).map(prefix + _)
   }
 
   /**
@@ -125,7 +125,7 @@ object AttributeTableV5 extends MutableFeatureIndex with LazyLogging {
       separator = suffix.indexOf(NULLBYTE)
       name = suffix.substring(0, separator)
       encodedValue = suffix.substring(separator + 1)
-      decodedValue = AttributeTable.decode(encodedValue, descriptor)
+      decodedValue = AttributeIndexWritable.decode(encodedValue, descriptor)
     } yield {
       AttributeIndexRow(name, decodedValue)
     }

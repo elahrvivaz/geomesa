@@ -11,7 +11,7 @@ package org.locationtech.geomesa.accumulo.index.z2
 import org.locationtech.geomesa.accumulo.index._
 import org.opengis.feature.simple.SimpleFeatureType
 
-object Z2Index extends AccumuloSplitIndex(Z2Table, Z2IdxStrategy) {
+object Z2Index extends AccumuloFeatureIndex {
 
   override val name: String = "z2"
 
@@ -21,5 +21,7 @@ object Z2Index extends AccumuloSplitIndex(Z2Table, Z2IdxStrategy) {
         (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name))
   }
 
-  override val toString = getClass.getSimpleName.split("\\$").last
+  override val writable: AccumuloIndexWritable = Z2IndexWritable
+
+  override val queryable: AccumuloIndexQueryable = Z2IndexQueryable
 }

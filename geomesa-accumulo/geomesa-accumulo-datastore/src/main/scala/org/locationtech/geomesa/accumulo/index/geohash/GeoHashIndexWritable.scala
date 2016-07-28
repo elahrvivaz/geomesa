@@ -24,7 +24,8 @@ import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.collection.JavaConversions._
 
-object SpatioTemporalTable extends MutableFeatureIndex with LazyLogging {
+@deprecated("z2/z3")
+object GeoHashIndexWritable extends AccumuloIndexWritable with LazyLogging {
 
   val INDEX_FLAG = "0"
   val DATA_FLAG = "1"

@@ -6,7 +6,7 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.data.stats
+package org.locationtech.geomesa.index.stats
 
 import java.io.{Closeable, Flushable}
 import java.util.Date

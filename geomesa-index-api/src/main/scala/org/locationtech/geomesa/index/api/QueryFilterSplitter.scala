@@ -9,7 +9,7 @@
 package org.locationtech.geomesa.accumulo.index
 
 import com.typesafe.scalalogging.LazyLogging
-import org.locationtech.geomesa.accumulo.index.attribute.{AttributeIndex, AttributeIdxStrategy}
+import org.locationtech.geomesa.accumulo.index.attribute.{AttributeIndex, AttributeIndexQueryable}
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.visitor.IdDetectingFilterVisitor
 import org.opengis.feature.simple.SimpleFeatureType
@@ -113,7 +113,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
     * @return sequence of options, any of which can satisfy the query
     */
   private def getSimpleQueryOptions(filter: Filter): Seq[FilterStrategy] = {
-    val options = IndexManager.indices(sft).flatMap(_.getFilterStrategy(sft, filter))
+    val options = IndexManager.indices(sft).flatMap(_.queryable.getFilterStrategy(sft, filter))
     if (options.isEmpty) {
       Seq.empty
     } else {
@@ -221,7 +221,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
     */
   private def fullTableScanOption(filter: Filter): FilterStrategy = {
     val secondary = if (filter == Filter.INCLUDE) None else Some(filter)
-    val options = IndexManager.indices(sft).toStream.flatMap(_.getFilterStrategy(sft, Filter.INCLUDE))
+    val options = IndexManager.indices(sft).toStream.flatMap(_.queryable.getFilterStrategy(sft, Filter.INCLUDE))
     options.headOption.map(o => o.copy(secondary = secondary)).getOrElse {
       throw new UnsupportedOperationException(s"Configured indices do not support the query ${filterToString(filter)}")
     }
@@ -248,7 +248,7 @@ object QueryFilterSplitter {
       val secondary = orOption(mergeTo.secondary.toSeq ++ toMerge.filter)
       mergeTo.copy(secondary = secondary)
     } else if (toMerge.index == AttributeIndex && mergeTo.index == AttributeIndex) {
-      AttributeIdxStrategy.tryMergeAttrStrategy(toMerge, mergeTo)
+      AttributeIndexQueryable.tryMergeAttrStrategy(toMerge, mergeTo)
     } else {
       // overlapping geoms, date ranges, attribute ranges, etc will be handled when extracting bounds
       null

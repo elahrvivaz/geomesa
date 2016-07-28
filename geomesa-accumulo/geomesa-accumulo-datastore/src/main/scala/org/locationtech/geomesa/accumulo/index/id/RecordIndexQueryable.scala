@@ -27,8 +27,7 @@ import org.opengis.filter.{And, Filter, Id, Or}
 
 import scala.collection.JavaConversions._
 
-
-object RecordIdxStrategy extends QueryableFeatureIndex with LazyLogging {
+object RecordIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
 
   // top-priority index - always 1 if there are actually ID filters
   override def getCost(sft: SimpleFeatureType,
@@ -81,9 +80,9 @@ object RecordIdxStrategy extends QueryableFeatureIndex with LazyLogging {
       case Some(primary) =>
         // Multiple sets of IDs in a ID Filter are ORs. ANDs of these call for the intersection to be taken.
         // intersect together all groups of ID Filters, producing a set of IDs
-        val identifiers = RecordIdxStrategy.intersectIdFilters(primary)
+        val identifiers = RecordIndexQueryable.intersectIdFilters(primary)
         explain(s"Extracted ID filter: ${identifiers.mkString(", ")}")
-        identifiers.toSeq.map(id => aRange.exact(RecordTable.getRowKey(prefix, id)))
+        identifiers.toSeq.map(id => aRange.exact(RecordIndexWritable.getRowKey(prefix, id)))
     }
 
     if (ranges.isEmpty) { EmptyPlan(filter) } else {
@@ -109,7 +108,7 @@ object RecordIdxStrategy extends QueryableFeatureIndex with LazyLogging {
           (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft))
         } else {
           val iter = KryoLazyFilterTransformIterator.configure(sft, filter.secondary, hints)
-          (iter.toSeq, RecordIndex.entriesToFeatures(sft, hints.getReturnSft))
+          (iter.toSeq, RecordIndex.writable.entriesToFeatures(sft, hints.getReturnSft))
         }
         BatchScanPlan(filter, table, ranges, iters ++ perAttributeIter, Seq.empty, kvsToFeatures, threads, dupes)
       } else {
@@ -121,7 +120,7 @@ object RecordIdxStrategy extends QueryableFeatureIndex with LazyLogging {
         val kvsToFeatures = if (hints.isBinQuery) {
           BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, RecordIndex, hints, featureEncoding)
         } else {
-          RecordIndex.entriesToFeatures(sft, hints.getReturnSft)
+          RecordIndex.writable.entriesToFeatures(sft, hints.getReturnSft)
         }
         BatchScanPlan(filter, table, ranges, iters, Seq.empty, kvsToFeatures, threads, dupes)
       }

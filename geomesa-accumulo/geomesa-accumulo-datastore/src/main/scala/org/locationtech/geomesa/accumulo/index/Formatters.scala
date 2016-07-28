@@ -10,7 +10,7 @@ package org.locationtech.geomesa.accumulo.index
 
 import org.apache.hadoop.io.Text
 import org.joda.time.DateTime
-import org.locationtech.geomesa.accumulo.index.geohash.SpatioTemporalTable
+import org.locationtech.geomesa.accumulo.index.geohash.GeoHashIndexWritable
 import org.locationtech.geomesa.utils.geohash.GeoHash
 import org.opengis.feature.simple.SimpleFeature
 
@@ -101,8 +101,8 @@ case class ConstantTextFormatter(constStr: String) extends TextFormatter {
 }
 
 case class IndexOrDataTextFormatter() extends TextFormatter {
-  val constTextIndex = new Text(SpatioTemporalTable.INDEX_FLAG)
-  val constTextData = new Text(SpatioTemporalTable.DATA_FLAG)
+  val constTextIndex = new Text(GeoHashIndexWritable.INDEX_FLAG)
+  val constTextData = new Text(GeoHashIndexWritable.DATA_FLAG)
   val numBits = 1
   def format(gh: GeoHash, dt: DateTime, sf: SimpleFeature, isIndex: Boolean = false) =
     if (isIndex) constTextIndex else constTextData

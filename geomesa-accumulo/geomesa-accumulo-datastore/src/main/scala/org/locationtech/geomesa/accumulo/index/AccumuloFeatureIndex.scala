@@ -33,8 +33,35 @@ trait AccumuloFeatureIndex {
 
   /**
     * Is the index compatible with the given feature type
+    *
+    * @param sft simple feature type
+    * @return
     */
   def supports(sft: SimpleFeatureType): Boolean
+
+  /**
+    * Data operations
+    *
+    * @return
+    */
+  def writable: AccumuloIndexWritable
+
+  /**
+    * Query operations
+    *
+    * @return
+    */
+  def queryable: AccumuloIndexQueryable
+
+  /**
+    * Trims off the $ of the object name
+    *
+    * @return
+    */
+  override def toString = getClass.getSimpleName.split("\\$").last
+}
+
+trait AccumuloIndexWritable {
 
   /**
     * Creates a function to write a feature to the index
@@ -70,11 +97,44 @@ trait AccumuloFeatureIndex {
   /**
     * Configure the underlying accumulo table
     *
-    * @param sft simple feature type
-    * @param table name of the accumulo table
+    * @param sft      simple feature type
+    * @param table    name of the accumulo table
     * @param tableOps handle to the accumulo table operations
     */
   def configureTable(sft: SimpleFeatureType, table: String, tableOps: TableOperations): Unit
+
+  /**
+    * Transforms an iterator of Accumulo Key-Values into an iterator of SimpleFeatures
+    *
+    * @param sft simple feature type
+    * @param returnSft simple feature type being returned (transform, aggregation, etc)
+    * @return
+    */
+  def entriesToFeatures(sft: SimpleFeatureType,
+                        returnSft: SimpleFeatureType): (java.util.Map.Entry[Key, Value]) => SimpleFeature = {
+    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+    // Perform a projecting decode of the simple feature
+    if (sft.getSchemaVersion < 9) {
+      val deserializer = SimpleFeatureDeserializers(returnSft, SerializationType.KRYO)
+      (kv: Entry[Key, Value]) => {
+        val sf = deserializer.deserialize(kv.getValue.get)
+        AccumuloFeatureIndex.applyVisibility(sf, kv.getKey)
+        sf
+      }
+    } else {
+      val getId = getIdFromRow(sft)
+      val deserializer = SimpleFeatureDeserializers(returnSft, SerializationType.KRYO, SerializationOptions.withoutId)
+      (kv: Entry[Key, Value]) => {
+        val sf = deserializer.deserialize(kv.getValue.get)
+        sf.getIdentifier.asInstanceOf[FeatureIdImpl].setID(getId(kv.getKey.getRow))
+        AccumuloFeatureIndex.applyVisibility(sf, kv.getKey)
+        sf
+      }
+    }
+  }
+}
+
+trait AccumuloIndexQueryable {
 
   /**
     * Gets options for a 'simple' filter, where each OR is on a single attribute, e.g.
@@ -108,36 +168,6 @@ trait AccumuloFeatureIndex {
                    filter: FilterStrategy,
                    hints: Hints,
                    explain: ExplainerOutputType = ExplainNull): QueryPlan
-
-  /**
-    * Transforms an iterator of Accumulo Key-Values into an iterator of SimpleFeatures
-    *
-    * @param sft simple feature type
-    * @param returnSft simple feature type being returned (transform, aggregation, etc)
-    * @return
-    */
-  def entriesToFeatures(sft: SimpleFeatureType,
-                        returnSft: SimpleFeatureType): (java.util.Map.Entry[Key, Value]) => SimpleFeature = {
-    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-    // Perform a projecting decode of the simple feature
-    if (sft.getSchemaVersion < 9) {
-      val deserializer = SimpleFeatureDeserializers(returnSft, SerializationType.KRYO)
-      (kv: Entry[Key, Value]) => {
-        val sf = deserializer.deserialize(kv.getValue.get)
-        AccumuloFeatureIndex.applyVisibility(sf, kv.getKey)
-        sf
-      }
-    } else {
-      val getId = getIdFromRow(sft)
-      val deserializer = SimpleFeatureDeserializers(returnSft, SerializationType.KRYO, SerializationOptions.withoutId)
-      (kv: Entry[Key, Value]) => {
-        val sf = deserializer.deserialize(kv.getValue.get)
-        sf.getIdentifier.asInstanceOf[FeatureIdImpl].setID(getId(kv.getKey.getRow))
-        AccumuloFeatureIndex.applyVisibility(sf, kv.getKey)
-        sf
-      }
-    }
-  }
 }
 
 object AccumuloFeatureIndex {
@@ -151,7 +181,6 @@ object AccumuloFeatureIndex {
 
   val NullByte = Array(0.toByte)
 
-  // TODO
   def applyVisibility(sf: SimpleFeature, key: Key): Unit = {
     val visibility = key.getColumnVisibility
     if (visibility.getLength > 0) {

@@ -16,8 +16,8 @@ import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
-import org.locationtech.geomesa.accumulo.index._
-import org.locationtech.geomesa.accumulo.index.z2.Z2IdxStrategy
+import org.locationtech.geomesa.accumulo.index.z2.Z2IndexQueryable
+import org.locationtech.geomesa.accumulo.index.{ExplainerOutputType, _}
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.{BinnedTime, Z3SFC}
 import org.locationtech.geomesa.filter._
@@ -28,14 +28,14 @@ import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
-object Z3IdxStrategy extends QueryableFeatureIndex with LazyLogging {
+object Z3IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
 
   override def getQueryPlan(ds: AccumuloDataStore,
                             sft: SimpleFeatureType,
                             filter: FilterStrategy,
                             hints: Hints,
                             explain: ExplainerOutputType): QueryPlan = {
-    import Z3Table.GEOM_Z_NUM_BYTES
+    import Z3IndexWritable.GEOM_Z_NUM_BYTES
     import org.locationtech.geomesa.accumulo.index.QueryHints.{LOOSE_BBOX, RichHints}
     import org.locationtech.geomesa.filter.FilterHelper._
 
@@ -64,7 +64,7 @@ object Z3IdxStrategy extends QueryableFeatureIndex with LazyLogging {
     explain(s"Intervals: $intervals")
 
     val looseBBox = if (hints.containsKey(LOOSE_BBOX)) Boolean.unbox(hints.get(LOOSE_BBOX)) else ds.config.looseBBox
-    val hasSplits = Z3Table.hasSplits(sft)
+    val hasSplits = Z3IndexWritable.hasSplits(sft)
 
     // if the user has requested strict bounding boxes, we apply the full filter
     // if this is a non-point geometry type, the index is coarse-grained, so we apply the full filter
@@ -83,24 +83,24 @@ object Z3IdxStrategy extends QueryableFeatureIndex with LazyLogging {
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
         if (filter.secondary.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
-          (Seq(BinAggregatingIterator.configurePrecomputed(sft, Z3Index, ecql, hints, sft.nonPoints)), Z3Table.BIN_CF)
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, Z3Index, ecql, hints, sft.nonPoints)), Z3IndexWritable.BIN_CF)
         } else {
           val iter = BinAggregatingIterator.configureDynamic(sft, Z3Index, ecql, hints, sft.nonPoints)
-          (Seq(iter), Z3Table.FULL_CF)
+          (Seq(iter), Z3IndexWritable.FULL_CF)
         }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf, false)
     } else if (hints.isDensityQuery) {
       val iter = Z3DensityIterator.configure(sft, ecql, hints)
-      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z3Table.FULL_CF, false)
+      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z3IndexWritable.FULL_CF, false)
     } else if (hints.isStatsIteratorQuery) {
       val iter = KryoLazyStatsIterator.configure(sft, Z3Index, ecql, hints, sft.nonPoints)
-      (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z3Table.FULL_CF, false)
+      (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z3IndexWritable.FULL_CF, false)
     } else if (hints.isMapAggregatingQuery) {
       val iter = KryoLazyMapAggregatingIterator.configure(sft, Z3Index, ecql, hints, sft.nonPoints)
-      (Seq(iter), Z3Index.entriesToFeatures(sft, hints.getReturnSft), Z3Table.FULL_CF, false)
+      (Seq(iter), Z3IndexWritable.entriesToFeatures(sft, hints.getReturnSft), Z3IndexWritable.FULL_CF, false)
     } else {
       val iters = KryoLazyFilterTransformIterator.configure(sft, ecql, hints).toSeq
-      (iters, Z3Index.entriesToFeatures(sft, hints.getReturnSft), Z3Table.FULL_CF, sft.nonPoints)
+      (iters, Z3IndexWritable.entriesToFeatures(sft, hints.getReturnSft), Z3IndexWritable.FULL_CF, sft.nonPoints)
     }
 
     val z3table = ds.getTableName(sft.getTypeName, Z3Index)
@@ -145,7 +145,7 @@ object Z3IdxStrategy extends QueryableFeatureIndex with LazyLogging {
       val ranges = timesByBin.flatMap { case (b, times) =>
         val zs = if (times.eq(wholePeriod)) wholePeriodRanges else toZRanges(times)
         val binBytes = Shorts.toByteArray(b)
-        val prefixes = if (hasSplits) Z3Table.SPLIT_ARRAYS.map(Bytes.concat(_, binBytes)) else Seq(binBytes)
+        val prefixes = if (hasSplits) Z3IndexWritable.SPLIT_ARRAYS.map(Bytes.concat(_, binBytes)) else Seq(binBytes)
         prefixes.flatMap { prefix =>
           zs.map { case (lo, hi) =>
             val start = Bytes.concat(prefix, lo)
@@ -186,7 +186,7 @@ object Z3IdxStrategy extends QueryableFeatureIndex with LazyLogging {
       val (temporal, nonTemporal) = FilterExtractingVisitor(filter, dtg, sft)
       val (spatial, others) = nonTemporal match {
         case None => (None, None)
-        case Some(nt) => FilterExtractingVisitor(nt, sft.getGeomField, sft, Z2IdxStrategy.spatialCheck)
+        case Some(nt) => FilterExtractingVisitor(nt, sft.getGeomField, sft, Z2IndexQueryable.spatialCheck)
       }
 
       if (temporal.exists(isBounded(_, dtg)) && (spatial.isDefined || !sft.getDescriptor(dtg).isIndexed)) {

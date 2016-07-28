@@ -11,7 +11,7 @@ package org.locationtech.geomesa.accumulo.index.id
 import org.locationtech.geomesa.accumulo.index._
 import org.opengis.feature.simple.SimpleFeatureType
 
-object RecordIndex extends AccumuloSplitIndex(RecordTable, RecordIdxStrategy) {
+object RecordIndex extends AccumuloFeatureIndex {
 
   override val name: String = "records"
 
@@ -20,5 +20,6 @@ object RecordIndex extends AccumuloSplitIndex(RecordTable, RecordIdxStrategy) {
     sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name)
   }
 
-  override val toString = getClass.getSimpleName.split("\\$").last
+  override val data: AccumuloFeatureIndexData = RecordIndexWritable
+  override val query: AccumuloFeatureIndexQuery = RecordIndexQueryable
 }

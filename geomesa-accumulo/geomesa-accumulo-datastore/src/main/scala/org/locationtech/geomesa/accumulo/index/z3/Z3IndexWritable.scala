@@ -21,7 +21,7 @@ import org.apache.accumulo.core.data.{Mutation, Value, Range => aRange}
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
 import org.locationtech.geomesa.accumulo.data.{EMPTY_TEXT, WritableFeature}
-import org.locationtech.geomesa.accumulo.index.MutableFeatureIndex
+import org.locationtech.geomesa.accumulo.index.AccumuloIndexWritable
 import org.locationtech.geomesa.curve.BinnedTime.TimeToBinnedTime
 import org.locationtech.geomesa.curve.{BinnedTime, Z3SFC}
 import org.locationtech.geomesa.utils.geotools.Conversions._
@@ -31,7 +31,7 @@ import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.collection.JavaConversions._
 
-object Z3Table extends MutableFeatureIndex {
+object Z3IndexWritable extends AccumuloIndexWritable {
 
   val FULL_CF = new Text("F")
   val BIN_CF = new Text("B")

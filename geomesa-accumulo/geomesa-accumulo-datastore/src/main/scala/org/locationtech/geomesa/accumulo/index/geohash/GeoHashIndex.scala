@@ -11,8 +11,8 @@ package org.locationtech.geomesa.accumulo.index.geohash
 import org.locationtech.geomesa.accumulo.index._
 import org.opengis.feature.simple.SimpleFeatureType
 
-@deprecated
-object GeoHashIndex extends AccumuloSplitIndex(SpatioTemporalTable, STIdxStrategy) {
+@deprecated("z2/z3")
+object GeoHashIndex extends AccumuloFeatureIndex {
 
   override val name: String = "st_idx"
 
@@ -22,5 +22,7 @@ object GeoHashIndex extends AccumuloSplitIndex(SpatioTemporalTable, STIdxStrateg
         (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name))
   }
 
-  override val toString = getClass.getSimpleName.split("\\$").last
+  override val writable: AccumuloIndexWritable = GeoHashIndexWritable
+
+  override val queryable: AccumuloIndexQueryable = GeoHashIndexQueryable
 }

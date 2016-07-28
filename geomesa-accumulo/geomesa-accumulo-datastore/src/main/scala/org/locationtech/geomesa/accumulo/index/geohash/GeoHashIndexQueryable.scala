@@ -23,7 +23,7 @@ import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
 import org.locationtech.geomesa.accumulo.index.Strategy._
 import org.locationtech.geomesa.accumulo.index._
-import org.locationtech.geomesa.accumulo.index.z2.Z2IdxStrategy
+import org.locationtech.geomesa.accumulo.index.z2.Z2IndexQueryable
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.features.SerializationType
 import org.locationtech.geomesa.features.SerializationType.SerializationType
@@ -34,7 +34,8 @@ import org.locationtech.geomesa.utils.geotools._
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
-object STIdxStrategy extends QueryableFeatureIndex with LazyLogging with IndexFilterHelpers {
+@deprecated("z2/z3")
+object GeoHashIndexQueryable extends AccumuloIndexQueryable with LazyLogging with IndexFilterHelpers {
 
   /**
     * Plans the query - strategy implementations need to define this
@@ -113,7 +114,7 @@ object STIdxStrategy extends QueryableFeatureIndex with LazyLogging with IndexFi
         (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), false, false)
       } else {
         val iters = KryoLazyFilterTransformIterator.configure(sft, filter.filter, hints).toSeq
-        (iters, GeoHashIndex.entriesToFeatures(sft, hints.getReturnSft), false, sft.nonPoints)
+        (iters, GeoHashIndexWritable.entriesToFeatures(sft, hints.getReturnSft), false, sft.nonPoints)
       }
     } else {
       // legacy iterators
@@ -130,7 +131,7 @@ object STIdxStrategy extends QueryableFeatureIndex with LazyLogging with IndexFi
       val kvs = if (hints.isBinQuery) {
         BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, GeoHashIndex, hints, featureEncoding)
       } else {
-        GeoHashIndex.entriesToFeatures(sft, hints.getReturnSft)
+        GeoHashIndexWritable.entriesToFeatures(sft, hints.getReturnSft)
       }
       (iters, kvs, indexEntries, sft.nonPoints)
     }
@@ -267,7 +268,7 @@ object STIdxStrategy extends QueryableFeatureIndex with LazyLogging with IndexFi
     } else if (filter == Filter.EXCLUDE) {
       Seq.empty
     } else {
-      val (spatial, nonSpatial) = FilterExtractingVisitor(filter, sft.getGeomField, sft, Z2IdxStrategy.spatialCheck)
+      val (spatial, nonSpatial) = FilterExtractingVisitor(filter, sft.getGeomField, sft, Z2IndexQueryable.spatialCheck)
       val (temporal, others) = (sft.getDtgField, nonSpatial) match {
         case (Some(dtg), Some(ns)) => FilterExtractingVisitor(ns, dtg, sft)
         case _ => (None, nonSpatial)

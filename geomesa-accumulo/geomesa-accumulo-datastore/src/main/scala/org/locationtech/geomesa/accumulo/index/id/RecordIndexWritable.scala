@@ -17,14 +17,14 @@ import org.apache.accumulo.core.file.keyfunctor.RowFunctor
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter._
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.MutableFeatureIndex
+import org.locationtech.geomesa.accumulo.index.AccumuloIndexWritable
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeatureType
 
 // TODO: Implement as traits and cache results to gain flexibility and speed-up.
 // https://geomesa.atlassian.net/browse/GEOMESA-344
-object RecordTable extends MutableFeatureIndex {
+object RecordIndexWritable extends AccumuloIndexWritable {
 
   private val SFT_CF = new Text("SFT")
 
@@ -73,7 +73,7 @@ object RecordTable extends MutableFeatureIndex {
     import scala.collection.JavaConversions._
 
     val prefix = featureType.getTableSharingPrefix
-    val prefixFn = RecordTable.getRowKey(prefix, _: String)
+    val prefixFn = getRowKey(prefix, _: String)
     val splitterClazz = featureType.getUserData.getOrElse(SimpleFeatureTypes.TABLE_SPLITTER, classOf[HexSplitter].getCanonicalName).asInstanceOf[String]
     val clazz = Class.forName(splitterClazz)
     val splitter = clazz.newInstance().asInstanceOf[TableSplitter]

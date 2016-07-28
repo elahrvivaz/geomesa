@@ -6,14 +6,10 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.index
+package org.locationtech.geomesa.index.api
 
 import org.geotools.data.Query
-import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
-import org.locationtech.geomesa.accumulo.index.QueryHints._
-import org.locationtech.geomesa.accumulo.index.Strategy.CostEvaluation
-import org.locationtech.geomesa.accumulo.index.z2.Z2Index
-import org.locationtech.geomesa.accumulo.index.z3.Z3Index
+import org.locationtech.geomesa.index.stats.GeoMesaStats
 import org.locationtech.geomesa.utils.stats.{MethodProfiling, Timing, TimingsImpl}
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
@@ -22,7 +18,7 @@ trait QueryStrategyDecider {
   def chooseFilterPlan(sft: SimpleFeatureType,
                        query: Query,
                        stats: GeoMesaStats,
-                       requested: Option[AccumuloFeatureIndex],
+                       requested: Option[GeoMesaFeatureIndex],
                        output: ExplainerOutputType = ExplainNull): FilterPlan
 }
 
