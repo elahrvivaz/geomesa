@@ -85,10 +85,10 @@ object Z2IdxStrategy extends QueryableFeatureIndex with LazyLogging {
       (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z2Table.FULL_CF, false)
     } else if (hints.isMapAggregatingQuery) {
       val iter = KryoLazyMapAggregatingIterator.configure(sft, Z2Index, ecql, hints, sft.nonPoints)
-      (Seq(iter), entriesToFeatures(sft, hints.getReturnSft), Z2Table.FULL_CF, false)
+      (Seq(iter), Z2Index.entriesToFeatures(sft, hints.getReturnSft), Z2Table.FULL_CF, false)
     } else {
       val iters = KryoLazyFilterTransformIterator.configure(sft, ecql, hints).toSeq
-      (iters, entriesToFeatures(sft, hints.getReturnSft), Z2Table.FULL_CF, sft.nonPoints)
+      (iters, Z2Index.entriesToFeatures(sft, hints.getReturnSft), Z2Table.FULL_CF, sft.nonPoints)
     }
 
     val z2table = ds.getTableName(sft.getTypeName, Z2Index)

@@ -11,7 +11,6 @@ package org.locationtech.geomesa.accumulo.index
 import org.geotools.factory.CommonFactoryFinder
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.data.tables.AvailableTables
 import org.locationtech.geomesa.accumulo.index.z3.Z3Index
 import org.locationtech.geomesa.utils.geotools.SftBuilder
 import org.opengis.filter.Filter
@@ -26,7 +25,7 @@ class ConfigurableIndexesTest extends Specification {
   val sft = new SftBuilder()
     .date("dtg", default = true)
     .point("geom", default = true)
-    .withIndexes(AvailableTables.Z3TableScheme)
+    .withIndexes(IndexManager.Schemes.Z3TableScheme)
     .build("ConfigurableIndexesTest")
 
   val splitter = new QueryFilterSplitter(sft)

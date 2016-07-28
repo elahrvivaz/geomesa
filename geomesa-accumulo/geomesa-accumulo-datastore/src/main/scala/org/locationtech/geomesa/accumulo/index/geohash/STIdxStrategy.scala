@@ -113,7 +113,7 @@ object STIdxStrategy extends QueryableFeatureIndex with LazyLogging with IndexFi
         (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), false, false)
       } else {
         val iters = KryoLazyFilterTransformIterator.configure(sft, filter.filter, hints).toSeq
-        (iters, entriesToFeatures(sft, hints.getReturnSft), false, sft.nonPoints)
+        (iters, GeoHashIndex.entriesToFeatures(sft, hints.getReturnSft), false, sft.nonPoints)
       }
     } else {
       // legacy iterators
@@ -130,7 +130,7 @@ object STIdxStrategy extends QueryableFeatureIndex with LazyLogging with IndexFi
       val kvs = if (hints.isBinQuery) {
         BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, GeoHashIndex, hints, featureEncoding)
       } else {
-        entriesToFeatures(sft, hints.getReturnSft)
+        GeoHashIndex.entriesToFeatures(sft, hints.getReturnSft)
       }
       (iters, kvs, indexEntries, sft.nonPoints)
     }

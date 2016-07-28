@@ -97,10 +97,10 @@ object Z3IdxStrategy extends QueryableFeatureIndex with LazyLogging {
       (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z3Table.FULL_CF, false)
     } else if (hints.isMapAggregatingQuery) {
       val iter = KryoLazyMapAggregatingIterator.configure(sft, Z3Index, ecql, hints, sft.nonPoints)
-      (Seq(iter), entriesToFeatures(sft, hints.getReturnSft), Z3Table.FULL_CF, false)
+      (Seq(iter), Z3Index.entriesToFeatures(sft, hints.getReturnSft), Z3Table.FULL_CF, false)
     } else {
       val iters = KryoLazyFilterTransformIterator.configure(sft, ecql, hints).toSeq
-      (iters, entriesToFeatures(sft, hints.getReturnSft), Z3Table.FULL_CF, sft.nonPoints)
+      (iters, Z3Index.entriesToFeatures(sft, hints.getReturnSft), Z3Table.FULL_CF, sft.nonPoints)
     }
 
     val z3table = ds.getTableName(sft.getTypeName, Z3Index)

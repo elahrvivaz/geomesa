@@ -101,7 +101,7 @@ object AttributeIdxStrategy extends QueryableFeatureIndex with LazyLogging {
       val iter = KryoLazyFilterTransformIterator.configure(schema, ecql, transform, sampling)
       val iters = visibilityIter(schema) ++ iter.toSeq
       // need to use transform to convert key/values if it's defined
-      val kvsToFeatures = entriesToFeatures(sft, transform.map(_._2).getOrElse(schema))
+      val kvsToFeatures = AttributeIndex.entriesToFeatures(sft, transform.map(_._2).getOrElse(schema))
       BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDupes)
     }
 

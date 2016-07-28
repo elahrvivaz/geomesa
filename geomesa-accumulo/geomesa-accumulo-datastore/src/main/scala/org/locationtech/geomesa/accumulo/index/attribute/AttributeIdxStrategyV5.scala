@@ -78,7 +78,7 @@ object AttributeIdxStrategyV5 extends QueryableFeatureIndex with LazyLogging {
       // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
       BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, AttributeIndex, hints, encoding)
     } else {
-      this.entriesToFeatures(sft, hints.getReturnSft)
+      AttributeIndex.entriesToFeatures(sft, hints.getReturnSft)
     }
 
     // choose which iterator we want to use - joining iterator or attribute only iterator

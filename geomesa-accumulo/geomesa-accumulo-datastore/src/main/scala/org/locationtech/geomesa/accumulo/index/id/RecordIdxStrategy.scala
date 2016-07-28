@@ -109,7 +109,7 @@ object RecordIdxStrategy extends QueryableFeatureIndex with LazyLogging {
           (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft))
         } else {
           val iter = KryoLazyFilterTransformIterator.configure(sft, filter.secondary, hints)
-          (iter.toSeq, entriesToFeatures(sft, hints.getReturnSft))
+          (iter.toSeq, RecordIndex.entriesToFeatures(sft, hints.getReturnSft))
         }
         BatchScanPlan(filter, table, ranges, iters ++ perAttributeIter, Seq.empty, kvsToFeatures, threads, dupes)
       } else {
@@ -121,7 +121,7 @@ object RecordIdxStrategy extends QueryableFeatureIndex with LazyLogging {
         val kvsToFeatures = if (hints.isBinQuery) {
           BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, RecordIndex, hints, featureEncoding)
         } else {
-          entriesToFeatures(sft, hints.getReturnSft)
+          RecordIndex.entriesToFeatures(sft, hints.getReturnSft)
         }
         BatchScanPlan(filter, table, ranges, iters, Seq.empty, kvsToFeatures, threads, dupes)
       }

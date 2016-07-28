@@ -675,7 +675,7 @@ class AccumuloDataStore(val connector: Connector,
           tableOps.delete(name)
         } else {
           val deleter = connector.createBatchDeleter(name, auths, config.queryThreads, defaultBWConfig)
-          index.deleteFeaturesForType(sft, deleter)
+          index.removeAll(sft, deleter)
           deleter.close()
         }
       }
