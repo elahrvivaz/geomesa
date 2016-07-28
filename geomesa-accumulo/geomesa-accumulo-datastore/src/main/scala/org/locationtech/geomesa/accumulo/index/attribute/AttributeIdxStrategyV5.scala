@@ -42,7 +42,7 @@ import org.opengis.filter.temporal.{After, Before, During, TEquals}
 import scala.collection.JavaConverters._
 
 @deprecated
-object AttributeIdxStrategyV5 extends AccumuloQueryableIndex with LazyLogging {
+object AttributeIdxStrategyV5 extends QueryableFeatureIndex with LazyLogging {
 
   override def getQueryPlan(ds: AccumuloDataStore,
                             sft: SimpleFeatureType,
@@ -78,7 +78,7 @@ object AttributeIdxStrategyV5 extends AccumuloQueryableIndex with LazyLogging {
       // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
       BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, AttributeIndex, hints, encoding)
     } else {
-      AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, AttributeTableV5)
+      this.entriesToFeatures(sft, hints.getReturnSft)
     }
 
     // choose which iterator we want to use - joining iterator or attribute only iterator
@@ -209,7 +209,7 @@ object AttributeIdxStrategyV5 extends AccumuloQueryableIndex with LazyLogging {
     )
 
 
-  override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = ???
+  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = ???
 
   override def getCost(sft: SimpleFeatureType,
                        stats: Option[GeoMesaStats],

@@ -11,7 +11,7 @@ package org.locationtech.geomesa.accumulo.index.id
 import org.locationtech.geomesa.accumulo.index._
 import org.opengis.feature.simple.SimpleFeatureType
 
-object RecordIndex extends DelegatingFeatureIndex(RecordTable, RecordIdxStrategy) {
+object RecordIndex extends AccumuloSplitIndex(RecordTable, RecordIdxStrategy) {
 
   override val name: String = "records"
 

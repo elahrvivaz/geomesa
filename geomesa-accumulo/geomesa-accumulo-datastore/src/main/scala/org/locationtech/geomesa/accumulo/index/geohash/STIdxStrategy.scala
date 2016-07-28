@@ -34,7 +34,7 @@ import org.locationtech.geomesa.utils.geotools._
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
-object STIdxStrategy extends AccumuloQueryableIndex with LazyLogging with IndexFilterHelpers {
+object STIdxStrategy extends QueryableFeatureIndex with LazyLogging with IndexFilterHelpers {
 
   /**
     * Plans the query - strategy implementations need to define this
@@ -113,7 +113,7 @@ object STIdxStrategy extends AccumuloQueryableIndex with LazyLogging with IndexF
         (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), false, false)
       } else {
         val iters = KryoLazyFilterTransformIterator.configure(sft, filter.filter, hints).toSeq
-        (iters, AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, SpatioTemporalTable), false, sft.nonPoints)
+        (iters, entriesToFeatures(sft, hints.getReturnSft), false, sft.nonPoints)
       }
     } else {
       // legacy iterators
@@ -130,7 +130,7 @@ object STIdxStrategy extends AccumuloQueryableIndex with LazyLogging with IndexF
       val kvs = if (hints.isBinQuery) {
         BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, GeoHashIndex, hints, featureEncoding)
       } else {
-        AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, SpatioTemporalTable)
+        entriesToFeatures(sft, hints.getReturnSft)
       }
       (iters, kvs, indexEntries, sft.nonPoints)
     }
@@ -259,7 +259,7 @@ object STIdxStrategy extends AccumuloQueryableIndex with LazyLogging with IndexF
     BatchScanPlan(qf, null, accRanges, null, cf, null, -1, hasDuplicates = false)
   }
 
-  override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
+  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
     import org.locationtech.geomesa.filter._
 
     if (filter == Filter.INCLUDE) {

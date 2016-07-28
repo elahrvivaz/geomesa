@@ -23,7 +23,7 @@ import org.calrissian.mango.types.{LexiTypeEncoders, SimpleTypeEncoders, TypeEnc
 import org.joda.time.format.ISODateTimeFormat
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.AccumuloMutableIndex
+import org.locationtech.geomesa.accumulo.index.MutableFeatureIndex
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -38,7 +38,7 @@ import scala.util.{Failure, Success, Try}
 /**
  * Contains logic for converting between accumulo and geotools for the attribute index
  */
-object AttributeTable extends AccumuloMutableIndex with LazyLogging {
+object AttributeTable extends MutableFeatureIndex with LazyLogging {
 
   private val NullByte = "\u0000"
   private val NullByteArray = NullByte.getBytes(StandardCharsets.UTF_8)

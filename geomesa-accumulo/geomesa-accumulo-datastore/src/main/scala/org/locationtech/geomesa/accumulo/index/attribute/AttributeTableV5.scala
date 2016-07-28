@@ -17,7 +17,7 @@ import org.apache.accumulo.core.data.Mutation
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.AccumuloMutableIndex
+import org.locationtech.geomesa.accumulo.index.MutableFeatureIndex
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -31,7 +31,7 @@ import scala.util.Try
  * Contains logic for converting between accumulo and geotools for the attribute index
  */
 @deprecated
-object AttributeTableV5 extends AccumuloMutableIndex with LazyLogging {
+object AttributeTableV5 extends MutableFeatureIndex with LazyLogging {
 
   override def writer(sft: SimpleFeatureType): FeatureToMutations = {
     val indexedAttributes = SimpleFeatureTypes.getSecondaryIndexedAttributes(sft)

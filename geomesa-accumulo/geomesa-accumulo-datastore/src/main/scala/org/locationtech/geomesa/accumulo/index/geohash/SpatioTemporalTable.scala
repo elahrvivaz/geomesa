@@ -24,7 +24,7 @@ import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.collection.JavaConversions._
 
-object SpatioTemporalTable extends AccumuloMutableIndex with LazyLogging {
+object SpatioTemporalTable extends MutableFeatureIndex with LazyLogging {
 
   val INDEX_FLAG = "0"
   val DATA_FLAG = "1"
@@ -50,7 +50,7 @@ object SpatioTemporalTable extends AccumuloMutableIndex with LazyLogging {
   // data rows have a data flag as part of the schema
   def isDataEntry(key: Key): Boolean = key.getRow.find(DATA_CHECK) != -1
 
-  override def deleteFeaturesForType(sft: SimpleFeatureType, bd: BatchDeleter): Unit = {
+  override def removeAll(sft: SimpleFeatureType, bd: BatchDeleter): Unit = {
     val MIN_START = "\u0000"
     val MAX_END = "~"
 

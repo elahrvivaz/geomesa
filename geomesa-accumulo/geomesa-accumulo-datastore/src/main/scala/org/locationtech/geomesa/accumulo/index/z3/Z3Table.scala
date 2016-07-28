@@ -20,9 +20,8 @@ import org.apache.accumulo.core.conf.Property
 import org.apache.accumulo.core.data.{Mutation, Value, Range => aRange}
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
-import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
 import org.locationtech.geomesa.accumulo.data.{EMPTY_TEXT, WritableFeature}
-import org.locationtech.geomesa.accumulo.index.AccumuloMutableIndex
+import org.locationtech.geomesa.accumulo.index.MutableFeatureIndex
 import org.locationtech.geomesa.curve.BinnedTime.TimeToBinnedTime
 import org.locationtech.geomesa.curve.{BinnedTime, Z3SFC}
 import org.locationtech.geomesa.utils.geotools.Conversions._
@@ -32,7 +31,7 @@ import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.collection.JavaConversions._
 
-object Z3Table extends AccumuloMutableIndex {
+object Z3Table extends MutableFeatureIndex {
 
   val FULL_CF = new Text("F")
   val BIN_CF = new Text("B")
@@ -149,7 +148,7 @@ object Z3Table extends AccumuloMutableIndex {
     (row: Text) => new String(row.getBytes, offset, row.getLength - offset, StandardCharsets.UTF_8)
   }
 
-  override def deleteFeaturesForType(sft: SimpleFeatureType, bd: BatchDeleter): Unit = {
+  override def removeAll(sft: SimpleFeatureType, bd: BatchDeleter): Unit = {
     bd.setRanges(Seq(new aRange()))
     bd.delete()
   }

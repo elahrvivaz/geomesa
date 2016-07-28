@@ -11,7 +11,7 @@ package org.locationtech.geomesa.accumulo.index.z3
 import org.locationtech.geomesa.accumulo.index._
 import org.opengis.feature.simple.SimpleFeatureType
 
-object Z3Index extends DelegatingFeatureIndex(Z3Table, Z3IdxStrategy) {
+object Z3Index extends AccumuloSplitIndex(Z3Table, Z3IdxStrategy) {
 
   override val name: String = "z3"
 

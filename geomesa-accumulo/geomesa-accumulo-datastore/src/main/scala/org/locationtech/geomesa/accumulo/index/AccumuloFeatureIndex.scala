@@ -18,14 +18,13 @@ import org.geotools.factory.Hints
 import org.geotools.filter.identity.FeatureIdImpl
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
-import org.locationtech.geomesa.accumulo.index.id.{RecordIdxStrategy, RecordTable}
 import org.locationtech.geomesa.features.SerializationOption.SerializationOptions
 import org.locationtech.geomesa.features.{SerializationType, SimpleFeatureDeserializers}
 import org.locationtech.geomesa.security.SecurityUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
-trait AccumuloFeatureIndex extends AccumuloMutableIndex with AccumuloQueryableIndex {
+trait AccumuloFeatureIndex {
 
   /**
     * The name used to identify the index
@@ -36,9 +35,6 @@ trait AccumuloFeatureIndex extends AccumuloMutableIndex with AccumuloQueryableIn
     * Is the index compatible with the given feature type
     */
   def supports(sft: SimpleFeatureType): Boolean
-}
-
-trait AccumuloMutableIndex {
 
   /**
     * Creates a function to write a feature to the index
@@ -51,19 +47,9 @@ trait AccumuloMutableIndex {
   def remover(sft: SimpleFeatureType): (WritableFeature) => Seq[Mutation]
 
   /**
-    * Retrieve an ID from a row. All indices are assumed to encode the feature ID into the row key
-    *
-    * @param sft simple feature type
-    * @return a function to retrieve an ID from a row
-    */
-  def getIdFromRow(sft: SimpleFeatureType): (Text) => String
-
-  def configureTable(sft: SimpleFeatureType, table: String, tableOps: TableOperations): Unit
-
-  /**
     * Deletes all features from the table
     */
-  def deleteFeaturesForType(sft: SimpleFeatureType, bd: BatchDeleter): Unit = {
+  def removeAll(sft: SimpleFeatureType, bd: BatchDeleter): Unit = {
     import org.apache.accumulo.core.data.{Range => aRange}
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
@@ -72,9 +58,23 @@ trait AccumuloMutableIndex {
     bd.setRanges(Seq(new aRange(prefix, true, aRange.followingPrefix(prefix), false)))
     bd.delete()
   }
-}
 
-trait AccumuloQueryableIndex {
+  /**
+    * Retrieve an ID from a row. All indices are assumed to encode the feature ID into the row key
+    *
+    * @param sft simple feature type
+    * @return a function to retrieve an ID from a row
+    */
+  def getIdFromRow(sft: SimpleFeatureType): (Text) => String
+
+  /**
+    * Configure the underlying accumulo table
+    *
+    * @param sft simple feature type
+    * @param table name of the accumulo table
+    * @param tableOps handle to the accumulo table operations
+    */
+  def configureTable(sft: SimpleFeatureType, table: String, tableOps: TableOperations): Unit
 
   /**
     * Gets options for a 'simple' filter, where each OR is on a single attribute, e.g.
@@ -84,12 +84,12 @@ trait AccumuloQueryableIndex {
     *   bbox OR dtg
     *
     * Because the inputs are simple, each one can be satisfied with a single query filter.
-    * The returned values will satisfy the query.
+    * The returned values will each satisfy the query.
     *
     * @param filter input filter
     * @return sequence of options, any of which can satisfy the query
     */
-  def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy]
+  def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy]
 
   /**
     * Gets the estimated cost of running the query. In general, this is the estimated
@@ -108,70 +108,54 @@ trait AccumuloQueryableIndex {
                    filter: FilterStrategy,
                    hints: Hints,
                    explain: ExplainerOutputType = ExplainNull): QueryPlan
-}
 
-object AccumuloQueryableIndex {
-
-  // This function decodes/transforms that Iterator of Accumulo Key-Values into an Iterator of SimpleFeatures
-  def kvsToFeatures(sft: SimpleFeatureType,
-                    returnSft: SimpleFeatureType,
-                    index: AccumuloMutableIndex): (java.util.Map.Entry[Key, Value]) => SimpleFeature = {
+  /**
+    * Transforms an iterator of Accumulo Key-Values into an iterator of SimpleFeatures
+    *
+    * @param sft simple feature type
+    * @param returnSft simple feature type being returned (transform, aggregation, etc)
+    * @return
+    */
+  def entriesToFeatures(sft: SimpleFeatureType,
+                        returnSft: SimpleFeatureType): (java.util.Map.Entry[Key, Value]) => SimpleFeature = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
     // Perform a projecting decode of the simple feature
     if (sft.getSchemaVersion < 9) {
       val deserializer = SimpleFeatureDeserializers(returnSft, SerializationType.KRYO)
       (kv: Entry[Key, Value]) => {
         val sf = deserializer.deserialize(kv.getValue.get)
-        applyVisibility(sf, kv.getKey)
+        AccumuloFeatureIndex.applyVisibility(sf, kv.getKey)
         sf
       }
     } else {
-      val getId = index.getIdFromRow(sft)
+      val getId = getIdFromRow(sft)
       val deserializer = SimpleFeatureDeserializers(returnSft, SerializationType.KRYO, SerializationOptions.withoutId)
       (kv: Entry[Key, Value]) => {
         val sf = deserializer.deserialize(kv.getValue.get)
         sf.getIdentifier.asInstanceOf[FeatureIdImpl].setID(getId(kv.getKey.getRow))
-        applyVisibility(sf, kv.getKey)
+        AccumuloFeatureIndex.applyVisibility(sf, kv.getKey)
         sf
       }
     }
   }
+}
 
+object AccumuloFeatureIndex {
+
+  val FullColumnFamily      = new Text("F")
+  val IndexColumnFamily     = new Text("I")
+  val BinColumnFamily       = new Text("B")
+  val AttributeColumnFamily = new Text("A")
+
+  val EmptyColumnQualifier  = new Text()
+
+  val NullByte = Array(0.toByte)
+
+  // TODO
   def applyVisibility(sf: SimpleFeature, key: Key): Unit = {
     val visibility = key.getColumnVisibility
     if (visibility.getLength > 0) {
       SecurityUtils.setFeatureVisibility(sf, visibility.toString)
     }
   }
-}
-
-abstract class DelegatingFeatureIndex(mutable: AccumuloMutableIndex, queryable: AccumuloQueryableIndex)
-    extends AccumuloFeatureIndex {
-
-  override def writer(sft: SimpleFeatureType): (WritableFeature) => Seq[Mutation] = mutable.writer(sft)
-
-  override def remover(sft: SimpleFeatureType): (WritableFeature) => Seq[Mutation] = mutable.remover(sft)
-
-  override def getIdFromRow(sft: SimpleFeatureType): (Text) => String = mutable.getIdFromRow(sft)
-
-  override def configureTable(sft: SimpleFeatureType,
-                              table: String,
-                              tableOps: TableOperations): Unit = mutable.configureTable(sft, table, tableOps)
-
-  override def getSimpleQueryFilter(sft: SimpleFeatureType,
-                                    filter: Filter): Seq[FilterStrategy] =
-    queryable.getSimpleQueryFilter(sft, filter)
-
-  override def getCost(sft: SimpleFeatureType,
-                       stats: Option[GeoMesaStats],
-                       filter: FilterStrategy,
-                       transform: Option[SimpleFeatureType]): Long =
-    queryable.getCost(sft, stats, filter, transform)
-
-  override def getQueryPlan(ds: AccumuloDataStore,
-                            sft: SimpleFeatureType,
-                            filter: FilterStrategy,
-                            hints: Hints,
-                            explain: ExplainerOutputType): QueryPlan =
-    queryable.getQueryPlan(ds, sft, filter, hints, explain)
 }

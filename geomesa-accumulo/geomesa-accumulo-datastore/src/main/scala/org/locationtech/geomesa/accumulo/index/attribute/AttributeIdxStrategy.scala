@@ -37,7 +37,7 @@ import org.opengis.filter.temporal.{After, Before, During, TEquals}
 
 import scala.util.Try
 
-object AttributeIdxStrategy extends AccumuloQueryableIndex with LazyLogging {
+object AttributeIdxStrategy extends QueryableFeatureIndex with LazyLogging {
 
   val FILTERING_ITER_PRIORITY = 25
   type ScanPlanFn = (SimpleFeatureType, Option[Filter], Option[(String, SimpleFeatureType)]) => BatchScanPlan
@@ -101,7 +101,7 @@ object AttributeIdxStrategy extends AccumuloQueryableIndex with LazyLogging {
       val iter = KryoLazyFilterTransformIterator.configure(schema, ecql, transform, sampling)
       val iters = visibilityIter(schema) ++ iter.toSeq
       // need to use transform to convert key/values if it's defined
-      val kvsToFeatures = AccumuloQueryableIndex.kvsToFeatures(sft, transform.map(_._2).getOrElse(schema), AttributeIndex)
+      val kvsToFeatures = entriesToFeatures(sft, transform.map(_._2).getOrElse(schema))
       BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDupes)
     }
 
@@ -207,7 +207,7 @@ object AttributeIdxStrategy extends AccumuloQueryableIndex with LazyLogging {
     } else if (hints.isStatsIteratorQuery) {
       KryoLazyStatsIterator.kvsToFeatures(sft)
     } else {
-      AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, RecordIndex)
+      RecordIndex.entriesToFeatures(sft, hints.getReturnSft)
     }
 
     // function to join the attribute index scan results to the record table
@@ -227,7 +227,7 @@ object AttributeIdxStrategy extends AccumuloQueryableIndex with LazyLogging {
       attributeScan.columnFamilies, recordThreads, hasDupes, joinFunction, joinQuery)
   }
 
-  override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
+  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
     val attributes = FilterHelper.propertyNames(filter, sft)
     val indexedAttributes = attributes.filter(a => Option(sft.getDescriptor(a)).exists(_.isIndexed))
     indexedAttributes.flatMap { attribute =>

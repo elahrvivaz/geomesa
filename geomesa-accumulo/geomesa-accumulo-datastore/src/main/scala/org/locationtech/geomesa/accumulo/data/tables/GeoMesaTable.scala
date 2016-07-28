@@ -11,28 +11,11 @@ package org.locationtech.geomesa.accumulo.data.tables
 import java.nio.charset.StandardCharsets
 import java.util.Locale
 
-import org.apache.accumulo.core.client.BatchDeleter
-import org.apache.accumulo.core.client.admin.TableOperations
-import org.apache.accumulo.core.data.{Range => AccRange}
 import org.apache.commons.codec.binary.Hex
-import org.apache.hadoop.io.Text
-import org.locationtech.geomesa.accumulo.data.AccumuloConnectorCreator
-import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter._
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeatureType
 
-import scala.collection.JavaConversions._
-
 object GeoMesaTable {
-
-  val FullColumnFamily      = new Text("F")
-  val IndexColumnFamily     = new Text("I")
-  val BinColumnFamily       = new Text("B")
-  val AttributeColumnFamily = new Text("A")
-
-  val EmptyColumnQualifier  = new Text()
-
-  val NullByte = Array(0.toByte)
 
   // only alphanumeric is safe
   private val SAFE_FEATURE_NAME_PATTERN = "^[a-zA-Z0-9]+$"

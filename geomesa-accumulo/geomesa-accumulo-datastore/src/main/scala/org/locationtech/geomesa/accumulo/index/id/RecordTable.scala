@@ -17,14 +17,14 @@ import org.apache.accumulo.core.file.keyfunctor.RowFunctor
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter._
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.AccumuloMutableIndex
+import org.locationtech.geomesa.accumulo.index.MutableFeatureIndex
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeatureType
 
 // TODO: Implement as traits and cache results to gain flexibility and speed-up.
 // https://geomesa.atlassian.net/browse/GEOMESA-344
-object RecordTable extends AccumuloMutableIndex {
+object RecordTable extends MutableFeatureIndex {
 
   private val SFT_CF = new Text("SFT")
 

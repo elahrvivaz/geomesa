@@ -17,7 +17,6 @@ import org.geotools.factory.CommonFactoryFinder
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithDataStore
-import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.z3.Z3Index
 import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
@@ -204,7 +203,7 @@ class Z3IdxStrategyTest extends Specification with TestWithDataStore {
       val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg"))
 
       val qps = ds.getQueryPlan(query)
-      forall(qps)(p => p.columnFamilies must containTheSameElementsAs(Seq(GeoMesaTable.BinColumnFamily)))
+      forall(qps)(p => p.columnFamilies must containTheSameElementsAs(Seq(AccumuloFeatureIndex.BinColumnFamily)))
 
       val features = runQuery(query).toList
       features must haveSize(4)

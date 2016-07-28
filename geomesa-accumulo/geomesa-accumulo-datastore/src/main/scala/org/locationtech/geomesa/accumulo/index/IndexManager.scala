@@ -8,7 +8,6 @@
 
 package org.locationtech.geomesa.accumulo.index
 
-import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
 // noinspection ScalaDeprecation
 import org.locationtech.geomesa.accumulo.index.geohash.GeoHashIndex
@@ -20,9 +19,15 @@ import org.opengis.feature.simple.SimpleFeatureType
 object IndexManager {
 
   // note: keep in priority order for running full table scans
-  val AllIndices: Seq[AccumuloFeatureIndex] =
+  val AllIndices: Seq[AccumuloFeatureIndex] = {
     // noinspection ScalaDeprecation
     Seq(Z3Index, Z2Index, RecordIndex, AttributeIndex, GeoHashIndex)
+  }
 
   def indices(sft: SimpleFeatureType): Seq[AccumuloFeatureIndex] = AllIndices.filter(_.supports(sft))
+
+  object Schemes {
+    val Z3TableScheme: List[String] = List(AttributeIndex, RecordIndex, Z3Index).map(_.name)
+    val Z2TableScheme: List[String] = List(AttributeIndex, RecordIndex, Z2Index).map(_.name)
+  }
 }

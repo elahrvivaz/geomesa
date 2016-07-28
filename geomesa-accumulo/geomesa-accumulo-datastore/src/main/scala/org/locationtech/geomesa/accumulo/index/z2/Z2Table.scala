@@ -19,13 +19,13 @@ import org.apache.accumulo.core.data.{Mutation, Value}
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.AccumuloMutableIndex
+import org.locationtech.geomesa.accumulo.index.MutableFeatureIndex
 import org.locationtech.geomesa.curve.Z2SFC
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.sfcurve.zorder.{Z2, ZPrefix}
 import org.opengis.feature.simple.SimpleFeatureType
 
-object Z2Table extends AccumuloMutableIndex {
+object Z2Table extends MutableFeatureIndex {
 
   val FULL_CF = new Text("F")
   val BIN_CF = new Text("B")

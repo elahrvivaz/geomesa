@@ -32,19 +32,19 @@ object AttributeIndex extends AccumuloFeatureIndex {
         (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name) || sft.getEnabledTables.contains("attr_idx")) // check for old suffix
   }
 
-  object V6Index extends DelegatingFeatureIndex(AttributeTable, AttributeIdxStrategy) {
+  object V6Index extends AccumuloSplitIndex(AttributeTable, AttributeIdxStrategy) {
     override val name: String = null
     override def supports(sft: SimpleFeatureType): Boolean = false
   }
 
   @deprecated
-  object V5Index extends DelegatingFeatureIndex(AttributeTableV5, AttributeIdxStrategyV5) {
+  object V5Index extends AccumuloSplitIndex(AttributeTableV5, AttributeIdxStrategyV5) {
     override val name: String = "attr"
     override def supports(sft: SimpleFeatureType): Boolean = false
   }
 
-  override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] =
-    V6Index.getSimpleQueryFilter(sft, filter)
+  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] =
+    V6Index.getFilterStrategy(sft, filter)
 
   override def getCost(sft: SimpleFeatureType,
                        stats: Option[GeoMesaStats],

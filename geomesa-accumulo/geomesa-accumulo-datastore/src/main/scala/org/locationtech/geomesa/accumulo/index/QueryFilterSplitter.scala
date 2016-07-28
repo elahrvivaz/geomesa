@@ -113,7 +113,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
     * @return sequence of options, any of which can satisfy the query
     */
   private def getSimpleQueryOptions(filter: Filter): Seq[FilterStrategy] = {
-    val options = IndexManager.indices(sft).flatMap(_.getSimpleQueryFilter(sft, filter))
+    val options = IndexManager.indices(sft).flatMap(_.getFilterStrategy(sft, filter))
     if (options.isEmpty) {
       Seq.empty
     } else {
@@ -221,7 +221,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
     */
   private def fullTableScanOption(filter: Filter): FilterStrategy = {
     val secondary = if (filter == Filter.INCLUDE) None else Some(filter)
-    val options = IndexManager.indices(sft).toStream.flatMap(_.getSimpleQueryFilter(sft, Filter.INCLUDE))
+    val options = IndexManager.indices(sft).toStream.flatMap(_.getFilterStrategy(sft, Filter.INCLUDE))
     options.headOption.map(o => o.copy(secondary = secondary)).getOrElse {
       throw new UnsupportedOperationException(s"Configured indices do not support the query ${filterToString(filter)}")
     }

@@ -28,7 +28,7 @@ import org.opengis.filter.{And, Filter, Id, Or}
 import scala.collection.JavaConversions._
 
 
-object RecordIdxStrategy extends AccumuloQueryableIndex with LazyLogging {
+object RecordIdxStrategy extends QueryableFeatureIndex with LazyLogging {
 
   // top-priority index - always 1 if there are actually ID filters
   override def getCost(sft: SimpleFeatureType,
@@ -46,7 +46,7 @@ object RecordIdxStrategy extends AccumuloQueryableIndex with LazyLogging {
     }
   }
 
-  override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
+  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
     if (filter == Filter.INCLUDE) {
       Seq(FilterStrategy(RecordIndex, None, None))
     } else if (filter == Filter.EXCLUDE) {
@@ -109,7 +109,7 @@ object RecordIdxStrategy extends AccumuloQueryableIndex with LazyLogging {
           (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft))
         } else {
           val iter = KryoLazyFilterTransformIterator.configure(sft, filter.secondary, hints)
-          (iter.toSeq, AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, RecordIndex))
+          (iter.toSeq, entriesToFeatures(sft, hints.getReturnSft))
         }
         BatchScanPlan(filter, table, ranges, iters ++ perAttributeIter, Seq.empty, kvsToFeatures, threads, dupes)
       } else {
@@ -121,7 +121,7 @@ object RecordIdxStrategy extends AccumuloQueryableIndex with LazyLogging {
         val kvsToFeatures = if (hints.isBinQuery) {
           BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, RecordIndex, hints, featureEncoding)
         } else {
-          AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, RecordIndex)
+          entriesToFeatures(sft, hints.getReturnSft)
         }
         BatchScanPlan(filter, table, ranges, iters, Seq.empty, kvsToFeatures, threads, dupes)
       }

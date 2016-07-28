@@ -11,7 +11,7 @@ package org.locationtech.geomesa.accumulo.index.z2
 import org.locationtech.geomesa.accumulo.index._
 import org.opengis.feature.simple.SimpleFeatureType
 
-object Z2Index extends DelegatingFeatureIndex(Z2Table, Z2IdxStrategy) {
+object Z2Index extends AccumuloSplitIndex(Z2Table, Z2IdxStrategy) {
 
   override val name: String = "z2"
 

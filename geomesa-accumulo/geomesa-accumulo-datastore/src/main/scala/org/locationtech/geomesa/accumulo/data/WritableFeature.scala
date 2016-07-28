@@ -11,9 +11,7 @@ package org.locationtech.geomesa.accumulo.data
 import org.apache.accumulo.core.data.Value
 import org.apache.accumulo.core.security.ColumnVisibility
 import org.apache.hadoop.io.Text
-import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
-import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable._
-import org.locationtech.geomesa.accumulo.index.BinEncoder
+import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, BinEncoder}
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, SimpleFeatureSerializer}
 import org.locationtech.geomesa.security.SecurityUtils._
 import org.locationtech.geomesa.utils.index.VisibilityLevel
@@ -93,7 +91,7 @@ class WritableFeatureLevelFeature(val feature: SimpleFeature,
                                   indexSerializer: SimpleFeatureSerializer,
                                   binEncoder: Option[BinEncoder]) extends WritableFeature {
 
-  import GeoMesaTable.{BinColumnFamily, EmptyColumnQualifier, FullColumnFamily, IndexColumnFamily}
+  import AccumuloFeatureIndex.{BinColumnFamily, EmptyColumnQualifier, FullColumnFamily, IndexColumnFamily}
   import org.locationtech.geomesa.utils.geotools.Conversions.RichSimpleFeature
 
   private lazy val visibility =
@@ -137,17 +135,21 @@ class WritableAttributeLevelFeature(val feature: SimpleFeature,
   override lazy val fullValues: Seq[RowValue] = indexGroups.map { case (vis, indices) =>
     val sf = new ScalaSimpleFeature("", sft)
     indices.foreach(i => sf.setAttribute(i, feature.getAttribute(i)))
-    new RowValue(GeoMesaTable.AttributeColumnFamily, new Text(indices), vis, new Value(serializer.serialize(sf)))
+    val cf = AccumuloFeatureIndex.AttributeColumnFamily
+    new RowValue(cf, new Text(indices), vis, new Value(serializer.serialize(sf)))
   }
 
   override lazy val indexValues: Seq[RowValue] = indexGroups.map { case (vis, indices) =>
     val sf = new ScalaSimpleFeature("", sft)
     indices.foreach(i => sf.setAttribute(i, feature.getAttribute(i)))
-    new RowValue(GeoMesaTable.AttributeColumnFamily, new Text(indices), vis, new Value(indexSerializer.serialize(sf)))
+    val cf = AccumuloFeatureIndex.AttributeColumnFamily
+    new RowValue(cf, new Text(indices), vis, new Value(indexSerializer.serialize(sf)))
   }
 
   override lazy val binValues: Seq[RowValue] = {
+    import AccumuloFeatureIndex.{BinColumnFamily, EmptyColumnQualifier}
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+
     val rowOpt = for {
       encoder <- binEncoder
       trackId <- sft.getBinTrackId

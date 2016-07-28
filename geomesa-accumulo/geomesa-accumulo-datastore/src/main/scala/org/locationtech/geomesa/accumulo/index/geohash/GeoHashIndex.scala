@@ -12,7 +12,7 @@ import org.locationtech.geomesa.accumulo.index._
 import org.opengis.feature.simple.SimpleFeatureType
 
 @deprecated
-object GeoHashIndex extends DelegatingFeatureIndex(SpatioTemporalTable, STIdxStrategy) {
+object GeoHashIndex extends AccumuloSplitIndex(SpatioTemporalTable, STIdxStrategy) {
 
   override val name: String = "st_idx"
 

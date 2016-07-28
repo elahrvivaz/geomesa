@@ -18,9 +18,7 @@ import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
-import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
 import org.locationtech.geomesa.accumulo.index._
-import org.locationtech.geomesa.accumulo.index.id.RecordIndex
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.Z2SFC
 import org.locationtech.geomesa.filter._
@@ -30,7 +28,7 @@ import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.{And, Filter, Or}
 
-object Z2IdxStrategy extends AccumuloQueryableIndex with LazyLogging {
+object Z2IdxStrategy extends QueryableFeatureIndex with LazyLogging {
 
   override def getQueryPlan(ds: AccumuloDataStore,
                             sft: SimpleFeatureType,
@@ -87,10 +85,10 @@ object Z2IdxStrategy extends AccumuloQueryableIndex with LazyLogging {
       (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z2Table.FULL_CF, false)
     } else if (hints.isMapAggregatingQuery) {
       val iter = KryoLazyMapAggregatingIterator.configure(sft, Z2Index, ecql, hints, sft.nonPoints)
-      (Seq(iter), AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, Z2Table), Z2Table.FULL_CF, false)
+      (Seq(iter), entriesToFeatures(sft, hints.getReturnSft), Z2Table.FULL_CF, false)
     } else {
       val iters = KryoLazyFilterTransformIterator.configure(sft, ecql, hints).toSeq
-      (iters, AccumuloQueryableIndex.kvsToFeatures(sft, hints.getReturnSft, Z2Table), Z2Table.FULL_CF, sft.nonPoints)
+      (iters, entriesToFeatures(sft, hints.getReturnSft), Z2Table.FULL_CF, sft.nonPoints)
     }
 
     val z2table = ds.getTableName(sft.getTypeName, Z2Index)
@@ -140,13 +138,13 @@ object Z2IdxStrategy extends AccumuloQueryableIndex with LazyLogging {
       case VisibilityLevel.Feature   => Seq.empty
       case VisibilityLevel.Attribute => Seq(KryoVisibilityRowEncoder.configure(sft))
     }
-    val cf = if (perAttributeIter.isEmpty) colFamily else GeoMesaTable.AttributeColumnFamily
+    val cf = if (perAttributeIter.isEmpty) colFamily else AccumuloFeatureIndex.AttributeColumnFamily
 
     val iters = perAttributeIter ++ iterators ++ z2Iter
     BatchScanPlan(filter, z2table, ranges, iters, Seq(cf), kvsToFeatures, numThreads, hasDupes)
   }
 
-  override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
+  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
     if (filter == Filter.INCLUDE) {
