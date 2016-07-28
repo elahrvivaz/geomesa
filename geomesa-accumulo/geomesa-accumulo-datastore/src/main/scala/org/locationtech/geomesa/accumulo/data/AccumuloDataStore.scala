@@ -135,7 +135,7 @@ class AccumuloDataStore(val connector: Connector,
 
           // create the tables in accumulo
           IndexManager.indices(reloadedSft).foreach { index =>
-            val name = GeoMesaTable.formatTableName(catalogTable, index.name, reloadedSft)
+            val name = getTableName(sft.getTypeName, index)
             AccumuloVersion.ensureTableExists(connector, name)
             index.configureTable(reloadedSft, name, tableOps)
           }

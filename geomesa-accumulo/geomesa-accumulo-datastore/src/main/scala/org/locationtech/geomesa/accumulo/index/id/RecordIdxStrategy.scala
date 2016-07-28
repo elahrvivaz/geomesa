@@ -47,11 +47,17 @@ object RecordIdxStrategy extends AccumuloQueryableIndex with LazyLogging {
   }
 
   override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
-    val (ids, notIds) = IdExtractingVisitor(filter)
-    if (ids.isDefined) {
-      Seq(FilterStrategy(RecordIndex, ids, notIds))
+    if (filter == Filter.INCLUDE) {
+      Seq(FilterStrategy(RecordIndex, None, None))
+    } else if (filter == Filter.EXCLUDE) {
+      Seq.empty
     } else {
-      Seq(FilterStrategy(RecordIndex, None, Some(filter).filterNot(_ == Filter.INCLUDE)))
+      val (ids, notIds) = IdExtractingVisitor(filter)
+      if (ids.isDefined) {
+        Seq(FilterStrategy(RecordIndex, ids, notIds))
+      } else {
+        Seq(FilterStrategy(RecordIndex, None, Some(filter)))
+      }
     }
   }
 

@@ -20,4 +20,6 @@ object Z2Index extends DelegatingFeatureIndex(Z2Table, Z2IdxStrategy) {
     sft.getGeometryDescriptor != null && sft.getSchemaVersion > 7 &&
         (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name))
   }
+
+  override val toString = getClass.getSimpleName.split("\\$").last
 }

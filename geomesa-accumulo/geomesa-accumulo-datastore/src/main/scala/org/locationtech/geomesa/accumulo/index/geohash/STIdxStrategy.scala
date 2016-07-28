@@ -262,15 +262,21 @@ object STIdxStrategy extends AccumuloQueryableIndex with LazyLogging with IndexF
   override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
     import org.locationtech.geomesa.filter._
 
-    val (spatial, nonSpatial) = FilterExtractingVisitor(filter, sft.getGeomField, sft, Z2IdxStrategy.spatialCheck)
-    val (temporal, others) = (sft.getDtgField, nonSpatial) match {
-      case (Some(dtg), Some(ns)) => FilterExtractingVisitor(ns, dtg, sft)
-      case _ => (None, nonSpatial)
-    }
-    if (spatial.isDefined) {
-      Seq(FilterStrategy(GeoHashIndex, andOption((spatial ++ temporal).toSeq), others))
+    if (filter == Filter.INCLUDE) {
+      Seq(FilterStrategy(GeoHashIndex, None, None))
+    } else if (filter == Filter.EXCLUDE) {
+      Seq.empty
     } else {
-      Seq(FilterStrategy(GeoHashIndex, None, Some(filter).filterNot(_ == Filter.INCLUDE)))
+      val (spatial, nonSpatial) = FilterExtractingVisitor(filter, sft.getGeomField, sft, Z2IdxStrategy.spatialCheck)
+      val (temporal, others) = (sft.getDtgField, nonSpatial) match {
+        case (Some(dtg), Some(ns)) => FilterExtractingVisitor(ns, dtg, sft)
+        case _ => (None, nonSpatial)
+      }
+      if (spatial.isDefined) {
+        Seq(FilterStrategy(GeoHashIndex, andOption((spatial ++ temporal).toSeq), others))
+      } else {
+        Seq(FilterStrategy(GeoHashIndex, None, Some(filter)))
+      }
     }
   }
 

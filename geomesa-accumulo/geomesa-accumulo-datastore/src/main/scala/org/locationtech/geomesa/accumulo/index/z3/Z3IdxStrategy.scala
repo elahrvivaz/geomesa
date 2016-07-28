@@ -179,16 +179,22 @@ object Z3IdxStrategy extends AccumuloQueryableIndex with LazyLogging {
       throw new RuntimeException("Trying to plan a z3 query but the schema does not have a date")
     }
 
-    val (temporal, nonTemporal) = FilterExtractingVisitor(filter, dtg, sft)
-    val (spatial, others) = nonTemporal match {
-      case None => (None, None)
-      case Some(nt) => FilterExtractingVisitor(nt, sft.getGeomField, sft, Z2IdxStrategy.spatialCheck)
-    }
-
-    if (temporal.exists(isBounded(_, dtg)) && (spatial.isDefined || !sft.getDescriptor(dtg).isIndexed)) {
-      Seq(FilterStrategy(Z3Index, andOption((spatial ++ temporal).toSeq), others))
+    if (filter == Filter.INCLUDE) {
+      Seq(FilterStrategy(Z3Index, None, None))
+    } else if (filter == Filter.EXCLUDE) {
+      Seq.empty
     } else {
-      Seq(FilterStrategy(Z3Index, None, Some(filter).filterNot(_ == Filter.INCLUDE)))
+      val (temporal, nonTemporal) = FilterExtractingVisitor(filter, dtg, sft)
+      val (spatial, others) = nonTemporal match {
+        case None => (None, None)
+        case Some(nt) => FilterExtractingVisitor(nt, sft.getGeomField, sft, Z2IdxStrategy.spatialCheck)
+      }
+
+      if (temporal.exists(isBounded(_, dtg)) && (spatial.isDefined || !sft.getDescriptor(dtg).isIndexed)) {
+        Seq(FilterStrategy(Z3Index, andOption((spatial ++ temporal).toSeq), others))
+      } else {
+        Seq(FilterStrategy(Z3Index, None, Some(filter)))
+      }
     }
   }
 

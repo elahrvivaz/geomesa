@@ -20,6 +20,7 @@ import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
 import org.locationtech.geomesa.accumulo.index._
+import org.locationtech.geomesa.accumulo.index.id.RecordIndex
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.Z2SFC
 import org.locationtech.geomesa.filter._
@@ -148,11 +149,17 @@ object Z2IdxStrategy extends AccumuloQueryableIndex with LazyLogging {
   override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
-    val (spatial, nonSpatial) = FilterExtractingVisitor(filter, sft.getGeomField, sft, spatialCheck)
-    if (spatial.nonEmpty) {
-      Seq(FilterStrategy(Z2Index, spatial, nonSpatial))
+    if (filter == Filter.INCLUDE) {
+      Seq(FilterStrategy(Z2Index, None, None))
+    } else if (filter == Filter.EXCLUDE) {
+      Seq.empty
     } else {
-      Seq(FilterStrategy(Z2Index, None, Some(filter).filterNot(_ == Filter.INCLUDE)))
+      val (spatial, nonSpatial) = FilterExtractingVisitor(filter, sft.getGeomField, sft, spatialCheck)
+      if (spatial.nonEmpty) {
+        Seq(FilterStrategy(Z2Index, spatial, nonSpatial))
+      } else {
+        Seq(FilterStrategy(Z2Index, None, Some(filter)))
+      }
     }
   }
 

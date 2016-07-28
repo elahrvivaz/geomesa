@@ -227,7 +227,6 @@ object AttributeIdxStrategy extends AccumuloQueryableIndex with LazyLogging {
       attributeScan.columnFamilies, recordThreads, hasDupes, joinFunction, joinQuery)
   }
 
-
   override def getSimpleQueryFilter(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
     val attributes = FilterHelper.propertyNames(filter, sft)
     val indexedAttributes = attributes.filter(a => Option(sft.getDescriptor(a)).exists(_.isIndexed))
@@ -240,7 +239,6 @@ object AttributeIdxStrategy extends AccumuloQueryableIndex with LazyLogging {
       }
     }
   }
-
 
   override def getCost(sft: SimpleFeatureType,
                        stats: Option[GeoMesaStats],

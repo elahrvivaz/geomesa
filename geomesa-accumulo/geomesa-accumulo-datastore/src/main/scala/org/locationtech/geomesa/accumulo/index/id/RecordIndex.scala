@@ -19,4 +19,6 @@ object RecordIndex extends DelegatingFeatureIndex(RecordTable, RecordIdxStrategy
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
     sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name)
   }
+
+  override val toString = getClass.getSimpleName.split("\\$").last
 }

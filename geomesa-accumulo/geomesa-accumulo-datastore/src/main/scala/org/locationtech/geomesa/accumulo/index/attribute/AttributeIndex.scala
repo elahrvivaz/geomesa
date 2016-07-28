@@ -26,6 +26,7 @@ object AttributeIndex extends AccumuloFeatureIndex {
 
   override def supports(sft: SimpleFeatureType): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
+
     import scala.collection.JavaConversions._
     sft.getSchemaVersion > 5 && sft.getAttributeDescriptors.exists(_.isIndexed) &&
         (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name) || sft.getEnabledTables.contains("attr_idx")) // check for old suffix
@@ -76,4 +77,6 @@ object AttributeIndex extends AccumuloFeatureIndex {
     } else {
       V5Index.configureTable(sft, table, tableOps)
     }
+
+  override val toString = getClass.getSimpleName.split("\\$").last
 }

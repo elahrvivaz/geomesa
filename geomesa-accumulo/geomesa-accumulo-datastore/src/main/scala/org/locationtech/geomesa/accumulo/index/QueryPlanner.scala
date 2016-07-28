@@ -27,6 +27,7 @@ import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
+import org.locationtech.geomesa.accumulo.index.id.RecordIndex
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.accumulo.util.{CloseableIterator, SelfClosingIterator}
 import org.locationtech.geomesa.filter._
@@ -134,9 +135,9 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
 
     var strategyCount = 1
     filterPlan.strategies.iterator.flatMap { strategy =>
-      output.pushLevel(s"Strategy $strategyCount of ${filterPlan.strategies.length}: ${strategy.index.name}")
+      output.pushLevel(s"Strategy $strategyCount of ${filterPlan.strategies.length}: ${strategy.index}")
       strategyCount += 1
-      output(s"Strategy filter: ${strategy.filter}")
+      output(s"Strategy filter: $strategy")
 
       implicit val timing = new Timing
       val plan = profile(strategy.index.getQueryPlan(ds, sft, strategy, hints, output))
@@ -283,7 +284,13 @@ object QueryPlanner extends LazyLogging {
     if (viewParams != null) {
       def withName(name: String) = {
         // rename of strategy from 'attribute' to 'attr' - back compatible check for both
-        val check = if (name.equalsIgnoreCase("attribute")) AttributeIndex.name else name.toLowerCase(Locale.US)
+        val check = if (name.equalsIgnoreCase("attribute")) {
+          AttributeIndex.name
+        } else if (name.equalsIgnoreCase("record")) {
+          RecordIndex.name
+        } else {
+          name.toLowerCase(Locale.US)
+        }
         val value = IndexManager.indices(sft).find(_.name.toLowerCase(Locale.US) == check)
         if (value.isEmpty) {
           logger.error(s"Ignoring invalid strategy name from view params: $name. Valid values " +

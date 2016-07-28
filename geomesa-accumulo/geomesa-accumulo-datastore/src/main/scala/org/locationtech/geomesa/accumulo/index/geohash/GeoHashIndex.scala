@@ -21,4 +21,6 @@ object GeoHashIndex extends DelegatingFeatureIndex(SpatioTemporalTable, STIdxStr
     sft.getGeometryDescriptor != null && sft.getSchemaVersion < 8 &&
         (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name))
   }
+
+  override val toString = getClass.getSimpleName.split("\\$").last
 }

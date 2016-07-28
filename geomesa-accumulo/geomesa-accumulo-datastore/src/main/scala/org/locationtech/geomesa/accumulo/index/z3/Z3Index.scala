@@ -8,15 +8,8 @@
 
 package org.locationtech.geomesa.accumulo.index.z3
 
-import org.apache.accumulo.core.client.admin.TableOperations
-import org.apache.accumulo.core.data.Mutation
-import org.apache.hadoop.io.Text
-import org.geotools.factory.Hints
-import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
-import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, WritableFeature}
 import org.locationtech.geomesa.accumulo.index._
 import org.opengis.feature.simple.SimpleFeatureType
-import org.opengis.filter.Filter
 
 object Z3Index extends DelegatingFeatureIndex(Z3Table, Z3IdxStrategy) {
 
@@ -27,4 +20,6 @@ object Z3Index extends DelegatingFeatureIndex(Z3Table, Z3IdxStrategy) {
     sft.getDtgField.isDefined && ((sft.getSchemaVersion > 6 && sft.getGeometryDescriptor != null) ||
         (sft.getSchemaVersion > 4 && sft.isPoints)) && (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name))
   }
+
+  override val toString = getClass.getSimpleName.split("\\$").last
 }
