@@ -21,10 +21,9 @@ import org.geotools.filter.text.cql2.CQL
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithDataStore
-import org.locationtech.geomesa.accumulo.data.tables.GeoMesaTable
+import org.locationtech.geomesa.accumulo.index.{AccumuloStrategyDecider, IndexManager}
 import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
 import org.locationtech.geomesa.accumulo.index.id.RecordIndex
-import org.locationtech.geomesa.accumulo.index.{IndexManager, QueryStrategyDecider}
 import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.utils.geotools.Conversions._
@@ -364,8 +363,7 @@ class AccumuloFeatureWriterTest extends Specification with TestWithDataStore wit
 
       val filter = CQL.toFilter("name = 'will'")
 
-      val q = new Query(sft.getTypeName, filter)
-      QueryStrategyDecider.chooseFilterPlan(sft, q, ds.stats, None).strategies.head.index mustEqual AttributeIndex
+      AccumuloStrategyDecider.chooseFilterPlan(sft, Some(ds), filter, None, None).strategies.head.index mustEqual AttributeIndex
 
       import org.locationtech.geomesa.utils.geotools.Conversions._
 
@@ -436,7 +434,7 @@ class AccumuloFeatureWriterTest extends Specification with TestWithDataStore wit
       // ensure that the second part of the UUID is random
       rowKeys.map(_.substring(19)).toSet must haveLength(5)
 
-      val ids = rows.map(e => RecordIndex.getIdFromRow(sft)(e.getKey.getRow))
+      val ids = rows.map(e => RecordIndex.writable.getIdFromRow(sft)(e.getKey.getRow))
       ids must haveLength(5)
       forall(ids)(_ must not(beMatching("fid\\d")))
       // ensure they share a common prefix, since they have the same dtg/geom

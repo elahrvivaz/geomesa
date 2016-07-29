@@ -21,6 +21,7 @@ import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
 import org.locationtech.geomesa.accumulo.index.z2.Z2Index
 import org.locationtech.geomesa.accumulo.index.z3.Z3Index
 import org.locationtech.geomesa.accumulo.util.SelfClosingIterator
+import org.locationtech.geomesa.index.utils.ExplainString
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
@@ -112,7 +113,7 @@ class AttributeIndexFilteringIteratorTest extends Specification with TestWithDat
     "handle corner case with attr idx, bbox, and no temporal filter" in {
       val filter = ff.and(ECQL.toFilter("name = 'b'"), ECQL.toFilter("BBOX(geom, 30, 30, 50, 50)"))
       val query = new Query(sftName, filter, Array("geom"))
-      QueryStrategyDecider.chooseFilterPlan(sft, query, ds.stats, None).strategies.head.index mustEqual Z2Index
+      AccumuloStrategyDecider.chooseFilterPlan(sft, Some(ds), filter, None, None).strategies.head.index mustEqual Z2Index
 
       val features = SelfClosingIterator(fs.getFeatures(query)).toList
 

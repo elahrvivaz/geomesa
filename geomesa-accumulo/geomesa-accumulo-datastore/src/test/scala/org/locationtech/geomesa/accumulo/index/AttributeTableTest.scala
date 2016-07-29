@@ -38,7 +38,7 @@ class AttributeTableTest extends Specification with TestWithDataStore {
       val binEncoder = BinEncoder(sft)
 
       val toWrite = WritableFeature(feature, sft, "", featureEncoder, indexValueEncoder, binEncoder)
-      val mutations = AttributeIndex.writer(sft)(toWrite)
+      val mutations = AttributeIndex.writable.writer(sft, "")(toWrite)
       mutations.size mustEqual 2 // for null date
       mutations.map(_.getUpdates.size()) must contain(beEqualTo(1)).foreach
       mutations.map(_.getUpdates.get(0).isDeleted) must contain(beEqualTo(false)).foreach
@@ -54,7 +54,7 @@ class AttributeTableTest extends Specification with TestWithDataStore {
       feature.setAttribute("age",50.asInstanceOf[Any])
 
       val toWrite = WritableFeature(feature, sft, "", null, null, null)
-      val mutations = AttributeIndex.remover(sft)(toWrite)
+      val mutations = AttributeIndex.writable.remover(sft, "")(toWrite)
       mutations.size mustEqual 2 // for null date
       mutations.map(_.getUpdates.size()) must contain(beEqualTo(1)).foreach
       mutations.map(_.getUpdates.get(0).isDeleted) must contain(beEqualTo(true)).foreach

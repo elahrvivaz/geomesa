@@ -17,6 +17,7 @@ import org.locationtech.geomesa.accumulo.index.z3.Z3Index
 import org.locationtech.geomesa.filter
 import org.locationtech.geomesa.filter.visitor.QueryPlanFilterVisitor
 import org.locationtech.geomesa.filter.{decomposeAnd, decomposeOr}
+import org.locationtech.geomesa.index.api.FilterSplitter
 import org.locationtech.geomesa.utils.geotools.SftBuilder.Opts
 import org.locationtech.geomesa.utils.geotools.{SftBuilder, SimpleFeatureTypes}
 import org.locationtech.geomesa.utils.stats.Cardinality
@@ -43,7 +44,7 @@ class QueryFilterSplitterTest extends Specification {
     .build("QueryFilterSplitterTest")
 
   val ff = CommonFactoryFinder.getFilterFactory2
-  val splitter = new QueryFilterSplitter(sft)
+  val splitter = new FilterSplitter(sft, IndexManager.indices(sft))
 
   val geom                = "BBOX(geom,40,40,50,50)"
   val geom2               = "BBOX(geom,60,60,70,70)"
@@ -472,7 +473,7 @@ class QueryFilterSplitterTest extends Specification {
 
     "support indexed date attributes" >> {
       val sft = SimpleFeatureTypes.createType("dtgIndex", "dtg:Date:index=full,*geom:Point:srid=4326")
-      val splitter = new QueryFilterSplitter(sft)
+      val splitter = new FilterSplitter(sft, IndexManager.indices(sft))
       val filter = f("dtg TEQUALS 2014-01-01T12:30:00.000Z")
       val options = splitter.getQueryOptions(filter)
       options must haveLength(1)

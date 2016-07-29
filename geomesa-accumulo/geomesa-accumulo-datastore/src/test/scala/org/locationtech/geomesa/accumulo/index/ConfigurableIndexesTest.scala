@@ -12,6 +12,7 @@ import org.geotools.factory.CommonFactoryFinder
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.index.z3.Z3Index
+import org.locationtech.geomesa.index.api.FilterSplitter
 import org.locationtech.geomesa.utils.geotools.SftBuilder
 import org.opengis.filter.Filter
 import org.specs2.mutable.Specification
@@ -28,7 +29,7 @@ class ConfigurableIndexesTest extends Specification {
     .withIndexes(IndexManager.Schemes.Z3TableScheme)
     .build("ConfigurableIndexesTest")
 
-  val splitter = new QueryFilterSplitter(sft)
+  val splitter = new FilterSplitter(sft, IndexManager.indices(sft))
 
   val ff = CommonFactoryFinder.getFilterFactory2
 
