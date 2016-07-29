@@ -48,7 +48,7 @@ object AttributeIndexQueryableV5 extends AccumuloIndexQueryable with LazyLogging
                             sft: SimpleFeatureType,
                             filter: FilterStrategy,
                             hints: Hints,
-                            explain: ExplainerOutputType = ExplainNull): QueryPlan = {
+                            explain: Explainer = ExplainNull): QueryPlan = {
     import scala.collection.JavaConversions._
 
     val propsAndRanges = filter.primary.collect {

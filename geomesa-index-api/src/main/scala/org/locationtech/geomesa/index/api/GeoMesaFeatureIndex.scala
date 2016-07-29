@@ -8,12 +8,14 @@
 
 package org.locationtech.geomesa.index.api
 
+import org.geotools.data.DataStore
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.index.stats.GeoMesaStats
+import org.locationtech.geomesa.index.utils.{ExplainNull, Explainer}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
-trait GeoMesaFeatureIndex[T <: GeoMesaIndexWritable, V <: GeoMesaIndexQueryable] {
+trait GeoMesaFeatureIndex[FeatureWrapper, Result, Row, Deleter, TableOps, Entries, Plan] {
 
   /**
     * The name used to identify the index
@@ -33,14 +35,14 @@ trait GeoMesaFeatureIndex[T <: GeoMesaIndexWritable, V <: GeoMesaIndexQueryable]
     *
     * @return
     */
-  def writable: T
+  def writable: GeoMesaIndexWritable[FeatureWrapper, Result, Row, Deleter, TableOps, Entries]
 
   /**
     * Query operations
     *
     * @return
     */
-  def queryable: V
+  def queryable: GeoMesaIndexQueryable[Plan]
 
   /**
     * Trims off the $ of the object name
@@ -94,7 +96,7 @@ trait GeoMesaIndexWritable[FeatureWrapper, Result, Row, Deleter, TableOps, Entri
   def entriesToFeatures(sft: SimpleFeatureType, returnSft: SimpleFeatureType): (Entries) => SimpleFeature
 }
 
-trait GeoMesaIndexQueryable {
+trait GeoMesaIndexQueryable[Plan] {
 
   /**
     * Gets options for a 'simple' filter, where each OR is on a single attribute, e.g.
@@ -123,9 +125,9 @@ trait GeoMesaIndexQueryable {
   /**
     * Plans the query - strategy implementations need to define this
     */
-  def getQueryPlan(ds: AccumuloDataStore,
+  def getQueryPlan(ds: DataStore,
                    sft: SimpleFeatureType,
                    filter: FilterStrategy,
                    hints: Hints,
-                   explain: ExplainerOutputType = ExplainNull): QueryPlan
+                   explain: Explainer = ExplainNull): Plan
 }

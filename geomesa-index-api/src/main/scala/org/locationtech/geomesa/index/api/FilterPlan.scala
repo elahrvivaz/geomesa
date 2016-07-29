@@ -8,7 +8,6 @@
 
 package org.locationtech.geomesa.index.api
 
-import org.locationtech.geomesa.accumulo.index.FilterPlan
 import org.locationtech.geomesa.filter._
 import org.opengis.filter.Filter
 
@@ -17,7 +16,7 @@ import org.opengis.filter.Filter
   * Filters split into a 'primary' that will be used for range planning,
   * and a 'secondary' that will be applied as a final step.
   */
-case class FilterStrategy(index: GeoMesaFeatureIndex, primary: Option[Filter], secondary: Option[Filter] = None) {
+case class FilterStrategy(index: GenericFeatureIndex, primary: Option[Filter], secondary: Option[Filter] = None) {
 
   lazy val filter: Option[Filter] = andOption(primary.toSeq ++ secondary)
 

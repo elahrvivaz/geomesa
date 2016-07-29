@@ -17,7 +17,7 @@ import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.index.z2.Z2IndexQueryable
-import org.locationtech.geomesa.accumulo.index.{ExplainerOutputType, _}
+import org.locationtech.geomesa.accumulo.index.{Explainer$, _}
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.{BinnedTime, Z3SFC}
 import org.locationtech.geomesa.filter._
@@ -34,7 +34,7 @@ object Z3IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
                             sft: SimpleFeatureType,
                             filter: FilterStrategy,
                             hints: Hints,
-                            explain: ExplainerOutputType): QueryPlan = {
+                            explain: Explainer): QueryPlan = {
     import Z3IndexWritable.GEOM_Z_NUM_BYTES
     import org.locationtech.geomesa.accumulo.index.QueryHints.{LOOSE_BBOX, RichHints}
     import org.locationtech.geomesa.filter.FilterHelper._

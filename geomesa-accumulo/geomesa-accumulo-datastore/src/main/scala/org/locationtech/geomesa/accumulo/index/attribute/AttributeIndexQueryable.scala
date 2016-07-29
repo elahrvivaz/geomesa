@@ -46,7 +46,7 @@ object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
                             sft: SimpleFeatureType,
                             filter: FilterStrategy,
                             hints: Hints,
-                            explain: ExplainerOutputType = ExplainNull): QueryPlan = {
+                            explain: Explainer = ExplainNull): QueryPlan = {
 
     val primary = filter.primary.getOrElse {
       throw new IllegalStateException("Attribute index does not support Filter.INCLUDE")

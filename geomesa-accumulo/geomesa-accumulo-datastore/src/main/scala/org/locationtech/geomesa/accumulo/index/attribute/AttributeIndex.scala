@@ -74,7 +74,7 @@ object AttributeMergedIndexQueryable extends AccumuloIndexQueryable {
                             sft: SimpleFeatureType,
                             filter: FilterStrategy,
                             hints: Hints,
-                            explain: ExplainerOutputType): QueryPlan =
+                            explain: Explainer): QueryPlan =
     if (sft.getSchemaVersion > 5) {
       AttributeIndexQueryable.getQueryPlan(ds, sft, filter, hints, explain)
     } else {

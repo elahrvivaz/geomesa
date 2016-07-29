@@ -44,7 +44,7 @@ object GeoHashIndexQueryable extends AccumuloIndexQueryable with LazyLogging wit
                             sft: SimpleFeatureType,
                             filter: FilterStrategy,
                             hints: Hints,
-                            explain: ExplainerOutputType = ExplainNull): QueryPlan = {
+                            explain: Explainer = ExplainNull): QueryPlan = {
 
     val acc             = ds
     val version         = sft.getSchemaVersion
@@ -235,7 +235,7 @@ object GeoHashIndexQueryable extends AccumuloIndexQueryable with LazyLogging wit
   def planQuery(qf: FilterStrategy,
                 filter: KeyPlanningFilter,
                 useIndexEntries: Boolean,
-                explain: ExplainerOutputType,
+                explain: Explainer,
                 keyPlanner: KeyPlanner,
                 cfPlanner: ColumnFamilyPlanner): BatchScanPlan = {
     explain(s"Planning query")

@@ -36,6 +36,7 @@ import org.locationtech.geomesa.features.SerializationOption.SerializationOption
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.features.{SerializationType, SimpleFeatureSerializers}
+import org.locationtech.geomesa.index.stats.HasGeoMesaStats
 import org.locationtech.geomesa.security.{AuditProvider, AuthorizationsProvider}
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes.{FeatureSpec, NonGeomAttributeSpec}
@@ -137,7 +138,7 @@ class AccumuloDataStore(val connector: Connector,
           IndexManager.indices(reloadedSft).foreach { index =>
             val name = getTableName(sft.getTypeName, index)
             AccumuloVersion.ensureTableExists(connector, name)
-            index.configureTable(reloadedSft, name, tableOps)
+            index.writable.configureTable(reloadedSft, name, tableOps)
           }
         }
       } finally {
@@ -577,7 +578,7 @@ class AccumuloDataStore(val connector: Connector,
    */
   def getQueryPlan(query: Query,
                    index: Option[AccumuloFeatureIndex] = None,
-                   explainer: ExplainerOutputType = ExplainNull): Seq[QueryPlan] = {
+                   explainer: Explainer = ExplainNull): Seq[QueryPlan] = {
     require(query.getTypeName != null, "Type name is required in the query")
     getQueryPlanner(query.getTypeName).planQuery(query, None, explainer)
   }

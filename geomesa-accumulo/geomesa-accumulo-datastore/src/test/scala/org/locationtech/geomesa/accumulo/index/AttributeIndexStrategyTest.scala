@@ -70,7 +70,7 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
 
   addFeatures(features)
 
-  def execute(filter: String, explain: ExplainerOutputType = ExplainNull): List[String] = {
+  def execute(filter: String, explain: Explainer = ExplainNull): List[String] = {
     val query = new Query(sftName, ECQL.toFilter(filter))
     forall(ds.getQueryPlan(query, explainer = explain))(_.filter.index mustEqual AttributeIndex)
     val results = SelfClosingIterator(ds.getFeatureSource(sftName).getFeatures(query).features())

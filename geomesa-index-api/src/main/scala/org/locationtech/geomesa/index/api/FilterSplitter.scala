@@ -6,10 +6,9 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.index
+package org.locationtech.geomesa.index.api
 
 import com.typesafe.scalalogging.LazyLogging
-import org.locationtech.geomesa.accumulo.index.attribute.{AttributeIndex, AttributeIndexQueryable}
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.visitor.IdDetectingFilterVisitor
 import org.opengis.feature.simple.SimpleFeatureType
@@ -21,9 +20,9 @@ import scala.collection.mutable.ArrayBuffer
 /**
  * Class for splitting queries up based on Boolean clauses and the available query strategies.
  */
-class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
+class FilterSplitter(sft: SimpleFeatureType, indices: Seq[GenericFeatureIndex]) extends LazyLogging {
 
-  import QueryFilterSplitter._
+  import FilterSplitter._
 
   /**
     * Splits the query up into different filter plans to be evaluated. Each filter plan will consist of one or
@@ -113,7 +112,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
     * @return sequence of options, any of which can satisfy the query
     */
   private def getSimpleQueryOptions(filter: Filter): Seq[FilterStrategy] = {
-    val options = IndexManager.indices(sft).flatMap(_.queryable.getFilterStrategy(sft, filter))
+    val options = indices.flatMap(_.queryable.getFilterStrategy(sft, filter))
     if (options.isEmpty) {
       Seq.empty
     } else {
@@ -221,7 +220,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
     */
   private def fullTableScanOption(filter: Filter): FilterStrategy = {
     val secondary = if (filter == Filter.INCLUDE) None else Some(filter)
-    val options = IndexManager.indices(sft).toStream.flatMap(_.queryable.getFilterStrategy(sft, Filter.INCLUDE))
+    val options = indices.toStream.flatMap(_.queryable.getFilterStrategy(sft, Filter.INCLUDE))
     options.headOption.map(o => o.copy(secondary = secondary)).getOrElse {
       throw new UnsupportedOperationException(s"Configured indices do not support the query ${filterToString(filter)}")
     }
@@ -237,7 +236,7 @@ class QueryFilterSplitter(sft: SimpleFeatureType) extends LazyLogging {
   }
 }
 
-object QueryFilterSplitter {
+object FilterSplitter {
 
   /**
    * Try to merge the two query filters. Return the merged query filter if successful, else null.
@@ -247,8 +246,8 @@ object QueryFilterSplitter {
       // this is a full table scan, we can just append the OR to the secondary filter
       val secondary = orOption(mergeTo.secondary.toSeq ++ toMerge.filter)
       mergeTo.copy(secondary = secondary)
-    } else if (toMerge.index == AttributeIndex && mergeTo.index == AttributeIndex) {
-      AttributeIndexQueryable.tryMergeAttrStrategy(toMerge, mergeTo)
+//    } else if (toMerge.index == AttributeIndex && mergeTo.index == AttributeIndex) {
+//      AttributeIndexQueryable.tryMergeAttrStrategy(toMerge, mergeTo)
     } else {
       // overlapping geoms, date ranges, attribute ranges, etc will be handled when extracting bounds
       null
@@ -278,28 +277,4 @@ object QueryFilterSplitter {
       FilterPlan(filters)
     }
   }
-}
-
-/**
- * Filters split into a 'primary' that will be used for range planning,
- * and a 'secondary' that will be applied as a final step.
- */
-case class FilterStrategy(index: AccumuloFeatureIndex, primary: Option[Filter], secondary: Option[Filter] = None) {
-
-  lazy val filter: Option[Filter] = andOption(primary.toSeq ++ secondary)
-
-  override lazy val toString: String =
-    s"$index[${primary.map(filterToString).getOrElse("INCLUDE")}]" +
-        s"[${secondary.map(filterToString).getOrElse("None")}]"
-}
-
-/**
- * A series of queries required to satisfy a filter - basically split on ORs
- */
-case class FilterPlan(strategies: Seq[FilterStrategy]) {
-  override lazy val toString: String = s"FilterPlan[${strategies.mkString(",")}]"
-}
-
-object FilterPlan {
-  def apply(filter: FilterStrategy): FilterPlan = FilterPlan(Seq(filter))
 }

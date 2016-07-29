@@ -102,57 +102,5 @@ package object index {
       def isExactCount: Option[Boolean] = Option(hints.get(EXACT_COUNT)).map(_.asInstanceOf[Boolean])
     }
   }
-
-  trait ExplainerOutputType {
-    private var indent = ""
-    def apply(s: => String): ExplainerOutputType = { output(s"$indent$s"); this }
-    def apply(s: => String, c: => Seq[String]): ExplainerOutputType = {
-      output(s"$indent$s")
-      val ci = c // don't evaluate strings twice
-      if (ci.nonEmpty) { pushLevel(); ci.foreach(s => output(s"$indent$s")); popLevel() } else this
-    }
-    def pushLevel(): ExplainerOutputType = { indent += "  "; this }
-    def pushLevel(s: => String): ExplainerOutputType = { apply(s); pushLevel(); this }
-    def popLevel(): ExplainerOutputType = { indent = indent.substring(2); this }
-    def popLevel(s: => String): ExplainerOutputType = { popLevel(); apply(s); this }
-    protected def output(s: => String)
-  }
-
-  object ExplainerOutputType {
-    def toString(r: AccRange) = {
-      val first = if (r.isStartKeyInclusive) "[" else "("
-      val last =  if (r.isEndKeyInclusive) "]" else ")"
-      val start = Option(r.getStartKey).map(_.toStringNoTime).getOrElse("-inf")
-      val end = Option(r.getEndKey).map(_.toStringNoTime).getOrElse("+inf")
-      first + start + ", " + end + last
-    }
-  }
-
-  class ExplainPrintln extends ExplainerOutputType {
-    override def output(s: => String): Unit = println(s)
-  }
-
-  object ExplainNull extends ExplainerOutputType {
-    override def apply(s: => String): ExplainerOutputType = this
-    override def pushLevel(): ExplainerOutputType = this
-    override def pushLevel(s: => String): ExplainerOutputType = this
-    override def popLevel(): ExplainerOutputType = this
-    override def popLevel(s: => String): ExplainerOutputType = this
-    override def output(s: => String): Unit = {}
-  }
-
-  class ExplainString extends ExplainerOutputType {
-    private val string: StringBuilder = new StringBuilder()
-    override def output(s: => String): Unit = string.append(s).append("\n")
-    override def toString = string.toString()
-  }
-
-  class ExplainLogging extends ExplainerOutputType {
-    override def output(s: => String): Unit = ExplainLogging.logger.trace(s)
-  }
-
-  object ExplainLogging {
-    private val logger = Logger(LoggerFactory.getLogger(classOf[QueryPlanner]))
-  }
 }
 

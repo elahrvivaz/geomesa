@@ -330,7 +330,7 @@ class Z2IdxStrategyTest extends Specification with TestWithDataStore {
     }
   }
 
-  def execute(ecql: String, transforms: Option[Array[String]] = None, explain: ExplainerOutputType = ExplainNull) = {
+  def execute(ecql: String, transforms: Option[Array[String]] = None, explain: Explainer = ExplainNull) = {
     val query = transforms match {
       case None    => new Query(sftName, ECQL.toFilter(ecql))
       case Some(t) => new Query(sftName, ECQL.toFilter(ecql), t)

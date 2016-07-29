@@ -64,23 +64,23 @@ class QueryStrategyDeciderTest extends Specification with TestWithDataStore {
 
   "Cost-based strategy decisions" should {
 
-    def getStrategies(filter: Filter, transforms: Option[Array[String]], explain: ExplainerOutputType): Seq[FilterStrategy] = {
+    def getStrategies(filter: Filter, transforms: Option[Array[String]], explain: Explainer): Seq[FilterStrategy] = {
       val query = transforms.map(new Query(sftName, filter, _)).getOrElse(new Query(sftName, filter))
       ds.getQueryPlan(query, explainer = explain).map(_.filter)
     }
 
-    def getStrategy(filter: String, expected: AccumuloFeatureIndex, transforms: Option[Array[String]], explain: ExplainerOutputType) = {
+    def getStrategy(filter: String, expected: AccumuloFeatureIndex, transforms: Option[Array[String]], explain: Explainer) = {
       val strategies = getStrategies(ECQL.toFilter(filter), transforms, explain)
       forall(strategies)(_.index mustEqual expected)
     }
 
-    def getRecordStrategy(filter: String, transforms: Option[Array[String]] = None, explain: ExplainerOutputType = ExplainNull) =
+    def getRecordStrategy(filter: String, transforms: Option[Array[String]] = None, explain: Explainer = ExplainNull) =
       getStrategy(filter, RecordIndex, transforms, explain)
-    def getAttributeStrategy(filter: String, transforms: Option[Array[String]] = None, explain: ExplainerOutputType = ExplainNull) =
+    def getAttributeStrategy(filter: String, transforms: Option[Array[String]] = None, explain: Explainer = ExplainNull) =
       getStrategy(filter, AttributeIndex, transforms, explain)
-    def getZ2Strategy(filter: String, transforms: Option[Array[String]] = None, explain: ExplainerOutputType = ExplainNull) =
+    def getZ2Strategy(filter: String, transforms: Option[Array[String]] = None, explain: Explainer = ExplainNull) =
       getStrategy(filter, Z2Index, transforms, explain)
-    def getZ3Strategy(filter: String, transforms: Option[Array[String]] = None, explain: ExplainerOutputType = ExplainNull) =
+    def getZ3Strategy(filter: String, transforms: Option[Array[String]] = None, explain: Explainer = ExplainNull) =
       getStrategy(filter, Z3Index, transforms, explain)
 
     "select z3 over z2 when spatial is limiting factor" >> {
@@ -115,7 +115,7 @@ class QueryStrategyDeciderTest extends Specification with TestWithDataStore {
 
   "Index-based strategy decisions" should {
 
-    def getStrategies(filter: Filter, explain: ExplainerOutputType = ExplainNull): Seq[FilterStrategy] = {
+    def getStrategies(filter: Filter, explain: Explainer = ExplainNull): Seq[FilterStrategy] = {
       import org.locationtech.geomesa.accumulo.index.QueryHints.COST_EVALUATION_KEY
       // default behavior for this test is to use the index-based query costs
       val query = new Query(sftName, filter)
@@ -123,7 +123,7 @@ class QueryStrategyDeciderTest extends Specification with TestWithDataStore {
       ds.getQueryPlan(query, explainer = explain).map(_.filter)
     }
 
-    def getStrategy(filter: String, expected: AccumuloFeatureIndex, explain: ExplainerOutputType = ExplainNull) = {
+    def getStrategy(filter: String, expected: AccumuloFeatureIndex, explain: Explainer = ExplainNull) = {
       val strategies = getStrategies(ECQL.toFilter(filter), explain)
       forall(strategies)(_.index mustEqual expected)
     }

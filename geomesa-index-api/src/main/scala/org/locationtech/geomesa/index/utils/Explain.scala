@@ -9,8 +9,6 @@
 package org.locationtech.geomesa.index.utils
 
 import com.typesafe.scalalogging.Logger
-import org.apache.accumulo.core.data.Range
-import org.locationtech.geomesa.accumulo.index.QueryPlanner
 import org.slf4j.LoggerFactory
 
 class Explain {
@@ -56,5 +54,5 @@ class ExplainLogging extends Explainer {
 }
 
 object ExplainLogging {
-  private val logger = Logger(LoggerFactory.getLogger(classOf[QueryPlanner]))
+  private val logger = Logger(LoggerFactory.getLogger(classOf[Explainer]))
 }

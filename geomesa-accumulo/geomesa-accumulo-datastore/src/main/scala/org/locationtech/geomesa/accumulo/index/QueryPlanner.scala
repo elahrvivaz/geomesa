@@ -26,12 +26,14 @@ import org.geotools.process.vector.TransformProcess.Definition
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.index.QueryHints._
+import org.locationtech.geomesa.accumulo.index.Strategy.CostEvaluation
 import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
 import org.locationtech.geomesa.accumulo.index.id.RecordIndex
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.accumulo.util.{CloseableIterator, SelfClosingIterator}
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.visitor.QueryPlanFilterVisitor
+import org.locationtech.geomesa.index.utils.{ExplainLogging, Explainer}
 import org.locationtech.geomesa.security.SecurityUtils
 import org.locationtech.geomesa.utils.cache.SoftThreadLocal
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -55,14 +57,13 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
   import org.locationtech.geomesa.accumulo.index.QueryPlanner._
 
   private lazy val serializationType = ds.getFeatureEncoding(sft)
-  private val stats = ds.stats
 
   /**
    * Plan the query, but don't execute it - used for m/r jobs and explain query
    */
   def planQuery(query: Query,
                 index: Option[AccumuloFeatureIndex] = None,
-                output: ExplainerOutputType = new ExplainLogging): Seq[QueryPlan] = {
+                output: Explainer = new ExplainLogging): Seq[QueryPlan] = {
     getQueryPlans(query, index, output).toList // toList forces evaluation of entire iterator
   }
 
@@ -71,7 +72,7 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
    */
   def runQuery(query: Query,
                index: Option[AccumuloFeatureIndex] = None,
-               output: ExplainerOutputType = new ExplainLogging): SFIter = {
+               output: Explainer = new ExplainLogging): SFIter = {
     val plans = getQueryPlans(query, index, output)
     executePlans(query, plans, output)
   }
@@ -81,7 +82,7 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
    */
   private def executePlans(query: Query,
                            queryPlans: Iterator[QueryPlan],
-                           output: ExplainerOutputType): SFIter = {
+                           output: Explainer): SFIter = {
     def scan(qps: Iterator[QueryPlan]): SFIter = SelfClosingIterator(qps).ciFlatMap { qp =>
       val iter = Strategy.execute(qp, ds).map(qp.kvsToFeatures)
       if (qp.hasDuplicates) new DeDuplicatingIterator(iter) else iter
@@ -112,7 +113,7 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
    */
   private def getQueryPlans(query: Query,
                             requested: Option[AccumuloFeatureIndex],
-                            output: ExplainerOutputType): Iterator[QueryPlan] = {
+                            explain: Explainer): Iterator[QueryPlan] = {
 
     configureQuery(query, sft) // configure the query - set hints that we'll need later on
     val q = updateFilter(query, sft) // tweak the filter so it meets our expectations going forward
@@ -120,29 +121,35 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
     val hints = q.getHints
     val batchRanges = QueryProperties.SCAN_BATCH_RANGES.option.map(_.toInt).getOrElse(Int.MaxValue)
 
-    output.pushLevel(s"Planning '${q.getTypeName}' ${filterToString(q.getFilter)}")
-    output(s"Original filter: ${filterToString(query.getFilter)}")
-    output(s"Hints: density[${hints.isDensityQuery}] bin[${hints.isBinQuery}] " +
+    explain.pushLevel(s"Planning '${q.getTypeName}' ${filterToString(q.getFilter)}")
+    explain(s"Original filter: ${filterToString(query.getFilter)}")
+    explain(s"Hints: density[${hints.isDensityQuery}] bin[${hints.isBinQuery}] " +
         s"stats[${hints.isStatsIteratorQuery}] map-aggregate[${hints.isMapAggregatingQuery}] " +
         s"sampling[${hints.getSampling.map { case (s, f) => s"$s${f.map(":" + _).getOrElse("")}"}.getOrElse("none")}]")
-    output(s"Sort: ${Option(q.getSortBy).filter(_.nonEmpty).map(_.mkString(", ")).getOrElse("none")}")
-    output(s"Transforms: ${q.getHints.getTransformDefinition.getOrElse("None")}")
+    explain(s"Sort: ${Option(q.getSortBy).filter(_.nonEmpty).map(_.mkString(", ")).getOrElse("none")}")
+    explain(s"Transforms: ${q.getHints.getTransformDefinition.getOrElse("None")}")
 
-    output.pushLevel("Strategy selection:")
-    val requestedIndex = requested.orElse(hints.getRequestedIndex)
-    val filterPlan = QueryStrategyDecider.chooseFilterPlan(sft, q, stats, requestedIndex, output)
-    output.popLevel()
+    explain.pushLevel("Strategy selection:")
+    val requestedIndex = requested.orElse(hints.getRequestedIndex).map(_.name)
+    val transform = q.getHints.getTransformSchema
+    val stats = query.getHints.getCostEvaluation match {
+      case CostEvaluation.Stats => Some(ds.stats)
+      case CostEvaluation.Index => None
+    }
+    val filterPlan = AccumuloStrategyDecider.chooseFilterPlan(sft, q.getFilter, transform, stats, requestedIndex, explain)
+    explain.popLevel()
 
     var strategyCount = 1
     filterPlan.strategies.iterator.flatMap { strategy =>
-      output.pushLevel(s"Strategy $strategyCount of ${filterPlan.strategies.length}: ${strategy.index}")
+      explain.pushLevel(s"Strategy $strategyCount of ${filterPlan.strategies.length}: ${strategy.index}")
       strategyCount += 1
-      output(s"Strategy filter: $strategy")
+      explain(s"Strategy filter: $strategy")
 
       implicit val timing = new Timing
-      val plan = profile(strategy.index.getQueryPlan(ds, sft, strategy, hints, output))
-      outputPlan(plan, output.popLevel())
-      output(s"Query planning took ${timing.time}ms")
+      val index = IndexManager.index(strategy.index)
+      val plan = profile(index.queryable.getQueryPlan(ds, sft, strategy, hints, explain))
+      outputPlan(plan, explain.popLevel())
+      explain(s"Query planning took ${timing.time}ms")
 
       if (batchRanges < plan.ranges.length) {
         // break up the ranges into groups that are manageable in memory
@@ -151,7 +158,7 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
           case p: JoinPlan      => p.copy(ranges = group)
         }
         val grouped = plan.ranges.grouped(batchRanges).map(copy).toSeq
-        output.pushLevel(s"Note: Ranges batched into ${grouped.length} separate queries").popLevel()
+        explain.pushLevel(s"Note: Ranges batched into ${grouped.length} separate queries").popLevel()
         grouped
       } else {
         Seq(plan)
@@ -160,7 +167,7 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
   }
 
   // output the query plan for explain logging
-  private def outputPlan(plan: QueryPlan, output: ExplainerOutputType, planPrefix: String = ""): Unit = {
+  private def outputPlan(plan: QueryPlan, output: Explainer, planPrefix: String = ""): Unit = {
     output.pushLevel(s"${planPrefix}Plan: ${plan.getClass.getName}")
     output(s"Table: ${plan.table}")
     output(s"Deduplicate: ${plan.hasDuplicates}")
@@ -384,7 +391,7 @@ object QueryPlanner extends LazyLogging {
     schema
   }
 
-  def splitQueryOnOrs(query: Query, output: ExplainerOutputType): Seq[Query] = {
+  def splitQueryOnOrs(query: Query, output: Explainer): Seq[Query] = {
     val originalFilter = query.getFilter
     output(s"Original filter: $originalFilter")
 

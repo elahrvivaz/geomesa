@@ -24,6 +24,10 @@ object IndexManager {
     Seq(Z3Index, Z2Index, RecordIndex, AttributeIndex, GeoHashIndex)
   }
 
+  def index(name: String): AccumuloFeatureIndex = AllIndices.find(_.name == name).getOrElse {
+    throw new IllegalArgumentException(s"No index with name $name exists")
+  }
+
   def indices(sft: SimpleFeatureType): Seq[AccumuloFeatureIndex] = AllIndices.filter(_.supports(sft))
 
   object Schemes {

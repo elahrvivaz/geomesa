@@ -14,15 +14,18 @@ import com.google.common.primitives.{Bytes, Longs}
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.data.{Range => aRange}
 import org.apache.hadoop.io.Text
+import org.geotools.data.DataStore
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
-import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.Z2SFC
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.visitor.FilterExtractingVisitor
+import org.locationtech.geomesa.index.api.FilterStrategy
+import org.locationtech.geomesa.index.stats.GeoMesaStats
+import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, WholeWorldPolygon}
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.opengis.feature.simple.SimpleFeatureType
@@ -30,16 +33,18 @@ import org.opengis.filter.{And, Filter, Or}
 
 object Z2IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
 
-  override def getQueryPlan(ds: AccumuloDataStore,
+  override def getQueryPlan(ds: DataStore,
                             sft: SimpleFeatureType,
                             filter: FilterStrategy,
                             hints: Hints,
-                            explain: ExplainerOutputType): QueryPlan = {
+                            explain: Explainer): QueryPlan = {
 
     import QueryHints.{LOOSE_BBOX, RichHints}
     import org.locationtech.geomesa.filter.FilterHelper._
     import org.locationtech.geomesa.filter._
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+
+    val ads = ds.asInstanceOf[AccumuloDataStore]
 
     if (filter.primary.isEmpty) {
       filter.secondary.foreach { f =>
@@ -52,7 +57,7 @@ object Z2IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
 
     explain(s"Geometries: $geometries")
 
-    val looseBBox = if (hints.containsKey(LOOSE_BBOX)) Boolean.unbox(hints.get(LOOSE_BBOX)) else ds.config.looseBBox
+    val looseBBox = if (hints.containsKey(LOOSE_BBOX)) Boolean.unbox(hints.get(LOOSE_BBOX)) else ads.config.looseBBox
 
     // if the user has requested strict bounding boxes, we apply the full filter
     // if this is a non-point geometry type, the index is coarse-grained, so we apply the full filter
@@ -91,8 +96,8 @@ object Z2IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
       (iters, Z2IndexWritable.entriesToFeatures(sft, hints.getReturnSft), Z2IndexWritable.FULL_CF, sft.nonPoints)
     }
 
-    val z2table = ds.getTableName(sft.getTypeName, Z2Index)
-    val numThreads = ds.getSuggestedThreads(sft.getTypeName, Z2Index)
+    val z2table = ads.getTableName(sft.getTypeName, Z2Index)
+    val numThreads = ads.getSuggestedThreads(sft.getTypeName, Z2Index)
 
     val (ranges, z2Iter) = if (filter.primary.isEmpty) {
       val range = if (sft.isTableSharing) {

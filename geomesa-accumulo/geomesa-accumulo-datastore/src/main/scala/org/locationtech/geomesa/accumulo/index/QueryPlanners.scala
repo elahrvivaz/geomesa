@@ -343,7 +343,7 @@ object KeyUtils {
 }
 
 trait KeyPlanner {
-  def getKeyPlan(filter:KeyPlanningFilter, indexOnly: Boolean, output: ExplainerOutputType): KeyPlan
+  def getKeyPlan(filter:KeyPlanningFilter, indexOnly: Boolean, output: Explainer): KeyPlan
 }
 
 trait ColumnFamilyPlanner {
@@ -387,7 +387,7 @@ trait GeoHashPlanner extends LazyLogging {
 }
 
 case class GeoHashKeyPlanner(offset: Int, bits: Int) extends KeyPlanner with GeoHashPlanner {
-  def getKeyPlan(filter: KeyPlanningFilter, indexOnly: Boolean, output: ExplainerOutputType) =
+  def getKeyPlan(filter: KeyPlanningFilter, indexOnly: Boolean, output: Explainer) =
     getKeyPlan(filter, offset, bits) match {
       case KeyList(keys) =>
         output(s"GeoHashKeyPlanner (${keys.size}): ${keys.take(20).mkString(",")}")
@@ -414,7 +414,7 @@ case class GeoHashColumnFamilyPlanner(offset: Int, bits: Int) extends ColumnFami
 case class RandomPartitionPlanner(shards: Int) extends KeyPlanner {
   val numPartitions = if (shards > 1) shards - 1 else 0
   val numBits: Int = numPartitions.toString.length
-  def getKeyPlan(filter: KeyPlanningFilter, indexOnly: Boolean, output: ExplainerOutputType) = {
+  def getKeyPlan(filter: KeyPlanningFilter, indexOnly: Boolean, output: Explainer) = {
     val keys = (0 to numPartitions).map(_.toString.reverse.padTo(numBits,"0").reverse.mkString)
     output(s"Random Partition Planner (${keys.size}): ${keys.take(5).mkString(",")}")
     KeyListTiered(keys)
@@ -422,7 +422,7 @@ case class RandomPartitionPlanner(shards: Int) extends KeyPlanner {
 }
 
 case class ConstStringPlanner(cstr: String) extends KeyPlanner {
-  def getKeyPlan(filter:KeyPlanningFilter, indexOnly: Boolean, output: ExplainerOutputType) = {
+  def getKeyPlan(filter:KeyPlanningFilter, indexOnly: Boolean, output: Explainer) = {
     output(s"ConstPlanner: $cstr")
     KeyListTiered(List(cstr))
   }
@@ -431,7 +431,7 @@ case class ConstStringPlanner(cstr: String) extends KeyPlanner {
 case class IndexOrDataPlanner() extends KeyPlanner {
   val indexEntry = List(GeoHashIndexWritable.INDEX_FLAG)
   val dataEntry = List(GeoHashIndexWritable.DATA_FLAG)
-  def getKeyPlan(filter:KeyPlanningFilter, indexOnly: Boolean, output: ExplainerOutputType) = {
+  def getKeyPlan(filter:KeyPlanningFilter, indexOnly: Boolean, output: Explainer) = {
     val k = if (indexOnly) indexEntry else dataEntry
     output(s"IndexOrDataPlanner: ${k.head}")
     KeyListTiered(k)
@@ -441,7 +441,7 @@ case class IndexOrDataPlanner() extends KeyPlanner {
 case class DatePlanner(formatter: DateTimeFormatter) extends KeyPlanner {
   val endDates = List(9999,12,31,23,59,59,999)
   val startDates = List(0,1,1,0,0,0,0)
-  def getKeyPlan(filter:KeyPlanningFilter, indexOnly: Boolean, output: ExplainerOutputType) = {
+  def getKeyPlan(filter:KeyPlanningFilter, indexOnly: Boolean, output: Explainer) = {
     val plan = filter match {
       case DateFilter(dt) => KeyRange(formatter.print(dt), formatter.print(dt))
       case SpatialDateFilter(_, dt) => KeyRange(formatter.print(dt), formatter.print(dt))
@@ -511,7 +511,7 @@ case class DatePlanner(formatter: DateTimeFormatter) extends KeyPlanner {
 }
 
 case class CompositePlanner(seq: Seq[KeyPlanner], sep: String) extends KeyPlanner {
-  def getKeyPlan(filter: KeyPlanningFilter, indexOnly: Boolean, output: ExplainerOutputType): KeyPlan = {
+  def getKeyPlan(filter: KeyPlanningFilter, indexOnly: Boolean, output: Explainer): KeyPlan = {
     val joined = seq.map(_.getKeyPlan(filter, indexOnly, output)).reduce(_.join(_, sep))
     joined match {
       case kt:KeyTiered    => KeyRanges(kt.toRanges(sep))

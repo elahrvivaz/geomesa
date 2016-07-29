@@ -64,7 +64,7 @@ object RecordIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
                             sft: SimpleFeatureType,
                             filter: FilterStrategy,
                             hints: Hints,
-                            explain: ExplainerOutputType = ExplainNull): QueryPlan = {
+                            explain: Explainer = ExplainNull): QueryPlan = {
     val featureEncoding = ds.getFeatureEncoding(sft)
     val prefix = sft.getTableSharingPrefix
 
