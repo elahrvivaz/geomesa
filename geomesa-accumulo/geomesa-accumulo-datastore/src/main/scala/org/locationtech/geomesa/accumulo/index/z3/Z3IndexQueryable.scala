@@ -8,31 +8,39 @@
 
 package org.locationtech.geomesa.accumulo.index.z3
 
+import java.util.Map.Entry
+
 import com.google.common.primitives.{Bytes, Longs, Shorts}
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.data.{Range => aRange}
+import org.apache.accumulo.core.data.{Key, Mutation, Value, Range => aRange}
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
-import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
-import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
-import org.locationtech.geomesa.accumulo.index.z2.Z2IndexQueryable
-import org.locationtech.geomesa.accumulo.index.{Explainer$, _}
+import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, WritableFeature}
+import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex.AccumuloFilterStrategy
+import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.{BinnedTime, Z3SFC}
 import org.locationtech.geomesa.filter._
-import org.locationtech.geomesa.filter.visitor.FilterExtractingVisitor
+import org.locationtech.geomesa.index.strategies.z3.Z3FilterStrategy
+import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools._
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.opengis.feature.simple.SimpleFeatureType
-import org.opengis.filter.Filter
 
-object Z3IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
+object Z3IndexQueryable extends AccumuloIndexQueryable
+    with Z3FilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
+    with LazyLogging {
 
-  override def getQueryPlan(ds: AccumuloDataStore,
-                            sft: SimpleFeatureType,
-                            filter: FilterStrategy,
+  val Z3_ITER_PRIORITY = 23
+  val FILTERING_ITER_PRIORITY = 25
+
+  override val index: AccumuloFeatureIndex = Z3Index
+
+  override def getQueryPlan(sft: SimpleFeatureType,
+                            ops: AccumuloDataStore,
+                            filter: AccumuloFilterStrategy,
                             hints: Hints,
                             explain: Explainer): QueryPlan = {
     import Z3IndexWritable.GEOM_Z_NUM_BYTES
@@ -63,7 +71,7 @@ object Z3IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
     explain(s"Geometries: $geometries")
     explain(s"Intervals: $intervals")
 
-    val looseBBox = if (hints.containsKey(LOOSE_BBOX)) Boolean.unbox(hints.get(LOOSE_BBOX)) else ds.config.looseBBox
+    val looseBBox = if (hints.containsKey(LOOSE_BBOX)) Boolean.unbox(hints.get(LOOSE_BBOX)) else ops.config.looseBBox
     val hasSplits = Z3IndexWritable.hasSplits(sft)
 
     // if the user has requested strict bounding boxes, we apply the full filter
@@ -103,8 +111,8 @@ object Z3IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
       (iters, Z3IndexWritable.entriesToFeatures(sft, hints.getReturnSft), Z3IndexWritable.FULL_CF, sft.nonPoints)
     }
 
-    val z3table = ds.getTableName(sft.getTypeName, Z3Index)
-    val numThreads = ds.getSuggestedThreads(sft.getTypeName, Z3Index)
+    val z3table = ops.getTableName(sft.getTypeName, Z3Index)
+    val numThreads = ops.getSuggestedThreads(sft.getTypeName, Z3Index)
 
     val sfc = Z3SFC(sft.getZ3Interval)
     val minTime = sfc.time.min.toLong
@@ -169,58 +177,5 @@ object Z3IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
 
     val iters = perAttributeIter ++ zIterator.toSeq ++ iterators
     BatchScanPlan(filter, z3table, ranges, iters, Seq(cf), kvsToFeatures, numThreads, hasDupes)
-  }
-
-  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
-    import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
-    // we know it's set due to our 'supported' check
-    val dtg = sft.getDtgField.getOrElse {
-      throw new RuntimeException("Trying to plan a z3 query but the schema does not have a date")
-    }
-
-    if (filter == Filter.INCLUDE) {
-      Seq(FilterStrategy(Z3Index, None, None))
-    } else if (filter == Filter.EXCLUDE) {
-      Seq.empty
-    } else {
-      val (temporal, nonTemporal) = FilterExtractingVisitor(filter, dtg, sft)
-      val (spatial, others) = nonTemporal match {
-        case None => (None, None)
-        case Some(nt) => FilterExtractingVisitor(nt, sft.getGeomField, sft, Z2IndexQueryable.spatialCheck)
-      }
-
-      if (temporal.exists(isBounded(_, dtg)) && (spatial.isDefined || !sft.getDescriptor(dtg).isIndexed)) {
-        Seq(FilterStrategy(Z3Index, andOption((spatial ++ temporal).toSeq), others))
-      } else {
-        Seq(FilterStrategy(Z3Index, None, Some(filter)))
-      }
-    }
-  }
-
-  /**
-   * Returns true if the temporal filters create a range with an upper and lower bound
-   */
-  private def isBounded(temporalFilter: Filter, dtg: String): Boolean = {
-    import FilterHelper.{MaxDateTime, MinDateTime}
-    val intervals = FilterHelper.extractIntervals(temporalFilter, dtg)
-    intervals.nonEmpty && intervals.forall { case (start, end) => start != MinDateTime && end != MaxDateTime }
-  }
-
-  val Z3_ITER_PRIORITY = 23
-  val FILTERING_ITER_PRIORITY = 25
-
-  override def getCost(sft: SimpleFeatureType,
-                       stats: Option[GeoMesaStats],
-                       filter: FilterStrategy,
-                       transform: Option[SimpleFeatureType]): Long = {
-    // https://geomesa.atlassian.net/browse/GEOMESA-1166
-    // TODO check date range and use z2 instead if too big
-    // TODO also if very small bbox, z2 has ~10 more bits of lat/lon info
-    filter.primary match {
-      case None    => Long.MaxValue
-      case Some(f) => stats.flatMap(_.getCount(sft, f, exact = false)).getOrElse {
-        if (filter.primary.exists(isSpatialFilter)) 200L else 401L
-      }
-    }
   }
 }

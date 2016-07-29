@@ -11,6 +11,7 @@ package org.locationtech.geomesa.index.api
 import com.typesafe.scalalogging.LazyLogging
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.visitor.IdDetectingFilterVisitor
+import org.locationtech.geomesa.index.stats.HasGeoMesaStats
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter._
 
@@ -20,9 +21,14 @@ import scala.collection.mutable.ArrayBuffer
 /**
  * Class for splitting queries up based on Boolean clauses and the available query strategies.
  */
-class FilterSplitter(sft: SimpleFeatureType, indices: Seq[GenericFeatureIndex]) extends LazyLogging {
+class FilterSplitter[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan](sft: SimpleFeatureType,
+    indices: Seq[GeoMesaFeatureIndex[Ops, FeatureWrapper, Result, Row, Entries, Plan]]) extends LazyLogging {
 
-  import FilterSplitter._
+
+  type TypedFilterPlan = FilterPlan[Ops, FeatureWrapper, Result, Row, Entries, Plan]
+  type TypedFilterStrategy = FilterStrategy[Ops, FeatureWrapper, Result, Row, Entries, Plan]
+
+  def FilterPlanApply(filter: TypedFilterStrategy): TypedFilterPlan = FilterPlan.apply(filter)
 
   /**
     * Splits the query up into different filter plans to be evaluated. Each filter plan will consist of one or
@@ -54,7 +60,7 @@ class FilterSplitter(sft: SimpleFeatureType, indices: Seq[GenericFeatureIndex]) 
     * note: ORs will not be split if they operate on a single attribute
     *
     */
-  def getQueryOptions(filter: Filter): Seq[FilterPlan] = {
+  def getQueryOptions(filter: Filter): Seq[TypedFilterPlan] = {
     // cnf gives us a top level AND with ORs as first children
     rewriteFilterInCNF(filter) match {
       case a: And =>
@@ -62,12 +68,13 @@ class FilterSplitter(sft: SimpleFeatureType, indices: Seq[GenericFeatureIndex]) 
         val (complex, simple) = a.getChildren.partition(f => f.isInstanceOf[Or] && attributeAndIdCount(f) > 1)
         if (complex.isEmpty) {
           // no cross-attribute ORs
-          getSimpleQueryOptions(a).map(FilterPlan.apply)
+          getSimpleQueryOptions(a).map(o => FilterPlan(o))
         } else if (simple.nonEmpty) {
           logger.warn("Not considering complex OR predicates in query planning: " +
               s"${complex.map(filterToString).mkString("(", ") AND (", ")")}")
-          def addComplexPredicates(qf: FilterStrategy) = qf.copy(secondary = andOption(qf.secondary.toSeq ++ complex))
-          getSimpleQueryOptions(andFilters(simple)).map(addComplexPredicates).map(FilterPlan.apply)
+          def addComplexPredicates(qf: TypedFilterStrategy) =
+            qf.copy(secondary = andOption(qf.secondary.toSeq ++ complex))
+          getSimpleQueryOptions(andFilters(simple)).map(addComplexPredicates).map(o => FilterPlan(o))
         } else {
           logger.warn(s"Falling back to expand/reduce query splitting for filter ${filterToString(filter)}")
           val dnf = rewriteFilterInDNF(filter).asInstanceOf[Or]
@@ -111,7 +118,7 @@ class FilterSplitter(sft: SimpleFeatureType, indices: Seq[GenericFeatureIndex]) 
     * @param filter input filter
     * @return sequence of options, any of which can satisfy the query
     */
-  private def getSimpleQueryOptions(filter: Filter): Seq[FilterStrategy] = {
+  private def getSimpleQueryOptions(filter: Filter): Seq[TypedFilterStrategy] = {
     val options = indices.flatMap(_.queryable.getFilterStrategy(sft, filter))
     if (options.isEmpty) {
       Seq.empty
@@ -129,26 +136,26 @@ class FilterSplitter(sft: SimpleFeatureType, indices: Seq[GenericFeatureIndex]) 
     * Calculates all possible options for each part of the filter, then determines all permutations of
     * the options. This can end up being expensive (O(2&#94;n)), so is only used as a fall-back.
     */
-  private def expandReduceOrOptions(filter: Or): Seq[FilterPlan] = {
+  private def expandReduceOrOptions(filter: Or): Seq[TypedFilterPlan] = {
 
     // for each child of the or, get the query options
     // each filter plan should only have a single query filter
-    def getChildOptions: Seq[Seq[FilterPlan]] =
+    def getChildOptions: Seq[Seq[TypedFilterPlan]] =
       filter.getChildren.map(getSimpleQueryOptions(_).map(qf => FilterPlan(Seq(qf))))
 
     // combine the filter plans so that each plan has multiple query filters
     // use the permutations of the different options for each child
     // TODO GEOMESA-941 Fix algorithmically dangerous (2^N exponential runtime)
-    def reduceChildOptions(childOptions: Seq[Seq[FilterPlan]]): Seq[FilterPlan] =
+    def reduceChildOptions(childOptions: Seq[Seq[TypedFilterPlan]]): Seq[TypedFilterPlan] =
       childOptions.reduce { (left, right) =>
         left.flatMap(l => right.map(r => FilterPlan(l.strategies ++ r.strategies)))
       }
 
     // try to combine query filters in each filter plan if they have the same primary filter
     // this avoids scanning the same ranges twice with different secondary predicates
-    def combineSecondaryFilters(options: Seq[FilterPlan]): Seq[FilterPlan] = options.map { r =>
+    def combineSecondaryFilters(options: Seq[TypedFilterPlan]): Seq[TypedFilterPlan] = options.map { r =>
       // build up the result array instead of using a group by to preserve filter order
-      val groups = ArrayBuffer.empty[FilterStrategy]
+      val groups = ArrayBuffer.empty[TypedFilterStrategy]
       r.strategies.distinct.foreach { f =>
         val i = groups.indexWhere(g => g.index == f.index && g.primary == f.primary)
         if (i == -1) {
@@ -167,9 +174,9 @@ class FilterSplitter(sft: SimpleFeatureType, indices: Seq[GenericFeatureIndex]) 
 
     // if a filter plan has any query filters that scan a subset of the range of a different query filter,
     // then we can combine them, as we have to scan the larger range anyway
-    def mergeOverlappedFilters(options: Seq[FilterPlan]): Seq[FilterPlan] = options.map { filterPlan =>
+    def mergeOverlappedFilters(options: Seq[TypedFilterPlan]): Seq[TypedFilterPlan] = options.map { filterPlan =>
       val filters = ArrayBuffer(filterPlan.strategies: _*)
-      var merged: FilterStrategy = null
+      var merged: TypedFilterStrategy = null
       var i = 0
       while (i < filters.length) {
         val toMerge = filters(i)
@@ -218,7 +225,7 @@ class FilterSplitter(sft: SimpleFeatureType, indices: Seq[GenericFeatureIndex]) 
     * Will perform a full table scan - used when we don't have anything better. Currently z3, z2 and record
     * tables support full table scans.
     */
-  private def fullTableScanOption(filter: Filter): FilterStrategy = {
+  private def fullTableScanOption(filter: Filter): TypedFilterStrategy = {
     val secondary = if (filter == Filter.INCLUDE) None else Some(filter)
     val options = indices.toStream.flatMap(_.queryable.getFilterStrategy(sft, Filter.INCLUDE))
     options.headOption.map(o => o.copy(secondary = secondary)).getOrElse {
@@ -234,14 +241,11 @@ class FilterSplitter(sft: SimpleFeatureType, indices: Seq[GenericFeatureIndex]) 
     val idCount = if (filter.accept(new IdDetectingFilterVisitor, false).asInstanceOf[Boolean]) 1 else 0
     attributeCount + idCount
   }
-}
-
-object FilterSplitter {
 
   /**
    * Try to merge the two query filters. Return the merged query filter if successful, else null.
    */
-  private def tryMerge(toMerge: FilterStrategy, mergeTo: FilterStrategy): FilterStrategy = {
+  private def tryMerge(toMerge: TypedFilterStrategy, mergeTo: TypedFilterStrategy): TypedFilterStrategy = {
     if (mergeTo.primary.forall(_ == Filter.INCLUDE)) {
       // this is a full table scan, we can just append the OR to the secondary filter
       val secondary = orOption(mergeTo.secondary.toSeq ++ toMerge.filter)
@@ -260,12 +264,12 @@ object FilterSplitter {
     * @param option filter plan
     * @return same filter plan with disjoint ORs
     */
-  private def makeDisjoint(option: FilterPlan): FilterPlan = {
+  private def makeDisjoint(option: TypedFilterPlan): TypedFilterPlan = {
     if (option.strategies.length < 2) {
       option
     } else {
       // A OR B OR C becomes... A OR (B NOT A) OR (C NOT A and NOT B)
-      def extractNot(qp: FilterStrategy) = qp.filter.map(ff.not)
+      def extractNot(qp: TypedFilterStrategy) = qp.filter.map(ff.not)
       // keep track of our current disjoint clause
       val nots = ArrayBuffer[Filter]()
       extractNot(option.strategies.head).foreach(nots.append(_))

@@ -18,17 +18,19 @@ import org.geotools.filter.text.ecql.ECQL
 import org.joda.time.{DateTime, Interval}
 import org.locationtech.geomesa.accumulo.GEOMESA_ITERATORS_IS_DENSITY_TYPE
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
-import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
+import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex._
 import org.locationtech.geomesa.accumulo.index.QueryHints._
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
 import org.locationtech.geomesa.accumulo.index.Strategy._
 import org.locationtech.geomesa.accumulo.index._
-import org.locationtech.geomesa.accumulo.index.z2.Z2IndexQueryable
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.features.SerializationType
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.filter.FilterHelper._
 import org.locationtech.geomesa.filter.visitor.FilterExtractingVisitor
+import org.locationtech.geomesa.index.api.FilterStrategy
+import org.locationtech.geomesa.index.strategies.Z2FilterStrategy
+import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools._
 import org.opengis.feature.simple.SimpleFeatureType
@@ -37,19 +39,21 @@ import org.opengis.filter.Filter
 @deprecated("z2/z3")
 object GeoHashIndexQueryable extends AccumuloIndexQueryable with LazyLogging with IndexFilterHelpers {
 
+  override val index: AccumuloFeatureIndex = GeoHashIndex
+
   /**
     * Plans the query - strategy implementations need to define this
     */
-  override def getQueryPlan(ds: AccumuloDataStore,
-                            sft: SimpleFeatureType,
-                            filter: FilterStrategy,
+  override def getQueryPlan(sft: SimpleFeatureType,
+                            ops: AccumuloDataStore,
+                            filter: AccumuloFilterStrategy,
                             hints: Hints,
-                            explain: Explainer = ExplainNull): QueryPlan = {
+                            explain: Explainer): QueryPlan = {
 
-    val acc             = ds
+    val acc             = ops
     val version         = sft.getSchemaVersion
     val schema          = Option(sft.getStIndexSchema).getOrElse("")
-    val featureEncoding = ds.getFeatureEncoding(sft)
+    val featureEncoding = ops.getFeatureEncoding(sft)
     val keyPlanner      = IndexSchema.buildKeyPlanner(schema)
     val cfPlanner       = IndexSchema.buildColumnFamilyPlanner(schema)
 
@@ -232,7 +236,7 @@ object GeoHashIndexQueryable extends AccumuloIndexQueryable with LazyLogging wit
     cfg
   }
 
-  def planQuery(qf: FilterStrategy,
+  def planQuery(qf: AccumuloFilterStrategy,
                 filter: KeyPlanningFilter,
                 useIndexEntries: Boolean,
                 explain: Explainer,
@@ -260,7 +264,7 @@ object GeoHashIndexQueryable extends AccumuloIndexQueryable with LazyLogging wit
     BatchScanPlan(qf, null, accRanges, null, cf, null, -1, hasDuplicates = false)
   }
 
-  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
+  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[AccumuloFilterStrategy] = {
     import org.locationtech.geomesa.filter._
 
     if (filter == Filter.INCLUDE) {
@@ -268,7 +272,7 @@ object GeoHashIndexQueryable extends AccumuloIndexQueryable with LazyLogging wit
     } else if (filter == Filter.EXCLUDE) {
       Seq.empty
     } else {
-      val (spatial, nonSpatial) = FilterExtractingVisitor(filter, sft.getGeomField, sft, Z2IndexQueryable.spatialCheck)
+      val (spatial, nonSpatial) = FilterExtractingVisitor(filter, sft.getGeomField, sft, Z2FilterStrategy.spatialCheck)
       val (temporal, others) = (sft.getDtgField, nonSpatial) match {
         case (Some(dtg), Some(ns)) => FilterExtractingVisitor(ns, dtg, sft)
         case _ => (None, nonSpatial)
@@ -282,12 +286,12 @@ object GeoHashIndexQueryable extends AccumuloIndexQueryable with LazyLogging wit
   }
 
   override def getCost(sft: SimpleFeatureType,
-                       stats: Option[GeoMesaStats],
-                       filter: FilterStrategy,
+                       ops: Option[AccumuloDataStore],
+                       filter: AccumuloFilterStrategy,
                        transform: Option[SimpleFeatureType]): Long = {
     filter.primary match {
       case None    => Long.MaxValue
-      case Some(f) => stats.flatMap(_.getCount(sft, f, exact = false)).getOrElse(400L)
+      case Some(f) => ops.flatMap(_.stats.getCount(sft, f, exact = false)).getOrElse(400L)
     }
   }
 }

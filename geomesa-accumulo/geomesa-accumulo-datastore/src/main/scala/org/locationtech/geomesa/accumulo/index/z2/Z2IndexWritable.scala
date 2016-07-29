@@ -13,13 +13,12 @@ import java.nio.charset.StandardCharsets
 import com.google.common.collect.{ImmutableSet, ImmutableSortedSet}
 import com.google.common.primitives.{Bytes, Longs}
 import com.vividsolutions.jts.geom.{Geometry, GeometryCollection, LineString, Point}
-import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
 import org.apache.accumulo.core.data.{Mutation, Value}
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.AccumuloIndexWritable
+import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, AccumuloIndexWritable}
 import org.locationtech.geomesa.curve.Z2SFC
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.sfcurve.zorder.{Z2, ZPrefix}
@@ -41,7 +40,9 @@ object Z2IndexWritable extends AccumuloIndexWritable {
   // mask for zeroing the last (8 - GEOM_Z_NUM_BYTES) bytes
   val GEOM_Z_MASK: Long = Long.MaxValue << (64 - 8 * GEOM_Z_NUM_BYTES)
 
-  override def writer(sft: SimpleFeatureType): FeatureToMutations = {
+  override val index: AccumuloFeatureIndex = Z2Index
+
+  override def writer(sft: SimpleFeatureType, table: String): FeatureToMutations = {
     val sharing = sharingPrefix(sft)
     val getRowKeys: (WritableFeature) => Seq[Array[Byte]] =
       if (sft.isPoints) getPointRowKey(sharing) else getGeomRowKeys(sharing)
@@ -79,7 +80,7 @@ object Z2IndexWritable extends AccumuloIndexWritable {
     }
   }
 
-  override def remover(sft: SimpleFeatureType): FeatureToMutations = {
+  override def remover(sft: SimpleFeatureType, table: String): FeatureToMutations = {
     val sharing = sharingPrefix(sft)
     val getRowKeys: (WritableFeature) => Seq[Array[Byte]] =
       if (sft.isPoints) getPointRowKey(sharing) else getGeomRowKeys(sharing)
@@ -203,13 +204,13 @@ object Z2IndexWritable extends AccumuloIndexWritable {
     prefix + length
   }
 
-  override def configure(sft: SimpleFeatureType, table: String, tableOps: TableOperations): Unit = {
+  override def configure(sft: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit = {
     import scala.collection.JavaConversions._
 
-    tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
+    ops.tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
 
     val localityGroups = Seq(BIN_CF, FULL_CF).map(cf => (cf.toString, ImmutableSet.of(cf))).toMap
-    tableOps.setLocalityGroups(table, localityGroups)
+    ops.tableOps.setLocalityGroups(table, localityGroups)
 
     // drop first split, otherwise we get an empty tablet
     val splits = if (sft.isTableSharing) {
@@ -218,10 +219,10 @@ object Z2IndexWritable extends AccumuloIndexWritable {
     } else {
       SPLIT_ARRAYS.drop(1).map(new Text(_)).toSet
     }
-    val splitsToAdd = splits -- tableOps.listSplits(table).toSet
+    val splitsToAdd = splits -- ops.tableOps.listSplits(table).toSet
     if (splitsToAdd.nonEmpty) {
       // noinspection RedundantCollectionConversion
-      tableOps.addSplits(table, ImmutableSortedSet.copyOf(splitsToAdd.toIterable))
+      ops.tableOps.addSplits(table, ImmutableSortedSet.copyOf(splitsToAdd.toIterable))
     }
   }
 }

@@ -15,7 +15,6 @@ import java.util.{Date, Locale, Collection => JCollection}
 import com.google.common.collect.ImmutableSortedSet
 import com.google.common.primitives.Bytes
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
 import org.apache.accumulo.core.data.{Mutation, Range => AccRange}
 import org.apache.hadoop.io.Text
@@ -23,7 +22,7 @@ import org.calrissian.mango.types.{LexiTypeEncoders, SimpleTypeEncoders, TypeEnc
 import org.joda.time.format.ISODateTimeFormat
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.AccumuloIndexWritable
+import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, AccumuloIndexWritable}
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -49,7 +48,9 @@ object AttributeIndexWritable extends AccumuloIndexWritable with LazyLogging {
 
   private type TryEncoder = Try[(TypeEncoder[Any, String], TypeEncoder[_, String])]
 
-  override def writer(sft: SimpleFeatureType): FeatureToMutations = {
+  override val index: AccumuloFeatureIndex = AttributeIndex
+
+  override def writer(sft: SimpleFeatureType, table: String): FeatureToMutations = {
     val getRows = getRowKeys(sft)
     if (sft.getSchemaVersion < 9) {
       (wf: WritableFeature) => {
@@ -78,7 +79,7 @@ object AttributeIndexWritable extends AccumuloIndexWritable with LazyLogging {
     }
   }
 
-  override def remover(sft: SimpleFeatureType): FeatureToMutations = {
+  override def remover(sft: SimpleFeatureType, table: String): FeatureToMutations = {
     val getRows = getRowKeys(sft)
     if (sft.getSchemaVersion < 9) {
       (wf: WritableFeature) => {
@@ -381,13 +382,13 @@ object AttributeIndexWritable extends AccumuloIndexWritable with LazyLogging {
     }
   }
 
-  override def configureTable(featureType: SimpleFeatureType, table: String, tableOps: TableOperations): Unit = {
-    tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
+  override def configure(featureType: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit = {
+    ops.tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
     val indexedAttrs = SimpleFeatureTypes.getSecondaryIndexedAttributes(featureType)
     if (indexedAttrs.nonEmpty) {
       val indices = indexedAttrs.map(d => featureType.indexOf(d.getLocalName))
       val splits = indices.map(i => new Text(getRowPrefix(featureType, i)))
-      tableOps.addSplits(table, ImmutableSortedSet.copyOf(splits.toArray))
+      ops.tableOps.addSplits(table, ImmutableSortedSet.copyOf(splits.toArray))
     }
   }
 }

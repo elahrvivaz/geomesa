@@ -8,15 +8,19 @@
 
 package org.locationtech.geomesa.index.api
 
-import org.locationtech.geomesa.index.stats.GeoMesaStats
+import org.locationtech.geomesa.index.stats.HasGeoMesaStats
 import org.locationtech.geomesa.index.utils.{ExplainNull, Explainer}
 import org.locationtech.geomesa.utils.stats.{MethodProfiling, Timing, TimingsImpl}
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
-abstract class StrategyDecider extends MethodProfiling {
+abstract class StrategyDecider[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan]
+    extends MethodProfiling {
 
-  def indices(sft: SimpleFeatureType): Seq[GenericFeatureIndex]
+  type TypedFeatureIndex = GeoMesaFeatureIndex[Ops, FeatureWrapper, Result, Row, Entries, Plan]
+  type TypedFeaturePlan = FilterPlan[Ops, FeatureWrapper, Result, Row, Entries, Plan]
+
+  def indices(sft: SimpleFeatureType): Seq[TypedFeatureIndex]
 
   /**
     * Selects a strategy for executing a given query.
@@ -28,19 +32,19 @@ abstract class StrategyDecider extends MethodProfiling {
     * executing each available strategy will be calculated, and the least expensive strategy will be used.
     *
     * @param sft simple feature type
+    * @param ops handle to operations
     * @param filter filter to execute
     * @param transform return transformation
-    * @param stats stats implementation
     * @param requested requested index
     * @param explain for trace logging
     * @return
     */
   def chooseFilterPlan(sft: SimpleFeatureType,
+                       ops: Option[Ops],
                        filter: Filter,
                        transform: Option[SimpleFeatureType],
-                       stats: Option[GeoMesaStats],
-                       requested: Option[GenericFeatureIndex],
-                       explain: Explainer = ExplainNull): FilterPlan = {
+                       requested: Option[TypedFeatureIndex],
+                       explain: Explainer = ExplainNull): TypedFeaturePlan = {
     implicit val timings = new TimingsImpl()
 
     val availableIndices = indices(sft)
@@ -56,8 +60,9 @@ abstract class StrategyDecider extends MethodProfiling {
         explain(s"Filter plan forced to $forced")
         forced
       } else if (options.isEmpty) {
+        // corresponds to filter.exclude
         explain("No filter plans found")
-        FilterPlan(Seq.empty) // corresponds to filter.exclude
+        FilterPlan[Ops, FeatureWrapper, Result, Row, Entries, Plan](Seq.empty)
       } else if (options.length == 1) {
         // only a single option, so don't bother with cost
         explain(s"Filter plan: ${options.head}")
@@ -66,11 +71,11 @@ abstract class StrategyDecider extends MethodProfiling {
         // choose the best option based on cost
         val costs = options.map { option =>
           implicit val timing = new Timing()
-          val optionCosts = profile(option.strategies.map(f => f.index.queryable.getCost(sft, stats, f, transform)))
+          val optionCosts = profile(option.strategies.map(f => f.index.queryable.getCost(sft, ops, f, transform)))
           (option, optionCosts.sum, timing.time)
         }.sortBy(_._2)
         val (cheapest, cost, time) = costs.head
-        explain(s"Filter plan selected: $cheapest (Cost $cost) in ${time}ms with${if (stats.isEmpty) "out" else ""} stats")
+        explain(s"Filter plan selected: $cheapest (Cost $cost) in ${time}ms")
         explain(s"Filter plans not used (${costs.size - 1}):",
           costs.drop(1).map(c => s"${c._1} (Cost ${c._2} in ${c._3}ms)"))
         cheapest
@@ -83,8 +88,10 @@ abstract class StrategyDecider extends MethodProfiling {
   }
 
   // see if one of the normal plans matches the requested type - if not, force it
-  private def forceStrategy(options: Seq[FilterPlan], index: GenericFeatureIndex, allFilter: Filter): FilterPlan = {
-    def checkStrategy(f: FilterStrategy) = f.index == index
+  private def forceStrategy(options: Seq[TypedFeaturePlan],
+                            index: TypedFeatureIndex,
+                            allFilter: Filter): TypedFeaturePlan = {
+    def checkStrategy(f: FilterStrategy[Ops, FeatureWrapper, Result, Row, Entries, Plan]) = f.index == index
     options.find(_.strategies.forall(checkStrategy)).getOrElse {
       val secondary = if (allFilter == Filter.INCLUDE) None else Some(allFilter)
       FilterPlan(Seq(FilterStrategy(index, None, secondary)))

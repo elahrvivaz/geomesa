@@ -73,7 +73,7 @@ abstract class KryoLazyAggregatingIterator[T <: AnyRef { def isEmpty: Boolean; d
       val table = IndexManager.AllIndices.find(_.getClass.getSimpleName == tableName).getOrElse {
         throw new RuntimeException(s"Table option not configured correctly: $tableName")
       }
-      getId = table.getIdFromRow(sft)
+      getId = table.writable.getIdFromRow(sft)
       reusableSf = new KryoFeatureSerializer(sft, SerializationOptions.withoutId).getReusableFeature
     }
     val filt = options.get(CQL_OPT).map(FastFilterFactory.toFilter).orNull

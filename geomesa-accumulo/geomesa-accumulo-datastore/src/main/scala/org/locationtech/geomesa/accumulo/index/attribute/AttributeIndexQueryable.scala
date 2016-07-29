@@ -16,7 +16,7 @@ import org.apache.accumulo.core.data.{Key, Value, Range => AccRange}
 import org.geotools.data.DataUtilities
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
-import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
+import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex.AccumuloFilterStrategy
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.QueryPlanners.{FeatureFunction, JoinFunction}
 import org.locationtech.geomesa.accumulo.index._
@@ -27,6 +27,8 @@ import org.locationtech.geomesa.features.SerializationOption.SerializationOption
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.visitor.FilterExtractingVisitor
+import org.locationtech.geomesa.index.api.FilterStrategy
+import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.index.VisibilityLevel
@@ -42,11 +44,13 @@ object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
   val FILTERING_ITER_PRIORITY = 25
   type ScanPlanFn = (SimpleFeatureType, Option[Filter], Option[(String, SimpleFeatureType)]) => BatchScanPlan
 
-  override def getQueryPlan(ds: AccumuloDataStore,
-                            sft: SimpleFeatureType,
-                            filter: FilterStrategy,
+  override val index: AccumuloFeatureIndex = AttributeIndex
+
+  override def getQueryPlan(sft: SimpleFeatureType,
+                            ops: AccumuloDataStore,
+                            filter: AccumuloFilterStrategy,
                             hints: Hints,
-                            explain: Explainer = ExplainNull): QueryPlan = {
+                            explain: Explainer): QueryPlan = {
 
     val primary = filter.primary.getOrElse {
       throw new IllegalStateException("Attribute index does not support Filter.INCLUDE")
@@ -68,13 +72,13 @@ object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
     if (bounds.isEmpty) {
       EmptyPlan(filter)
     } else {
-      nonEmptyQueryPlan(ds, sft, filter, hints, bounds)
+      nonEmptyQueryPlan(ops, sft, filter, hints, bounds)
     }
   }
 
   private def nonEmptyQueryPlan(ds: AccumuloDataStore,
                                 sft: SimpleFeatureType,
-                                filter: FilterStrategy,
+                                filter: AccumuloFilterStrategy,
                                 hints: Hints,
                                 bounds: Seq[PropertyBounds]): QueryPlan = {
 
@@ -175,7 +179,7 @@ object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
    */
   def joinQuery(ds: AccumuloDataStore,
                 sft: SimpleFeatureType,
-                filter: FilterStrategy,
+                filter: AccumuloFilterStrategy,
                 hints: Hints,
                 hasDupes: Boolean,
                 attributePlan: ScanPlanFn): JoinPlan = {
@@ -227,7 +231,7 @@ object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
       attributeScan.columnFamilies, recordThreads, hasDupes, joinFunction, joinQuery)
   }
 
-  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
+  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[AccumuloFilterStrategy] = {
     val attributes = FilterHelper.propertyNames(filter, sft)
     val indexedAttributes = attributes.filter(a => Option(sft.getDescriptor(a)).exists(_.isIndexed))
     indexedAttributes.flatMap { attribute =>
@@ -241,13 +245,13 @@ object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
   }
 
   override def getCost(sft: SimpleFeatureType,
-                       stats: Option[GeoMesaStats],
-                       filter: FilterStrategy,
+                       ops: Option[AccumuloDataStore],
+                       filter: AccumuloFilterStrategy,
                        transform: Option[SimpleFeatureType]): Long = {
     filter.primary match {
       case None => Long.MaxValue
       case Some(f) =>
-        stats.flatMap(_.getCount(sft, f, exact = false)).map { count =>
+        ops.flatMap(_.stats.getCount(sft, f, exact = false)).map { count =>
           // account for cardinality and index coverage
           val attribute = FilterHelper.propertyNames(f, sft).head
           val descriptor = sft.getDescriptor(attribute)
@@ -419,7 +423,7 @@ object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
     * @param mergeTo second filter
     * @return merged filter that satisfies both inputs, or null if that isn't possible
     */
-  def tryMergeAttrStrategy(toMerge: FilterStrategy, mergeTo: FilterStrategy): FilterStrategy = {
+  def tryMergeAttrStrategy(toMerge: AccumuloFilterStrategy, mergeTo: AccumuloFilterStrategy): AccumuloFilterStrategy = {
     // TODO this will be incorrect for multi-valued properties where we have an AND in the primary filter
     val leftAttributes = toMerge.primary.map(FilterHelper.propertyNames(_, null))
     val rightAttributes = mergeTo.primary.map(FilterHelper.propertyNames(_, null))

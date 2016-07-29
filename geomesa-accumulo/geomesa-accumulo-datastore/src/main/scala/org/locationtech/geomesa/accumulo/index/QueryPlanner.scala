@@ -130,13 +130,13 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
     explain(s"Transforms: ${q.getHints.getTransformDefinition.getOrElse("None")}")
 
     explain.pushLevel("Strategy selection:")
-    val requestedIndex = requested.orElse(hints.getRequestedIndex).map(_.name)
+    val requestedIndex = requested.orElse(hints.getRequestedIndex)
     val transform = q.getHints.getTransformSchema
     val stats = query.getHints.getCostEvaluation match {
-      case CostEvaluation.Stats => Some(ds.stats)
+      case CostEvaluation.Stats => Some(ds)
       case CostEvaluation.Index => None
     }
-    val filterPlan = AccumuloStrategyDecider.chooseFilterPlan(sft, q.getFilter, transform, stats, requestedIndex, explain)
+    val filterPlan = AccumuloStrategyDecider.chooseFilterPlan(sft, stats, q.getFilter, transform, requestedIndex, explain)
     explain.popLevel()
 
     var strategyCount = 1
@@ -146,8 +146,7 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
       explain(s"Strategy filter: $strategy")
 
       implicit val timing = new Timing
-      val index = IndexManager.index(strategy.index)
-      val plan = profile(index.queryable.getQueryPlan(ds, sft, strategy, hints, explain))
+      val plan = profile(strategy.index.queryable.getQueryPlan(sft, ds, strategy, hints, explain)).asInstanceOf[QueryPlan]
       outputPlan(plan, explain.popLevel())
       explain(s"Query planning took ${timing.time}ms")
 

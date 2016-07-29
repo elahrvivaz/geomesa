@@ -11,13 +11,12 @@ package org.locationtech.geomesa.accumulo.index.attribute
 
 import com.google.common.collect.ImmutableSortedSet
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
 import org.apache.accumulo.core.data.Mutation
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.AccumuloIndexWritable
+import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, AccumuloIndexWritable}
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -33,7 +32,9 @@ import scala.util.Try
 @deprecated
 object AttributeIndexWritableV5 extends AccumuloIndexWritable with LazyLogging {
 
-  override def writer(sft: SimpleFeatureType): FeatureToMutations = {
+  override val index: AccumuloFeatureIndex = AttributeIndex
+
+  override def writer(sft: SimpleFeatureType, table: String): FeatureToMutations = {
     val indexedAttributes = SimpleFeatureTypes.getSecondaryIndexedAttributes(sft)
     val indexesOfIndexedAttributes = indexedAttributes.map { a => sft.indexOf(a.getName) }
     val attributesToIdx = indexedAttributes.zip(indexesOfIndexedAttributes)
@@ -41,7 +42,7 @@ object AttributeIndexWritableV5 extends AccumuloIndexWritable with LazyLogging {
     (toWrite: WritableFeature) => getAttributeIndexMutations(toWrite, attributesToIdx, rowIdPrefix)
   }
 
-  override def remover(sft: SimpleFeatureType): FeatureToMutations = {
+  override def remover(sft: SimpleFeatureType, table: String): FeatureToMutations = {
     val indexedAttributes = SimpleFeatureTypes.getSecondaryIndexedAttributes(sft)
     val indexesOfIndexedAttributes = indexedAttributes.map { a => sft.indexOf(a.getName)}
     val attributesToIdx = indexedAttributes.zip(indexesOfIndexedAttributes)
@@ -130,16 +131,16 @@ object AttributeIndexWritableV5 extends AccumuloIndexWritable with LazyLogging {
       AttributeIndexRow(name, decodedValue)
     }
 
-  override def configureTable(featureType: SimpleFeatureType, table: String, tableOps: TableOperations): Unit = {
-    tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
-    tableOps.setProperty(table, Property.TABLE_SPLIT_THRESHOLD.getKey, "128M")
+  override def configure(featureType: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit = {
+    ops.tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
+    ops.tableOps.setProperty(table, Property.TABLE_SPLIT_THRESHOLD.getKey, "128M")
     val indexedAttrs = SimpleFeatureTypes.getSecondaryIndexedAttributes(featureType)
     if (indexedAttrs.nonEmpty) {
       val prefix = featureType.getTableSharingPrefix
       val prefixFn = getAttributeIndexRowPrefix(prefix, _: AttributeDescriptor)
       val names = indexedAttrs.map(prefixFn).map(new Text(_))
       val splits = ImmutableSortedSet.copyOf(names.toArray)
-      tableOps.addSplits(table, splits)
+      ops.tableOps.addSplits(table, splits)
     }
   }
 }

@@ -8,18 +8,21 @@
 
 package org.locationtech.geomesa.accumulo.index.id
 
+import java.util.Map.Entry
+
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.data.{Range => aRange}
+import org.apache.accumulo.core.data.{Key, Mutation, Value, Range => aRange}
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
-import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
-import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
+import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, WritableFeature}
+import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex._
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.Strategy._
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators.{BinAggregatingIterator, KryoLazyDensityIterator, KryoLazyFilterTransformIterator, KryoLazyStatsIterator, KryoVisibilityRowEncoder}
 import org.locationtech.geomesa.filter._
-import org.locationtech.geomesa.filter.visitor.IdExtractingVisitor
+import org.locationtech.geomesa.index.strategies.IdFilterStrategy
+import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.opengis.feature.simple.SimpleFeatureType
@@ -27,14 +30,11 @@ import org.opengis.filter.{And, Filter, Id, Or}
 
 import scala.collection.JavaConversions._
 
-object RecordIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
+object RecordIndexQueryable extends AccumuloIndexQueryable
+    with IdFilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
+    with LazyLogging {
 
-  // top-priority index - always 1 if there are actually ID filters
-  override def getCost(sft: SimpleFeatureType,
-                       stats: Option[GeoMesaStats],
-                       filter: FilterStrategy,
-                       transform: Option[SimpleFeatureType]): Long =
-    if (filter.primary.isDefined) 1 else Long.MaxValue
+  override val index: AccumuloFeatureIndex = RecordIndex
 
   def intersectIdFilters(filter: Filter): Set[String] = {
     filter match {
@@ -45,27 +45,12 @@ object RecordIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
     }
   }
 
-  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
-    if (filter == Filter.INCLUDE) {
-      Seq(FilterStrategy(RecordIndex, None, None))
-    } else if (filter == Filter.EXCLUDE) {
-      Seq.empty
-    } else {
-      val (ids, notIds) = IdExtractingVisitor(filter)
-      if (ids.isDefined) {
-        Seq(FilterStrategy(RecordIndex, ids, notIds))
-      } else {
-        Seq(FilterStrategy(RecordIndex, None, Some(filter)))
-      }
-    }
-  }
-
-  override def getQueryPlan(ds: AccumuloDataStore,
-                            sft: SimpleFeatureType,
-                            filter: FilterStrategy,
+  override def getQueryPlan(sft: SimpleFeatureType,
+                            ops: AccumuloDataStore,
+                            filter: AccumuloFilterStrategy,
                             hints: Hints,
-                            explain: Explainer = ExplainNull): QueryPlan = {
-    val featureEncoding = ds.getFeatureEncoding(sft)
+                            explain: Explainer): QueryPlan = {
+    val featureEncoding = ops.getFeatureEncoding(sft)
     val prefix = sft.getTableSharingPrefix
 
     val ranges = filter.primary match {
@@ -86,8 +71,8 @@ object RecordIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
     }
 
     if (ranges.isEmpty) { EmptyPlan(filter) } else {
-      val table = ds.getTableName(sft.getTypeName, RecordIndex)
-      val threads = ds.getSuggestedThreads(sft.getTypeName, RecordIndex)
+      val table = ops.getTableName(sft.getTypeName, RecordIndex)
+      val threads = ops.getSuggestedThreads(sft.getTypeName, RecordIndex)
       val dupes = false // record table never has duplicate entries
 
       if (sft.getSchemaVersion > 5) {

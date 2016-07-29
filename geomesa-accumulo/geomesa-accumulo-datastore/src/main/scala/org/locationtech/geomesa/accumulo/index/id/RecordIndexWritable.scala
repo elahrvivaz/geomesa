@@ -10,14 +10,13 @@ package org.locationtech.geomesa.accumulo.index.id
 
 import com.google.common.base.Charsets
 import com.google.common.collect.ImmutableSortedSet
-import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
 import org.apache.accumulo.core.data.Mutation
 import org.apache.accumulo.core.file.keyfunctor.RowFunctor
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter._
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.AccumuloIndexWritable
+import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, AccumuloIndexWritable}
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeatureType
@@ -28,7 +27,9 @@ object RecordIndexWritable extends AccumuloIndexWritable {
 
   private val SFT_CF = new Text("SFT")
 
-  override def writer(sft: SimpleFeatureType): FeatureToMutations = {
+  override val index: AccumuloFeatureIndex = RecordIndex
+
+  override def writer(sft: SimpleFeatureType, table: String): FeatureToMutations = {
     val rowIdPrefix = sft.getTableSharingPrefix
     if (sft.getSchemaVersion < 9) {
       (wf: WritableFeature) => {
@@ -45,7 +46,7 @@ object RecordIndexWritable extends AccumuloIndexWritable {
     }
   }
 
-  override def remover(sft: SimpleFeatureType): FeatureToMutations = {
+  override def remover(sft: SimpleFeatureType, table: String): FeatureToMutations = {
     val rowIdPrefix = sft.getTableSharingPrefix
     if (sft.getSchemaVersion < 9) {
       (wf: WritableFeature) => {
@@ -69,7 +70,7 @@ object RecordIndexWritable extends AccumuloIndexWritable {
 
   def getRowKey(rowIdPrefix: String, id: String): String = rowIdPrefix + id
 
-  override def configureTable(featureType: SimpleFeatureType, table: String, tableOps: TableOperations): Unit = {
+  override def configure(featureType: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit = {
     import scala.collection.JavaConversions._
 
     val prefix = featureType.getTableSharingPrefix
@@ -80,15 +81,15 @@ object RecordIndexWritable extends AccumuloIndexWritable {
     val splitterOptions = featureType.getUserData.getOrElse(SimpleFeatureTypes.TABLE_SPLITTER_OPTIONS, Map.empty[String, String]).asInstanceOf[Map[String, String]]
     val splits = splitter.getSplits(splitterOptions)
     val sortedSplits = splits.map(_.toString).map(prefixFn).map(new Text(_)).toSet
-    val splitsToAdd = sortedSplits -- tableOps.listSplits(table).toSet
+    val splitsToAdd = sortedSplits -- ops.tableOps.listSplits(table).toSet
     if (splitsToAdd.nonEmpty) {
       // noinspection RedundantCollectionConversion
-      tableOps.addSplits(table, ImmutableSortedSet.copyOf(splitsToAdd.toIterable))
+      ops.tableOps.addSplits(table, ImmutableSortedSet.copyOf(splitsToAdd.toIterable))
     }
 
     // enable the row functor as the feature ID is stored in the Row ID
-    tableOps.setProperty(table, Property.TABLE_BLOOM_KEY_FUNCTOR.getKey, classOf[RowFunctor].getCanonicalName)
-    tableOps.setProperty(table, Property.TABLE_BLOOM_ENABLED.getKey, "true")
-    tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
+    ops.tableOps.setProperty(table, Property.TABLE_BLOOM_KEY_FUNCTOR.getKey, classOf[RowFunctor].getCanonicalName)
+    ops.tableOps.setProperty(table, Property.TABLE_BLOOM_ENABLED.getKey, "true")
+    ops.tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
   }
 }

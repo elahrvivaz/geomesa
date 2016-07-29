@@ -20,6 +20,6 @@ object RecordIndex extends AccumuloFeatureIndex {
     sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name)
   }
 
-  override val data: AccumuloFeatureIndexData = RecordIndexWritable
-  override val query: AccumuloFeatureIndexQuery = RecordIndexQueryable
+  override val writable: AccumuloIndexWritable = RecordIndexWritable
+  override val queryable: AccumuloIndexQueryable = RecordIndexQueryable
 }

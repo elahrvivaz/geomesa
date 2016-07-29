@@ -17,9 +17,11 @@ import org.apache.accumulo.core.data.{Key, Value, Range => AccRange}
 import org.apache.hadoop.io.Text
 import org.joda.time.format.DateTimeFormatter
 import org.joda.time.{DateTime, DateTimeZone}
+import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex.AccumuloFilterStrategy
 import org.locationtech.geomesa.accumulo.index.KeyUtils._
 import org.locationtech.geomesa.accumulo.index.QueryPlanners.{FeatureFunction, JoinFunction}
 import org.locationtech.geomesa.accumulo.index.geohash.GeoHashIndexWritable
+import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.utils.CartesianProductIterable
 import org.locationtech.geomesa.utils.geohash.{GeoHash, GeohashUtils}
 import org.opengis.feature.simple.SimpleFeature
@@ -30,7 +32,7 @@ object QueryPlanners {
 }
 
 sealed trait QueryPlan {
-  def filter: FilterStrategy
+  def filter: AccumuloFilterStrategy
   def table: String
   def ranges: Seq[AccRange]
   def iterators: Seq[IteratorSetting]
@@ -43,7 +45,7 @@ sealed trait QueryPlan {
 }
 
 // plan that will not actually scan anything
-case class EmptyPlan(filter: FilterStrategy) extends QueryPlan {
+case class EmptyPlan(filter: AccumuloFilterStrategy) extends QueryPlan {
   override val table: String = ""
   override val iterators: Seq[IteratorSetting] = Seq.empty
   override val kvsToFeatures: FeatureFunction = (_) => null
@@ -54,7 +56,7 @@ case class EmptyPlan(filter: FilterStrategy) extends QueryPlan {
 }
 
 // single scan plan
-case class ScanPlan(filter: FilterStrategy,
+case class ScanPlan(filter: AccumuloFilterStrategy,
                     table: String,
                     range: AccRange,
                     iterators: Seq[IteratorSetting],
@@ -66,7 +68,7 @@ case class ScanPlan(filter: FilterStrategy,
 }
 
 // batch scan plan
-case class BatchScanPlan(filter: FilterStrategy,
+case class BatchScanPlan(filter: AccumuloFilterStrategy,
                          table: String,
                          ranges: Seq[AccRange],
                          iterators: Seq[IteratorSetting],
@@ -76,7 +78,7 @@ case class BatchScanPlan(filter: FilterStrategy,
                          hasDuplicates: Boolean) extends QueryPlan
 
 // join on multiple tables - requires multiple scans
-case class JoinPlan(filter: FilterStrategy,
+case class JoinPlan(filter: AccumuloFilterStrategy,
                     table: String,
                     ranges: Seq[AccRange],
                     iterators: Seq[IteratorSetting],

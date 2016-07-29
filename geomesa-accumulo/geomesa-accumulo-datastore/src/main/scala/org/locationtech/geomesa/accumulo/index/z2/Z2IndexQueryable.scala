@@ -9,33 +9,37 @@
 package org.locationtech.geomesa.accumulo.index.z2
 
 import java.nio.charset.StandardCharsets
+import java.util.Map.Entry
 
 import com.google.common.primitives.{Bytes, Longs}
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.data.{Range => aRange}
+import org.apache.accumulo.core.data.{Key, Mutation, Value, Range => aRange}
 import org.apache.hadoop.io.Text
-import org.geotools.data.DataStore
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
-import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
+import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, WritableFeature}
+import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex.AccumuloFilterStrategy
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.Z2SFC
-import org.locationtech.geomesa.filter._
-import org.locationtech.geomesa.filter.visitor.FilterExtractingVisitor
-import org.locationtech.geomesa.index.api.FilterStrategy
-import org.locationtech.geomesa.index.stats.GeoMesaStats
+import org.locationtech.geomesa.index.strategies.Z2FilterStrategy
 import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, WholeWorldPolygon}
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.opengis.feature.simple.SimpleFeatureType
-import org.opengis.filter.{And, Filter, Or}
 
-object Z2IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
+object Z2IndexQueryable extends AccumuloIndexQueryable
+    with Z2FilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
+    with LazyLogging {
 
-  override def getQueryPlan(ds: DataStore,
-                            sft: SimpleFeatureType,
-                            filter: FilterStrategy,
+  val Z2_ITER_PRIORITY = 23
+  val FILTERING_ITER_PRIORITY = 25
+
+  override val index: AccumuloFeatureIndex = Z2Index
+
+  override def getQueryPlan(sft: SimpleFeatureType,
+                            ops: AccumuloDataStore,
+                            filter: AccumuloFilterStrategy,
                             hints: Hints,
                             explain: Explainer): QueryPlan = {
 
@@ -43,8 +47,6 @@ object Z2IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
     import org.locationtech.geomesa.filter.FilterHelper._
     import org.locationtech.geomesa.filter._
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-
-    val ads = ds.asInstanceOf[AccumuloDataStore]
 
     if (filter.primary.isEmpty) {
       filter.secondary.foreach { f =>
@@ -57,7 +59,7 @@ object Z2IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
 
     explain(s"Geometries: $geometries")
 
-    val looseBBox = if (hints.containsKey(LOOSE_BBOX)) Boolean.unbox(hints.get(LOOSE_BBOX)) else ads.config.looseBBox
+    val looseBBox = if (hints.containsKey(LOOSE_BBOX)) Boolean.unbox(hints.get(LOOSE_BBOX)) else ops.config.looseBBox
 
     // if the user has requested strict bounding boxes, we apply the full filter
     // if this is a non-point geometry type, the index is coarse-grained, so we apply the full filter
@@ -96,8 +98,8 @@ object Z2IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
       (iters, Z2IndexWritable.entriesToFeatures(sft, hints.getReturnSft), Z2IndexWritable.FULL_CF, sft.nonPoints)
     }
 
-    val z2table = ads.getTableName(sft.getTypeName, Z2Index)
-    val numThreads = ads.getSuggestedThreads(sft.getTypeName, Z2Index)
+    val z2table = ops.getTableName(sft.getTypeName, Z2Index)
+    val numThreads = ops.getSuggestedThreads(sft.getTypeName, Z2Index)
 
     val (ranges, z2Iter) = if (filter.primary.isEmpty) {
       val range = if (sft.isTableSharing) {
@@ -147,52 +149,5 @@ object Z2IndexQueryable extends AccumuloIndexQueryable with LazyLogging {
 
     val iters = perAttributeIter ++ iterators ++ z2Iter
     BatchScanPlan(filter, z2table, ranges, iters, Seq(cf), kvsToFeatures, numThreads, hasDupes)
-  }
-
-  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = {
-    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-
-    if (filter == Filter.INCLUDE) {
-      Seq(FilterStrategy(Z2Index, None, None))
-    } else if (filter == Filter.EXCLUDE) {
-      Seq.empty
-    } else {
-      val (spatial, nonSpatial) = FilterExtractingVisitor(filter, sft.getGeomField, sft, spatialCheck)
-      if (spatial.nonEmpty) {
-        Seq(FilterStrategy(Z2Index, spatial, nonSpatial))
-      } else {
-        Seq(FilterStrategy(Z2Index, None, Some(filter)))
-      }
-    }
-  }
-
-
-  override def getCost(sft: SimpleFeatureType,
-                       stats: Option[GeoMesaStats],
-                       filter: FilterStrategy,
-                       transform: Option[SimpleFeatureType]): Long = {
-    filter.primary match {
-      case None => Long.MaxValue
-      // add one so that we prefer the z3 index even if geometry is the limiting factor, resulting in the same count
-      case Some(f) =>
-        stats.flatMap(_.getCount(sft, f, exact = false).map(c => if (c == 0L) 0L else c + 1L)).getOrElse(400L) // 400 = old index based cost
-    }
-  }
-
-  val Z2_ITER_PRIORITY = 23
-  val FILTERING_ITER_PRIORITY = 25
-
-  /**
-    * Evaluates filters that we can handle with the z-index strategies
-    *
-    * @param filter filter to check
-    * @return
-    */
-  def spatialCheck(filter: Filter): Boolean = {
-    filter match {
-      case f: And => true // note: implies further evaluation of children
-      case f: Or  => true // note: implies further evaluation of children
-      case _ => isSpatialFilter(filter)
-    }
   }
 }

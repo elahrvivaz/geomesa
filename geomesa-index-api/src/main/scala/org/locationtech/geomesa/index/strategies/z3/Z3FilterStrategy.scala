@@ -1,0 +1,81 @@
+/***********************************************************************
+* Copyright (c) 2013-2016 Commonwealth Computer Research, Inc.
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of the Apache License, Version 2.0
+* which accompanies this distribution and is available at
+* http://www.opensource.org/licenses/apache2.0.php.
+*************************************************************************/
+
+package org.locationtech.geomesa.index.strategies.z3
+
+import org.locationtech.geomesa.filter._
+import org.locationtech.geomesa.filter.visitor.FilterExtractingVisitor
+import org.locationtech.geomesa.index.api.{FilterStrategy, GeoMesaIndexQueryable}
+import org.locationtech.geomesa.index.stats.HasGeoMesaStats
+import org.locationtech.geomesa.index.strategies.Z2FilterStrategy
+import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+import org.opengis.feature.simple.SimpleFeatureType
+import org.opengis.filter.Filter
+
+trait Z3FilterStrategy[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan] extends
+    GeoMesaIndexQueryable[Ops, FeatureWrapper, Result, Row, Entries, Plan] {
+
+  import Z3FilterStrategy.{StaticCost, isBounded}
+
+  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter):
+      Seq[FilterStrategy[Ops, FeatureWrapper, Result, Row, Entries, Plan]] = {
+
+    import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
+
+    val dtg = sft.getDtgField.getOrElse {
+      throw new RuntimeException("Trying to plan a z3 query but the schema does not have a date")
+    }
+
+    if (filter == Filter.INCLUDE) {
+      Seq(FilterStrategy(index, None, None))
+    } else if (filter == Filter.EXCLUDE) {
+      Seq.empty
+    } else {
+      val (temporal, nonTemporal) = FilterExtractingVisitor(filter, dtg, sft)
+      val (spatial, others) = nonTemporal match {
+        case None     => (None, None)
+        case Some(nt) => FilterExtractingVisitor(nt, sft.getGeomField, sft, Z2FilterStrategy.spatialCheck)
+      }
+
+      if (temporal.exists(isBounded(_, dtg)) && (spatial.isDefined || !sft.getDescriptor(dtg).isIndexed)) {
+        Seq(FilterStrategy(index, andOption((spatial ++ temporal).toSeq), others))
+      } else {
+        Seq(FilterStrategy(index, None, Some(filter)))
+      }
+    }
+  }
+
+  override def getCost(sft: SimpleFeatureType,
+                       ops: Option[Ops],
+                       filter: FilterStrategy[Ops, FeatureWrapper, Result, Row, Entries, Plan],
+                       transform: Option[SimpleFeatureType]): Long = {
+    // https://geomesa.atlassian.net/browse/GEOMESA-1166
+    // TODO check date range and use z2 instead if too big
+    // TODO also if very small bbox, z2 has ~10 more bits of lat/lon info
+    filter.primary match {
+      case None    => Long.MaxValue
+      case Some(f) => ops.flatMap(_.stats.getCount(sft, f, exact = false)).getOrElse {
+        if (filter.primary.exists(isSpatialFilter)) StaticCost else Z2FilterStrategy.StaticCost + 1
+      }
+    }
+  }
+}
+
+object Z3FilterStrategy {
+
+  val StaticCost = 200L
+
+  /**
+    * Returns true if the temporal filters create a range with an upper and lower bound
+    */
+  def isBounded(temporalFilter: Filter, dtg: String): Boolean = {
+    import FilterHelper.{MaxDateTime, MinDateTime}
+    val intervals = FilterHelper.extractIntervals(temporalFilter, dtg)
+    intervals.nonEmpty && intervals.forall { case (start, end) => start != MinDateTime && end != MaxDateTime }
+  }
+}

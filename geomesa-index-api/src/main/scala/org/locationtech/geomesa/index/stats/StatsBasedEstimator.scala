@@ -35,7 +35,7 @@ trait StatsBasedEstimator {
     * @param filter filter to apply - should have been run through QueryPlanFilterVisitor so all props are right
     * @return estimated count, if available
     */
-  private [stats] def estimateCount(sft: SimpleFeatureType, filter: Filter): Option[Long] = {
+  protected def estimateCount(sft: SimpleFeatureType, filter: Filter): Option[Long] = {
     // TODO currently we don't consider if the dates are actually ANDed with everything else
     val dates = CountEstimator.extractDates(sft, filter)
     new CountEstimator(sft, this).estimateCount(filter, dates._1, dates._2)

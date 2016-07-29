@@ -19,7 +19,7 @@ import org.geotools.filter.text.ecql.ECQL
 import org.geotools.temporal.`object`.DefaultPeriod
 import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
+import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex.AccumuloFilterStrategy
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
 import org.locationtech.geomesa.accumulo.index.QueryPlanners.JoinFunction
@@ -30,6 +30,7 @@ import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.filter.FilterHelper._
 import org.locationtech.geomesa.filter._
+import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.stats.IndexCoverage
@@ -44,11 +45,13 @@ import scala.collection.JavaConverters._
 @deprecated
 object AttributeIndexQueryableV5 extends AccumuloIndexQueryable with LazyLogging {
 
-  override def getQueryPlan(ds: AccumuloDataStore,
-                            sft: SimpleFeatureType,
-                            filter: FilterStrategy,
+  override val index: AccumuloFeatureIndex = AttributeIndex
+
+  override def getQueryPlan(sft: SimpleFeatureType,
+                            ops: AccumuloDataStore,
+                            filter: AccumuloFilterStrategy,
                             hints: Hints,
-                            explain: Explainer = ExplainNull): QueryPlan = {
+                            explain: Explainer): QueryPlan = {
     import scala.collection.JavaConversions._
 
     val propsAndRanges = filter.primary.collect {
@@ -60,7 +63,7 @@ object AttributeIndexQueryableV5 extends AccumuloIndexQueryable with LazyLogging
     // ensure we only have 1 prop we're working on
     assert(propsAndRanges.forall(_._1 == attributeName))
 
-    val encoding = ds.getFeatureEncoding(sft)
+    val encoding = ops.getFeatureEncoding(sft)
     val version = sft.getSchemaVersion
     val hasDupes = sft.getDescriptor(attributeName).isMultiValued
 
@@ -98,7 +101,7 @@ object AttributeIndexQueryableV5 extends AccumuloIndexQueryable with LazyLogging
         }
 
         // there won't be any non-date/time-filters if the index only iterator has been selected
-        val table = ds.getTableName(sft.getTypeName, AttributeIndex)
+        val table = ops.getTableName(sft.getTypeName, AttributeIndex)
         BatchScanPlan(filter, table, ranges, attributeIterators.toSeq, Seq.empty, kvsToFeatures, 1, hasDupes)
 
       case RecordJoinIterator =>
@@ -120,14 +123,14 @@ object AttributeIndexQueryableV5 extends AccumuloIndexQueryable with LazyLogging
         val joinFunction: JoinFunction =
           (kv) => new AccRange(RecordIndexWritable.getRowKey(prefix, kv.getKey.getColumnQualifier.toString))
 
-        val recordTable = ds.getTableName(sft.getTypeName, RecordIndex)
-        val recordThreads = ds.getSuggestedThreads(sft.getTypeName, RecordIndex)
+        val recordTable = ops.getTableName(sft.getTypeName, RecordIndex)
+        val recordThreads = ops.getSuggestedThreads(sft.getTypeName, RecordIndex)
         val recordRanges = Seq(new AccRange()) // this will get overwritten in the join method
         val joinQuery = BatchScanPlan(filter, recordTable, recordRanges, recordIterators.toSeq, Seq.empty,
           kvsToFeatures, recordThreads, hasDupes)
 
-        val attrTable = ds.getTableName(sft.getTypeName, AttributeIndex)
-        val attrThreads = ds.getSuggestedThreads(sft.getTypeName, AttributeIndex)
+        val attrTable = ops.getTableName(sft.getTypeName, AttributeIndex)
+        val attrThreads = ops.getSuggestedThreads(sft.getTypeName, AttributeIndex)
         val attrIters = attributeIterators.toSeq
         JoinPlan(filter, attrTable, ranges, attrIters, Seq.empty, attrThreads, hasDupes, joinFunction, joinQuery)
     }
@@ -209,11 +212,11 @@ object AttributeIndexQueryableV5 extends AccumuloIndexQueryable with LazyLogging
     )
 
 
-  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] = ???
+  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[AccumuloFilterStrategy] = ???
 
   override def getCost(sft: SimpleFeatureType,
-                       stats: Option[GeoMesaStats],
-                       filter: FilterStrategy,
+                       ops: Option[AccumuloDataStore],
+                       filter: AccumuloFilterStrategy,
                        transform: Option[SimpleFeatureType]): Long = ???
 
   /**

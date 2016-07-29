@@ -26,6 +26,7 @@ import org.locationtech.geomesa.accumulo.data.stats.usage.{GeoMesaUsageStats, Ge
 import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
+// noinspection ScalaDeprecation
 import org.locationtech.geomesa.accumulo.index.geohash.GeoHashIndex
 import org.locationtech.geomesa.accumulo.index.id.RecordIndex
 import org.locationtech.geomesa.accumulo.index.z2.Z2Index
@@ -36,7 +37,8 @@ import org.locationtech.geomesa.features.SerializationOption.SerializationOption
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.features.{SerializationType, SimpleFeatureSerializers}
-import org.locationtech.geomesa.index.stats.HasGeoMesaStats
+import org.locationtech.geomesa.index.stats.{GeoMesaStats, HasGeoMesaStats}
+import org.locationtech.geomesa.index.utils.{ExplainNull, Explainer}
 import org.locationtech.geomesa.security.{AuditProvider, AuthorizationsProvider}
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes.{FeatureSpec, NonGeomAttributeSpec}
@@ -80,9 +82,10 @@ class AccumuloDataStore(val connector: Connector,
 
   private val defaultBWConfig = GeoMesaBatchWriterConfig().setMaxWriteThreads(config.writeThreads)
 
-  private val tableOps = connector.tableOperations()
   private val statsTable = GeoMesaTable.concatenateNameParts(catalogTable, "stats")
   private val usageStatsTable = GeoMesaTable.concatenateNameParts(catalogTable, "queries")
+
+  val tableOps = connector.tableOperations()
 
   override val metadata: GeoMesaMetadata[String] =
     new MultiRowAccumuloMetadata(connector, catalogTable, MetadataStringSerializer)
@@ -138,7 +141,7 @@ class AccumuloDataStore(val connector: Connector,
           IndexManager.indices(reloadedSft).foreach { index =>
             val name = getTableName(sft.getTypeName, index)
             AccumuloVersion.ensureTableExists(connector, name)
-            index.writable.configureTable(reloadedSft, name, tableOps)
+            index.writable.configure(reloadedSft, name, this)
           }
         }
       } finally {
@@ -520,7 +523,9 @@ class AccumuloDataStore(val connector: Connector,
    * NB: We are *not* currently deleting the query table and/or query information.
    */
   def delete() = {
-    val indexTables = getTypeNames.map(getSchema).flatMap(sft => IndexManager.indices(sft).map(getTableName(sft.getTypeName, _))).distinct
+    val indexTables = getTypeNames.map(getSchema)
+        .flatMap(sft => IndexManager.indices(sft).map(getTableName(sft.getTypeName, _)))
+        .distinct
     val metadataTables = Seq(statsTable, catalogTable)
     // Delete index tables first then catalog table in case of error
     val allTables = indexTables ++ metadataTables
@@ -565,7 +570,7 @@ class AccumuloDataStore(val connector: Connector,
     // reconfigure the splits on the attribute table
     val sft = getSchema(typeName)
     val table = getTableName(typeName, AttributeIndex)
-    AttributeIndex.configureTable(sft, table, tableOps)
+    AttributeIndex.writable.configure(sft, table, this)
   }
 
   /**
@@ -668,17 +673,10 @@ class AccumuloDataStore(val connector: Connector,
   }
 
   private def deleteSharedTables(sft: SimpleFeatureType) = {
-    val auths = authProvider.getAuthorizations
     IndexManager.indices(sft).par.foreach { index =>
       val name = getTableName(sft.getTypeName, index)
       if (tableOps.exists(name)) {
-        if (index == Z3Index) {
-          tableOps.delete(name)
-        } else {
-          val deleter = connector.createBatchDeleter(name, auths, config.queryThreads, defaultBWConfig)
-          index.removeAll(sft, deleter)
-          deleter.close()
-        }
+        index.writable.removeAll(sft, this, name)
       }
     }
   }

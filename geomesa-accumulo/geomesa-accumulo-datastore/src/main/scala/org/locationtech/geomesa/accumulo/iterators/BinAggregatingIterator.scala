@@ -230,7 +230,7 @@ class PrecomputedBinAggregatingIterator extends BinAggregatingIterator {
     val table = IndexManager.AllIndices.find(_.getClass.getSimpleName == tableName).getOrElse {
       throw new RuntimeException(s"Table option not configured correctly: $tableName")
     }
-    val getId = table.getIdFromRow(sft)
+    val getId = table.writable.getIdFromRow(sft)
 
     // we only need to decode the parts required for the filter/dedupe/sampling check
     // note: we wouldn't be using precomputed if sample by field wasn't the track id
@@ -538,7 +538,7 @@ object BinAggregatingIterator extends LazyLogging {
         new ScalaSimpleFeature(deserialized.getID, BIN_SFT, Array(encode(deserialized), zeroPoint))
       }
     } else {
-      val getId = index.getIdFromRow(sft)
+      val getId = index.writable.getIdFromRow(sft)
       val deserializer = SimpleFeatureDeserializers(returnSft, serializationType, SerializationOptions.withoutId)
       (e: Entry[Key, Value]) => {
         val deserialized = deserializer.deserialize(e.getValue.get())

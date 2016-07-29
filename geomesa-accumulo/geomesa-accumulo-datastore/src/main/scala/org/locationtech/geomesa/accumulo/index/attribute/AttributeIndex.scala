@@ -8,13 +8,13 @@
 
 package org.locationtech.geomesa.accumulo.index.attribute
 
-import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.data.Mutation
 import org.apache.hadoop.io.Text
 import org.geotools.factory.Hints
-import org.locationtech.geomesa.accumulo.data.stats.GeoMesaStats
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, WritableFeature}
+import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex.AccumuloFilterStrategy
 import org.locationtech.geomesa.accumulo.index._
+import org.locationtech.geomesa.index.utils.Explainer
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
@@ -39,20 +39,34 @@ object AttributeMergedIndexWritable extends AccumuloIndexWritable {
 
   import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
-  override def writer(sft: SimpleFeatureType): (WritableFeature) => Seq[Mutation] =
-    if (sft.getSchemaVersion > 5) AttributeIndexWritable.writer(sft) else AttributeIndexWritableV5.writer(sft)
+  override val index: AccumuloFeatureIndex = AttributeIndex
 
-  override def remover(sft: SimpleFeatureType): (WritableFeature) => Seq[Mutation] =
-    if (sft.getSchemaVersion > 5) AttributeIndexWritable.remover(sft) else AttributeIndexWritableV5.remover(sft)
+  override def writer(sft: SimpleFeatureType, table: String): (WritableFeature) => Seq[Mutation] =
+    if (sft.getSchemaVersion > 5) {
+      AttributeIndexWritable.writer(sft, table)
+    } else {
+      AttributeIndexWritableV5.writer(sft, table)
+    }
+
+  override def remover(sft: SimpleFeatureType, table: String): (WritableFeature) => Seq[Mutation] =
+    if (sft.getSchemaVersion > 5) {
+      AttributeIndexWritable.remover(sft, table)
+    } else {
+      AttributeIndexWritableV5.remover(sft, table)
+    }
 
   override def getIdFromRow(sft: SimpleFeatureType): (Text) => String =
-    if (sft.getSchemaVersion > 5) AttributeIndexWritable.getIdFromRow(sft) else AttributeIndexWritableV5.getIdFromRow(sft)
-
-  override def configureTable(sft: SimpleFeatureType, table: String, tableOps: TableOperations): Unit =
     if (sft.getSchemaVersion > 5) {
-      AttributeIndexWritable.configureTable(sft, table, tableOps)
+      AttributeIndexWritable.getIdFromRow(sft)
     } else {
-      AttributeIndexWritableV5.configureTable(sft, table, tableOps)
+      AttributeIndexWritableV5.getIdFromRow(sft)
+    }
+
+  override def configure(sft: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit =
+    if (sft.getSchemaVersion > 5) {
+      AttributeIndexWritable.configure(sft, table, ops)
+    } else {
+      AttributeIndexWritableV5.configure(sft, table, ops)
     }
 }
 
@@ -61,24 +75,26 @@ object AttributeMergedIndexQueryable extends AccumuloIndexQueryable {
 
   import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
-  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy] =
+  override val index: AccumuloFeatureIndex = AttributeIndex
+
+  override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[AccumuloFilterStrategy] =
     AttributeIndexQueryable.getFilterStrategy(sft, filter)
 
   override def getCost(sft: SimpleFeatureType,
-                       stats: Option[GeoMesaStats],
-                       filter: FilterStrategy,
+                       ops: Option[AccumuloDataStore],
+                       filter: AccumuloFilterStrategy,
                        transform: Option[SimpleFeatureType]): Long =
-    AttributeIndexQueryable.getCost(sft, stats, filter, transform)
+    AttributeIndexQueryable.getCost(sft, ops, filter, transform)
 
-  override def getQueryPlan(ds: AccumuloDataStore,
-                            sft: SimpleFeatureType,
-                            filter: FilterStrategy,
+  override def getQueryPlan(sft: SimpleFeatureType,
+                            ops: AccumuloDataStore,
+                            filter: AccumuloFilterStrategy,
                             hints: Hints,
                             explain: Explainer): QueryPlan =
     if (sft.getSchemaVersion > 5) {
-      AttributeIndexQueryable.getQueryPlan(ds, sft, filter, hints, explain)
+      AttributeIndexQueryable.getQueryPlan(sft, ops, filter, hints, explain)
     } else {
-      AttributeIndexQueryableV5.getQueryPlan(ds, sft, filter, hints, explain)
+      AttributeIndexQueryableV5.getQueryPlan(sft, ops, filter, hints, explain)
     }
 
 }

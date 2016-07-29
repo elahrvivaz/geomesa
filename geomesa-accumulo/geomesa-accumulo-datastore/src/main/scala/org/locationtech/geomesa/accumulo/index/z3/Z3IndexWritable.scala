@@ -14,14 +14,12 @@ import java.util.Date
 import com.google.common.collect.{ImmutableSet, ImmutableSortedSet}
 import com.google.common.primitives.{Bytes, Longs, Shorts}
 import com.vividsolutions.jts.geom._
-import org.apache.accumulo.core.client.BatchDeleter
-import org.apache.accumulo.core.client.admin.TableOperations
 import org.apache.accumulo.core.conf.Property
 import org.apache.accumulo.core.data.{Mutation, Value, Range => aRange}
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
-import org.locationtech.geomesa.accumulo.data.{EMPTY_TEXT, WritableFeature}
-import org.locationtech.geomesa.accumulo.index.AccumuloIndexWritable
+import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, EMPTY_TEXT, WritableFeature}
+import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, AccumuloIndexWritable}
 import org.locationtech.geomesa.curve.BinnedTime.TimeToBinnedTime
 import org.locationtech.geomesa.curve.{BinnedTime, Z3SFC}
 import org.locationtech.geomesa.utils.geotools.Conversions._
@@ -49,7 +47,9 @@ object Z3IndexWritable extends AccumuloIndexWritable {
   // mask for zeroing the last (8 - GEOM_Z_NUM_BYTES) bytes
   val GEOM_Z_MASK: Long = Long.MaxValue << (64 - 8 * GEOM_Z_NUM_BYTES)
 
-  override def writer(sft: SimpleFeatureType): FeatureToMutations = {
+  override val index: AccumuloFeatureIndex = Z3Index
+
+  override def writer(sft: SimpleFeatureType, table: String): FeatureToMutations = {
     val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
     val timeToIndex = BinnedTime.timeToBinnedTime(sft.getZ3Interval)
     val sfc = Z3SFC(sft.getZ3Interval)
@@ -97,7 +97,7 @@ object Z3IndexWritable extends AccumuloIndexWritable {
     }
   }
 
-  override def remover(sft: SimpleFeatureType): FeatureToMutations = {
+  override def remover(sft: SimpleFeatureType, table: String): FeatureToMutations = {
     val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
     val timeToIndex = BinnedTime.timeToBinnedTime(sft.getZ3Interval)
     val sfc = Z3SFC(sft.getZ3Interval)
@@ -143,14 +143,13 @@ object Z3IndexWritable extends AccumuloIndexWritable {
     }
   }
 
+  override def removeAll(sft: SimpleFeatureType, ops: AccumuloDataStore, table: String): Unit = {
+    ops.tableOps.delete(table)
+  }
+
   override def getIdFromRow(sft: SimpleFeatureType): (Text) => String = {
     val offset = getIdRowOffset(sft)
     (row: Text) => new String(row.getBytes, offset, row.getLength - offset, StandardCharsets.UTF_8)
-  }
-
-  override def removeAll(sft: SimpleFeatureType, bd: BatchDeleter): Unit = {
-    bd.setRanges(Seq(new aRange()))
-    bd.delete()
   }
 
   // geoms always have splits, but they weren't added until schema 7
@@ -240,18 +239,18 @@ object Z3IndexWritable extends AccumuloIndexWritable {
     prefix + length
   }
 
-  override def configureTable(sft: SimpleFeatureType, table: String, tableOps: TableOperations): Unit = {
-    tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
+  override def configure(sft: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit = {
+    ops.tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
 
     val localityGroups = Seq(BIN_CF, FULL_CF).map(cf => (cf.toString, ImmutableSet.of(cf))).toMap
-    tableOps.setLocalityGroups(table, localityGroups)
+    ops.tableOps.setLocalityGroups(table, localityGroups)
 
     // drop first split, otherwise we get an empty tablet
     val splits = SPLIT_ARRAYS.drop(1).map(new Text(_)).toSet
-    val splitsToAdd = splits -- tableOps.listSplits(table).toSet
+    val splitsToAdd = splits -- ops.tableOps.listSplits(table).toSet
     if (splitsToAdd.nonEmpty) {
       // noinspection RedundantCollectionConversion
-      tableOps.addSplits(table, ImmutableSortedSet.copyOf(splitsToAdd.toIterable))
+      ops.tableOps.addSplits(table, ImmutableSortedSet.copyOf(splitsToAdd.toIterable))
     }
   }
 }

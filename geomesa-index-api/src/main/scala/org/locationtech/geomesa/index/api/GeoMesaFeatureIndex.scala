@@ -8,14 +8,13 @@
 
 package org.locationtech.geomesa.index.api
 
-import org.geotools.data.DataStore
 import org.geotools.factory.Hints
-import org.locationtech.geomesa.index.stats.GeoMesaStats
+import org.locationtech.geomesa.index.stats.HasGeoMesaStats
 import org.locationtech.geomesa.index.utils.{ExplainNull, Explainer}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
-trait GeoMesaFeatureIndex[FeatureWrapper, Result, Row, Deleter, TableOps, Entries, Plan] {
+trait GeoMesaFeatureIndex[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan] {
 
   /**
     * The name used to identify the index
@@ -35,14 +34,14 @@ trait GeoMesaFeatureIndex[FeatureWrapper, Result, Row, Deleter, TableOps, Entrie
     *
     * @return
     */
-  def writable: GeoMesaIndexWritable[FeatureWrapper, Result, Row, Deleter, TableOps, Entries]
+  def writable: GeoMesaIndexWritable[Ops, FeatureWrapper, Result, Row, Entries, Plan]
 
   /**
     * Query operations
     *
     * @return
     */
-  def queryable: GeoMesaIndexQueryable[Plan]
+  def queryable: GeoMesaIndexQueryable[Ops, FeatureWrapper, Result, Row, Entries, Plan]
 
   /**
     * Trims off the $ of the object name
@@ -52,22 +51,29 @@ trait GeoMesaFeatureIndex[FeatureWrapper, Result, Row, Deleter, TableOps, Entrie
   override def toString = getClass.getSimpleName.split("\\$").last
 }
 
-trait GeoMesaIndexWritable[FeatureWrapper, Result, Row, Deleter, TableOps, Entries] {
+trait GeoMesaIndexWritable[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan] {
+
+  /**
+    * Pointer back to the main index
+    *
+    * @return
+    */
+  def index: GeoMesaFeatureIndex[Ops, FeatureWrapper, Result, Row, Entries, Plan]
 
   /**
     * Creates a function to write a feature to the index
     */
-  def writer(sft: SimpleFeatureType): (FeatureWrapper) => Seq[Result]
+  def writer(sft: SimpleFeatureType, table: String): (FeatureWrapper) => Seq[Result]
 
   /**
     * Creates a function to delete a feature to the index
     */
-  def remover(sft: SimpleFeatureType): (FeatureWrapper) => Seq[Result]
+  def remover(sft: SimpleFeatureType, table: String): (FeatureWrapper) => Seq[Result]
 
   /**
     * Deletes all features from the table
     */
-  def removeAll(sft: SimpleFeatureType, deleter: Deleter): Unit
+  def removeAll(sft: SimpleFeatureType, ops: Ops, table: String): Unit
 
   /**
     * Retrieve an ID from a row. All indices are assumed to encode the feature ID into the row key
@@ -82,9 +88,9 @@ trait GeoMesaIndexWritable[FeatureWrapper, Result, Row, Deleter, TableOps, Entri
     *
     * @param sft      simple feature type
     * @param table    name of the accumulo table
-    * @param tableOps handle to the accumulo table operations
+    * @param ops handle to the accumulo table operations
     */
-  def configure(sft: SimpleFeatureType, table: String, tableOps: TableOps): Unit
+  def configure(sft: SimpleFeatureType, table: String, ops: Ops): Unit
 
   /**
     * Transforms an iterator of Accumulo Key-Values into an iterator of SimpleFeatures
@@ -96,7 +102,16 @@ trait GeoMesaIndexWritable[FeatureWrapper, Result, Row, Deleter, TableOps, Entri
   def entriesToFeatures(sft: SimpleFeatureType, returnSft: SimpleFeatureType): (Entries) => SimpleFeature
 }
 
-trait GeoMesaIndexQueryable[Plan] {
+trait GeoMesaIndexQueryable[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan] {
+
+  type TypedFilterStrategy = FilterStrategy[Ops, FeatureWrapper, Result, Row, Entries, Plan]
+
+  /**
+    * Pointer back to the main index
+    *
+    * @return
+    */
+  def index: GeoMesaFeatureIndex[Ops, FeatureWrapper, Result, Row, Entries, Plan]
 
   /**
     * Gets options for a 'simple' filter, where each OR is on a single attribute, e.g.
@@ -111,23 +126,23 @@ trait GeoMesaIndexQueryable[Plan] {
     * @param filter input filter
     * @return sequence of options, any of which can satisfy the query
     */
-  def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[FilterStrategy]
+  def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[TypedFilterStrategy]
 
   /**
     * Gets the estimated cost of running the query. In general, this is the estimated
     * number of features that will have to be scanned.
     */
   def getCost(sft: SimpleFeatureType,
-              stats: Option[GeoMesaStats],
-              filter: FilterStrategy,
+              ops: Option[Ops],
+              filter: TypedFilterStrategy,
               transform: Option[SimpleFeatureType]): Long
 
   /**
     * Plans the query - strategy implementations need to define this
     */
-  def getQueryPlan(ds: DataStore,
-                   sft: SimpleFeatureType,
-                   filter: FilterStrategy,
+  def getQueryPlan(sft: SimpleFeatureType,
+                   ops: Ops,
+                   filter: TypedFilterStrategy,
                    hints: Hints,
                    explain: Explainer = ExplainNull): Plan
 }
