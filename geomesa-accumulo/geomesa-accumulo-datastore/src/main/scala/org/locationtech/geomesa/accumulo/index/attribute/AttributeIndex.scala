@@ -62,11 +62,11 @@ object AttributeMergedWritableIndex extends AccumuloWritableIndex {
       AttributeWritableIndexV5.getIdFromRow(sft)
     }
 
-  override def configure(sft: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit =
+  override def configure(sft: SimpleFeatureType, ops: AccumuloDataStore, table: String): Unit =
     if (sft.getSchemaVersion > 5) {
-      AttributeWritableIndex.configure(sft, table, ops)
+      AttributeWritableIndex.configure(sft, ops, table)
     } else {
-      AttributeWritableIndexV5.configure(sft, table, ops)
+      AttributeWritableIndexV5.configure(sft, ops, table)
     }
 }
 

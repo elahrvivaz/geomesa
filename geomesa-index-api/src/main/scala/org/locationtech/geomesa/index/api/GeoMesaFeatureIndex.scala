@@ -87,10 +87,10 @@ trait GeoMesaWritableIndex[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, 
     * Configure the underlying accumulo table
     *
     * @param sft      simple feature type
-    * @param table    name of the accumulo table
     * @param ops handle to the accumulo table operations
+    * @param table    name of the accumulo table
     */
-  def configure(sft: SimpleFeatureType, table: String, ops: Ops): Unit
+  def configure(sft: SimpleFeatureType, ops: Ops, table: String): Unit
 
   /**
     * Transforms an iterator of Accumulo Key-Values into an iterator of SimpleFeatures

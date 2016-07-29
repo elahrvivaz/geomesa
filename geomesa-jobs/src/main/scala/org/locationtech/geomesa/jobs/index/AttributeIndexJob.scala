@@ -106,7 +106,7 @@ class AttributeIndexJob extends Tool {
       val updatedSpec = SimpleFeatureTypes.encodeType(sft)
       ds.updateIndexedAttributes(typeName, updatedSpec)
       // configure the table splits
-      AttributeIndex.writable.configure(sft, tableName, ds)
+      AttributeIndex.writable.configure(sft, ds, tableName)
       // schedule a table compaction to clean up the table
       ds.connector.tableOperations().compact(tableName, null, null, true, false)
     }

@@ -97,7 +97,7 @@ object GeoHashWritableIndex extends AccumuloWritableIndex with LazyLogging {
     }
   }
 
-  override def configure(sft: SimpleFeatureType, tableName: String, ops: AccumuloDataStore): Unit = {
+  override def configure(sft: SimpleFeatureType, ops: AccumuloDataStore, tableName: String): Unit = {
     val maxShard = IndexSchema.maxShard(sft.getStIndexSchema)
     val splits = (1 until maxShard).map(i => new Text(s"%0${maxShard.toString.length}d".format(i)))
     ops.tableOps.addSplits(tableName, new java.util.TreeSet(splits))

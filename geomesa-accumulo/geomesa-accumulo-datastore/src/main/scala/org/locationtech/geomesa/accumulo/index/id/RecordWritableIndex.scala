@@ -70,7 +70,7 @@ object RecordWritableIndex extends AccumuloWritableIndex {
 
   def getRowKey(rowIdPrefix: String, id: String): String = rowIdPrefix + id
 
-  override def configure(featureType: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit = {
+  override def configure(featureType: SimpleFeatureType, ops: AccumuloDataStore, table: String): Unit = {
     import scala.collection.JavaConversions._
 
     val prefix = featureType.getTableSharingPrefix

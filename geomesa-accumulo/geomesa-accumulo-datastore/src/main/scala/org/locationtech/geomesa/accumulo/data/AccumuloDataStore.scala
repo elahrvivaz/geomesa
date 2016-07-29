@@ -141,7 +141,7 @@ class AccumuloDataStore(val connector: Connector,
           IndexManager.indices(reloadedSft).foreach { index =>
             val name = getTableName(sft.getTypeName, index)
             AccumuloVersion.ensureTableExists(connector, name)
-            index.writable.configure(reloadedSft, name, this)
+            index.writable.configure(reloadedSft, this, name)
           }
         }
       } finally {
@@ -570,7 +570,7 @@ class AccumuloDataStore(val connector: Connector,
     // reconfigure the splits on the attribute table
     val sft = getSchema(typeName)
     val table = getTableName(typeName, AttributeIndex)
-    AttributeIndex.writable.configure(sft, table, this)
+    AttributeIndex.writable.configure(sft, this, table)
   }
 
   /**

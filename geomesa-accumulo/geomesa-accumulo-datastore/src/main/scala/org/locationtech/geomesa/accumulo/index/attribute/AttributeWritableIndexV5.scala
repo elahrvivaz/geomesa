@@ -131,7 +131,7 @@ object AttributeWritableIndexV5 extends AccumuloWritableIndex with LazyLogging {
       AttributeIndexRow(name, decodedValue)
     }
 
-  override def configure(featureType: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit = {
+  override def configure(featureType: SimpleFeatureType, ops: AccumuloDataStore, table: String): Unit = {
     ops.tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
     ops.tableOps.setProperty(table, Property.TABLE_SPLIT_THRESHOLD.getKey, "128M")
     val indexedAttrs = SimpleFeatureTypes.getSecondaryIndexedAttributes(featureType)

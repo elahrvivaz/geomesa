@@ -239,7 +239,7 @@ object Z3WritableIndex extends AccumuloWritableIndex {
     prefix + length
   }
 
-  override def configure(sft: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit = {
+  override def configure(sft: SimpleFeatureType, ops: AccumuloDataStore, table: String): Unit = {
     ops.tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
 
     val localityGroups = Seq(BIN_CF, FULL_CF).map(cf => (cf.toString, ImmutableSet.of(cf))).toMap

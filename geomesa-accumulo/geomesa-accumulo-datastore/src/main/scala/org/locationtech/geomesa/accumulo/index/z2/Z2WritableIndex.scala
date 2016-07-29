@@ -204,7 +204,7 @@ object Z2WritableIndex extends AccumuloWritableIndex {
     prefix + length
   }
 
-  override def configure(sft: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit = {
+  override def configure(sft: SimpleFeatureType, ops: AccumuloDataStore, table: String): Unit = {
     import scala.collection.JavaConversions._
 
     ops.tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
