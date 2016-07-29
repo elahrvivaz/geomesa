@@ -28,9 +28,9 @@ import org.locationtech.geomesa.utils.geotools.{GeometryUtils, WholeWorldPolygon
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.opengis.feature.simple.SimpleFeatureType
 
-object Z2IndexQueryable extends AccumuloIndexQueryable
-    with Z2FilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
-    with LazyLogging {
+object Z2QueryableIndex extends AccumuloQueryableIndex
+                                with Z2FilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
+                                with LazyLogging {
 
   val Z2_ITER_PRIORITY = 23
   val FILTERING_ITER_PRIORITY = 25
@@ -78,24 +78,24 @@ object Z2IndexQueryable extends AccumuloIndexQueryable
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
         if (filter.secondary.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
-          (Seq(BinAggregatingIterator.configurePrecomputed(sft, Z2Index, ecql, hints, sft.nonPoints)), Z2IndexWritable.BIN_CF)
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, Z2Index, ecql, hints, sft.nonPoints)), Z2WritableIndex.BIN_CF)
         } else {
           val iter = BinAggregatingIterator.configureDynamic(sft, Z2Index, ecql, hints, sft.nonPoints)
-          (Seq(iter), Z2IndexWritable.FULL_CF)
+          (Seq(iter), Z2WritableIndex.FULL_CF)
         }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf, false)
     } else if (hints.isDensityQuery) {
       val iter = Z2DensityIterator.configure(sft, ecql, hints)
-      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z2IndexWritable.FULL_CF, false)
+      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z2WritableIndex.FULL_CF, false)
     } else if (hints.isStatsIteratorQuery) {
       val iter = KryoLazyStatsIterator.configure(sft, Z2Index, ecql, hints, sft.nonPoints)
-      (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z2IndexWritable.FULL_CF, false)
+      (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z2WritableIndex.FULL_CF, false)
     } else if (hints.isMapAggregatingQuery) {
       val iter = KryoLazyMapAggregatingIterator.configure(sft, Z2Index, ecql, hints, sft.nonPoints)
-      (Seq(iter), Z2IndexWritable.entriesToFeatures(sft, hints.getReturnSft), Z2IndexWritable.FULL_CF, false)
+      (Seq(iter), Z2WritableIndex.entriesToFeatures(sft, hints.getReturnSft), Z2WritableIndex.FULL_CF, false)
     } else {
       val iters = KryoLazyFilterTransformIterator.configure(sft, ecql, hints).toSeq
-      (iters, Z2IndexWritable.entriesToFeatures(sft, hints.getReturnSft), Z2IndexWritable.FULL_CF, sft.nonPoints)
+      (iters, Z2WritableIndex.entriesToFeatures(sft, hints.getReturnSft), Z2WritableIndex.FULL_CF, sft.nonPoints)
     }
 
     val z2table = ops.getTableName(sft.getTypeName, Z2Index)
@@ -110,7 +110,7 @@ object Z2IndexQueryable extends AccumuloIndexQueryable
       (Seq(range), None)
     } else {
       // setup Z2 iterator
-      import Z2IndexWritable.GEOM_Z_NUM_BYTES
+      import Z2WritableIndex.GEOM_Z_NUM_BYTES
       val xy = geometries.map(GeometryUtils.bounds)
       val rangeTarget = QueryProperties.SCAN_RANGES_TARGET.option.map(_.toInt)
       val zRanges = if (sft.isPoints) {
@@ -123,9 +123,9 @@ object Z2IndexQueryable extends AccumuloIndexQueryable
 
       val prefixes = if (sft.isTableSharing) {
         val ts = sft.getTableSharingPrefix.getBytes(StandardCharsets.UTF_8)
-        Z2IndexWritable.SPLIT_ARRAYS.map(ts ++ _)
+        Z2WritableIndex.SPLIT_ARRAYS.map(ts ++ _)
       } else {
-        Z2IndexWritable.SPLIT_ARRAYS
+        Z2WritableIndex.SPLIT_ARRAYS
       }
 
       val ranges = prefixes.flatMap { prefix =>

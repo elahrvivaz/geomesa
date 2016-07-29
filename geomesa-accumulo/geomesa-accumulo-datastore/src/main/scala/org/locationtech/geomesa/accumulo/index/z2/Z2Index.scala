@@ -21,7 +21,7 @@ object Z2Index extends AccumuloFeatureIndex {
         (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name))
   }
 
-  override val writable: AccumuloIndexWritable = Z2IndexWritable
+  override val writable: AccumuloWritableIndex = Z2WritableIndex
 
-  override val queryable: AccumuloIndexQueryable = Z2IndexQueryable
+  override val queryable: AccumuloQueryableIndex = Z2QueryableIndex
 }

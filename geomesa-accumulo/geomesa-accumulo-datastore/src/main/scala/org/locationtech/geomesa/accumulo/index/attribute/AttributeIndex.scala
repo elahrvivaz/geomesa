@@ -31,11 +31,11 @@ object AttributeIndex extends AccumuloFeatureIndex {
         (sft.getEnabledTables.isEmpty || Seq(name, "attr_idx").exists(sft.getEnabledTables.contains)) // check for old suffix
   }
 
-  override val writable: AccumuloIndexWritable = AttributeMergedIndexWritable
-  override val queryable: AccumuloIndexQueryable = AttributeMergedIndexQueryable
+  override val writable: AccumuloWritableIndex = AttributeMergedWritableIndex
+  override val queryable: AccumuloQueryableIndex = AttributeMergedQueryableIndex
 }
 
-object AttributeMergedIndexWritable extends AccumuloIndexWritable {
+object AttributeMergedWritableIndex extends AccumuloWritableIndex {
 
   import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
@@ -43,48 +43,48 @@ object AttributeMergedIndexWritable extends AccumuloIndexWritable {
 
   override def writer(sft: SimpleFeatureType, table: String): (WritableFeature) => Seq[Mutation] =
     if (sft.getSchemaVersion > 5) {
-      AttributeIndexWritable.writer(sft, table)
+      AttributeWritableIndex.writer(sft, table)
     } else {
-      AttributeIndexWritableV5.writer(sft, table)
+      AttributeWritableIndexV5.writer(sft, table)
     }
 
   override def remover(sft: SimpleFeatureType, table: String): (WritableFeature) => Seq[Mutation] =
     if (sft.getSchemaVersion > 5) {
-      AttributeIndexWritable.remover(sft, table)
+      AttributeWritableIndex.remover(sft, table)
     } else {
-      AttributeIndexWritableV5.remover(sft, table)
+      AttributeWritableIndexV5.remover(sft, table)
     }
 
   override def getIdFromRow(sft: SimpleFeatureType): (Text) => String =
     if (sft.getSchemaVersion > 5) {
-      AttributeIndexWritable.getIdFromRow(sft)
+      AttributeWritableIndex.getIdFromRow(sft)
     } else {
-      AttributeIndexWritableV5.getIdFromRow(sft)
+      AttributeWritableIndexV5.getIdFromRow(sft)
     }
 
   override def configure(sft: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit =
     if (sft.getSchemaVersion > 5) {
-      AttributeIndexWritable.configure(sft, table, ops)
+      AttributeWritableIndex.configure(sft, table, ops)
     } else {
-      AttributeIndexWritableV5.configure(sft, table, ops)
+      AttributeWritableIndexV5.configure(sft, table, ops)
     }
 }
 
 
-object AttributeMergedIndexQueryable extends AccumuloIndexQueryable {
+object AttributeMergedQueryableIndex extends AccumuloQueryableIndex {
 
   import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
   override val index: AccumuloFeatureIndex = AttributeIndex
 
   override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter): Seq[AccumuloFilterStrategy] =
-    AttributeIndexQueryable.getFilterStrategy(sft, filter)
+    AttributeQueryableIndex.getFilterStrategy(sft, filter)
 
   override def getCost(sft: SimpleFeatureType,
                        ops: Option[AccumuloDataStore],
                        filter: AccumuloFilterStrategy,
                        transform: Option[SimpleFeatureType]): Long =
-    AttributeIndexQueryable.getCost(sft, ops, filter, transform)
+    AttributeQueryableIndex.getCost(sft, ops, filter, transform)
 
   override def getQueryPlan(sft: SimpleFeatureType,
                             ops: AccumuloDataStore,
@@ -92,9 +92,9 @@ object AttributeMergedIndexQueryable extends AccumuloIndexQueryable {
                             hints: Hints,
                             explain: Explainer): QueryPlan =
     if (sft.getSchemaVersion > 5) {
-      AttributeIndexQueryable.getQueryPlan(sft, ops, filter, hints, explain)
+      AttributeQueryableIndex.getQueryPlan(sft, ops, filter, hints, explain)
     } else {
-      AttributeIndexQueryableV5.getQueryPlan(sft, ops, filter, hints, explain)
+      AttributeQueryableIndexV5.getQueryPlan(sft, ops, filter, hints, explain)
     }
 
 }

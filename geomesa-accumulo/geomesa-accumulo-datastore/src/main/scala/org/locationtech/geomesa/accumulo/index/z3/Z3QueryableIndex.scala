@@ -22,16 +22,16 @@ import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.curve.{BinnedTime, Z3SFC}
 import org.locationtech.geomesa.filter._
-import org.locationtech.geomesa.index.strategies.z3.Z3FilterStrategy
+import org.locationtech.geomesa.index.strategies.Z3FilterStrategy
 import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools._
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.opengis.feature.simple.SimpleFeatureType
 
-object Z3IndexQueryable extends AccumuloIndexQueryable
-    with Z3FilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
-    with LazyLogging {
+object Z3QueryableIndex extends AccumuloQueryableIndex
+                                with Z3FilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
+                                with LazyLogging {
 
   val Z3_ITER_PRIORITY = 23
   val FILTERING_ITER_PRIORITY = 25
@@ -43,7 +43,7 @@ object Z3IndexQueryable extends AccumuloIndexQueryable
                             filter: AccumuloFilterStrategy,
                             hints: Hints,
                             explain: Explainer): QueryPlan = {
-    import Z3IndexWritable.GEOM_Z_NUM_BYTES
+    import Z3WritableIndex.GEOM_Z_NUM_BYTES
     import org.locationtech.geomesa.accumulo.index.QueryHints.{LOOSE_BBOX, RichHints}
     import org.locationtech.geomesa.filter.FilterHelper._
 
@@ -72,7 +72,7 @@ object Z3IndexQueryable extends AccumuloIndexQueryable
     explain(s"Intervals: $intervals")
 
     val looseBBox = if (hints.containsKey(LOOSE_BBOX)) Boolean.unbox(hints.get(LOOSE_BBOX)) else ops.config.looseBBox
-    val hasSplits = Z3IndexWritable.hasSplits(sft)
+    val hasSplits = Z3WritableIndex.hasSplits(sft)
 
     // if the user has requested strict bounding boxes, we apply the full filter
     // if this is a non-point geometry type, the index is coarse-grained, so we apply the full filter
@@ -91,24 +91,24 @@ object Z3IndexQueryable extends AccumuloIndexQueryable
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
         if (filter.secondary.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
-          (Seq(BinAggregatingIterator.configurePrecomputed(sft, Z3Index, ecql, hints, sft.nonPoints)), Z3IndexWritable.BIN_CF)
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, Z3Index, ecql, hints, sft.nonPoints)), Z3WritableIndex.BIN_CF)
         } else {
           val iter = BinAggregatingIterator.configureDynamic(sft, Z3Index, ecql, hints, sft.nonPoints)
-          (Seq(iter), Z3IndexWritable.FULL_CF)
+          (Seq(iter), Z3WritableIndex.FULL_CF)
         }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf, false)
     } else if (hints.isDensityQuery) {
       val iter = Z3DensityIterator.configure(sft, ecql, hints)
-      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z3IndexWritable.FULL_CF, false)
+      (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z3WritableIndex.FULL_CF, false)
     } else if (hints.isStatsIteratorQuery) {
       val iter = KryoLazyStatsIterator.configure(sft, Z3Index, ecql, hints, sft.nonPoints)
-      (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z3IndexWritable.FULL_CF, false)
+      (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z3WritableIndex.FULL_CF, false)
     } else if (hints.isMapAggregatingQuery) {
       val iter = KryoLazyMapAggregatingIterator.configure(sft, Z3Index, ecql, hints, sft.nonPoints)
-      (Seq(iter), Z3IndexWritable.entriesToFeatures(sft, hints.getReturnSft), Z3IndexWritable.FULL_CF, false)
+      (Seq(iter), Z3WritableIndex.entriesToFeatures(sft, hints.getReturnSft), Z3WritableIndex.FULL_CF, false)
     } else {
       val iters = KryoLazyFilterTransformIterator.configure(sft, ecql, hints).toSeq
-      (iters, Z3IndexWritable.entriesToFeatures(sft, hints.getReturnSft), Z3IndexWritable.FULL_CF, sft.nonPoints)
+      (iters, Z3WritableIndex.entriesToFeatures(sft, hints.getReturnSft), Z3WritableIndex.FULL_CF, sft.nonPoints)
     }
 
     val z3table = ops.getTableName(sft.getTypeName, Z3Index)
@@ -153,7 +153,7 @@ object Z3IndexQueryable extends AccumuloIndexQueryable
       val ranges = timesByBin.flatMap { case (b, times) =>
         val zs = if (times.eq(wholePeriod)) wholePeriodRanges else toZRanges(times)
         val binBytes = Shorts.toByteArray(b)
-        val prefixes = if (hasSplits) Z3IndexWritable.SPLIT_ARRAYS.map(Bytes.concat(_, binBytes)) else Seq(binBytes)
+        val prefixes = if (hasSplits) Z3WritableIndex.SPLIT_ARRAYS.map(Bytes.concat(_, binBytes)) else Seq(binBytes)
         prefixes.flatMap { prefix =>
           zs.map { case (lo, hi) =>
             val start = Bytes.concat(prefix, lo)

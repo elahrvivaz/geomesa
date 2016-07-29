@@ -22,7 +22,7 @@ object GeoHashIndex extends AccumuloFeatureIndex {
         (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name))
   }
 
-  override val writable: AccumuloIndexWritable = GeoHashIndexWritable
+  override val writable: AccumuloWritableIndex = GeoHashWritableIndex
 
-  override val queryable: AccumuloIndexQueryable = GeoHashIndexQueryable
+  override val queryable: AccumuloQueryableIndex = GeoHashQueryableIndex
 }

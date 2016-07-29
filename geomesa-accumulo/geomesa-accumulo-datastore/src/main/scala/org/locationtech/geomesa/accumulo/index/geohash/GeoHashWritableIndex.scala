@@ -25,7 +25,7 @@ import org.opengis.feature.simple.SimpleFeatureType
 import scala.collection.JavaConversions._
 
 @deprecated("z2/z3")
-object GeoHashIndexWritable extends AccumuloIndexWritable with LazyLogging {
+object GeoHashWritableIndex extends AccumuloWritableIndex with LazyLogging {
 
   val INDEX_FLAG = "0"
   val DATA_FLAG = "1"

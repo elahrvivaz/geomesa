@@ -10,13 +10,13 @@ package org.locationtech.geomesa.index.strategies
 
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.visitor.FilterExtractingVisitor
-import org.locationtech.geomesa.index.api.{FilterStrategy, GeoMesaIndexQueryable}
+import org.locationtech.geomesa.index.api.{FilterStrategy, GeoMesaQueryableIndex}
 import org.locationtech.geomesa.index.stats.HasGeoMesaStats
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.{And, Filter, Or}
 
 trait Z2FilterStrategy[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan] extends
-    GeoMesaIndexQueryable[Ops, FeatureWrapper, Result, Row, Entries, Plan] {
+    GeoMesaQueryableIndex[Ops, FeatureWrapper, Result, Row, Entries, Plan] {
 
   import Z2FilterStrategy.{StaticCost, spatialCheck}
 

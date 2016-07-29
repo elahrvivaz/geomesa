@@ -21,7 +21,7 @@ object Z3Index extends AccumuloFeatureIndex {
         (sft.getSchemaVersion > 4 && sft.isPoints)) && (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name))
   }
 
-  override val writable: AccumuloIndexWritable = Z3IndexWritable
+  override val writable: AccumuloWritableIndex = Z3WritableIndex
 
-  override val queryable: AccumuloIndexQueryable = Z3IndexQueryable
+  override val queryable: AccumuloQueryableIndex = Z3QueryableIndex
 }

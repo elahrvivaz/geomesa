@@ -229,7 +229,7 @@ class GeoMesaRecordReader(sft: SimpleFeatureType,
   var readerIndex: Int = -1
   var currentReader: Option[RecordReader[Key, Value]] = None
 
-  val getId = table.getIdFromRow(sft)
+  val getId = table.writable.getIdFromRow(sft)
 
   override def initialize(split: InputSplit, context: TaskAttemptContext) = {
     val splits = split.asInstanceOf[GroupedSplit].splits

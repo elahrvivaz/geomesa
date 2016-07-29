@@ -9,13 +9,13 @@
 package org.locationtech.geomesa.index.strategies
 
 import org.locationtech.geomesa.filter.visitor.IdExtractingVisitor
-import org.locationtech.geomesa.index.api.{FilterStrategy, GeoMesaIndexQueryable}
+import org.locationtech.geomesa.index.api.{FilterStrategy, GeoMesaQueryableIndex}
 import org.locationtech.geomesa.index.stats.HasGeoMesaStats
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
 trait IdFilterStrategy[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan] extends
-    GeoMesaIndexQueryable[Ops, FeatureWrapper, Result, Row, Entries, Plan] {
+    GeoMesaQueryableIndex[Ops, FeatureWrapper, Result, Row, Entries, Plan] {
 
   override def getFilterStrategy(sft: SimpleFeatureType, filter: Filter):
       Seq[FilterStrategy[Ops, FeatureWrapper, Result, Row, Entries, Plan]] = {

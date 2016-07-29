@@ -13,7 +13,7 @@ import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithDataStore
 import org.locationtech.geomesa.accumulo.index.QueryHints._
-import org.locationtech.geomesa.accumulo.index.id.{RecordIndexQueryable, RecordIndex}
+import org.locationtech.geomesa.accumulo.index.id.{RecordQueryableIndex, RecordIndex}
 import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.filter._
@@ -43,7 +43,7 @@ class RecordIdxStrategyTest extends Specification with TestWithDataStore {
       .asInstanceOf[Id].getIDs.asScala.toSet[AnyRef].map(_.toString)
     // process the string sequences for the test
     val filterSeq = stringSeqToTest.map(ECQL.toFilter)
-    val combinedIDFilter = RecordIndexQueryable.intersectIdFilters(ff.and(filterSeq.asJava))
+    val combinedIDFilter = RecordQueryableIndex.intersectIdFilters(ff.and(filterSeq.asJava))
     val computedIntersectionIds = if (combinedIDFilter.isEmpty) None else Some(combinedIDFilter)
 
     IntersectionResult(computedIntersectionIds, trueIntersectionIds)

@@ -106,7 +106,7 @@ class AttributeIndexJob extends Tool {
       val updatedSpec = SimpleFeatureTypes.encodeType(sft)
       ds.updateIndexedAttributes(typeName, updatedSpec)
       // configure the table splits
-      AttributeIndex.configureTable(sft, tableName, ds.connector.tableOperations())
+      AttributeIndex.writable.configure(sft, tableName, ds)
       // schedule a table compaction to clean up the table
       ds.connector.tableOperations().compact(tableName, null, null, true, false)
     }
@@ -150,7 +150,7 @@ class AttributeMapper extends Mapper[Text, SimpleFeature, Text, Mutation] {
     featureEncoder = SimpleFeatureSerializers(sft, encoding)
     indexValueEncoder = IndexValueEncoder(sft)
     binEncoder = BinEncoder(sft)
-    writer = AttributeIndex.writer(sft)
+    writer = AttributeIndex.writable.writer(sft, ds.getTableName(sft.getTypeName, AttributeIndex))
 
     ds.dispose()
   }

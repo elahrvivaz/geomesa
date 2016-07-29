@@ -34,14 +34,14 @@ trait GeoMesaFeatureIndex[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, E
     *
     * @return
     */
-  def writable: GeoMesaIndexWritable[Ops, FeatureWrapper, Result, Row, Entries, Plan]
+  def writable: GeoMesaWritableIndex[Ops, FeatureWrapper, Result, Row, Entries, Plan]
 
   /**
     * Query operations
     *
     * @return
     */
-  def queryable: GeoMesaIndexQueryable[Ops, FeatureWrapper, Result, Row, Entries, Plan]
+  def queryable: GeoMesaQueryableIndex[Ops, FeatureWrapper, Result, Row, Entries, Plan]
 
   /**
     * Trims off the $ of the object name
@@ -51,7 +51,7 @@ trait GeoMesaFeatureIndex[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, E
   override def toString = getClass.getSimpleName.split("\\$").last
 }
 
-trait GeoMesaIndexWritable[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan] {
+trait GeoMesaWritableIndex[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan] {
 
   /**
     * Pointer back to the main index
@@ -102,7 +102,7 @@ trait GeoMesaIndexWritable[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, 
   def entriesToFeatures(sft: SimpleFeatureType, returnSft: SimpleFeatureType): (Entries) => SimpleFeature
 }
 
-trait GeoMesaIndexQueryable[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan] {
+trait GeoMesaQueryableIndex[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan] {
 
   type TypedFilterStrategy = FilterStrategy[Ops, FeatureWrapper, Result, Row, Entries, Plan]
 

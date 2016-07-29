@@ -20,7 +20,7 @@ import org.joda.time.{DateTime, DateTimeZone}
 import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex.AccumuloFilterStrategy
 import org.locationtech.geomesa.accumulo.index.KeyUtils._
 import org.locationtech.geomesa.accumulo.index.QueryPlanners.{FeatureFunction, JoinFunction}
-import org.locationtech.geomesa.accumulo.index.geohash.GeoHashIndexWritable
+import org.locationtech.geomesa.accumulo.index.geohash.GeoHashWritableIndex
 import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.utils.CartesianProductIterable
 import org.locationtech.geomesa.utils.geohash.{GeoHash, GeohashUtils}
@@ -431,8 +431,8 @@ case class ConstStringPlanner(cstr: String) extends KeyPlanner {
 }
 
 case class IndexOrDataPlanner() extends KeyPlanner {
-  val indexEntry = List(GeoHashIndexWritable.INDEX_FLAG)
-  val dataEntry = List(GeoHashIndexWritable.DATA_FLAG)
+  val indexEntry = List(GeoHashWritableIndex.INDEX_FLAG)
+  val dataEntry = List(GeoHashWritableIndex.DATA_FLAG)
   def getKeyPlan(filter:KeyPlanningFilter, indexOnly: Boolean, output: Explainer) = {
     val k = if (indexOnly) indexEntry else dataEntry
     output(s"IndexOrDataPlanner: ${k.head}")

@@ -25,7 +25,7 @@ import org.locationtech.geomesa.accumulo.index.QueryPlanner._
 import org.locationtech.geomesa.accumulo.index.QueryPlanners.JoinFunction
 import org.locationtech.geomesa.accumulo.index.Strategy._
 import org.locationtech.geomesa.accumulo.index._
-import org.locationtech.geomesa.accumulo.index.id.{RecordIndex, RecordIndexWritable}
+import org.locationtech.geomesa.accumulo.index.id.{RecordIndex, RecordWritableIndex}
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.filter.FilterHelper._
@@ -43,7 +43,7 @@ import org.opengis.filter.temporal.{After, Before, During, TEquals}
 import scala.collection.JavaConverters._
 
 @deprecated
-object AttributeIndexQueryableV5 extends AccumuloIndexQueryable with LazyLogging {
+object AttributeQueryableIndexV5 extends AccumuloQueryableIndex with LazyLogging {
 
   override val index: AccumuloFeatureIndex = AttributeIndex
 
@@ -81,7 +81,7 @@ object AttributeIndexQueryableV5 extends AccumuloIndexQueryable with LazyLogging
       // TODO GEOMESA-822 we can use the aggregating iterator if the features are kryo encoded
       BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, AttributeIndex, hints, encoding)
     } else {
-      AttributeIndexWritableV5.entriesToFeatures(sft, hints.getReturnSft)
+      AttributeWritableIndexV5.entriesToFeatures(sft, hints.getReturnSft)
     }
 
     // choose which iterator we want to use - joining iterator or attribute only iterator
@@ -121,7 +121,7 @@ object AttributeIndexQueryableV5 extends AccumuloIndexQueryable with LazyLogging
         // since the row id of the record table is in the CF just grab that
         val prefix = sft.getTableSharingPrefix
         val joinFunction: JoinFunction =
-          (kv) => new AccRange(RecordIndexWritable.getRowKey(prefix, kv.getKey.getColumnQualifier.toString))
+          (kv) => new AccRange(RecordWritableIndex.getRowKey(prefix, kv.getKey.getColumnQualifier.toString))
 
         val recordTable = ops.getTableName(sft.getTypeName, RecordIndex)
         val recordThreads = ops.getSuggestedThreads(sft.getTypeName, RecordIndex)
@@ -243,7 +243,7 @@ object AttributeIndexQueryableV5 extends AccumuloIndexQueryable with LazyLogging
         descriptor.getListType() match {
           case Some(collectionType) if collectionType == actualBinding => Seq(value).asJava
           case Some(collectionType) if collectionType != actualBinding =>
-            Seq(AttributeIndexWritable.convertType(value, actualBinding, collectionType)).asJava
+            Seq(AttributeWritableIndex.convertType(value, actualBinding, collectionType)).asJava
         }
       } else if (descriptor.isMap) {
         // TODO GEOMESA-454 - support querying against map attributes
@@ -251,15 +251,15 @@ object AttributeIndexQueryableV5 extends AccumuloIndexQueryable with LazyLogging
       } else {
         // type mismatch, encoding won't work b/c value is wrong class
         // try to convert to the appropriate class
-        AttributeIndexWritable.convertType(value, actualBinding, expectedBinding)
+        AttributeWritableIndex.convertType(value, actualBinding, expectedBinding)
       }
 
     val rowIdPrefix = sft.getTableSharingPrefix
     // grab the first encoded row - right now there will only ever be a single item in the seq
     // eventually we may support searching a whole collection at once
-    val rowWithValue = AttributeIndexWritableV5.getAttributeIndexRows(rowIdPrefix, descriptor, typedValue).headOption
+    val rowWithValue = AttributeWritableIndexV5.getAttributeIndexRows(rowIdPrefix, descriptor, typedValue).headOption
     // if value is null there won't be any rows returned, instead just use the row prefix
-    rowWithValue.getOrElse(AttributeIndexWritableV5.getAttributeIndexRowPrefix(rowIdPrefix, descriptor))
+    rowWithValue.getOrElse(AttributeWritableIndexV5.getAttributeIndexRowPrefix(rowIdPrefix, descriptor))
   }
 
   /**
@@ -399,12 +399,12 @@ object AttributeIndexQueryableV5 extends AccumuloIndexQueryable with LazyLogging
 
   private def lowerBound(sft: SimpleFeatureType, prop: String): Text = {
     val rowIdPrefix = sft.getTableSharingPrefix
-    new Text(AttributeIndexWritableV5.getAttributeIndexRowPrefix(rowIdPrefix, sft.getDescriptor(prop)))
+    new Text(AttributeWritableIndexV5.getAttributeIndexRowPrefix(rowIdPrefix, sft.getDescriptor(prop)))
   }
 
   private def upperBound(sft: SimpleFeatureType, prop: String): Text = {
     val rowIdPrefix = sft.getTableSharingPrefix
-    val end = new Text(AttributeIndexWritableV5.getAttributeIndexRowPrefix(rowIdPrefix, sft.getDescriptor(prop)))
+    val end = new Text(AttributeWritableIndexV5.getAttributeIndexRowPrefix(rowIdPrefix, sft.getDescriptor(prop)))
     AccRange.followingPrefix(end)
   }
 

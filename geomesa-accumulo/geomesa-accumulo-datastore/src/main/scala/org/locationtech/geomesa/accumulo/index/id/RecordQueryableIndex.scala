@@ -30,9 +30,9 @@ import org.opengis.filter.{And, Filter, Id, Or}
 
 import scala.collection.JavaConversions._
 
-object RecordIndexQueryable extends AccumuloIndexQueryable
-    with IdFilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
-    with LazyLogging {
+object RecordQueryableIndex extends AccumuloQueryableIndex
+                                    with IdFilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
+                                    with LazyLogging {
 
   override val index: AccumuloFeatureIndex = RecordIndex
 
@@ -65,9 +65,9 @@ object RecordIndexQueryable extends AccumuloIndexQueryable
       case Some(primary) =>
         // Multiple sets of IDs in a ID Filter are ORs. ANDs of these call for the intersection to be taken.
         // intersect together all groups of ID Filters, producing a set of IDs
-        val identifiers = RecordIndexQueryable.intersectIdFilters(primary)
+        val identifiers = RecordQueryableIndex.intersectIdFilters(primary)
         explain(s"Extracted ID filter: ${identifiers.mkString(", ")}")
-        identifiers.toSeq.map(id => aRange.exact(RecordIndexWritable.getRowKey(prefix, id)))
+        identifiers.toSeq.map(id => aRange.exact(RecordWritableIndex.getRowKey(prefix, id)))
     }
 
     if (ranges.isEmpty) { EmptyPlan(filter) } else {

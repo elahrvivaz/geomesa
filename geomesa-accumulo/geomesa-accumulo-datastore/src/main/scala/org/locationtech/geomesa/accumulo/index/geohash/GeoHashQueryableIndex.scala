@@ -37,7 +37,7 @@ import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
 @deprecated("z2/z3")
-object GeoHashIndexQueryable extends AccumuloIndexQueryable with LazyLogging with IndexFilterHelpers {
+object GeoHashQueryableIndex extends AccumuloQueryableIndex with LazyLogging with IndexFilterHelpers {
 
   override val index: AccumuloFeatureIndex = GeoHashIndex
 
@@ -118,7 +118,7 @@ object GeoHashIndexQueryable extends AccumuloIndexQueryable with LazyLogging wit
         (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), false, false)
       } else {
         val iters = KryoLazyFilterTransformIterator.configure(sft, filter.filter, hints).toSeq
-        (iters, GeoHashIndexWritable.entriesToFeatures(sft, hints.getReturnSft), false, sft.nonPoints)
+        (iters, GeoHashWritableIndex.entriesToFeatures(sft, hints.getReturnSft), false, sft.nonPoints)
       }
     } else {
       // legacy iterators
@@ -135,7 +135,7 @@ object GeoHashIndexQueryable extends AccumuloIndexQueryable with LazyLogging wit
       val kvs = if (hints.isBinQuery) {
         BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, GeoHashIndex, hints, featureEncoding)
       } else {
-        GeoHashIndexWritable.entriesToFeatures(sft, hints.getReturnSft)
+        GeoHashWritableIndex.entriesToFeatures(sft, hints.getReturnSft)
       }
       (iters, kvs, indexEntries, sft.nonPoints)
     }

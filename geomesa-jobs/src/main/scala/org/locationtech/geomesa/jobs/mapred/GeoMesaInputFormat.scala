@@ -203,7 +203,7 @@ class GeoMesaRecordReader(sft: SimpleFeatureType,
   val delegateValue = new Value()
   var pos = 0L
 
-  val getId = table.getIdFromRow(sft)
+  val getId = table.writable.getIdFromRow(sft)
 
   nextReader()
 

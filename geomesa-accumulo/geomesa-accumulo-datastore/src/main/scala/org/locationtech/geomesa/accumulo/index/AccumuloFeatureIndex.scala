@@ -24,8 +24,8 @@ import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 trait AccumuloFeatureIndex extends
     GeoMesaFeatureIndex[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
 
-trait AccumuloIndexWritable extends
-    GeoMesaIndexWritable[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan] {
+trait AccumuloWritableIndex extends
+    GeoMesaWritableIndex[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan] {
 
   override def removeAll(sft: SimpleFeatureType, ops: AccumuloDataStore, table: String): Unit = {
     import org.apache.accumulo.core.data.{Range => aRange}
@@ -69,8 +69,8 @@ trait AccumuloIndexWritable extends
   }
 }
 
-trait AccumuloIndexQueryable extends
-    GeoMesaIndexQueryable[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
+trait AccumuloQueryableIndex extends
+    GeoMesaQueryableIndex[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
 
 object AccumuloFeatureIndex {
 

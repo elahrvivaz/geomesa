@@ -6,25 +6,30 @@
 * http://www.opensource.org/licenses/apache2.0.php.
 *************************************************************************/
 
-package org.locationtech.geomesa.accumulo.index.z2
+package org.locationtech.geomesa.accumulo.index.z3
 
 import java.nio.charset.StandardCharsets
+import java.util.Date
 
 import com.google.common.collect.{ImmutableSet, ImmutableSortedSet}
-import com.google.common.primitives.{Bytes, Longs}
-import com.vividsolutions.jts.geom.{Geometry, GeometryCollection, LineString, Point}
+import com.google.common.primitives.{Bytes, Longs, Shorts}
+import com.vividsolutions.jts.geom._
 import org.apache.accumulo.core.conf.Property
-import org.apache.accumulo.core.data.{Mutation, Value}
+import org.apache.accumulo.core.data.{Mutation, Value, Range => aRange}
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
-import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, AccumuloIndexWritable}
-import org.locationtech.geomesa.curve.Z2SFC
+import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, EMPTY_TEXT, WritableFeature}
+import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, AccumuloWritableIndex}
+import org.locationtech.geomesa.curve.BinnedTime.TimeToBinnedTime
+import org.locationtech.geomesa.curve.{BinnedTime, Z3SFC}
+import org.locationtech.geomesa.utils.geotools.Conversions._
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-import org.locationtech.sfcurve.zorder.{Z2, ZPrefix}
+import org.locationtech.sfcurve.zorder.{Z3, ZPrefix}
 import org.opengis.feature.simple.SimpleFeatureType
 
-object Z2IndexWritable extends AccumuloIndexWritable {
+import scala.collection.JavaConversions._
+
+object Z3WritableIndex extends AccumuloWritableIndex {
 
   val FULL_CF = new Text("F")
   val BIN_CF = new Text("B")
@@ -34,22 +39,34 @@ object Z2IndexWritable extends AccumuloIndexWritable {
   val SPLIT_ARRAYS = (0 until NUM_SPLITS).map(_.toByte).toArray.map(Array(_)).toSeq
 
   // the bytes of z we keep for complex geoms
-  // 3 bytes is 22 bits of geometry (not including the first 2 bits which aren't used)
-  // roughly equivalent to 4 digits of geohash (32^4 == 2^20) and ~20km resolution
+  // 3 bytes is 15 bits of geometry (not including time bits and the first 2 bits which aren't used)
+  // roughly equivalent to 3 digits of geohash (32^3 == 2^15) and ~78km resolution
+  // (4 bytes is 20 bits, equivalent to 4 digits of geohash and ~20km resolution)
+  // note: we also lose time resolution
   val GEOM_Z_NUM_BYTES = 3
   // mask for zeroing the last (8 - GEOM_Z_NUM_BYTES) bytes
   val GEOM_Z_MASK: Long = Long.MaxValue << (64 - 8 * GEOM_Z_NUM_BYTES)
 
-  override val index: AccumuloFeatureIndex = Z2Index
+  override val index: AccumuloFeatureIndex = Z3Index
 
   override def writer(sft: SimpleFeatureType, table: String): FeatureToMutations = {
-    val sharing = sharingPrefix(sft)
-    val getRowKeys: (WritableFeature) => Seq[Array[Byte]] =
-      if (sft.isPoints) getPointRowKey(sharing) else getGeomRowKeys(sharing)
-
+    val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
+    val timeToIndex = BinnedTime.timeToBinnedTime(sft.getZ3Interval)
+    val sfc = Z3SFC(sft.getZ3Interval)
+    val getRowKeys: (WritableFeature, Int) => Seq[Array[Byte]] = {
+      if (sft.isPoints) {
+        if (hasSplits(sft)) {
+          getPointRowKey(timeToIndex, sfc)
+        } else {
+          (wf, i) => getPointRowKey(timeToIndex, sfc)(wf, i).map(_.drop(1))
+        }
+      } else {
+        getGeomRowKeys(timeToIndex, sfc)
+      }
+    }
     if (sft.getSchemaVersion < 9) {
       (wf: WritableFeature) => {
-        val rows = getRowKeys(wf)
+        val rows = getRowKeys(wf, dtgIndex)
         // store the duplication factor in the column qualifier for later use
         val cq = if (rows.length > 1) new Text(Integer.toHexString(rows.length)) else EMPTY_TEXT
         rows.map { row =>
@@ -61,7 +78,7 @@ object Z2IndexWritable extends AccumuloIndexWritable {
       }
     } else {
       (wf: WritableFeature) => {
-        val rows = getRowKeys(wf)
+        val rows = getRowKeys(wf, dtgIndex)
         // store the duplication factor in the column qualifier for later use
         val duplication = Integer.toHexString(rows.length)
         rows.map { row =>
@@ -81,13 +98,23 @@ object Z2IndexWritable extends AccumuloIndexWritable {
   }
 
   override def remover(sft: SimpleFeatureType, table: String): FeatureToMutations = {
-    val sharing = sharingPrefix(sft)
-    val getRowKeys: (WritableFeature) => Seq[Array[Byte]] =
-      if (sft.isPoints) getPointRowKey(sharing) else getGeomRowKeys(sharing)
-
+    val dtgIndex = sft.getDtgIndex.getOrElse(throw new RuntimeException("Z3 writer requires a valid date"))
+    val timeToIndex = BinnedTime.timeToBinnedTime(sft.getZ3Interval)
+    val sfc = Z3SFC(sft.getZ3Interval)
+    val getRowKeys: (WritableFeature, Int) => Seq[Array[Byte]] = {
+      if (sft.isPoints) {
+        if (hasSplits(sft)) {
+          getPointRowKey(timeToIndex, sfc)
+        } else {
+          (ftw, i) => getPointRowKey(timeToIndex, sfc)(ftw, i).map(_.drop(1))
+        }
+      } else {
+        getGeomRowKeys(timeToIndex, sfc)
+      }
+    }
     if (sft.getSchemaVersion < 9) {
       (wf: WritableFeature) => {
-        val rows = getRowKeys(wf)
+        val rows = getRowKeys(wf, dtgIndex)
         val cq = if (rows.length > 1) new Text(Integer.toHexString(rows.length)) else EMPTY_TEXT
         rows.map { row =>
           val mutation = new Mutation(row)
@@ -98,7 +125,7 @@ object Z2IndexWritable extends AccumuloIndexWritable {
       }
     } else {
       (wf: WritableFeature) => {
-        val rows = getRowKeys(wf)
+        val rows = getRowKeys(wf, dtgIndex)
         val duplication = Integer.toHexString(rows.length)
         rows.map { row =>
           val mutation = new Mutation(row)
@@ -116,50 +143,68 @@ object Z2IndexWritable extends AccumuloIndexWritable {
     }
   }
 
+  override def removeAll(sft: SimpleFeatureType, ops: AccumuloDataStore, table: String): Unit = {
+    ops.tableOps.delete(table)
+  }
+
   override def getIdFromRow(sft: SimpleFeatureType): (Text) => String = {
     val offset = getIdRowOffset(sft)
     (row: Text) => new String(row.getBytes, offset, row.getLength - offset, StandardCharsets.UTF_8)
   }
 
-  // split(1 byte), z value (8 bytes), id (n bytes)
-  private def getPointRowKey(tableSharing: Array[Byte])(wf: WritableFeature): Seq[Array[Byte]] = {
-    import org.locationtech.geomesa.utils.geotools.Conversions.RichSimpleFeature
+  // geoms always have splits, but they weren't added until schema 7
+  def hasSplits(sft: SimpleFeatureType) = sft.getSchemaVersion > 6
+
+  // split(1 byte), week(2 bytes), z value (8 bytes), id (n bytes)
+  private def getPointRowKey(timeToIndex: TimeToBinnedTime, sfc: Z3SFC)
+                            (wf: WritableFeature, dtgIndex: Int): Seq[Array[Byte]] = {
     val split = SPLIT_ARRAYS(wf.idHash % NUM_SPLITS)
+    val (timeBin, z) = {
+      val dtg = wf.feature.getAttribute(dtgIndex).asInstanceOf[Date]
+      val time = if (dtg == null) 0 else dtg.getTime
+      val BinnedTime(b, t) = timeToIndex(time)
+      val geom = wf.feature.point
+      (b, sfc.index(geom.getX, geom.getY, t).z)
+    }
     val id = wf.feature.getID.getBytes(StandardCharsets.UTF_8)
-    val pt = wf.feature.point
-    val z = Z2SFC.index(pt.getX, pt.getY).z
-    Seq(Bytes.concat(tableSharing, split, Longs.toByteArray(z), id))
+    Seq(Bytes.concat(split, Shorts.toByteArray(timeBin), Longs.toByteArray(z), id))
   }
 
-  // split(1 byte), z value (3 bytes), id (n bytes)
-  private def getGeomRowKeys(tableSharing: Array[Byte])(wf: WritableFeature): Seq[Array[Byte]] = {
+  // split(1 byte), week (2 bytes), z value (3 bytes), id (n bytes)
+  private def getGeomRowKeys(timeToIndex: TimeToBinnedTime, sfc: Z3SFC)
+                            (wf: WritableFeature, dtgIndex: Int): Seq[Array[Byte]] = {
     val split = SPLIT_ARRAYS(wf.idHash % NUM_SPLITS)
-    val geom = wf.feature.getDefaultGeometry.asInstanceOf[Geometry]
-    val zs = zBox(geom)
+    val (timeBin, zs) = {
+      val dtg = wf.feature.getAttribute(dtgIndex).asInstanceOf[Date]
+      val time = if (dtg == null) 0 else dtg.getTime
+      val BinnedTime(b, t) = timeToIndex(time)
+      val geom = wf.feature.getDefaultGeometry.asInstanceOf[Geometry]
+      (Shorts.toByteArray(b), zBox(sfc, geom, t).toSeq)
+    }
     val id = wf.feature.getID.getBytes(StandardCharsets.UTF_8)
-    zs.map(z => Bytes.concat(tableSharing, split, Longs.toByteArray(z).take(GEOM_Z_NUM_BYTES), id)).toSeq
+    zs.map(z => Bytes.concat(split, timeBin, Longs.toByteArray(z).take(GEOM_Z_NUM_BYTES), id))
   }
 
-  // gets a sequence of z values that cover the geometry
-  private def zBox(geom: Geometry): Set[Long] = geom match {
-    case g: Point => Set(Z2SFC.index(g.getX, g.getY).z)
+  // gets a sequence of (week, z) values that cover the geometry
+  private def zBox(sfc: Z3SFC, geom: Geometry, t: Long): Set[Long] = geom match {
+    case g: Point => Set(sfc.index(g.getX, g.getY, t).z)
     case g: LineString =>
       // we flatMap bounds for each line segment so we cover a smaller area
       (0 until g.getNumPoints).map(g.getPointN).sliding(2).flatMap { case Seq(one, two) =>
         val (xmin, xmax) = minMax(one.getX, two.getX)
         val (ymin, ymax) = minMax(one.getY, two.getY)
-        zBox(xmin, ymin, xmax, ymax)
+        zBox(sfc, xmin, ymin, xmax, ymax, t)
       }.toSet
-    case g: GeometryCollection => (0 until g.getNumGeometries).toSet.map(g.getGeometryN).flatMap(zBox)
+    case g: GeometryCollection => (0 until g.getNumGeometries).toSet.map(g.getGeometryN).flatMap(zBox(sfc, _, t))
     case g: Geometry =>
       val env = g.getEnvelopeInternal
-      zBox(env.getMinX, env.getMinY, env.getMaxX, env.getMaxY)
+      zBox(sfc, env.getMinX, env.getMinY, env.getMaxX, env.getMaxY, t)
   }
 
-  // gets a sequence of z values that cover the bounding box
-  private def zBox(xmin: Double, ymin: Double, xmax: Double, ymax: Double): Set[Long] = {
-    val zmin = Z2SFC.index(xmin, ymin).z
-    val zmax = Z2SFC.index(xmax, ymax).z
+  // gets a sequence of (week, z) values that cover the bounding box
+  private def zBox(sfc: Z3SFC, xmin: Double, ymin: Double, xmax: Double, ymax: Double, t: Long): Set[Long] = {
+    val zmin = sfc.index(xmin, ymin, t).z
+    val zmax = sfc.index(xmax, ymax, t).z
     getZPrefixes(zmin, zmax)
   }
 
@@ -172,10 +217,10 @@ object Z2IndexWritable extends AccumuloIndexWritable {
 
     while (in.nonEmpty) {
       val (min, max) = in.dequeue()
-      val ZPrefix(zprefix, zbits) = Z2.longestCommonPrefix(min, max)
+      val ZPrefix(zprefix, zbits) = Z3.longestCommonPrefix(min, max)
       if (zbits < GEOM_Z_NUM_BYTES * 8) {
         // divide the range into two smaller ones using tropf litmax/bigmin
-        val (litmax, bigmin) = Z2.zdivide((min + max) >>> 1, min, max) // >>> 1 is overflow safe mean
+        val (litmax, bigmin) = Z3.zdivide((min + max) >>> 1, min, max) // >>> 1 is overflow safe mean
         in.enqueue((min, litmax), (bigmin, max))
       } else {
         // we've found a prefix that contains our z range
@@ -187,38 +232,21 @@ object Z2IndexWritable extends AccumuloIndexWritable {
     out.toSet
   }
 
-  private def sharingPrefix(sft: SimpleFeatureType): Array[Byte] = {
-    val sharing = if (sft.isTableSharing) {
-      sft.getTableSharingPrefix.getBytes(StandardCharsets.UTF_8)
-    } else {
-      Array.empty[Byte]
-    }
-    require(sharing.length < 2, s"Expecting only a single byte for table sharing, got ${sft.getTableSharingPrefix}")
-    sharing
-  }
-
   // gets the offset into the row for the id bytes
   def getIdRowOffset(sft: SimpleFeatureType): Int = {
-    val length = if (sft.isPoints) 8 else GEOM_Z_NUM_BYTES
-    val prefix = if (sft.isTableSharing) 2 else 1 // shard + table sharing
+    val length = if (sft.isPoints) 10 else 2 + GEOM_Z_NUM_BYTES // week + z bytes
+    val prefix = if (hasSplits(sft)) 1 else 0 // shard
     prefix + length
   }
 
   override def configure(sft: SimpleFeatureType, table: String, ops: AccumuloDataStore): Unit = {
-    import scala.collection.JavaConversions._
-
     ops.tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
 
     val localityGroups = Seq(BIN_CF, FULL_CF).map(cf => (cf.toString, ImmutableSet.of(cf))).toMap
     ops.tableOps.setLocalityGroups(table, localityGroups)
 
     // drop first split, otherwise we get an empty tablet
-    val splits = if (sft.isTableSharing) {
-      val ts = sft.getTableSharingPrefix.getBytes(StandardCharsets.UTF_8)
-      SPLIT_ARRAYS.drop(1).map(s => new Text(ts ++ s)).toSet
-    } else {
-      SPLIT_ARRAYS.drop(1).map(new Text(_)).toSet
-    }
+    val splits = SPLIT_ARRAYS.drop(1).map(new Text(_)).toSet
     val splitsToAdd = splits -- ops.tableOps.listSplits(table).toSet
     if (splitsToAdd.nonEmpty) {
       // noinspection RedundantCollectionConversion

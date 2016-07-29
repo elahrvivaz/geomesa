@@ -1,24 +1,23 @@
-/***********************************************************************
-* Copyright (c) 2013-2016 Commonwealth Computer Research, Inc.
-* All rights reserved. This program and the accompanying materials
-* are made available under the terms of the Apache License, Version 2.0
-* which accompanies this distribution and is available at
-* http://www.opensource.org/licenses/apache2.0.php.
-*************************************************************************/
+/*
+ * Copyright (c) 2013-2016 Commonwealth Computer Research, Inc.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Apache License, Version 2.0 which
+ * accompanies this distribution and is available at
+ * http://www.opensource.org/licenses/apache2.0.php.
+ */
 
-package org.locationtech.geomesa.index.strategies.z3
+package org.locationtech.geomesa.index.strategies
 
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.visitor.FilterExtractingVisitor
-import org.locationtech.geomesa.index.api.{FilterStrategy, GeoMesaIndexQueryable}
+import org.locationtech.geomesa.index.api.{FilterStrategy, GeoMesaQueryableIndex}
 import org.locationtech.geomesa.index.stats.HasGeoMesaStats
-import org.locationtech.geomesa.index.strategies.Z2FilterStrategy
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
 trait Z3FilterStrategy[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entries, Plan] extends
-    GeoMesaIndexQueryable[Ops, FeatureWrapper, Result, Row, Entries, Plan] {
+    GeoMesaQueryableIndex[Ops, FeatureWrapper, Result, Row, Entries, Plan] {
 
   import Z3FilterStrategy.{StaticCost, isBounded}
 
@@ -60,7 +59,8 @@ trait Z3FilterStrategy[Ops <: HasGeoMesaStats, FeatureWrapper, Result, Row, Entr
     filter.primary match {
       case None    => Long.MaxValue
       case Some(f) => ops.flatMap(_.stats.getCount(sft, f, exact = false)).getOrElse {
-        if (filter.primary.exists(isSpatialFilter)) StaticCost else Z2FilterStrategy.StaticCost + 1
+        val names = filter.primary.map(FilterHelper.propertyNames(_, sft)).getOrElse(Seq.empty)
+        if (names.contains(sft.getGeomField)) StaticCost else Z2FilterStrategy.StaticCost + 1
       }
     }
   }

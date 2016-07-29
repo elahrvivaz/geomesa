@@ -20,7 +20,7 @@ import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex.AccumuloFilt
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.QueryPlanners.{FeatureFunction, JoinFunction}
 import org.locationtech.geomesa.accumulo.index._
-import org.locationtech.geomesa.accumulo.index.id.{RecordIndex, RecordIndexWritable}
+import org.locationtech.geomesa.accumulo.index.id.{RecordIndex, RecordWritableIndex}
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.features.SerializationOption.SerializationOptions
@@ -39,7 +39,7 @@ import org.opengis.filter.temporal.{After, Before, During, TEquals}
 
 import scala.util.Try
 
-object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
+object AttributeQueryableIndex extends AccumuloQueryableIndex with LazyLogging {
 
   val FILTERING_ITER_PRIORITY = 25
   type ScanPlanFn = (SimpleFeatureType, Option[Filter], Option[(String, SimpleFeatureType)]) => BatchScanPlan
@@ -67,7 +67,7 @@ object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
     }
 
     // TODO GEOMESA-1336 fix exclusive AND handling for list types
-    val bounds = AttributeIndexQueryable.getBounds(sft, primary, dates)
+    val bounds = AttributeQueryableIndex.getBounds(sft, primary, dates)
 
     if (bounds.isEmpty) {
       EmptyPlan(filter)
@@ -105,7 +105,7 @@ object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
       val iter = KryoLazyFilterTransformIterator.configure(schema, ecql, transform, sampling)
       val iters = visibilityIter(schema) ++ iter.toSeq
       // need to use transform to convert key/values if it's defined
-      val kvsToFeatures = AttributeIndexWritable.entriesToFeatures(sft, transform.map(_._2).getOrElse(schema))
+      val kvsToFeatures = AttributeWritableIndex.entriesToFeatures(sft, transform.map(_._2).getOrElse(schema))
       BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDupes)
     }
 
@@ -211,15 +211,15 @@ object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
     } else if (hints.isStatsIteratorQuery) {
       KryoLazyStatsIterator.kvsToFeatures(sft)
     } else {
-      RecordIndexWritable.entriesToFeatures(sft, hints.getReturnSft)
+      RecordWritableIndex.entriesToFeatures(sft, hints.getReturnSft)
     }
 
     // function to join the attribute index scan results to the record table
     // have to pull the feature id from the row
     val prefix = sft.getTableSharingPrefix
-    val getIdFromRow = AttributeIndexWritable.getIdFromRow(sft)
+    val getIdFromRow = AttributeWritableIndex.getIdFromRow(sft)
     val joinFunction: JoinFunction =
-      (kv) => new AccRange(RecordIndexWritable.getRowKey(prefix, getIdFromRow(kv.getKey.getRow)))
+      (kv) => new AccRange(RecordWritableIndex.getRowKey(prefix, getIdFromRow(kv.getKey.getRow)))
 
     val recordTable = ds.getTableName(sft.getTypeName, RecordIndex)
     val recordThreads = ds.getSuggestedThreads(sft.getTypeName, RecordIndex)
@@ -349,26 +349,26 @@ object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
       val range = bounds.bounds match {
         case (Some(lower), Some(upper)) =>
           if (lower == upper) {
-            AttributeIndexWritable.equals(sft, index, lower, dates)
+            AttributeWritableIndex.equals(sft, index, lower, dates)
           } else if (lower + WILDCARD_SUFFIX == upper) {
-            AttributeIndexWritable.prefix(sft, index, lower)
+            AttributeWritableIndex.prefix(sft, index, lower)
           } else {
-            AttributeIndexWritable.between(sft, index, (lower, upper), dates, bounds.inclusive)
+            AttributeWritableIndex.between(sft, index, (lower, upper), dates, bounds.inclusive)
           }
         case (Some(lower), None) =>
           if (bounds.inclusive) {
-            AttributeIndexWritable.gte(sft, index, lower, dates.map(_._1))
+            AttributeWritableIndex.gte(sft, index, lower, dates.map(_._1))
           } else {
-            AttributeIndexWritable.gt(sft, index, lower, dates.map(_._1))
+            AttributeWritableIndex.gt(sft, index, lower, dates.map(_._1))
           }
         case (None, Some(upper)) =>
           if (bounds.inclusive) {
-            AttributeIndexWritable.lte(sft, index, upper, dates.map(_._2))
+            AttributeWritableIndex.lte(sft, index, upper, dates.map(_._2))
           } else {
-            AttributeIndexWritable.lt(sft, index, upper, dates.map(_._2))
+            AttributeWritableIndex.lt(sft, index, upper, dates.map(_._2))
           }
         case (None, None) => // not null
-          AttributeIndexWritable.all(sft, index)
+          AttributeWritableIndex.all(sft, index)
       }
 
       PropertyBounds(attribute, bounds.bounds, range)
@@ -391,19 +391,19 @@ object AttributeIndexQueryable extends AccumuloIndexQueryable with LazyLogging {
         kryoFeature.setBuffer(kv.getValue.get)
         val sf = new ScalaSimpleFeature(kryoFeature.getID, returnSft)
         translateIndices.foreach { case (to, from) => sf.setAttribute(to, kryoFeature.getAttribute(from)) }
-        val decoded = AttributeIndexWritable.decodeRow(sft, attributeIndex, kv.getKey.getRow.getBytes).get
+        val decoded = AttributeWritableIndex.decodeRow(sft, attributeIndex, kv.getKey.getRow.getBytes).get
         sf.setAttribute(returnIndex, decoded.asInstanceOf[AnyRef])
         QueryPlanner.applyVisibility(sf, kv.getKey)
         sf
       }
     } else {
       val kryoFeature = new KryoFeatureSerializer(indexSft, SerializationOptions.withoutId).getReusableFeature
-      val getId = AttributeIndexWritable.getIdFromRow(sft)
+      val getId = AttributeWritableIndex.getIdFromRow(sft)
       (kv: Entry[Key, Value]) => {
         kryoFeature.setBuffer(kv.getValue.get)
         val sf = new ScalaSimpleFeature(getId(kv.getKey.getRow), returnSft)
         translateIndices.foreach { case (to, from) => sf.setAttribute(to, kryoFeature.getAttribute(from)) }
-        val decoded = AttributeIndexWritable.decodeRow(sft, attributeIndex, kv.getKey.getRow.getBytes).get
+        val decoded = AttributeWritableIndex.decodeRow(sft, attributeIndex, kv.getKey.getRow.getBytes).get
         sf.setAttribute(returnIndex, decoded.asInstanceOf[AnyRef])
         QueryPlanner.applyVisibility(sf, kv.getKey)
         sf
