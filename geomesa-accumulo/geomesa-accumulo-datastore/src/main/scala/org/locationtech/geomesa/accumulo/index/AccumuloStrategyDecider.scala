@@ -19,5 +19,5 @@ import org.opengis.feature.simple.SimpleFeatureType
 object AccumuloStrategyDecider extends
     StrategyDecider[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan] {
 
-  override def indices(sft: SimpleFeatureType): Seq[AccumuloFeatureIndex] = IndexManager.indices(sft)
+  override def indices(sft: SimpleFeatureType): Seq[AccumuloFeatureIndex] = AccumuloIndexManager.indices(sft)
 }

@@ -26,10 +26,10 @@ class ConfigurableIndexesTest extends Specification {
   val sft = new SftBuilder()
     .date("dtg", default = true)
     .point("geom", default = true)
-    .withIndexes(IndexManager.Schemes.Z3TableScheme)
+    .withIndexes(AccumuloIndexManager.Schemes.Z3TableScheme)
     .build("ConfigurableIndexesTest")
 
-  val splitter = new FilterSplitter(sft, IndexManager.indices(sft))
+  val splitter = new FilterSplitter(sft, AccumuloIndexManager.indices(sft))
 
   val ff = CommonFactoryFinder.getFilterFactory2
 

@@ -16,7 +16,7 @@ import org.locationtech.geomesa.accumulo.index.z2.Z2Index
 import org.locationtech.geomesa.accumulo.index.z3.Z3Index
 import org.opengis.feature.simple.SimpleFeatureType
 
-object IndexManager {
+object AccumuloIndexManager {
 
   // note: keep in priority order for running full table scans
   val AllIndices: Seq[AccumuloFeatureIndex] = {

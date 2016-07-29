@@ -50,7 +50,7 @@ object AccumuloFeatureWriter extends LazyLogging {
    * Gets writers and table names for each table (e.g. index) that supports the sft
    */
   def getTablesAndWriters(sft: SimpleFeatureType, ds: AccumuloConnectorCreator): Seq[TableAndWriter] =
-    IndexManager.indices(sft).map { index =>
+    AccumuloIndexManager.indices(sft).map { index =>
       val table = ds.getTableName(sft.getTypeName, index)
       (table, index.writable.writer(sft, table))
     }
@@ -59,7 +59,7 @@ object AccumuloFeatureWriter extends LazyLogging {
    * Gets removers and table names for each table (e.g. index) that supports the sft
    */
   def getTablesAndRemovers(sft: SimpleFeatureType, ds: AccumuloConnectorCreator): Seq[TableAndWriter] =
-    IndexManager.indices(sft).map { index =>
+    AccumuloIndexManager.indices(sft).map { index =>
       val table = ds.getTableName(sft.getTypeName, index)
       (table, index.writable.remover(sft, table))
     }

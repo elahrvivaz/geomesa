@@ -16,7 +16,7 @@ import org.apache.accumulo.core.data.{Range => aRange, _}
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.apache.hadoop.io.Text
 import org.geotools.filter.text.ecql.ECQL
-import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, IndexManager}
+import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, AccumuloIndexManager}
 import org.locationtech.geomesa.features.SerializationOption.SerializationOptions
 import org.locationtech.geomesa.features.kryo.{KryoBufferSimpleFeature, KryoFeatureSerializer}
 import org.locationtech.geomesa.filter.factory.FastFilterFactory
@@ -70,7 +70,7 @@ abstract class KryoLazyAggregatingIterator[T <: AnyRef { def isEmpty: Boolean; d
       reusableSf = new KryoFeatureSerializer(sft).getReusableFeature
     } else {
       val tableName = options(TABLE_OPT)
-      val table = IndexManager.AllIndices.find(_.getClass.getSimpleName == tableName).getOrElse {
+      val table = AccumuloIndexManager.AllIndices.find(_.getClass.getSimpleName == tableName).getOrElse {
         throw new RuntimeException(s"Table option not configured correctly: $tableName")
       }
       getId = table.writable.getIdFromRow(sft)

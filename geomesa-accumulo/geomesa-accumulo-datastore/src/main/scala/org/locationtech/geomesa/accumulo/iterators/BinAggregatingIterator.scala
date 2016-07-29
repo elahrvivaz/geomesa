@@ -22,7 +22,7 @@ import org.geotools.factory.Hints
 import org.geotools.filter.identity.FeatureIdImpl
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
 import org.locationtech.geomesa.accumulo.index.QueryPlanners._
-import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, IndexManager}
+import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, AccumuloIndexManager}
 import org.locationtech.geomesa.features.SerializationOption.SerializationOptions
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features.kryo.KryoBufferSimpleFeature
@@ -227,7 +227,7 @@ class PrecomputedBinAggregatingIterator extends BinAggregatingIterator {
     val gf = new GeometryFactory
 
     val tableName = options(KryoLazyAggregatingIterator.TABLE_OPT)
-    val table = IndexManager.AllIndices.find(_.getClass.getSimpleName == tableName).getOrElse {
+    val table = AccumuloIndexManager.AllIndices.find(_.getClass.getSimpleName == tableName).getOrElse {
       throw new RuntimeException(s"Table option not configured correctly: $tableName")
     }
     val getId = table.writable.getIdFromRow(sft)

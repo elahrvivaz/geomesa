@@ -339,7 +339,7 @@ class AccumuloDataStoreTest extends Specification with TestWithMultipleSfts {
       val sftName = sft.getTypeName
 
       "create all appropriate tables" >> {
-        val tables = IndexManager.indices(sft).map(ds.getTableName(sft.getTypeName, _))
+        val tables = AccumuloIndexManager.indices(sft).map(ds.getTableName(sft.getTypeName, _))
         tables must haveLength(4)
         forall(Seq(Z2Index, Z3Index, AttributeIndex))(t => tables must contain(endWith(t.name)))
         forall(tables)(t => ds.connector.tableOperations.exists(t) must beTrue)
@@ -386,14 +386,14 @@ class AccumuloDataStoreTest extends Specification with TestWithMultipleSfts {
       val encodedSFT = "nihao" + enc("你") + enc("好")
       encodedSFT mustEqual GeoMesaTable.hexEncodeNonAlphaNumeric(sftName)
 
-      forall(IndexManager.indices(sft)) { table =>
+      forall(AccumuloIndexManager.indices(sft)) { table =>
         GeoMesaTable.formatTableName(ds.catalogTable, table.name, sft) mustEqual s"${ds.catalogTable}_${encodedSFT}_${table.name}"
       }
 
       val c = ds.connector
 
       c.tableOperations().exists(ds.catalogTable) must beTrue
-      forall(IndexManager.indices(sft)) { table =>
+      forall(AccumuloIndexManager.indices(sft)) { table =>
         c.tableOperations().exists(s"${ds.catalogTable}_${encodedSFT}_${table.name}") must beTrue
       }
     }
@@ -633,7 +633,7 @@ class AccumuloDataStoreTest extends Specification with TestWithMultipleSfts {
       val ds = DataStoreFinder.getDataStore(dsParams ++ Map("tableName" -> catalog)).asInstanceOf[AccumuloDataStore]
       val sft = SimpleFeatureTypes.createType(catalog, "name:String:index=true,dtg:Date,*geom:Point:srid=4326")
       ds.createSchema(sft)
-      val tables = IndexManager.indices(sft).map(ds.getTableName(sft.getTypeName, _)) ++ Seq(catalog)
+      val tables = AccumuloIndexManager.indices(sft).map(ds.getTableName(sft.getTypeName, _)) ++ Seq(catalog)
       tables must haveSize(5)
       connector.tableOperations().list().toSeq must containAllOf(tables)
       ds.delete()

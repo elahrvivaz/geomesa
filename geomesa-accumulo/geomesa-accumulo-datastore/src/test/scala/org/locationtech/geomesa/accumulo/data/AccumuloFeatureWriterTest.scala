@@ -21,7 +21,7 @@ import org.geotools.filter.text.cql2.CQL
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithDataStore
-import org.locationtech.geomesa.accumulo.index.{AccumuloStrategyDecider, IndexManager}
+import org.locationtech.geomesa.accumulo.index.{AccumuloStrategyDecider, AccumuloIndexManager}
 import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
 import org.locationtech.geomesa.accumulo.index.id.RecordIndex
 import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
@@ -161,7 +161,7 @@ class AccumuloFeatureWriterTest extends Specification with TestWithDataStore wit
       val features = fs.getFeatures(Filter.INCLUDE).features().toSeq
       features must beEmpty
 
-      forall(IndexManager.indices(sft).map(ds.getTableName(sft.getTypeName, _))) { name =>
+      forall(AccumuloIndexManager.indices(sft).map(ds.getTableName(sft.getTypeName, _))) { name =>
         val scanner = connector.createScanner(name, new Authorizations())
         try {
           scanner.iterator().hasNext must beFalse
@@ -445,7 +445,7 @@ class AccumuloFeatureWriterTest extends Specification with TestWithDataStore wit
   }
 
   def clearTablesHard(): Unit = {
-    IndexManager.indices(sft).map(ds.getTableName(sft.getTypeName, _)).foreach { name =>
+    AccumuloIndexManager.indices(sft).map(ds.getTableName(sft.getTypeName, _)).foreach { name =>
       val deleter = connector.createBatchDeleter(name, new Authorizations(), 5, new BatchWriterConfig())
       deleter.setRanges(Seq(new aRange()))
       deleter.delete()
