@@ -18,8 +18,9 @@ import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex.AccumuloFilterStrategy
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
-import org.locationtech.geomesa.accumulo.index.QueryPlanners.{FeatureFunction, JoinFunction}
+import org.locationtech.geomesa.accumulo.index.QueryPlan.{FeatureFunction, JoinFunction}
 import org.locationtech.geomesa.accumulo.index._
+import org.locationtech.geomesa.accumulo.index.encoders.IndexValueEncoder
 import org.locationtech.geomesa.accumulo.index.id.{RecordIndex, RecordWritableIndex}
 import org.locationtech.geomesa.accumulo.iterators._
 import org.locationtech.geomesa.features.ScalaSimpleFeature

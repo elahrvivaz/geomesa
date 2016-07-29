@@ -26,11 +26,10 @@ import org.geotools.process.vector.TransformProcess.Definition
 import org.locationtech.geomesa.accumulo.GeomesaSystemProperties.QueryProperties
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.index.QueryHints._
-import org.locationtech.geomesa.accumulo.index.Strategy.CostEvaluation
 import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
 import org.locationtech.geomesa.accumulo.index.id.RecordIndex
 import org.locationtech.geomesa.accumulo.iterators._
-import org.locationtech.geomesa.accumulo.util.{CloseableIterator, SelfClosingIterator}
+import org.locationtech.geomesa.accumulo.util.{CloseableIterator, DeDuplicatingIterator, SelfClosingIterator}
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.visitor.QueryPlanFilterVisitor
 import org.locationtech.geomesa.index.utils.{ExplainLogging, Explainer}
@@ -84,7 +83,7 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
                            queryPlans: Iterator[QueryPlan],
                            output: Explainer): SFIter = {
     def scan(qps: Iterator[QueryPlan]): SFIter = SelfClosingIterator(qps).ciFlatMap { qp =>
-      val iter = Strategy.execute(qp, ds).map(qp.kvsToFeatures)
+      val iter = qp.execute(ds).map(qp.kvsToFeatures)
       if (qp.hasDuplicates) new DeDuplicatingIterator(iter) else iter
     }
 
@@ -207,6 +206,11 @@ object QueryPlanner extends LazyLogging {
   type SFIter = CloseableIterator[SimpleFeature]
 
   private val threadedHints = new SoftThreadLocal[Map[AnyRef, AnyRef]]
+
+  object CostEvaluation extends Enumeration {
+    type CostEvaluation = Value
+    val Stats, Index = Value
+  }
 
   def setPerThreadQueryHints(hints: Map[AnyRef, AnyRef]): Unit = threadedHints.put(hints)
   def clearPerThreadQueryHints() = threadedHints.clear()

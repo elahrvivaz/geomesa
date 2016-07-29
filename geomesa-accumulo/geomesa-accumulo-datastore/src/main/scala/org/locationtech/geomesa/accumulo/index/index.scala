@@ -8,18 +8,16 @@
 
 package org.locationtech.geomesa.accumulo
 
-import com.typesafe.scalalogging.Logger
 import com.vividsolutions.jts.geom.Envelope
-import org.apache.accumulo.core.data.{Key, Value, Range => AccRange}
+import org.apache.accumulo.core.data.{Key, Value}
 import org.geotools.factory.Hints
 import org.geotools.factory.Hints.{ClassKey, IntegerKey}
 import org.geotools.geometry.jts.ReferencedEnvelope
 import org.joda.time.{DateTime, DateTimeZone}
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.index.Strategy.CostEvaluation
-import org.locationtech.geomesa.accumulo.index.Strategy.CostEvaluation.CostEvaluation
+import org.locationtech.geomesa.accumulo.index.QueryPlanner.CostEvaluation
+import org.locationtech.geomesa.accumulo.index.QueryPlanner.CostEvaluation.CostEvaluation
 import org.opengis.feature.simple.SimpleFeatureType
-import org.slf4j.LoggerFactory
 
 import scala.languageFeature.implicitConversions
 
@@ -27,6 +25,7 @@ import scala.languageFeature.implicitConversions
  * These are package-wide constants.
  */
 package object index {
+
   // constrain these dates to the range GeoMesa can index (four-digit years)
   val MIN_DATE = new DateTime(0, 1, 1, 0, 0, 0, DateTimeZone.forID("UTC"))
   val MAX_DATE = new DateTime(9999, 12, 31, 23, 59, 59, DateTimeZone.forID("UTC"))

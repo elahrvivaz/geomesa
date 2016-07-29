@@ -20,6 +20,7 @@ import org.geotools.data.{DataStoreFinder, Query}
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
+import org.locationtech.geomesa.accumulo.index.encoders.{BinEncoder, IndexValueEncoder}
 import org.locationtech.geomesa.features.{SimpleFeatureSerializer, SimpleFeatureSerializers}
 import org.locationtech.geomesa.jobs._
 import org.locationtech.geomesa.jobs.mapreduce.GeoMesaInputFormat

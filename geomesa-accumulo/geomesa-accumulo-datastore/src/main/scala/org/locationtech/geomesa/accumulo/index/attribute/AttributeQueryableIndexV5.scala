@@ -21,12 +21,13 @@ import org.locationtech.geomesa.accumulo._
 import org.locationtech.geomesa.accumulo.data._
 import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex.AccumuloFilterStrategy
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
+import org.locationtech.geomesa.accumulo.index.QueryPlan.JoinFunction
 import org.locationtech.geomesa.accumulo.index.QueryPlanner._
-import org.locationtech.geomesa.accumulo.index.QueryPlanners.JoinFunction
-import org.locationtech.geomesa.accumulo.index.Strategy._
 import org.locationtech.geomesa.accumulo.index._
+import org.locationtech.geomesa.accumulo.index.geohash.Strategy._
 import org.locationtech.geomesa.accumulo.index.id.{RecordIndex, RecordWritableIndex}
 import org.locationtech.geomesa.accumulo.iterators._
+import org.locationtech.geomesa.accumulo.iterators.legacy.{AttributeIndexIterator, IndexedSpatioTemporalFilter, UniqueAttributeIterator}
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.filter.FilterHelper._
 import org.locationtech.geomesa.filter._

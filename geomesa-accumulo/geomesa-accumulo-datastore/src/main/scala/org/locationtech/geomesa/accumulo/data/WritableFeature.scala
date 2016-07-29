@@ -11,7 +11,8 @@ package org.locationtech.geomesa.accumulo.data
 import org.apache.accumulo.core.data.Value
 import org.apache.accumulo.core.security.ColumnVisibility
 import org.apache.hadoop.io.Text
-import org.locationtech.geomesa.accumulo.index.{AccumuloWritableIndex, BinEncoder}
+import org.locationtech.geomesa.accumulo.index.AccumuloWritableIndex
+import org.locationtech.geomesa.accumulo.index.encoders.BinEncoder
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, SimpleFeatureSerializer}
 import org.locationtech.geomesa.security.SecurityUtils._
 import org.locationtech.geomesa.utils.index.VisibilityLevel

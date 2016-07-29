@@ -26,6 +26,7 @@ import org.locationtech.geomesa.accumulo.data.stats.usage.{GeoMesaUsageStats, Ge
 import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
+import org.locationtech.geomesa.accumulo.index.geohash.IndexSchemaBuilder
 // noinspection ScalaDeprecation
 import org.locationtech.geomesa.accumulo.index.geohash.GeoHashIndex
 import org.locationtech.geomesa.accumulo.index.id.RecordIndex

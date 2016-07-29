@@ -16,7 +16,7 @@ import org.apache.accumulo.core.file.keyfunctor.ColumnFamilyFunctor
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, WritableFeature}
-import org.locationtech.geomesa.accumulo.index.{IndexSchema, _}
+import org.locationtech.geomesa.accumulo.index.{_}
 import org.locationtech.geomesa.accumulo.util.GeoMesaBatchWriterConfig
 import org.locationtech.geomesa.index.utils.ExplainNull
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
