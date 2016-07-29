@@ -18,20 +18,4 @@ import org.opengis.feature.simple.SimpleFeatureType
 
 object AccumuloIndexManager {
 
-  // note: keep in priority order for running full table scans
-  val AllIndices: Seq[AccumuloFeatureIndex] = {
-    // noinspection ScalaDeprecation
-    Seq(Z3Index, Z2Index, RecordIndex, AttributeIndex, GeoHashIndex)
-  }
-
-  def index(name: String): AccumuloFeatureIndex = AllIndices.find(_.name == name).getOrElse {
-    throw new IllegalArgumentException(s"No index with name $name exists")
-  }
-
-  def indices(sft: SimpleFeatureType): Seq[AccumuloFeatureIndex] = AllIndices.filter(_.supports(sft))
-
-  object Schemes {
-    val Z3TableScheme: List[String] = List(AttributeIndex, RecordIndex, Z3Index).map(_.name)
-    val Z2TableScheme: List[String] = List(AttributeIndex, RecordIndex, Z2Index).map(_.name)
-  }
 }

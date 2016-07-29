@@ -145,7 +145,7 @@ object Z2QueryableIndex extends AccumuloQueryableIndex
       case VisibilityLevel.Feature   => Seq.empty
       case VisibilityLevel.Attribute => Seq(KryoVisibilityRowEncoder.configure(sft))
     }
-    val cf = if (perAttributeIter.isEmpty) colFamily else AccumuloFeatureIndex.AttributeColumnFamily
+    val cf = if (perAttributeIter.isEmpty) colFamily else AccumuloWritableIndex.AttributeColumnFamily
 
     val iters = perAttributeIter ++ iterators ++ z2Iter
     BatchScanPlan(filter, z2table, ranges, iters, Seq(cf), kvsToFeatures, numThreads, hasDupes)

@@ -14,6 +14,12 @@ import org.apache.accumulo.core.data.{Key, Mutation, Value}
 import org.apache.hadoop.io.Text
 import org.geotools.filter.identity.FeatureIdImpl
 import org.locationtech.geomesa.accumulo.data._
+import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
+// noinspection ScalaDeprecation
+import org.locationtech.geomesa.accumulo.index.geohash.GeoHashIndex
+import org.locationtech.geomesa.accumulo.index.id.RecordIndex
+import org.locationtech.geomesa.accumulo.index.z2.Z2Index
+import org.locationtech.geomesa.accumulo.index.z3.Z3Index
 import org.locationtech.geomesa.accumulo.util.GeoMesaBatchWriterConfig
 import org.locationtech.geomesa.features.SerializationOption.SerializationOptions
 import org.locationtech.geomesa.features.{SerializationType, SimpleFeatureDeserializers}
@@ -53,7 +59,7 @@ trait AccumuloWritableIndex extends
       val deserializer = SimpleFeatureDeserializers(returnSft, SerializationType.KRYO)
       (kv: Entry[Key, Value]) => {
         val sf = deserializer.deserialize(kv.getValue.get)
-        AccumuloFeatureIndex.applyVisibility(sf, kv.getKey)
+        AccumuloWritableIndex.applyVisibility(sf, kv.getKey)
         sf
       }
     } else {
@@ -62,7 +68,7 @@ trait AccumuloWritableIndex extends
       (kv: Entry[Key, Value]) => {
         val sf = deserializer.deserialize(kv.getValue.get)
         sf.getIdentifier.asInstanceOf[FeatureIdImpl].setID(getId(kv.getKey.getRow))
-        AccumuloFeatureIndex.applyVisibility(sf, kv.getKey)
+        AccumuloWritableIndex.applyVisibility(sf, kv.getKey)
         sf
       }
     }
@@ -76,6 +82,22 @@ object AccumuloFeatureIndex {
 
   type AccumuloFilterPlan = FilterPlan[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
   type AccumuloFilterStrategy = FilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
+
+  // note: keep in priority order for running full table scans
+  val AllIndices: Seq[AccumuloFeatureIndex] = {
+    // noinspection ScalaDeprecation
+    Seq(Z3Index, Z2Index, RecordIndex, AttributeIndex, GeoHashIndex)
+  }
+
+  def indices(sft: SimpleFeatureType): Seq[AccumuloFeatureIndex] = AllIndices.filter(_.supports(sft))
+
+  object Schemes {
+    val Z3TableScheme: List[String] = List(AttributeIndex, RecordIndex, Z3Index).map(_.name)
+    val Z2TableScheme: List[String] = List(AttributeIndex, RecordIndex, Z2Index).map(_.name)
+  }
+}
+
+object AccumuloWritableIndex {
 
   val FullColumnFamily      = new Text("F")
   val IndexColumnFamily     = new Text("I")

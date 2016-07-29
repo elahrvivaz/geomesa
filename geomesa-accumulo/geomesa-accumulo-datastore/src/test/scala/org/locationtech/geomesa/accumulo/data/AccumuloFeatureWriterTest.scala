@@ -21,9 +21,9 @@ import org.geotools.filter.text.cql2.CQL
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithDataStore
-import org.locationtech.geomesa.accumulo.index.{AccumuloStrategyDecider, AccumuloIndexManager}
 import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
 import org.locationtech.geomesa.accumulo.index.id.RecordIndex
+import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, AccumuloStrategyDecider}
 import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.utils.geotools.Conversions._
@@ -161,7 +161,7 @@ class AccumuloFeatureWriterTest extends Specification with TestWithDataStore wit
       val features = fs.getFeatures(Filter.INCLUDE).features().toSeq
       features must beEmpty
 
-      forall(AccumuloIndexManager.indices(sft).map(ds.getTableName(sft.getTypeName, _))) { name =>
+      forall(AccumuloFeatureIndex.indices(sft).map(ds.getTableName(sft.getTypeName, _))) { name =>
         val scanner = connector.createScanner(name, new Authorizations())
         try {
           scanner.iterator().hasNext must beFalse
@@ -445,7 +445,7 @@ class AccumuloFeatureWriterTest extends Specification with TestWithDataStore wit
   }
 
   def clearTablesHard(): Unit = {
-    AccumuloIndexManager.indices(sft).map(ds.getTableName(sft.getTypeName, _)).foreach { name =>
+    AccumuloFeatureIndex.indices(sft).map(ds.getTableName(sft.getTypeName, _)).foreach { name =>
       val deleter = connector.createBatchDeleter(name, new Authorizations(), 5, new BatchWriterConfig())
       deleter.setRanges(Seq(new aRange()))
       deleter.delete()

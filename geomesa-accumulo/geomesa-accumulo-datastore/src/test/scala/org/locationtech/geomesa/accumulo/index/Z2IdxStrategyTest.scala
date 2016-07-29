@@ -180,7 +180,7 @@ class Z2IdxStrategyTest extends Specification with TestWithDataStore {
           " AND dtg between '2010-05-07T06:00:00.000Z' and '2010-05-08T00:00:00.000Z'"
       val query = new Query(sftName, ECQL.toFilter(filter), Array("geom", "dtg"))
       val qps = getQueryPlans(query)
-      forall(qps)(p => p.columnFamilies must containTheSameElementsAs(Seq(AccumuloFeatureIndex.BinColumnFamily)))
+      forall(qps)(p => p.columnFamilies must containTheSameElementsAs(Seq(AccumuloWritableIndex.BinColumnFamily)))
 
       val features = execute(filter, Some(Array("geom", "dtg")))
       features must haveSize(4)

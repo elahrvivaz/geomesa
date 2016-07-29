@@ -173,7 +173,7 @@ object Z3QueryableIndex extends AccumuloQueryableIndex
       case VisibilityLevel.Feature   => Seq.empty
       case VisibilityLevel.Attribute => Seq(KryoVisibilityRowEncoder.configure(sft))
     }
-    val cf = if (perAttributeIter.isEmpty) colFamily else AccumuloFeatureIndex.AttributeColumnFamily
+    val cf = if (perAttributeIter.isEmpty) colFamily else AccumuloWritableIndex.AttributeColumnFamily
 
     val iters = perAttributeIter ++ zIterator.toSeq ++ iterators
     BatchScanPlan(filter, z3table, ranges, iters, Seq(cf), kvsToFeatures, numThreads, hasDupes)

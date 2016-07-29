@@ -44,7 +44,7 @@ class QueryFilterSplitterTest extends Specification {
     .build("QueryFilterSplitterTest")
 
   val ff = CommonFactoryFinder.getFilterFactory2
-  val splitter = new FilterSplitter(sft, AccumuloIndexManager.indices(sft))
+  val splitter = new FilterSplitter(sft, AccumuloFeatureIndex.indices(sft))
 
   val geom                = "BBOX(geom,40,40,50,50)"
   val geom2               = "BBOX(geom,60,60,70,70)"
@@ -473,7 +473,7 @@ class QueryFilterSplitterTest extends Specification {
 
     "support indexed date attributes" >> {
       val sft = SimpleFeatureTypes.createType("dtgIndex", "dtg:Date:index=full,*geom:Point:srid=4326")
-      val splitter = new FilterSplitter(sft, AccumuloIndexManager.indices(sft))
+      val splitter = new FilterSplitter(sft, AccumuloFeatureIndex.indices(sft))
       val filter = f("dtg TEQUALS 2014-01-01T12:30:00.000Z")
       val options = splitter.getQueryOptions(filter)
       options must haveLength(1)

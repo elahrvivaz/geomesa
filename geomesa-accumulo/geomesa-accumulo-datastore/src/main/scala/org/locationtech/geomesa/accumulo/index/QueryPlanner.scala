@@ -146,7 +146,7 @@ case class QueryPlanner(sft: SimpleFeatureType, ds: AccumuloDataStore) extends M
       explain(s"Strategy filter: $strategy")
 
       implicit val timing = new Timing
-      val plan = profile(strategy.index.queryable.getQueryPlan(sft, ds, strategy, hints, explain)).asInstanceOf[QueryPlan]
+      val plan = profile(strategy.index.queryable.getQueryPlan(sft, ds, strategy, hints, explain))
       outputPlan(plan, explain.popLevel())
       explain(s"Query planning took ${timing.time}ms")
 
@@ -297,10 +297,10 @@ object QueryPlanner extends LazyLogging {
         } else {
           name.toLowerCase(Locale.US)
         }
-        val value = AccumuloIndexManager.indices(sft).find(_.name.toLowerCase(Locale.US) == check)
+        val value = AccumuloFeatureIndex.indices(sft).find(_.name.toLowerCase(Locale.US) == check)
         if (value.isEmpty) {
           logger.error(s"Ignoring invalid strategy name from view params: $name. Valid values " +
-              s"are ${AccumuloIndexManager.indices(sft).map(_.name).mkString(", ")}")
+              s"are ${AccumuloFeatureIndex.indices(sft).map(_.name).mkString(", ")}")
         }
         value
       }

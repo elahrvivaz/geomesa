@@ -138,7 +138,7 @@ class AccumuloDataStore(val connector: Connector,
               .foreach(k => reloadedSft.getUserData.put(k, sft.getUserData.get(k)))
 
           // create the tables in accumulo
-          AccumuloIndexManager.indices(reloadedSft).foreach { index =>
+          AccumuloFeatureIndex.indices(reloadedSft).foreach { index =>
             val name = getTableName(sft.getTypeName, index)
             AccumuloVersion.ensureTableExists(connector, name)
             index.writable.configure(reloadedSft, this, name)
@@ -524,7 +524,7 @@ class AccumuloDataStore(val connector: Connector,
    */
   def delete() = {
     val indexTables = getTypeNames.map(getSchema)
-        .flatMap(sft => AccumuloIndexManager.indices(sft).map(getTableName(sft.getTypeName, _)))
+        .flatMap(sft => AccumuloFeatureIndex.indices(sft).map(getTableName(sft.getTypeName, _)))
         .distinct
     val metadataTables = Seq(statsTable, catalogTable)
     // Delete index tables first then catalog table in case of error
@@ -673,7 +673,7 @@ class AccumuloDataStore(val connector: Connector,
   }
 
   private def deleteSharedTables(sft: SimpleFeatureType) = {
-    AccumuloIndexManager.indices(sft).par.foreach { index =>
+    AccumuloFeatureIndex.indices(sft).par.foreach { index =>
       val name = getTableName(sft.getTypeName, index)
       if (tableOps.exists(name)) {
         index.writable.removeAll(sft, this, name)
@@ -683,7 +683,7 @@ class AccumuloDataStore(val connector: Connector,
 
   // NB: We are *not* currently deleting the query table and/or query information.
   private def deleteStandAloneTables(sft: SimpleFeatureType) =
-    AccumuloIndexManager.indices(sft).map(getTableName(sft.getTypeName, _)).filter(tableOps.exists).foreach(tableOps.delete)
+  AccumuloFeatureIndex.indices(sft).map(getTableName(sft.getTypeName, _)).filter(tableOps.exists).foreach(tableOps.delete)
 
   /**
    * Acquires a distributed lock for all accumulo data stores sharing this catalog table.
