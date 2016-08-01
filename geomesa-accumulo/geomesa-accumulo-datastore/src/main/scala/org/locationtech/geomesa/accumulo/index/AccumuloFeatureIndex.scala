@@ -83,11 +83,9 @@ object AccumuloFeatureIndex {
   type AccumuloFilterPlan = FilterPlan[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
   type AccumuloFilterStrategy = FilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
 
+  // noinspection ScalaDeprecation
   // note: keep in priority order for running full table scans
-  val AllIndices: Seq[AccumuloFeatureIndex] = {
-    // noinspection ScalaDeprecation
-    Seq(Z3Index, Z2Index, RecordIndex, AttributeIndex, GeoHashIndex)
-  }
+  val AllIndices: Seq[AccumuloFeatureIndex] = Seq(Z3Index, Z2Index, RecordIndex, AttributeIndex, GeoHashIndex)
 
   def indices(sft: SimpleFeatureType): Seq[AccumuloFeatureIndex] = AllIndices.filter(_.supports(sft))
 

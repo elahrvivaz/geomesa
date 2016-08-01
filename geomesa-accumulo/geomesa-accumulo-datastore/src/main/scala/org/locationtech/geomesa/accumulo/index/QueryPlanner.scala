@@ -293,15 +293,15 @@ object QueryPlanner extends LazyLogging {
     val viewParams = query.getHints.get(Hints.VIRTUAL_TABLE_PARAMETERS).asInstanceOf[jMap[String, String]]
     if (viewParams != null) {
       def withName(name: String) = {
-        // rename of strategy from 'attribute' to 'attr' - back compatible check for both
-        val check = if (name.equalsIgnoreCase("attribute")) {
-          AttributeIndex.name
+        // rename of strategy from 'attribute' to 'attr', 'record' to 'records' - back compatible check for both
+        val value = if (name.equalsIgnoreCase("attribute")) {
+          Some(AttributeIndex)
         } else if (name.equalsIgnoreCase("record")) {
-          RecordIndex.name
+          Some(RecordIndex)
         } else {
-          name.toLowerCase(Locale.US)
+          val check = name.toLowerCase(Locale.US)
+          AccumuloFeatureIndex.indices(sft).find(_.name.toLowerCase(Locale.US) == check)
         }
-        val value = AccumuloFeatureIndex.indices(sft).find(_.name.toLowerCase(Locale.US) == check)
         if (value.isEmpty) {
           logger.error(s"Ignoring invalid strategy name from view params: $name. Valid values " +
               s"are ${AccumuloFeatureIndex.indices(sft).map(_.name).mkString(", ")}")

@@ -22,13 +22,15 @@ object AttributeIndex extends AccumuloFeatureIndex {
 
   override val name: String = "attr"
 
+  // check for old suffix
+  private val enabledSuffixes = Seq(name, "attr_idx")
+
   override def supports(sft: SimpleFeatureType): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
     import scala.collection.JavaConversions._
-    sft.getAttributeDescriptors.exists(_.isIndexed) &&
-        (sft.getEnabledTables.isEmpty || Seq(name, "attr_idx").exists(sft.getEnabledTables.contains)) // check for old suffix
+    sft.getAttributeDescriptors.exists(_.isIndexed) && enabledSuffixes.exists(sft.isTableEnabled)
   }
 
   override val writable: AccumuloWritableIndex = AttributeMergedWritableIndex
@@ -70,7 +72,6 @@ object AttributeMergedWritableIndex extends AccumuloWritableIndex {
     }
 }
 
-
 object AttributeMergedQueryableIndex extends AccumuloQueryableIndex {
 
   import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -96,5 +97,4 @@ object AttributeMergedQueryableIndex extends AccumuloQueryableIndex {
     } else {
       AttributeQueryableIndexV5.getQueryPlan(sft, ops, filter, hints, explain)
     }
-
 }

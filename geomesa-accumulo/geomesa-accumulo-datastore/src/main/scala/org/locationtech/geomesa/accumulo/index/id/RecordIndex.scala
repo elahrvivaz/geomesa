@@ -17,7 +17,7 @@ object RecordIndex extends AccumuloFeatureIndex {
 
   override def supports(sft: SimpleFeatureType): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-    sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name)
+    sft.isTableEnabled(name)
   }
 
   override val writable: AccumuloWritableIndex = RecordWritableIndex

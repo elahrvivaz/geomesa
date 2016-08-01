@@ -93,8 +93,8 @@ object AttributeQueryableIndex extends AccumuloQueryableIndex with LazyLogging {
     val sampling = hints.getSampling
     val hasDupes = descriptor.isMultiValued
 
-    val attrTable = ds.getTableName(sft.getTypeName, AttributeIndex)
-    val attrThreads = ds.getSuggestedThreads(sft.getTypeName, AttributeIndex)
+    val attrTable = ds.getTableName(sft.getTypeName, index)
+    val attrThreads = ds.getSuggestedThreads(sft.getTypeName, index)
 
     def visibilityIter(schema: SimpleFeatureType): Seq[IteratorSetting] = sft.getVisibilityLevel match {
       case VisibilityLevel.Feature   => Seq.empty
@@ -106,14 +106,14 @@ object AttributeQueryableIndex extends AccumuloQueryableIndex with LazyLogging {
       val iter = KryoLazyFilterTransformIterator.configure(schema, ecql, transform, sampling)
       val iters = visibilityIter(schema) ++ iter.toSeq
       // need to use transform to convert key/values if it's defined
-      val kvsToFeatures = AttributeWritableIndex.entriesToFeatures(sft, transform.map(_._2).getOrElse(schema))
+      val kvsToFeatures = index.writable.entriesToFeatures(sft, transform.map(_._2).getOrElse(schema))
       BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDupes)
     }
 
     if (hints.isBinQuery) {
       if (descriptor.getIndexCoverage() == IndexCoverage.FULL) {
         // can apply the bin aggregating iterator directly to the sft
-        val iter = BinAggregatingIterator.configureDynamic(sft, AttributeIndex, filter.secondary, hints, hasDupes)
+        val iter = BinAggregatingIterator.configureDynamic(sft, index, filter.secondary, hints, hasDupes)
         val iters = visibilityIter(sft) :+ iter
         val kvsToFeatures = BinAggregatingIterator.kvsToFeatures()
         BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDupes)
@@ -123,7 +123,7 @@ object AttributeQueryableIndex extends AccumuloQueryableIndex with LazyLogging {
         if (indexSft.indexOf(hints.getBinTrackIdField) != -1 &&
             hints.getBinLabelField.forall(indexSft.indexOf(_) != -1) &&
             filter.secondary.forall(IteratorTrigger.supportsFilter(indexSft, _))) {
-          val iter = BinAggregatingIterator.configureDynamic(indexSft, AttributeIndex, filter.secondary, hints, hasDupes)
+          val iter = BinAggregatingIterator.configureDynamic(indexSft, index, filter.secondary, hints, hasDupes)
           val iters = visibilityIter(indexSft) :+ iter
           val kvsToFeatures = BinAggregatingIterator.kvsToFeatures()
           BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDupes)
@@ -135,7 +135,7 @@ object AttributeQueryableIndex extends AccumuloQueryableIndex with LazyLogging {
     } else if (hints.isStatsIteratorQuery) {
       val kvsToFeatures = KryoLazyStatsIterator.kvsToFeatures(sft)
       if (descriptor.getIndexCoverage() == IndexCoverage.FULL) {
-        val iter = KryoLazyStatsIterator.configure(sft, AttributeIndex, filter.secondary, hints, hasDupes)
+        val iter = KryoLazyStatsIterator.configure(sft, index, filter.secondary, hints, hasDupes)
         val iters = visibilityIter(sft) :+ iter
         BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDuplicates = false)
       } else {
@@ -143,7 +143,7 @@ object AttributeQueryableIndex extends AccumuloQueryableIndex with LazyLogging {
         val indexSft = IndexValueEncoder.getIndexSft(sft)
         if (Try(Stat(indexSft, hints.getStatsIteratorQuery)).isSuccess &&
             filter.secondary.forall(IteratorTrigger.supportsFilter(indexSft, _))) {
-          val iter = KryoLazyStatsIterator.configure(indexSft, AttributeIndex, filter.secondary, hints, hasDupes)
+          val iter = KryoLazyStatsIterator.configure(indexSft, index, filter.secondary, hints, hasDupes)
           val iters = visibilityIter(indexSft) :+ iter
           BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, kvsToFeatures, attrThreads, hasDuplicates = false)
         } else {
@@ -212,13 +212,13 @@ object AttributeQueryableIndex extends AccumuloQueryableIndex with LazyLogging {
     } else if (hints.isStatsIteratorQuery) {
       KryoLazyStatsIterator.kvsToFeatures(sft)
     } else {
-      RecordWritableIndex.entriesToFeatures(sft, hints.getReturnSft)
+      RecordIndex.writable.entriesToFeatures(sft, hints.getReturnSft)
     }
 
     // function to join the attribute index scan results to the record table
     // have to pull the feature id from the row
     val prefix = sft.getTableSharingPrefix
-    val getIdFromRow = AttributeWritableIndex.getIdFromRow(sft)
+    val getIdFromRow = index.writable.getIdFromRow(sft)
     val joinFunction: JoinFunction =
       (kv) => new AccRange(RecordWritableIndex.getRowKey(prefix, getIdFromRow(kv.getKey.getRow)))
 
@@ -238,7 +238,7 @@ object AttributeQueryableIndex extends AccumuloQueryableIndex with LazyLogging {
     indexedAttributes.flatMap { attribute =>
       val (primary, secondary) = FilterExtractingVisitor(filter, attribute, sft, attributeCheck)
       if (primary.isDefined) {
-        Seq(FilterStrategy(AttributeIndex, primary, secondary))
+        Seq(FilterStrategy(index, primary, secondary))
       } else {
         Seq.empty
       }

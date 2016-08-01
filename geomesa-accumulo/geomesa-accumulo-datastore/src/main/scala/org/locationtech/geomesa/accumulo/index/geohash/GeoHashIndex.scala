@@ -18,8 +18,7 @@ object GeoHashIndex extends AccumuloFeatureIndex {
 
   override def supports(sft: SimpleFeatureType): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-    sft.getGeometryDescriptor != null && sft.getSchemaVersion < 8 &&
-        (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name))
+    sft.getGeometryDescriptor != null && sft.getSchemaVersion < 8 && sft.isTableEnabled(name)
   }
 
   override val writable: AccumuloWritableIndex = GeoHashWritableIndex

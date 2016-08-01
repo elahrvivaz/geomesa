@@ -31,8 +31,8 @@ import org.opengis.filter.{And, Filter, Id, Or}
 import scala.collection.JavaConversions._
 
 object RecordQueryableIndex extends AccumuloQueryableIndex
-                                    with IdFilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
-                                    with LazyLogging {
+    with IdFilterStrategy[AccumuloDataStore, WritableFeature, Mutation, Text, Entry[Key, Value], QueryPlan]
+    with LazyLogging {
 
   override val index: AccumuloFeatureIndex = RecordIndex
 
@@ -71,8 +71,8 @@ object RecordQueryableIndex extends AccumuloQueryableIndex
     }
 
     if (ranges.isEmpty) { EmptyPlan(filter) } else {
-      val table = ops.getTableName(sft.getTypeName, RecordIndex)
-      val threads = ops.getSuggestedThreads(sft.getTypeName, RecordIndex)
+      val table = ops.getTableName(sft.getTypeName, index)
+      val threads = ops.getSuggestedThreads(sft.getTypeName, index)
       val dupes = false // record table never has duplicate entries
 
       if (sft.getSchemaVersion > 5) {
@@ -83,17 +83,17 @@ object RecordQueryableIndex extends AccumuloQueryableIndex
         }
         val (iters, kvsToFeatures) = if (hints.isBinQuery) {
           // use the server side aggregation
-          val iter = BinAggregatingIterator.configureDynamic(sft, RecordIndex, filter.secondary, hints, dupes)
+          val iter = BinAggregatingIterator.configureDynamic(sft, index, filter.secondary, hints, dupes)
           (Seq(iter), BinAggregatingIterator.kvsToFeatures())
         } else if (hints.isDensityQuery) {
-          val iter = KryoLazyDensityIterator.configure(sft, RecordIndex, filter.secondary, hints)
+          val iter = KryoLazyDensityIterator.configure(sft, index, filter.secondary, hints)
           (Seq(iter), KryoLazyDensityIterator.kvsToFeatures())
         } else if (hints.isStatsIteratorQuery) {
-          val iter = KryoLazyStatsIterator.configure(sft, RecordIndex, filter.secondary, hints, dupes)
+          val iter = KryoLazyStatsIterator.configure(sft, index, filter.secondary, hints, dupes)
           (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft))
         } else {
           val iter = KryoLazyFilterTransformIterator.configure(sft, filter.secondary, hints)
-          (iter.toSeq, RecordIndex.writable.entriesToFeatures(sft, hints.getReturnSft))
+          (iter.toSeq, index.writable.entriesToFeatures(sft, hints.getReturnSft))
         }
         BatchScanPlan(filter, table, ranges, iters ++ perAttributeIter, Seq.empty, kvsToFeatures, threads, dupes)
       } else {
@@ -103,9 +103,9 @@ object RecordQueryableIndex extends AccumuloQueryableIndex
           Seq.empty
         }
         val kvsToFeatures = if (hints.isBinQuery) {
-          BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, RecordIndex, hints, featureEncoding)
+          BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, index, hints, featureEncoding)
         } else {
-          RecordIndex.writable.entriesToFeatures(sft, hints.getReturnSft)
+          index.writable.entriesToFeatures(sft, hints.getReturnSft)
         }
         BatchScanPlan(filter, table, ranges, iters, Seq.empty, kvsToFeatures, threads, dupes)
       }

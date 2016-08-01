@@ -683,8 +683,10 @@ class AccumuloDataStore(val connector: Connector,
   }
 
   // NB: We are *not* currently deleting the query table and/or query information.
-  private def deleteStandAloneTables(sft: SimpleFeatureType) =
-  AccumuloFeatureIndex.indices(sft).map(getTableName(sft.getTypeName, _)).filter(tableOps.exists).foreach(tableOps.delete)
+  private def deleteStandAloneTables(sft: SimpleFeatureType) = {
+    val tables = AccumuloFeatureIndex.indices(sft).map(getTableName(sft.getTypeName, _)).distinct
+    tables.filter(tableOps.exists).foreach(tableOps.delete)
+  }
 
   /**
    * Acquires a distributed lock for all accumulo data stores sharing this catalog table.

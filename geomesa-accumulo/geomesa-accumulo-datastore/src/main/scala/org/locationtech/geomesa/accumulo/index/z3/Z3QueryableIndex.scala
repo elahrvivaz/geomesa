@@ -91,9 +91,9 @@ object Z3QueryableIndex extends AccumuloQueryableIndex
       // can't use if there are non-st filters or if custom fields are requested
       val (iters, cf) =
         if (filter.secondary.isEmpty && BinAggregatingIterator.canUsePrecomputedBins(sft, hints)) {
-          (Seq(BinAggregatingIterator.configurePrecomputed(sft, Z3Index, ecql, hints, sft.nonPoints)), Z3WritableIndex.BIN_CF)
+          (Seq(BinAggregatingIterator.configurePrecomputed(sft, index, ecql, hints, sft.nonPoints)), Z3WritableIndex.BIN_CF)
         } else {
-          val iter = BinAggregatingIterator.configureDynamic(sft, Z3Index, ecql, hints, sft.nonPoints)
+          val iter = BinAggregatingIterator.configureDynamic(sft, index, ecql, hints, sft.nonPoints)
           (Seq(iter), Z3WritableIndex.FULL_CF)
         }
       (iters, BinAggregatingIterator.kvsToFeatures(), cf, false)
@@ -101,18 +101,18 @@ object Z3QueryableIndex extends AccumuloQueryableIndex
       val iter = Z3DensityIterator.configure(sft, ecql, hints)
       (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), Z3WritableIndex.FULL_CF, false)
     } else if (hints.isStatsIteratorQuery) {
-      val iter = KryoLazyStatsIterator.configure(sft, Z3Index, ecql, hints, sft.nonPoints)
+      val iter = KryoLazyStatsIterator.configure(sft, index, ecql, hints, sft.nonPoints)
       (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), Z3WritableIndex.FULL_CF, false)
     } else if (hints.isMapAggregatingQuery) {
-      val iter = KryoLazyMapAggregatingIterator.configure(sft, Z3Index, ecql, hints, sft.nonPoints)
-      (Seq(iter), Z3WritableIndex.entriesToFeatures(sft, hints.getReturnSft), Z3WritableIndex.FULL_CF, false)
+      val iter = KryoLazyMapAggregatingIterator.configure(sft, index, ecql, hints, sft.nonPoints)
+      (Seq(iter), index.writable.entriesToFeatures(sft, hints.getReturnSft), Z3WritableIndex.FULL_CF, false)
     } else {
       val iters = KryoLazyFilterTransformIterator.configure(sft, ecql, hints).toSeq
-      (iters, Z3WritableIndex.entriesToFeatures(sft, hints.getReturnSft), Z3WritableIndex.FULL_CF, sft.nonPoints)
+      (iters, index.writable.entriesToFeatures(sft, hints.getReturnSft), Z3WritableIndex.FULL_CF, sft.nonPoints)
     }
 
-    val z3table = ops.getTableName(sft.getTypeName, Z3Index)
-    val numThreads = ops.getSuggestedThreads(sft.getTypeName, Z3Index)
+    val z3table = ops.getTableName(sft.getTypeName, index)
+    val numThreads = ops.getSuggestedThreads(sft.getTypeName, index)
 
     val sfc = Z3SFC(sft.getZ3Interval)
     val minTime = sfc.time.min.toLong

@@ -17,8 +17,7 @@ object Z2Index extends AccumuloFeatureIndex {
 
   override def supports(sft: SimpleFeatureType): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-    sft.getGeometryDescriptor != null && sft.getSchemaVersion > 7 &&
-        (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name))
+    sft.getGeometryDescriptor != null && sft.getSchemaVersion > 7 && sft.isTableEnabled(name)
   }
 
   override val writable: AccumuloWritableIndex = Z2WritableIndex

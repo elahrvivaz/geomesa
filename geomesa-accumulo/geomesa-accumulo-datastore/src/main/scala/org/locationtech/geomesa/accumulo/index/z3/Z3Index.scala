@@ -18,7 +18,7 @@ object Z3Index extends AccumuloFeatureIndex {
   override def supports(sft: SimpleFeatureType): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
     sft.getDtgField.isDefined && ((sft.getSchemaVersion > 6 && sft.getGeometryDescriptor != null) ||
-        (sft.getSchemaVersion > 4 && sft.isPoints)) && (sft.getEnabledTables.isEmpty || sft.getEnabledTables.contains(name))
+        (sft.getSchemaVersion > 4 && sft.isPoints)) && sft.isTableEnabled(name)
   }
 
   override val writable: AccumuloWritableIndex = Z3WritableIndex

@@ -50,7 +50,6 @@ object GeoHashQueryableIndex extends AccumuloQueryableIndex with LazyLogging wit
                             filter: AccumuloFilterStrategy,
                             hints: Hints,
                             explain: Explainer): QueryPlan = {
-
     val acc             = ops
     val version         = sft.getSchemaVersion
     val schema          = Option(sft.getStIndexSchema).getOrElse("")
@@ -103,7 +102,7 @@ object GeoHashQueryableIndex extends AccumuloQueryableIndex with LazyLogging wit
       val envelope = hints.getDensityEnvelope.get
       val weight = hints.getDensityWeight
       val p = iteratorPriority_AnalysisIterator
-      val iter = DensityIterator.configure(sft, GeoHashIndex, featureEncoding, schema,
+      val iter = DensityIterator.configure(sft, index, featureEncoding, schema,
         filter.filter, envelope, width, height, weight, p)
       (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), false, false)
     } else if (featureEncoding == SerializationType.KRYO &&
@@ -112,14 +111,14 @@ object GeoHashQueryableIndex extends AccumuloQueryableIndex with LazyLogging wit
       // TODO GEOMESA-822 add bin line dates to distributed bin aggregation
       if (hints.isBinQuery) {
         // use the server side aggregation
-        val iter = BinAggregatingIterator.configureDynamic(sft, GeoHashIndex, filter.filter, hints, sft.nonPoints)
+        val iter = BinAggregatingIterator.configureDynamic(sft, index, filter.filter, hints, sft.nonPoints)
         (Seq(iter), BinAggregatingIterator.kvsToFeatures(), false, false)
       } else if (hints.isStatsIteratorQuery) {
-        val iter = KryoLazyStatsIterator.configure(sft, GeoHashIndex, filter.filter, hints, sft.nonPoints)
+        val iter = KryoLazyStatsIterator.configure(sft, index, filter.filter, hints, sft.nonPoints)
         (Seq(iter), KryoLazyStatsIterator.kvsToFeatures(sft), false, false)
       } else {
         val iters = KryoLazyFilterTransformIterator.configure(sft, filter.filter, hints).toSeq
-        (iters, GeoHashWritableIndex.entriesToFeatures(sft, hints.getReturnSft), false, sft.nonPoints)
+        (iters, index.writable.entriesToFeatures(sft, hints.getReturnSft), false, sft.nonPoints)
       }
     } else {
       // legacy iterators
@@ -134,9 +133,9 @@ object GeoHashQueryableIndex extends AccumuloQueryableIndex with LazyLogging wit
       }
       val iters = Seq(stiiIterCfg) ++ aggIterCfg
       val kvs = if (hints.isBinQuery) {
-        BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, GeoHashIndex, hints, featureEncoding)
+        BinAggregatingIterator.nonAggregatedKvsToFeatures(sft, index, hints, featureEncoding)
       } else {
-        GeoHashWritableIndex.entriesToFeatures(sft, hints.getReturnSft)
+        index.writable.entriesToFeatures(sft, hints.getReturnSft)
       }
       (iters, kvs, indexEntries, sft.nonPoints)
     }
@@ -144,8 +143,8 @@ object GeoHashQueryableIndex extends AccumuloQueryableIndex with LazyLogging wit
     // set up row ranges and regular expression filter
     val qp = planQuery(filter, keyPlanningFilter, useIndexEntries, explain, keyPlanner, cfPlanner)
 
-    val table = acc.getTableName(sft.getTypeName, GeoHashIndex)
-    val numThreads = acc.getSuggestedThreads(sft.getTypeName, GeoHashIndex)
+    val table = acc.getTableName(sft.getTypeName, index)
+    val numThreads = acc.getSuggestedThreads(sft.getTypeName, index)
     qp.copy(table = table, iterators = iterators, kvsToFeatures = kvsToFeatures,
       numThreads = numThreads, hasDuplicates = hasDupes)
   }
@@ -269,7 +268,7 @@ object GeoHashQueryableIndex extends AccumuloQueryableIndex with LazyLogging wit
     import org.locationtech.geomesa.filter._
 
     if (filter == Filter.INCLUDE) {
-      Seq(FilterStrategy(GeoHashIndex, None, None))
+      Seq(FilterStrategy(index, None, None))
     } else if (filter == Filter.EXCLUDE) {
       Seq.empty
     } else {
@@ -279,9 +278,9 @@ object GeoHashQueryableIndex extends AccumuloQueryableIndex with LazyLogging wit
         case _ => (None, nonSpatial)
       }
       if (spatial.isDefined) {
-        Seq(FilterStrategy(GeoHashIndex, andOption((spatial ++ temporal).toSeq), others))
+        Seq(FilterStrategy(index, andOption((spatial ++ temporal).toSeq), others))
       } else {
-        Seq(FilterStrategy(GeoHashIndex, None, Some(filter)))
+        Seq(FilterStrategy(index, None, Some(filter)))
       }
     }
   }
