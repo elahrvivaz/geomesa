@@ -24,8 +24,8 @@ import org.geotools.data.{DataStoreFinder, Query}
 import org.geotools.filter.identity.FeatureIdImpl
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloDataStoreParams}
+import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex
 import org.locationtech.geomesa.accumulo.index.QueryHints.RichHints
-import org.locationtech.geomesa.accumulo.index.{AccumuloFeatureIndex, AccumuloIndexManager}
 import org.locationtech.geomesa.features.SerializationOption.SerializationOptions
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, SimpleFeatureDeserializers, SimpleFeatureSerializer}
@@ -125,7 +125,7 @@ class GeoMesaInputFormat extends InputFormat[Text, SimpleFeature] with LazyLoggi
     encoding = ds.getFeatureEncoding(sft)
     desiredSplitCount = GeoMesaConfigurator.getDesiredSplits(conf)
     val tableName = GeoMesaConfigurator.getTable(conf)
-    table = AccumuloIndexManager.indices(sft).find(t => tableName.endsWith(t.name)).getOrElse {
+    table = AccumuloFeatureIndex.indices(sft).find(t => tableName.endsWith(t.name)).getOrElse {
       throw new RuntimeException(s"Couldn't find input table $tableName")
     }
     ds.dispose()

@@ -12,7 +12,7 @@ import com.beust.jcommander.{JCommander, Parameter, Parameters}
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.client.TableNotFoundException
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
-import org.locationtech.geomesa.accumulo.index.AccumuloIndexManager
+import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex
 import org.locationtech.geomesa.tools.accumulo.AccumuloRunner.mkSubCommand
 import org.locationtech.geomesa.tools.accumulo.commands.TableConfCommand._
 import org.locationtech.geomesa.tools.accumulo.{DataStoreHelper, GeoMesaConnectionParams}
@@ -96,7 +96,7 @@ object TableConfCommand {
     }
   
   def getTableName(ds: AccumuloDataStore, params: ListParams) =
-    AccumuloIndexManager.indices(ds.getSchema(params.featureName))
+    AccumuloFeatureIndex.indices(ds.getSchema(params.featureName))
         .find(_.name == params.tableSuffix)
         .map(ds.getTableName(params.featureName, _))
         .getOrElse(throw new Exception(s"Invalid table suffix: ${params.tableSuffix}"))
