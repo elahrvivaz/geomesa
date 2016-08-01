@@ -13,6 +13,7 @@ import java.util.Map.Entry
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.client.Scanner
 import org.apache.accumulo.core.data.{Key, Mutation, Value}
+import org.apache.hadoop.io.Text
 import org.joda.time.format.DateTimeFormat
 import org.locationtech.geomesa.accumulo.util.{CloseableIterator, SelfClosingIterator}
 
@@ -31,9 +32,17 @@ trait Stat {
  */
 trait StatTransform[S <: Stat] extends LazyLogging {
 
+  private val RowId = "(.*)~(.*)".r
+
   protected def createMutation(stat: Stat) = new Mutation(s"${stat.typeName}~${StatTransform.dateFormat.print(stat.date)}")
 
-  protected def createRandomColumnFamily = Random.nextInt(9999).formatted("%1$04d")
+  protected def typeNameAndDate(key: Key): (String, Long) = {
+    val RowId(typeName, dateString) = key.getRow.toString
+    val date = StatTransform.dateFormat.parseMillis(dateString)
+    (typeName, date)
+  }
+
+  protected def createRandomColumnFamily: Text = new Text(Random.nextInt(9999).formatted("%1$04d"))
 
   /**
    * Convert a stat to a mutation

@@ -149,6 +149,7 @@ object StatWriter extends Runnable with LazyLogging {
       // get the appropriate transform for this type of stat
       val transform = group.clas match {
         case c if c == classOf[QueryStat] => QueryStatTransform.asInstanceOf[StatTransform[Stat]]
+        case c if c == classOf[SerializedQueryStat] => SerializedQueryStatTransform.asInstanceOf[StatTransform[Stat]]
         case r if r == classOf[RasterQueryStat] => RasterQueryStatTransform.asInstanceOf[StatTransform[Stat]]
         case _ => throw new RuntimeException("Not implemented")
       }

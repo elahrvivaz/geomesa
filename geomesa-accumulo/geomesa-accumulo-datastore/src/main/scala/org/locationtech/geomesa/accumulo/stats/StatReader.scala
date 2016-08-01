@@ -67,3 +67,17 @@ class QueryStatReader(connector: Connector, statTableForFeatureName: String => S
 
   override protected def configureScanner(scanner: Scanner) = {}
 }
+
+/**
+  * Class for querying query stats
+  *
+  * @param connector
+  * @param statTableForFeatureName
+  */
+class SerializedQueryStatReader(connector: Connector, statTableForFeatureName: String => String)
+    extends StatReader[SerializedQueryStat](connector, statTableForFeatureName) {
+
+  override protected val statTransform = SerializedQueryStatTransform
+
+  override protected def configureScanner(scanner: Scanner) = {}
+}

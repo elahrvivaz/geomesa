@@ -30,7 +30,7 @@ import org.locationtech.geomesa.accumulo.data.stats.GeoMesaMetadataStats
 import org.locationtech.geomesa.accumulo.data.tables._
 import org.locationtech.geomesa.accumulo.index.Strategy.StrategyType.StrategyType
 import org.locationtech.geomesa.accumulo.index._
-import org.locationtech.geomesa.accumulo.stats.{QueryStat, Stat, StatWriter}
+import org.locationtech.geomesa.accumulo.stats.{QueryStat, SerializedQueryStat, Stat, StatWriter}
 import org.locationtech.geomesa.accumulo.util.GeoMesaBatchWriterConfig
 import org.locationtech.geomesa.accumulo.{AccumuloVersion, GeomesaSystemProperties}
 import org.locationtech.geomesa.features.SerializationType.SerializationType
@@ -419,7 +419,7 @@ class AccumuloDataStore(val connector: Connector,
    */
   def getStatTable(stat: Stat): String = {
     stat match {
-      case qs: QueryStat =>
+      case _: QueryStat | _: SerializedQueryStat =>
         metadata.read(stat.typeName, QUERIES_TABLE_KEY).getOrElse {
           // For backwards compatibility with existing tables that do not have queries table metadata
           val queriesTableValue = formatQueriesTableName(catalogTable)

@@ -11,13 +11,13 @@ package org.locationtech.geomesa.web.analytics
 import org.geotools.data.DataStoreFinder
 import org.joda.time.Interval
 import org.joda.time.format.ISODateTimeFormat
-import org.json4s.{DefaultFormats, Formats}
+import org.json4s.{DefaultFormats, Formats, JValue}
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
-import org.locationtech.geomesa.accumulo.stats.{QueryStat, QueryStatReader}
+import org.locationtech.geomesa.accumulo.stats.{QueryStat, QueryStatReader, SerializedQueryStatReader, StatWriter}
 import org.locationtech.geomesa.utils.cache.FilePersistence
 import org.locationtech.geomesa.web.core.GeoMesaDataStoreServlet
-import org.scalatra.BadRequest
 import org.scalatra.json.NativeJsonSupport
+import org.scalatra.{BadRequest, Ok}
 
 import scala.collection.JavaConversions._
 import scala.util.Try
@@ -35,6 +35,12 @@ class StatsEndpoint(val persistence: FilePersistence) extends GeoMesaDataStoreSe
     contentType = formats(format)
   }
 
+  // filter out the internal 'deleted' flag
+  protected override def transformResponseBody(body: JValue): JValue = body.removeField {
+    case ("deleted", _) => true
+    case _          => false
+  }
+
   /**
    * Retrieves stored query stats.
    *
@@ -44,6 +50,44 @@ class StatsEndpoint(val persistence: FilePersistence) extends GeoMesaDataStoreSe
    *   'who' - (optional) user to filter on
    */
   get("/:alias/queries/?") {
+    try {
+      val ds = DataStoreFinder.getDataStore(datastoreParams).asInstanceOf[AccumuloDataStore]
+      val sft = params.get("typeName").orNull
+      // corresponds to 2015-11-01T00:00:00.000Z/2015-12-05T00:00:00.000Z - same as used by geotools
+      val dates = params.get("dates").flatMap(d => Try(d.split("/").map(dtFormat.parseDateTime)).toOption).orNull
+      if (ds == null || sft == null || dates == null || dates.length != 2) {
+        val reason = new StringBuilder
+        if (ds == null) {
+          reason.append("Could not load data store using the provided parameters. ")
+        }
+        if (sft == null) {
+          reason.append("typeName not specified. ")
+        }
+        if (dates == null || dates.length != 2) {
+          reason.append("date not specified or invalid. ")
+        }
+        BadRequest(reason = reason.toString())
+      } else {
+        val getTable = (typeName: String) => {
+          ds.getStatTable(QueryStat(typeName, 0L, "", "", "", 0L, 0L, 0))
+        }
+        val reader = new QueryStatReader(ds.connector, getTable)
+        val interval = new Interval(dates(0), dates(1))
+        // json response doesn't seem to handle iterators directly, have to convert to iterable
+        val iter = reader.query(sft, interval, ds.authProvider.getAuthorizations).toIterable
+        // we do the user filtering here, instead of in the tservers - revisit if performance becomes an issue
+        // 'user' appears to be reserved by scalatra
+        params.get("who") match {
+          case None => iter.filter(s => !s.deleted)
+          case Some(user) => iter.filter(s => s.user == user && !s.deleted)
+        }
+      }
+    } catch {
+      case e: Exception => handleError(s"Error reading queries:", e)
+    }
+  }
+
+  delete("/:alias/queries/?") {
     try {
       val ds = DataStoreFinder.getDataStore(datastoreParams).asInstanceOf[AccumuloDataStore]
       val sft = params.get("typeName").orNull
@@ -63,18 +107,23 @@ class StatsEndpoint(val persistence: FilePersistence) extends GeoMesaDataStoreSe
         BadRequest(reason = reason.toString())
       } else {
         val getTable = (typeName: String) => {
-          ds.getStatTable(new QueryStat(typeName, 0L, "", "", "", 0L, 0L, 0))
+          ds.getStatTable(QueryStat(typeName, 0L, "", "", "", 0L, 0L, 0))
         }
-        val reader = new QueryStatReader(ds.connector, getTable)
+        val reader = new SerializedQueryStatReader(ds.connector, getTable)
         val interval = new Interval(dates(0), dates(1))
-        // json response doesn't seem to handle iterators directly, have to convert to iterable
         val iter = reader.query(sft, interval, ds.authProvider.getAuthorizations).toIterable
         // we do the user filtering here, instead of in the tservers - revisit if performance becomes an issue
         // 'user' appears to be reserved by scalatra
-        params.get("who") match {
-          case None => iter
-          case Some(user) => iter.filter(_.user == user)
+        // 'user' appears to be reserved by scalatra
+        val toDelete = params.get("who") match {
+          case None => iter.filter(s => !s.deleted)
+          case Some(user) => iter.filter(s => s.user == user && !s.deleted)
         }
+
+        toDelete.foreach { s =>
+          ds.asInstanceOf[StatWriter].writeStat(s.copy(deleted = true))
+        }
+        Ok()
       }
     } catch {
       case e: Exception => handleError(s"Error reading queries:", e)

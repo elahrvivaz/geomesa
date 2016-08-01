@@ -45,7 +45,7 @@ object RasterQueryStatTransform extends StatTransform[RasterQueryStat] {
 
   override def statToMutation(stat: RasterQueryStat): Mutation = {
     val mutation = createMutation(stat)
-    val cf = createRandomColumnFamily
+    val cf = createRandomColumnFamily.toString
     mutation.put(cf, CQ_QUERY, stat.rasterQuery)
     mutation.put(cf, CQ_PLANTIME, s"${stat.planningTime}")
     mutation.put(cf, CQ_SCANTIME, s"${stat.scanTime}")
