@@ -22,6 +22,7 @@ import org.geotools.factory.Hints
 import org.geotools.feature.{FeatureTypes, NameImpl}
 import org.joda.time.DateTimeUtils
 import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
+import org.locationtech.geomesa.accumulo.GeomesaSystemProperties
 import org.locationtech.geomesa.accumulo.data.GeoMesaMetadata._
 import org.locationtech.geomesa.accumulo.data.stats._
 import org.locationtech.geomesa.accumulo.data.stats.usage.{GeoMesaUsageStats, GeoMesaUsageStatsImpl, HasGeoMesaUsageStats}
@@ -31,7 +32,6 @@ import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.index.attribute.AttributeIndex
 import org.locationtech.geomesa.accumulo.index.z2.XZ2Index
 import org.locationtech.geomesa.accumulo.index.z3.XZ3Index
-import org.locationtech.geomesa.accumulo.GeomesaSystemProperties
 // noinspection ScalaDeprecation
 import org.locationtech.geomesa.accumulo.index.geohash.GeoHashIndex
 import org.locationtech.geomesa.accumulo.index.id.RecordIndex
@@ -130,7 +130,7 @@ class AccumuloDataStore(val connector: Connector,
    */
   override def createSchema(sft: SimpleFeatureType): Unit = {
     if (getSchema(sft.getTypeName) == null) {
-      val lock = acquireDistributedLock()
+      val lock = acquireCatalogLock()
       try {
         // check a second time now that we have the lock
         if (getSchema(sft.getTypeName) == null) {
@@ -180,7 +180,7 @@ class AccumuloDataStore(val connector: Connector,
     val attributes = metadata.read(typeName, ATTRIBUTES_KEY).orElse {
       // check for old-style metadata and re-write it if necessary
       if (oldMetadata.read(typeName, ATTRIBUTES_KEY, cache = false).isDefined) {
-        val lock = acquireDistributedLock()
+        val lock = acquireFeatureLock(typeName)
         try {
           if (oldMetadata.read(typeName, ATTRIBUTES_KEY, cache = false).isDefined) {
             metadata.asInstanceOf[MultiRowAccumuloMetadata[String]].migrate(typeName)
@@ -200,31 +200,53 @@ class AccumuloDataStore(val connector: Connector,
 
       checkProjectVersion()
 
-      // back compatible check if user data wasn't encoded with the sft
-      if (!sft.getUserData.containsKey(SCHEMA_VERSION_KEY)) {
-        metadata.read(typeName, "dtgfield").foreach(sft.setDtgField)
-        sft.setSchemaVersion(metadata.readRequired(typeName, VERSION_KEY).toInt)
+      // back compatible check for index versions
+      if (!sft.getUserData.keySet().exists(_.toString.startsWith(SimpleFeatureTypes.INDEX_VERSIONS))) {
+        // back compatible check if user data wasn't encoded with the sft
+        if (!sft.getUserData.containsKey(SCHEMA_VERSION_KEY)) {
+          metadata.read(typeName, "dtgfield").foreach(sft.setDtgField)
+          sft.getUserData.put(SCHEMA_VERSION_KEY, metadata.readRequired(typeName, VERSION_KEY))
 
-        // If no data is written, we default to 'false' in order to support old tables.
-        if (metadata.read(typeName, "tables.sharing").exists(_.toBoolean)) {
-          sft.setTableSharing(true)
-          // use schema id if available or fall back to old type name for backwards compatibility
-          val prefix = metadata.read(typeName, SCHEMA_ID_KEY).getOrElse(s"${sft.getTypeName}~")
-          sft.setTableSharingPrefix(prefix)
-        } else {
-          sft.setTableSharing(false)
-          sft.setTableSharingPrefix("")
+          // If no data is written, we default to 'false' in order to support old tables.
+          if (metadata.read(typeName, "tables.sharing").exists(_.toBoolean)) {
+            sft.setTableSharing(true)
+            // use schema id if available or fall back to old type name for backwards compatibility
+            val prefix = metadata.read(typeName, SCHEMA_ID_KEY).getOrElse(s"${sft.getTypeName}~")
+            sft.setTableSharingPrefix(prefix)
+          } else {
+            sft.setTableSharing(false)
+            sft.setTableSharingPrefix("")
+          }
+          SimpleFeatureTypes.ENABLED_INDEXES.foreach { i =>
+            metadata.read(typeName, i).foreach(e => sft.getUserData.put(SimpleFeatureTypes.ENABLED_INDEXES.head, e))
+          }
+          // old st_idx schema, kept around for back-compatibility
+          metadata.read(typeName, "schema").foreach(sft.setStIndexSchema)
         }
-        // noinspection ScalaDeprecation
-        metadata.read(typeName, SimpleFeatureTypes.ENABLED_INDEXES_OLD)
-            .foreach(sft.getUserData.put(SimpleFeatureTypes.ENABLED_INDEXES, _))
-        // old st_idx schema, kept around for back-compatibility
-        metadata.read(typeName, "schema").foreach(sft.setStIndexSchema)
+
+        // set the enabled indices
+        val schemaVersion = sft.getSchemaVersion
+        AccumuloDataStore.getEnabledIndices(sft).foreach { index =>
+          sft.setIndexVersion(index.name, index.getIndexVersion(schemaVersion))
+          if (!index.supports(sft)) {
+            sft.clearIndexVersion(index.name)
+          }
+        }
       }
 
       if (sft.getSchemaVersion > CURRENT_SCHEMA_VERSION) {
         logger.error(s"Trying to access schema ${sft.getTypeName} with version ${sft.getSchemaVersion} " +
             s"but client can only handle up to version $CURRENT_SCHEMA_VERSION.")
+        throw new IllegalStateException(s"The schema ${sft.getTypeName} was written with a newer " +
+            "version of GeoMesa than this client can handle. Please ensure that you are using the " +
+            "same GeoMesa jar versions across your entire workflow. For more information, see " +
+            "http://www.geomesa.org/documentation/user/installation_and_configuration.html#upgrading")
+      } else if (AccumuloFeatureIndex.indices(sft).exists(i => sft.getIndexVersion(i.name).exists(_ > i.version))) {
+        val indices = AccumuloFeatureIndex.indices(sft).flatMap { i =>
+          val version = sft.getIndexVersion(i.name).filter(_ > i.version)
+          version.map(v => s"${i.name}: schema requires $v but index is ${i.version}")
+        }
+        logger.error(s"Trying to access schema ${sft.getTypeName} with invalid versions: ${indices.mkString(",")}")
         throw new IllegalStateException(s"The schema ${sft.getTypeName} was written with a newer " +
             "version of GeoMesa than this client can handle. Please ensure that you are using the " +
             "same GeoMesa jar versions across your entire workflow. For more information, see " +
@@ -236,7 +258,7 @@ class AccumuloDataStore(val connector: Connector,
         // configure the stats combining iterator - we only use this key for older data stores
         val configuredKey = "stats-configured"
         if (!metadata.read(typeName, configuredKey).contains("true")) {
-          val lock = acquireDistributedLock()
+          val lock = acquireCatalogLock()
           try {
             if (!metadata.read(typeName, configuredKey, cache = false).contains("true")) {
               GeoMesaMetadataStats.configureStatCombiner(connector, statsTable, sft)
@@ -258,59 +280,78 @@ class AccumuloDataStore(val connector: Connector,
   }
 
   /**
-   * @see org.geotools.data.DataStore#updateSchema(java.lang.String, org.opengis.feature.simple.SimpleFeatureType)
-   * @param typeName simple feature type name
-   * @param sft new simple feature type
-   */
+    * Allows the following modifications to the schema:
+    *   modifying keywords through user-data
+    *   enabling/disabling indices through RichSimpleFeatureType.setIndexVersion (SimpleFeatureTypes.INDEX_VERSIONS)
+    *   appending of new attributes
+    *
+    * Other modifications are not supported.
+    *
+    * @see org.geotools.data.DataStore#updateSchema(java.lang.String, org.opengis.feature.simple.SimpleFeatureType)
+    * @param typeName simple feature type name
+    * @param sft new simple feature type
+    */
   override def updateSchema(typeName: String, sft: SimpleFeatureType): Unit =
     updateSchema(new NameImpl(typeName), sft)
 
   /**
-   * @see org.geotools.data.DataAccess#updateSchema(org.opengis.feature.type.Name, org.opengis.feature.type.FeatureType)
-   * @param typeName simple feature type name
-   * @param sft new simple feature type
-   */
+    * Allows the following modifications to the schema:
+    *   modifying keywords through user-data
+    *   enabling/disabling indices through RichSimpleFeatureType.setIndexVersion (SimpleFeatureTypes.INDEX_VERSIONS)
+    *   appending of new attributes
+    *
+    * Other modifications are not supported.
+    *
+    * @see org.geotools.data.DataAccess#updateSchema(org.opengis.feature.type.Name, org.opengis.feature.type.FeatureType)
+    * @param typeName simple feature type name
+    * @param sft new simple feature type
+    */
   override def updateSchema(typeName: Name, sft: SimpleFeatureType): Unit = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType._
 
-    // Currently this method only allows for updating of keywords in user data. All other attempted changes will fail
-
-    val schemaTypeName = sft.getTypeName
-
-    // Prevent modifying wrong type if type names don't match
-    if (!schemaTypeName.equals(typeName.toString)) {
-      throw new UnsupportedOperationException(s"Updating the type name of a schema is not allowed: $schemaTypeName $typeName")
+    // validate type name has not changed
+    if (typeName.toString != sft.getTypeName) {
+      val msg = s"Updating the name of a schema is not allowed: '$typeName' changed to '${sft.getTypeName}'"
+      throw new UnsupportedOperationException(msg)
     }
 
-    // Get previous schema and user data
-    val previousSft = getSchema(typeName)
+    val lock = acquireFeatureLock(sft.getTypeName)
+    try {
+      // Get previous schema and user data
+      val previousSft = getSchema(typeName)
 
-    if (previousSft == null) {
-      throw new IllegalArgumentException(s"No schema found for given type name $typeName")
-    }
-
-    val existingUserData = metadata.read(schemaTypeName, ATTRIBUTES_KEY)
-
-    // Check that unmodifiable user data has not changed
-    val unmodifiableUserdataKeys = Set(SCHEMA_VERSION_KEY, TABLE_SHARING_KEY, SHARING_PREFIX_KEY,
-                                   DEFAULT_DATE_KEY, ST_INDEX_SCHEMA_KEY, SimpleFeatureTypes.ENABLED_INDEXES)
-
-    unmodifiableUserdataKeys.foreach { key =>
-      if (sft.getUserData.contains(key) && sft.userData[String](key) != previousSft.userData[String](key)) {
-        throw new UnsupportedOperationException(s"Updating $key is not allowed")
+      if (previousSft == null) {
+        throw new IllegalArgumentException(s"Schema '$typeName' does not exist")
       }
-    }
 
-    // Check that the rest of the schema has not changed (columns, types, etc)
-    val previousColumns = previousSft.getAttributeDescriptors
-    val currentColumns = sft.getAttributeDescriptors
-    if (previousColumns != currentColumns) {
-      throw new UnsupportedOperationException("Updating schema columns is not allowed")
-    }
+      // Check that unmodifiable user data has not changed
+      val unmodifiableUserdataKeys =
+        Set(SCHEMA_VERSION_KEY, TABLE_SHARING_KEY, SHARING_PREFIX_KEY, DEFAULT_DATE_KEY, ST_INDEX_SCHEMA_KEY)
 
-    // If all is well, update the metadata
-    val attributesValue   = SimpleFeatureTypes.encodeType(sft, includeUserData = true)
-    metadata.insert(schemaTypeName, ATTRIBUTES_KEY, attributesValue)
+      unmodifiableUserdataKeys.foreach { key =>
+        if (sft.userData[Any](key) != previousSft.userData[Any](key)) {
+          throw new UnsupportedOperationException(s"Updating '$key' is not supported")
+        }
+      }
+
+      // Check that the rest of the schema has not changed (columns, types, etc)
+      val previousColumns = previousSft.getAttributeDescriptors
+      val currentColumns = sft.getAttributeDescriptors
+      if (previousColumns.toSeq != currentColumns.take(previousColumns.length)) {
+        throw new UnsupportedOperationException("Updating schema columns is not allowed")
+      }
+
+      // update the configured indices if needed
+      val previousIndices = AccumuloFeatureIndex.indices(previousSft)
+      AccumuloFeatureIndex.AllIndices.filter(i => i.supports(sft) && !previousIndices.contains(i))
+          .foreach(_.configure(sft, this))
+
+      // If all is well, update the metadata
+      val attributesValue = SimpleFeatureTypes.encodeType(sft, includeUserData = true)
+      metadata.insert(sft.getTypeName, ATTRIBUTES_KEY, attributesValue)
+    } finally {
+      lock.release()
+    }
   }
 
   /**
@@ -322,7 +363,7 @@ class AccumuloDataStore(val connector: Connector,
    * @param typeName simple feature type name
    */
   override def removeSchema(typeName: String) = {
-    val lock = acquireDistributedLock()
+    val typeLock = acquireFeatureLock(typeName)
     try {
       Option(getSchema(typeName)).foreach { sft =>
         if (sft.isTableSharing && getTypeNames.filter(_ != typeName).map(getSchema).exists(_.isTableSharing)) {
@@ -332,9 +373,14 @@ class AccumuloDataStore(val connector: Connector,
         }
         stats.clearStats(sft)
       }
+    } finally {
+      typeLock.release()
+    }
+    val catalogLock = acquireCatalogLock()
+    try {
       metadata.delete(typeName)
     } finally {
-      lock.release()
+      catalogLock.release()
     }
   }
 
@@ -636,11 +682,16 @@ class AccumuloDataStore(val connector: Connector,
       sft.setTableSharing(true) // explicitly set it in case this was just the default
       sft.setTableSharingPrefix(schemaIdString)
     }
-    // handle renaming of enabled indices key so that it gets persisted
-    // noinspection ScalaDeprecation
-    Option(sft.getUserData.get(SimpleFeatureTypes.ENABLED_INDEXES_OLD)).foreach { old =>
-      sft.getUserData.put(SimpleFeatureTypes.ENABLED_INDEXES, old)
+
+    // set the enabled indices
+    AccumuloDataStore.getEnabledIndices(sft).foreach { index =>
+      sft.setIndexVersion(index.name, index.version)
+      if (!index.supports(sft)) {
+        // clear the user data so we save a little space
+        sft.clearIndexVersion(index.name)
+      }
     }
+    SimpleFeatureTypes.ENABLED_INDEXES.foreach(sft.getUserData.remove)
 
     // compute the metadata values - IMPORTANT: encode type has to be called after all user data is set
     val attributesValue   = SimpleFeatureTypes.encodeType(sft, includeUserData = true)
@@ -711,10 +762,44 @@ class AccumuloDataStore(val connector: Connector,
    * Acquires a distributed lock for all accumulo data stores sharing this catalog table.
    * Make sure that you 'release' the lock in a finally block.
    */
-  private def acquireDistributedLock(): Releasable = {
+  private def acquireCatalogLock(): Releasable = {
     val path = s"/org.locationtech.geomesa/accumulo/ds/$catalogTable"
     acquireDistributedLock(path, 120000).getOrElse {
       throw new RuntimeException(s"Could not acquire distributed lock at '$path'")
+    }
+  }
+
+  /**
+    * Acquires a distributed lock for a single feature type across all accumulo data stores sharing
+    * this catalog table. Make sure that you 'release' the lock in a finally block.
+    */
+  private def acquireFeatureLock(typeName: String): Releasable = {
+    val path = s"/org.locationtech.geomesa/accumulo/ds/$catalogTable-$typeName"
+    acquireDistributedLock(path, 120000).getOrElse {
+      throw new RuntimeException(s"Could not acquire distributed lock at '$path'")
+    }
+  }
+}
+
+object AccumuloDataStore {
+
+  /**
+    * Reads the indices configured using SimpleFeatureTypes.ENABLED_INDICES. Note that not all indices
+    * are guaranteed to actually 'support' the simple feature type.
+    *
+    * @param sft simple feature type
+    * @return
+    */
+  private def getEnabledIndices(sft: SimpleFeatureType): Seq[AccumuloWritableIndex] = {
+    SimpleFeatureTypes.ENABLED_INDEXES.map(sft.getUserData.get).find(_ != null) match {
+      case None => AccumuloFeatureIndex.AllIndices
+      case Some(enabled) =>
+        val list = {
+          val e = enabled.toString.split(",").map(_.trim).filter(_.length > 0)
+          // check for old attribute index name
+          if (e.contains("attr_idx")) {  e :+ AttributeIndex.name } else { e }
+        }
+        AccumuloFeatureIndex.AllIndices.filter(i => list.contains(i.name))
     }
   }
 }

@@ -17,8 +17,12 @@ object XZ3Index extends AccumuloFeatureIndex with XZ3WritableIndex with XZ3Query
 
   override val name: String = "xz3"
 
+  override val version: Int = 1
+
   override def supports(sft: SimpleFeatureType): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-    sft.getSchemaVersion > 9 && sft.nonPoints && sft.getDtgField.isDefined && sft.isTableEnabled(name)
+    sft.nonPoints && sft.getDtgField.isDefined && sft.getIndexVersion(name).exists(_ > 0)
   }
+
+  override def getIndexVersion(schemaVersion: Int): Int = if (schemaVersion < 10) { 0 } else { 1 }
 }

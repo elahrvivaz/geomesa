@@ -24,15 +24,21 @@ object AttributeIndex extends AccumuloFeatureIndex with AccumuloWritableIndex {
 
   override val name: String = "attr"
 
-  // check for old suffix
-  private val enabledSuffixes = Seq(name, "attr_idx")
+  // 1 -> initial implementation
+  // 2 -> added feature ID and dates to row key
+  override val version: Int = 2
 
   override def supports(sft: SimpleFeatureType): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
     import scala.collection.JavaConversions._
-    sft.getAttributeDescriptors.exists(_.isIndexed) && enabledSuffixes.exists(sft.isTableEnabled)
+    sft.getAttributeDescriptors.exists(_.isIndexed) && sft.getIndexVersion(name).exists(_ > 0)
+  }
+
+  override def getIndexVersion(schemaVersion: Int): Int = {
+    // 6  -> attribute indices with dates
+    if (schemaVersion < 6) { 1 } else { 2 }
   }
 
   override def writer(sft: SimpleFeatureType, ops: AccumuloDataStore): (WritableFeature) => Seq[Mutation] =
@@ -87,12 +93,16 @@ object AttributeIndex extends AccumuloFeatureIndex with AccumuloWritableIndex {
 
   object AttributeIndexV6 extends AccumuloFeatureIndex with AttributeWritableIndex with AttributeQueryableIndex {
     override def name: String = AttributeIndex.name
+    override def version: Int = AttributeIndex.version
     override def supports(sft: SimpleFeatureType): Boolean = AttributeIndex.supports(sft)
+    override def getIndexVersion(schemaVersion: Int): Int = AttributeIndex.getIndexVersion(schemaVersion)
   }
 
   // noinspection ScalaDeprecation
   object AttributeIndexV5 extends AccumuloFeatureIndex with AttributeWritableIndexV5 with AttributeQueryableIndexV5 {
     override def name: String = AttributeIndex.name
+    override def version: Int = AttributeIndex.version
     override def supports(sft: SimpleFeatureType): Boolean = AttributeIndex.supports(sft)
+    override def getIndexVersion(schemaVersion: Int): Int = AttributeIndex.getIndexVersion(schemaVersion)
   }
 }

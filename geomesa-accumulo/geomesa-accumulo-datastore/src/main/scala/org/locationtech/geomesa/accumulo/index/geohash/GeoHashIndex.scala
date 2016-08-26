@@ -16,8 +16,17 @@ object GeoHashIndex extends AccumuloFeatureIndex with GeoHashWritableIndex with 
 
   override val name: String = "st_idx"
 
+  override val version: Int = 2
+
   override def supports(sft: SimpleFeatureType): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-    sft.getGeometryDescriptor != null && sft.getSchemaVersion < 8 && sft.isTableEnabled(name)
+    // note: current version 'supports' is false as this class is deprecated
+    // noinspection ExistsEquals - scala 2.10 compatibility
+    sft.getGeometryDescriptor != null && sft.getIndexVersion(name).exists(_ == 1)
   }
+
+  // 2  -> sorted keys in the STIDX table
+  // 8  -> z2 index, deprecating stidx
+  override def getIndexVersion(schemaVersion: Int): Int =
+    if (schemaVersion < 2) { 0 } else if (schemaVersion < 8) { 1 } else { 2 }
 }

@@ -43,6 +43,11 @@ class QueryFilterSplitterTest extends Specification {
     .point("geom", default = true)
     .build("QueryFilterSplitterTest")
 
+  AccumuloFeatureIndex.AllIndices.foreach { i =>
+    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+    sft.setIndexVersion(i.name, i.version)
+  }
+
   val ff = CommonFactoryFinder.getFilterFactory2
   val splitter = new FilterSplitter(sft, AccumuloFeatureIndex.indices(sft))
 
@@ -473,6 +478,10 @@ class QueryFilterSplitterTest extends Specification {
 
     "support indexed date attributes" >> {
       val sft = SimpleFeatureTypes.createType("dtgIndex", "dtg:Date:index=full,*geom:Point:srid=4326")
+      AccumuloFeatureIndex.AllIndices.foreach { i =>
+        import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+        sft.setIndexVersion(i.name, i.version)
+      }
       val splitter = new FilterSplitter(sft, AccumuloFeatureIndex.indices(sft))
       val filter = f("dtg TEQUALS 2014-01-01T12:30:00.000Z")
       val options = splitter.getQueryOptions(filter)

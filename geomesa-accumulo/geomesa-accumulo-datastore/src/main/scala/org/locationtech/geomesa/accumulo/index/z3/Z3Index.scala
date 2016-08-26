@@ -29,15 +29,29 @@ object Z3Index extends AccumuloFeatureIndex with Z3WritableIndex with Z3Queryabl
   // geoms always have splits, but they weren't added until schema 7
   def hasSplits(sft: SimpleFeatureType) = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-    sft.getSchemaVersion > 6
+    sft.getIndexVersion(name).exists(_ > 1)
   }
 
   override val name: String = "z3"
 
+  // 1 -> initial implementation
+  // 2 -> polygon support and splits
+  // 3 -> deprecated polygon support
+  override val version: Int = 3
+
   override def supports(sft: SimpleFeatureType): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-    val schema = sft.getSchemaVersion
-    sft.getDtgField.isDefined && sft.isTableEnabled(name) &&
-        ((sft.isPoints && schema > 4) || (sft.nonPoints && schema > 6 && schema < 10))
+    sft.getDtgField.isDefined && sft.getIndexVersion(name).exists {
+      case 3 if sft.isPoints => true
+      case 2 if sft.getGeometryDescriptor != null => true
+      case 1 if sft.isPoints => true
+      case _ => false
+    }
   }
+
+  // 5  -> z3 index
+  // 7  -> z3 polygons
+  // 10 -> XZ3 index
+  override def getIndexVersion(schemaVersion: Int): Int =
+    if (schemaVersion < 5) { 0 } else if (schemaVersion < 7) { 1 } else if (schemaVersion < 10) { 2 } else { 3 }
 }

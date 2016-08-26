@@ -51,6 +51,15 @@ object AccumuloFeatureIndex {
 
 trait AccumuloWritableIndex extends AccumuloFeatureIndex {
 
+  /**
+    * Gets the index-specific version based on the overall schema version so that index versions
+    * can be tracked separately from schema version.
+    *
+    * @param schemaVersion schema version
+    * @return
+    */
+  def getIndexVersion(schemaVersion: Int): Int
+
   override def removeAll(sft: SimpleFeatureType, ops: AccumuloDataStore): Unit = {
     import org.apache.accumulo.core.data.{Range => aRange}
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType

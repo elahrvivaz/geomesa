@@ -13,12 +13,16 @@ import org.opengis.feature.simple.SimpleFeatureType
 
 object RecordIndex extends AccumuloFeatureIndex with RecordWritableIndex with RecordQueryableIndex {
 
+  def getRowKey(rowIdPrefix: String, id: String): String = rowIdPrefix + id
+
   override val name: String = "records"
+
+  override val version: Int = 1
 
   override def supports(sft: SimpleFeatureType): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-    sft.isTableEnabled(name)
+    sft.getIndexVersion(name).exists(_ > 0)
   }
 
-  def getRowKey(rowIdPrefix: String, id: String): String = rowIdPrefix + id
+  override def getIndexVersion(schemaVersion: Int): Int = version
 }

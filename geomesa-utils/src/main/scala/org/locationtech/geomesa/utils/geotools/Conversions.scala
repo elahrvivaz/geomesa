@@ -285,16 +285,11 @@ object RichSimpleFeatureType {
       Array.empty[Byte]
     }
 
-    // gets suffixes of enabled tables
-    def getEnabledTables: Seq[String] =
-      userData[String](SimpleFeatureTypes.ENABLED_INDEXES).map(_.split(",").map(_.trim).filter(_.length > 0).toSeq)
-          .getOrElse(List.empty)
-    def setEnabledTables(tables: Seq[String]): Unit =
-      sft.getUserData.put(SimpleFeatureTypes.ENABLED_INDEXES, tables.mkString(","))
-    def isTableEnabled(table: String) = {
-      val enabled = getEnabledTables
-      enabled.isEmpty || enabled.contains(table)
-    }
+    def setIndexVersion(index: String, version: Int): Unit =
+      sft.getUserData.put(indexVersionKey(index), version.toString)
+    def getIndexVersion(index: String): Option[Int] = userData[String](indexVersionKey(index)).map(_.toInt)
+    def clearIndexVersion(index: String): Unit = sft.getUserData.remove(indexVersionKey(index))
+    private def indexVersionKey(index: String): String = s"${SimpleFeatureTypes.INDEX_VERSIONS}.$index"
 
     def setUserDataPrefixes(prefixes: Seq[String]): Unit = sft.getUserData.put(USER_DATA_PREFIX, prefixes.mkString(","))
     def getUserDataPrefixes: Seq[String] =

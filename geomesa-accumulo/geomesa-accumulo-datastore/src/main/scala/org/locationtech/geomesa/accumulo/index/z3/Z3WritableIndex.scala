@@ -15,7 +15,7 @@ import com.google.common.collect.{ImmutableSet, ImmutableSortedSet}
 import com.google.common.primitives.{Bytes, Longs, Shorts}
 import com.vividsolutions.jts.geom._
 import org.apache.accumulo.core.conf.Property
-import org.apache.accumulo.core.data.{Mutation, Range => aRange}
+import org.apache.accumulo.core.data.Mutation
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.AccumuloVersion
 import org.locationtech.geomesa.accumulo.data.AccumuloFeatureWriter.FeatureToMutations

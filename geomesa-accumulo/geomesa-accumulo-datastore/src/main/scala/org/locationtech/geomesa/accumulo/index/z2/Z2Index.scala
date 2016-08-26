@@ -8,8 +8,6 @@
 
 package org.locationtech.geomesa.accumulo.index.z2
 
-import org.apache.accumulo.core.data.Value
-import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex.AccumuloFeatureIndex
 import org.opengis.feature.simple.SimpleFeatureType
 
@@ -31,9 +29,21 @@ object Z2Index extends AccumuloFeatureIndex with Z2WritableIndex with Z2Queryabl
 
   override val name: String = "z2"
 
+  // 1 -> initial implementation
+  // 2 -> deprecated polygon support
+  override val version: Int = 2
+
   override def supports(sft: SimpleFeatureType): Boolean = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-    val schema = sft.getSchemaVersion
-    schema > 7 && (sft.isPoints || (sft.nonPoints && schema < 10)) && sft.isTableEnabled(name)
+    sft.getIndexVersion(name).exists {
+      case 2 if sft.isPoints => true
+      case 1 if sft.getGeometryDescriptor != null => true
+      case _ => false
+    }
   }
+
+  // 8  -> z2 index, deprecating stidx
+  // 10 -> XZ2 index
+  override def getIndexVersion(schemaVersion: Int): Int =
+    if (schemaVersion < 8) { 0 } else if (schemaVersion < 10) { 1 } else { 2 }
 }
