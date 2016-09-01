@@ -118,7 +118,7 @@ trait Z3WritableIndex extends AccumuloWritableIndex {
   override def configure(sft: SimpleFeatureType, ops: AccumuloDataStore): Unit = {
     val table = Try(ops.getTableName(sft.getTypeName, this)).getOrElse {
       // z3 always has it's own table
-      val table = GeoMesaTable.formatSoloTableName(ops.catalogTable, name, sft.getTypeName)
+      val table = GeoMesaTable.formatSoloTableName(ops.catalogTable, tableSuffix, sft.getTypeName)
       ops.metadata.insert(sft.getTypeName, tableNameKey, table)
       table
     }

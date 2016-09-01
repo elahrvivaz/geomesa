@@ -86,7 +86,9 @@ object AccumuloFeatureIndex {
 
 trait AccumuloWritableIndex extends AccumuloFeatureIndex {
 
-  def tableNameKey: String = s"table.name.$name.$version"
+  def tableNameKey: String = s"table.$name.v$version"
+
+  def tableSuffix: String = if (version == 1) name else s"${name}_v$version"
 
   override def removeAll(sft: SimpleFeatureType, ops: AccumuloDataStore): Unit = {
     import org.apache.accumulo.core.data.{Range => aRange}

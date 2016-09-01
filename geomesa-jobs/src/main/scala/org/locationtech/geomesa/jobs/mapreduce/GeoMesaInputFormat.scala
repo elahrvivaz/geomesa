@@ -158,9 +158,9 @@ class GeoMesaInputFormat extends InputFormat[Text, SimpleFeature] with LazyLoggi
     encoding = ds.getFeatureEncoding(sft)
     desiredSplitCount = GeoMesaConfigurator.getDesiredSplits(conf)
     val tableName = GeoMesaConfigurator.getTable(conf)
-    table = AccumuloFeatureIndex.indices(sft, IndexMode.Read).find(t => tableName.endsWith(t.name)).getOrElse {
-      throw new RuntimeException(s"Couldn't find input table $tableName")
-    }
+    table = AccumuloFeatureIndex.indices(sft, IndexMode.Read)
+        .find(t => ds.getTableName(sft.getTypeName, t) == tableName)
+        .getOrElse(throw new RuntimeException(s"Couldn't find input table $tableName"))
     ds.dispose()
   }
 

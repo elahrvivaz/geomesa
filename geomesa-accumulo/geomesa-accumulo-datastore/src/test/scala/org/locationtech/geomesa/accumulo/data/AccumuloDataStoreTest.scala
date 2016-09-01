@@ -404,15 +404,15 @@ class AccumuloDataStoreTest extends Specification with TestWithMultipleSfts {
       encodedSFT mustEqual GeoMesaTable.hexEncodeNonAlphaNumeric(sftName)
 
       forall(AccumuloFeatureIndex.indices(sft, IndexMode.Any)) { table =>
-        GeoMesaTable.formatTableName(ds.catalogTable, table.name, sft) mustEqual
-            s"${ds.catalogTable}_${encodedSFT}_${table.name}"
+        GeoMesaTable.formatTableName(ds.catalogTable, table.tableSuffix, sft) mustEqual
+            s"${ds.catalogTable}_${encodedSFT}_${table.tableSuffix}"
       }
 
       val c = ds.connector
 
       c.tableOperations().exists(ds.catalogTable) must beTrue
       forall(AccumuloFeatureIndex.indices(sft, IndexMode.Any)) { table =>
-        c.tableOperations().exists(s"${ds.catalogTable}_${encodedSFT}_${table.name}") must beTrue
+        c.tableOperations().exists(s"${ds.catalogTable}_${encodedSFT}_${table.tableSuffix}") must beTrue
       }
     }
 

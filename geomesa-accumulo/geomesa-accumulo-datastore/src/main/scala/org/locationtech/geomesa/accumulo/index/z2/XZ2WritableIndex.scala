@@ -69,7 +69,7 @@ trait XZ2WritableIndex extends AccumuloWritableIndex {
     import scala.collection.JavaConversions._
 
     val table = Try(ops.getTableName(sft.getTypeName, this)).getOrElse {
-      val table = GeoMesaTable.formatTableName(ops.catalogTable, name, sft)
+      val table = GeoMesaTable.formatTableName(ops.catalogTable, tableSuffix, sft)
       ops.metadata.insert(sft.getTypeName, tableNameKey, table)
       table
     }
