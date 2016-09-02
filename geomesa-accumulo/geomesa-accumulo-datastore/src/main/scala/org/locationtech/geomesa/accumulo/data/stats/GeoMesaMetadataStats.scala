@@ -76,7 +76,7 @@ class GeoMesaMetadataStats(val ds: AccumuloDataStore, statsTable: String, genera
       if (sft.isPoints) {
         runStats[CountStat](sft, Stat.Count(), filter).headOption.map(_.count)
       } else {
-        import org.locationtech.geomesa.accumulo.util.SelfClosingIterator
+        import org.locationtech.geomesa.utils.collection.SelfClosingIterator
 
         // stat query doesn't entirely handle duplicates - only on a per-iterator basis
         // is a full scan worth it? the stat will be pretty close...

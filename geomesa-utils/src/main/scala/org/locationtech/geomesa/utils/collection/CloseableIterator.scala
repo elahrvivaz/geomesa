@@ -1,17 +1,13 @@
-/***********************************************************************
-* Copyright (c) 2013-2016 Commonwealth Computer Research, Inc.
-* All rights reserved. This program and the accompanying materials
-* are made available under the terms of the Apache License, Version 2.0
-* which accompanies this distribution and is available at
-* http://www.opensource.org/licenses/apache2.0.php.
-*************************************************************************/
+/*
+ * Copyright (c) 2013-2016 Commonwealth Computer Research, Inc.
+ * All rights reserved. This program and the accompanying materials
+ * are made available under the terms of the Apache License, Version 2.0 which
+ * accompanies this distribution and is available at
+ * http://www.opensource.org/licenses/apache2.0.php.
+ */
 
-package org.locationtech.geomesa.accumulo.util
+package org.locationtech.geomesa.utils.collection
 
-import java.util.Map.Entry
-
-import org.apache.accumulo.core.client.ScannerBase
-import org.apache.accumulo.core.data.{Key, Value}
 import org.geotools.data.FeatureReader
 import org.geotools.data.simple.{SimpleFeatureCollection, SimpleFeatureIterator}
 import org.opengis.feature.Feature
@@ -20,14 +16,13 @@ import org.opengis.feature.simple.SimpleFeature
 
 import scala.annotation.tailrec
 import scala.collection.Iterator
-import scala.collection.JavaConversions._
 
 // A CloseableIterator is one which involves some kind of close function which should be called at the end of use.
 object CloseableIterator {
 
-  // In order to use 'map' and 'flatMap', we provide an implicit promoting wrapper.
   // noinspection LanguageFeature
-  implicit def iteratorToCloseable[A](iter: Iterator[A]) = apply(iter)
+  // In order to use 'map' and 'flatMap', we provide an implicit promoting wrapper.
+  implicit def iteratorToCloseable[A](iter: Iterator[A]): CloseableIterator[A] = apply(iter)
 
   // This apply method provides us with a simple interface for creating new CloseableIterators.
   def apply[A](iter: Iterator[A], closeIter: => Unit = {}) = new CloseableIterator[A] {
@@ -52,10 +47,11 @@ object CloseableIterator {
   val empty: CloseableIterator[Nothing] = apply(Iterator.empty)
 }
 
-import org.locationtech.geomesa.accumulo.util.CloseableIterator.empty
-
 trait CloseableIterator[+A] extends Iterator[A] {
+
   self =>
+
+  import CloseableIterator.empty
 
   def close(): Unit
 
@@ -95,7 +91,7 @@ trait SelfClosingIterator[+A] extends CloseableIterator[A]
 
 object SelfClosingIterator {
 
-  def apply[A](iter: Iterator[A], closeIter: () => Unit) = new SelfClosingIterator[A] {
+  def apply[A](iter: Iterator[A], closeIter: => Unit) = new SelfClosingIterator[A] {
     def hasNext: Boolean = {
       val iterHasNext = iter.hasNext
       if(!iterHasNext) close()
@@ -105,9 +101,8 @@ object SelfClosingIterator {
     def close() = closeIter()
   }
 
-  def apply[A](iter: CloseableIterator[A]): SelfClosingIterator[A] = apply(iter, iter.close)
-
-  def apply(s: ScannerBase): SelfClosingIterator[Entry[Key, Value]] = apply(s.iterator(), s.close)
+//  def apply(s: ScannerBase): SelfClosingIterator[Entry[Key, Value]] = apply(s.iterator(), s.close)
+  def apply[A](iter: CloseableIterator[A]): SelfClosingIterator[A] = apply(iter, iter.close())
 
   def apply[A <: Feature, B <: FeatureType](fr: FeatureReader[B, A]): SelfClosingIterator[A] =
     apply(CloseableIterator(fr))

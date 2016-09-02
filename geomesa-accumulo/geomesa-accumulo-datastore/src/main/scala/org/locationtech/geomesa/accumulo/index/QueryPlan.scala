@@ -18,7 +18,8 @@ import org.locationtech.geomesa.accumulo.data.AccumuloConnectorCreator
 import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex.AccumuloFilterStrategy
 import org.locationtech.geomesa.accumulo.index.QueryPlan.{FeatureFunction, JoinFunction}
 import org.locationtech.geomesa.accumulo.index.QueryPlanner.KVIter
-import org.locationtech.geomesa.accumulo.util.{BatchMultiScanner, CloseableIterator, SelfClosingIterator}
+import org.locationtech.geomesa.accumulo.util.{BatchMultiScanner, SelfClosingIterator}
+import org.locationtech.geomesa.utils.collection.{CloseableIterator, SelfClosingIterator}
 import org.opengis.feature.simple.SimpleFeature
 
 object QueryPlan extends LazyLogging {

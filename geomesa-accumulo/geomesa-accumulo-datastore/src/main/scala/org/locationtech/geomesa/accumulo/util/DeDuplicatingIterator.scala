@@ -8,6 +8,7 @@
 
 package org.locationtech.geomesa.accumulo.util
 
+import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.opengis.feature.simple.SimpleFeature
 
 /**

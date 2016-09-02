@@ -11,7 +11,7 @@ package org.locationtech.geomesa.accumulo.data
 import org.geotools.data._
 import org.geotools.filter.text.cql2.CQL
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.util.CloseableIterator
+import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 

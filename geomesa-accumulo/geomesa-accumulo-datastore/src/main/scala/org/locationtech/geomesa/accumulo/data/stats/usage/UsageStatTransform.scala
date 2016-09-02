@@ -15,7 +15,8 @@ import org.apache.accumulo.core.client.Scanner
 import org.apache.accumulo.core.data.{Key, Mutation, Value}
 import org.apache.hadoop.io.Text
 import org.joda.time.format.DateTimeFormat
-import org.locationtech.geomesa.accumulo.util.{CloseableIterator, SelfClosingIterator}
+import org.locationtech.geomesa.accumulo.util.SelfClosingIterator
+import org.locationtech.geomesa.utils.collection.{CloseableIterator, SelfClosingIterator}
 import org.locationtech.geomesa.utils.monitoring.UsageStat
 
 import scala.util.Random
