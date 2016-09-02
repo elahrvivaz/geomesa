@@ -19,20 +19,21 @@ import org.geotools.data.store.{ContentDataStore, ContentEntry, ContentFeatureSo
 import org.geotools.data.{AbstractDataStoreFactory, DataStore, Transaction}
 import org.geotools.factory.Hints
 import org.geotools.feature.NameImpl
+import org.locationtech.geomesa.index.stats.HasGeoMesaStats
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.`type`.Name
 import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.collection.JavaConversions._
 
-class HBaseDataStore(conn: Connection,
-                     catalog: String,
-                     namespace: String = null) extends ContentDataStore {
+class HBaseDataStore(val connection: Connection,
+                     val catalog: String,
+                     namespace: String = null) extends ContentDataStore with HasGeoMesaStats {
 
   import HBaseDataStore._
 
   private val CATALOG_TABLE = TableName.valueOf(catalog)
-  private val catalogTable = getOrCreateCatalogTable(conn, CATALOG_TABLE)
+  private val catalogTable = getOrCreateCatalogTable(connection, CATALOG_TABLE)
   private val schemaCQ = Bytes.toBytes("schema")
 
   setNamespaceURI(namespace)
@@ -42,10 +43,10 @@ class HBaseDataStore(conn: Connection,
 
     // create the z3 index
     val z3TableName = getZ3TableName(featureType)
-    if (!conn.getAdmin.tableExists(z3TableName)) {
+    if (!connection.getAdmin.tableExists(z3TableName)) {
       val desc = new HTableDescriptor(z3TableName)
       Seq(DATA_FAMILY_NAME).foreach { f => desc.addFamily(new HColumnDescriptor(f)) }
-      conn.getAdmin.createTable(desc)
+      connection.getAdmin.createTable(desc)
     }
 
     // write the meta-data
@@ -57,7 +58,7 @@ class HBaseDataStore(conn: Connection,
   }
 
   def getZ3TableName(sft: SimpleFeatureType) = TableName.valueOf(s"${sft.getTypeName}_z3")
-  def getZ3Table(sft: SimpleFeatureType) = conn.getTable(getZ3TableName(sft))
+  def getZ3Table(sft: SimpleFeatureType) = connection.getTable(getZ3TableName(sft))
 
   override def createFeatureSource(entry: ContentEntry): ContentFeatureSource = {
     val sft =

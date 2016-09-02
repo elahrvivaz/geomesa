@@ -11,36 +11,25 @@ package org.locationtech.geomesa.hbase.index
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.hadoop.hbase.client._
 import org.locationtech.geomesa.hbase.index.HBaseFeatureIndex.HBaseFilterStrategy
-import org.locationtech.geomesa.hbase.index.QueryPlan.{FeatureFunction, JoinFunction}
 import org.locationtech.geomesa.utils.collection.{CloseableIterator, SelfClosingIterator}
 import org.opengis.feature.simple.SimpleFeature
 
-object QueryPlan extends LazyLogging {
-
-  type JoinFunction = (Result) => Scan
-  type FeatureFunction = (Result) => SimpleFeature
-
-  private def result(scanner: ResultScanner): SelfClosingIterator[Result] = {
-    import scala.collection.JavaConversions._
-    SelfClosingIterator(scanner.toList.iterator, scanner.close())
-  }
+object HBaseQueryPlan extends LazyLogging {
 
   /**
     * Creates a scanner based on a query plan
     */
-  private def getScanner(queryPlan: QueryPlan): CloseableIterator[Result] = {
+  private def getScanner(queryPlan: HBaseQueryPlan): CloseableIterator[Result] = {
     try {
       queryPlan match {
         case qp: EmptyPlan =>
           CloseableIterator.empty
 
         case qp: ScanPlan =>
-          val scans = qp.ranges.map { case (l, u) => new Scan(l, u).addFamily(qp.columnFamily) } // TODO calculate this elsewhere?
-          val scanners = scans.map(qp.table.getScanner)
+          val scanners = qp.ranges.map(qp.table.getScanner)
           CloseableIterator(scanners.flatMap(result).iterator, scanners.foreach(_.close))
 
         case qp: JoinPlan => ???
-//          val scans = qp.ranges.map { case (l, u) => new Scan(l, u).addFamily(qp.columnFamily) } // TODO calculate this elsewhere?
 //          val primary =
 //          val primary = if (qp.ranges.length == 1) {
 //            val scanner = acc.getScanner(qp.table)
@@ -66,47 +55,49 @@ object QueryPlan extends LazyLogging {
         CloseableIterator.empty
     }
   }
+
+  private def result(scanner: ResultScanner): SelfClosingIterator[Result] = {
+    import scala.collection.JavaConversions._
+    SelfClosingIterator(scanner.toList.iterator, scanner.close())
+  }
 }
 
-sealed trait QueryPlan {
+sealed trait HBaseQueryPlan {
   def filter: HBaseFilterStrategy
   def table: Table
-  def ranges: Seq[(Array[Byte], Array[Byte])]
-  def columnFamily: Array[Byte]
-  def kvsToFeatures: FeatureFunction
+  def ranges: Seq[Scan]
+  def kvsToFeatures: (Result) => SimpleFeature
   def clientSideFilter: Option[(SimpleFeature) => Boolean]
 
-  def join: Option[(JoinFunction, QueryPlan)] = None
+  def join: Option[((Result) => Scan, HBaseQueryPlan)] = None
 
   def execute(): CloseableIterator[SimpleFeature] =
-    SelfClosingIterator(QueryPlan.getScanner(this)).map(kvsToFeatures)
+    SelfClosingIterator(HBaseQueryPlan.getScanner(this)).map(kvsToFeatures)
 }
 
 // plan that will not actually scan anything
-case class EmptyPlan(filter: HBaseFilterStrategy) extends QueryPlan {
+case class EmptyPlan(filter: HBaseFilterStrategy) extends HBaseQueryPlan {
+
   override val table: Table = null
-  override val ranges: Seq[(Array[Byte], Array[Byte])] = Seq.empty
-  override val columnFamily: Array[Byte] = Array.empty
-  override val kvsToFeatures: FeatureFunction = (_) => null
+  override val ranges: Seq[Scan] = Seq.empty
+  override val kvsToFeatures: (Result) => SimpleFeature = (_) => null
   override val clientSideFilter: Option[(SimpleFeature) => Boolean] = None
 }
 
 // single scan plan
 case class ScanPlan(filter: HBaseFilterStrategy,
                     table: Table,
-                    ranges: Seq[(Array[Byte], Array[Byte])],
-                    columnFamily: Array[Byte],
-                    kvsToFeatures: FeatureFunction,
-                    clientSideFilter: Option[(SimpleFeature) => Boolean]) extends QueryPlan
+                    ranges: Seq[Scan],
+                    kvsToFeatures: (Result) => SimpleFeature,
+                    clientSideFilter: Option[(SimpleFeature) => Boolean]) extends HBaseQueryPlan
 
 // join on multiple tables - requires multiple scans
 case class JoinPlan(filter: HBaseFilterStrategy,
                     table: Table,
-                    ranges: Seq[(Array[Byte], Array[Byte])],
-                    columnFamily: Array[Byte],
-                    joinFunction: JoinFunction,
-                    joinQuery: ScanPlan) extends QueryPlan {
-  override val kvsToFeatures: FeatureFunction = joinQuery.kvsToFeatures
-  override val join: Option[(JoinFunction, QueryPlan)] = Some((joinFunction, joinQuery))
+                    ranges: Seq[Scan],
+                    joinFunction: (Result) => Scan,
+                    joinQuery: ScanPlan) extends HBaseQueryPlan {
+  override val kvsToFeatures: (Result) => SimpleFeature = joinQuery.kvsToFeatures
+  override val join: Option[((Result) => Scan, HBaseQueryPlan)] = Some((joinFunction, joinQuery))
   override val clientSideFilter: Option[(SimpleFeature) => Boolean] = joinQuery.clientSideFilter
 }
