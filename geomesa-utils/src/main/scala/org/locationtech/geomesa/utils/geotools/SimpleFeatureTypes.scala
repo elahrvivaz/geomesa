@@ -45,8 +45,9 @@ object SimpleFeatureTypes {
   val OPT_STATS                = "keep-stats"
   val OPT_CARDINALITY          = "cardinality"
   val OPT_BIN_TRACK_ID         = "bin-track-id"
+  val OPT_JSON                 = "json"
 
-  val OPTS = Seq(OPT_DEFAULT, OPT_SRID, OPT_INDEX, OPT_STATS, OPT_INDEX_VALUE, OPT_CARDINALITY, OPT_BIN_TRACK_ID)
+  val OPTS = Seq(OPT_DEFAULT, OPT_SRID, OPT_INDEX, OPT_STATS, OPT_INDEX_VALUE, OPT_CARDINALITY, OPT_BIN_TRACK_ID, OPT_JSON)
 
   val USER_DATA_LIST_TYPE      = "subtype"
   val USER_DATA_MAP_KEY_TYPE   = "keyclass"

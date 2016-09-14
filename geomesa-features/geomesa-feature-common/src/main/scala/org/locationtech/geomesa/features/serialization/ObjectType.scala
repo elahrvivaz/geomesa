@@ -22,7 +22,7 @@ object ObjectType extends Enumeration {
 
   def selectType(clazz: Class[_], metadata: jMap[_, _] = jCollections.emptyMap()): (ObjectType, Seq[ObjectType]) = {
     clazz match {
-      case c if classOf[java.lang.String].isAssignableFrom(c) => (STRING, Seq.empty)
+      case c if classOf[java.lang.String].isAssignableFrom(c) => (STRING, Option(metadata.get(OPT_JSON)).map(_ => BOOLEAN).toSeq)
       case c if classOf[java.lang.Integer].isAssignableFrom(c) => (INT, Seq.empty)
       case c if classOf[java.lang.Long].isAssignableFrom(c) => (LONG, Seq.empty)
       case c if classOf[java.lang.Float].isAssignableFrom(c) => (FLOAT, Seq.empty)

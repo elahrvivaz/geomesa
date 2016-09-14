@@ -12,7 +12,7 @@ import java.io.{InputStream, OutputStream}
 
 import com.google.common.primitives.Ints
 import org.apache.hadoop.io.serializer.{Deserializer, Serialization, Serializer}
-import org.locationtech.geomesa.features.kryo.serialization.KryoFeatureSerializer
+import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.jobs.mapreduce.SimpleFeatureSerialization._
 import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -52,6 +52,7 @@ object SimpleFeatureSerialization {
    * Read a string from the input stream
    */
   def readString(in: InputStream): String = {
+    // noinspection LanguageFeature
     implicit def intToByte(i: Int): Byte = i.asInstanceOf[Byte]
     // have to re-construct the int from 4 bytes
     val bytes = Array.ofDim[Byte](Ints.fromBytes(in.read(), in.read(), in.read(), in.read()))
@@ -77,7 +78,7 @@ class HadoopSimpleFeatureSerializer extends Serializer[SimpleFeature] {
     writeString(out, sft.getTypeName)
     val sftString = SimpleFeatureTypes.encodeType(sft)
     writeString(out, sftString)
-    serializers.getOrElseUpdate(s"${sft.getTypeName}:$sftString", KryoFeatureSerializer(sft)).write(sf, out)
+    serializers.getOrElseUpdate(s"${sft.getTypeName}:$sftString", new KryoFeatureSerializer(sft)).serialize(sf, out)
   }
 }
 
@@ -96,6 +97,6 @@ class HadoopSimpleFeatureDeserializer extends Deserializer[SimpleFeature] {
     val sftName = readString(in)
     val sftString = readString(in)
     lazy val sft = SimpleFeatureTypes.createType(sftName, sftString)
-    serializers.getOrElseUpdate(s"${sft.getTypeName}:$sftString", KryoFeatureSerializer(sft)).read(in)
+    serializers.getOrElseUpdate(s"${sft.getTypeName}:$sftString", new KryoFeatureSerializer(sft)).deserialize(in)
   }
 }
