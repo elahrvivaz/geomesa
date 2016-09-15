@@ -122,13 +122,23 @@ class KryoBufferSimpleFeature(sft: SimpleFeatureType,
     }
   }
 
-  override def getAttribute(index: Int) = {
+  override def getAttribute(index: Int): AnyRef = {
     val offset = offsets(index)
     if (offset == -1) {
       null
     } else {
       input.setPosition(offset)
       readers(index)(input)
+    }
+  }
+
+  def getInput(index: Int): Input = {
+    val offset = offsets(index)
+    if (offset == -1) {
+      null
+    } else {
+      input.setPosition(offset)
+      input
     }
   }
 

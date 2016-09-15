@@ -15,7 +15,7 @@ import com.esotericsoftware.kryo.io.{Input, Output}
 import com.vividsolutions.jts.geom.Geometry
 import org.locationtech.geomesa.features.SerializationOption.SerializationOption
 import org.locationtech.geomesa.features._
-import org.locationtech.geomesa.features.kryo.serialization.{KryoGeometrySerialization, KryoUserDataSerialization}
+import org.locationtech.geomesa.features.kryo.serialization.{KryoGeometrySerialization, KryoJsonSerialization, KryoUserDataSerialization}
 import org.locationtech.geomesa.features.serialization.ObjectType
 import org.locationtech.geomesa.features.serialization.ObjectType.ObjectType
 import org.locationtech.geomesa.utils.cache.{CacheKeyGenerator, SoftThreadLocal, SoftThreadLocalCache}
@@ -317,6 +317,8 @@ object KryoFeatureSerializer {
         writeNullable(w)
       case ObjectType.GEOMETRY =>
         writeNullable((o: Output, v: AnyRef) => KryoGeometrySerialization.serialize(o, v.asInstanceOf[Geometry]))
+      case ObjectType.JSON =>
+        writeNullable((o: Output, v: AnyRef) => KryoJsonSerialization.serialize(o, v.asInstanceOf[String]))
       case ObjectType.LIST =>
         val valueWriter = matchWriter(bindings.head)
         (o: Output, v: AnyRef) => {
@@ -396,6 +398,7 @@ object KryoFeatureSerializer {
         }
         readNullable(w)
       case ObjectType.GEOMETRY => readNullable((i: Input) => KryoGeometrySerialization.deserialize(i))
+      case ObjectType.JSON => readNullable((i: Input) => KryoJsonSerialization.deserialize(i))
       case ObjectType.LIST =>
         val valueReader = matchReader(bindings.head)
         (i: Input) => {
