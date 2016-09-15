@@ -6,16 +6,15 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  */
 
-package org.locationtech.geomesa.features.kryo.serialization
+package org.locationtech.geomesa.features.kryo.json
 
 import com.esotericsoftware.kryo.io.{Input, Output}
-import com.typesafe.scalalogging.LazyLogging
 import org.junit.runner.RunWith
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
-class KryoJsonSerializationTest extends Specification with LazyLogging {
+class KryoJsonSerializationTest extends Specification {
 
   val geoms = Seq(
     """{ "type": "Point", "coordinates": [30, 10] }""",

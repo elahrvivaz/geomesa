@@ -6,7 +6,7 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  */
 
-package org.locationtech.geomesa.features.kryo.serialization
+package org.locationtech.geomesa.features.kryo.json
 
 import java.nio.charset.StandardCharsets
 

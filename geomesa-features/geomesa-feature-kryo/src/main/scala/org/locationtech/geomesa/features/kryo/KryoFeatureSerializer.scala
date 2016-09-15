@@ -15,7 +15,8 @@ import com.esotericsoftware.kryo.io.{Input, Output}
 import com.vividsolutions.jts.geom.Geometry
 import org.locationtech.geomesa.features.SerializationOption.SerializationOption
 import org.locationtech.geomesa.features._
-import org.locationtech.geomesa.features.kryo.serialization.{KryoGeometrySerialization, KryoJsonSerialization, KryoUserDataSerialization}
+import org.locationtech.geomesa.features.kryo.json.KryoJsonSerialization
+import org.locationtech.geomesa.features.kryo.serialization.{KryoGeometrySerialization, KryoUserDataSerialization}
 import org.locationtech.geomesa.features.serialization.ObjectType
 import org.locationtech.geomesa.features.serialization.ObjectType.ObjectType
 import org.locationtech.geomesa.utils.cache.{CacheKeyGenerator, SoftThreadLocal, SoftThreadLocalCache}
