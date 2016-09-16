@@ -8,6 +8,7 @@
 
 package org.locationtech.geomesa.features.kryo.json
 
+import org.locationtech.geomesa.features.kryo.json.JsonPathParser.JsonPathFunction.JsonPathFunction
 import org.locationtech.geomesa.features.kryo.json.JsonPathParser._
 import org.parboiled.Context
 import org.parboiled.errors.{ErrorUtils, ParsingException}
@@ -45,15 +46,26 @@ object JsonPathParser {
 
   // deep scan: ..
   case object PathDeepScan extends PathElement
+
+  // path function: .min(), .max(), .avg(), .length()
+  // not implemented: stddev
+  case class PathFunction(function: JsonPathFunction) extends PathElement
+
+  object JsonPathFunction extends Enumeration {
+    type JsonPathFunction = Value
+    val min, max, avg, length = Value
+  }
 }
 
 private class JsonPathParser extends Parser {
 
   // main parsing rule
-  def Path: Rule1[Seq[PathElement]] = rule { "$" ~ zeroOrMore(Element) ~ EOI }
+  def Path: Rule1[Seq[PathElement]] =
+  rule { "$" ~ zeroOrMore(Element) ~ optional(Function) ~~> ((e, f) => e ++ f.toSeq) ~ EOI }
 
-  def Element: Rule1[PathElement] =
-    rule { Attribute | ArrayIndex | ArrayIndices | ArrayIndexRange | AttributeWildCard | IndexWildCard | DeepScan }
+  def Element: Rule1[PathElement] = rule {
+    Attribute | ArrayIndex | ArrayIndices | ArrayIndexRange | AttributeWildCard | IndexWildCard | DeepScan
+  }
 
   def IndexWildCard: Rule1[PathElement] = rule { "[*]" ~ push(PathIndexWildCard) }
 
@@ -75,7 +87,11 @@ private class JsonPathParser extends Parser {
   def ArrayIndexRange: Rule1[PathIndices] =
     rule { "[" ~ Number ~ ":" ~ Number ~ "]" ~~> ((n0, n1) => PathIndices(n0 until n1)) }
 
-  def Attribute: Rule1[PathAttribute] = rule { "." ~ oneOrMore(Character) ~> PathAttribute }
+  def Attribute: Rule1[PathAttribute] = rule { "." ~ oneOrMore(Character) ~> PathAttribute ~ !"()" }
+
+  def Function: Rule1[PathFunction] = rule {
+    "." ~ ("min" | "max" | "avg" | "stddev" | "length") ~> ((f) => PathFunction(JsonPathFunction.withName(f))) ~ "()"
+  }
 
   def Number: Rule1[Int] = rule { oneOrMore("0" - "9") ~> (_.toInt) }
 

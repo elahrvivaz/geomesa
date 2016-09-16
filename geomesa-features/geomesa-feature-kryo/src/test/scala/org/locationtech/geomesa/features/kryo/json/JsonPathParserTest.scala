@@ -67,5 +67,10 @@ class JsonPathParserTest extends Specification {
       path must haveLength(3)
       path mustEqual Seq(PathAttribute("foo"), PathDeepScan, PathAttribute("bar"))
     }
+    "correctly parse functions" in {
+      val path = JsonPathParser.parse("$.foo.length()")
+      path must haveLength(2)
+      path mustEqual Seq(PathAttribute("foo"), PathFunction(JsonPathFunction.length))
+    }
   }
 }

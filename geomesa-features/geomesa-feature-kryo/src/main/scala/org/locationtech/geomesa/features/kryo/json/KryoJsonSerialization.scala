@@ -14,6 +14,7 @@ import com.esotericsoftware.kryo.io.{Input, Output}
 import com.typesafe.scalalogging.LazyLogging
 import org.json4s.JsonAST._
 import org.json4s.native.JsonMethods.{parse => _, _}
+import org.locationtech.geomesa.features.kryo.json.JsonPathParser.JsonPathFunction.JsonPathFunction
 import org.locationtech.geomesa.features.kryo.json.JsonPathParser._
 
 object KryoJsonSerialization extends LazyLogging {
@@ -118,6 +119,7 @@ object KryoJsonSerialization extends LazyLogging {
     } else {
       // collection of (type, position) for our matches so far
       var matches: Seq[(Byte, Int)] = Seq((DocByte, in.position()))
+      var function: Option[JsonPathFunction] = None
 
       // collect types and indices for each match at each level
       val paths = path.iterator
@@ -129,17 +131,22 @@ object KryoJsonSerialization extends LazyLogging {
           case PathIndices(indices: Seq[Int]) => matches = matchPathIndex(in, matches, Some(indices))
           case PathIndexWildCard              => matches = matchPathIndex(in, matches, None)
           case PathDeepScan                   => throw new NotImplementedError("todo") // TODO
+          case PathFunction(f)                => function = Some(f) // only 1 trailing function allowed by parser spec
         }
       }
 
       val values = matches.map { case (t, p) => readPathValue(in, t, p) }
+      val mapped = function match {
+        case None    => values
+        case Some(f) => values.map(applyPathFunction(f, _))
+      }
 
-      if (values.isEmpty) {
+      if (mapped.isEmpty) {
         null
       } else if (values.length == 1) {
-        values.head
+        mapped.head
       } else {
-        values
+        mapped
       }
     }
   }
@@ -322,7 +329,7 @@ object KryoJsonSerialization extends LazyLogging {
   }
 
   private def unwrapArray(array: JArray): Seq[Any] = {
-    array.values.map {
+    array.arr.map {
       case JString(s) => s
       case j: JObject => compact(render(j))
       case j: JArray  => unwrapArray(j)
@@ -330,6 +337,25 @@ object KryoJsonSerialization extends LazyLogging {
       case JInt(i)    => if (i.isValidInt) i.toInt else i.toLong
       case JNull      => null
       case JBool(b)   => b
+    }
+  }
+
+  private def applyPathFunction(function: JsonPathFunction, value: Any): Any = {
+    def toNum(v: Any): Double = v match {
+      case n: Number => n.doubleValue
+      case null => 0.0
+      case n => n.toString.toDouble
+    }
+    value match {
+      case s: Seq[_] =>
+        function match {
+          case JsonPathFunction.length => s.length
+          case JsonPathFunction.avg    => s.map(toNum).sum / s.length
+          case JsonPathFunction.min    => s.map(toNum).min
+          case JsonPathFunction.max    => s.map(toNum).max
+        }
+      case s: String if function == JsonPathFunction.length => s.length
+      case _ => null
     }
   }
 
