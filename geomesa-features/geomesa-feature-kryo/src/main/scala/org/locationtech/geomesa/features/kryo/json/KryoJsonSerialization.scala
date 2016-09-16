@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.typesafe.scalalogging.LazyLogging
 import org.json4s.JsonAST._
+import org.json4s.native.JsonMethods.{parse => _, _}
 import org.locationtech.geomesa.features.kryo.json.JsonPathParser._
 
 object KryoJsonSerialization extends LazyLogging {
@@ -311,12 +312,24 @@ object KryoJsonSerialization extends LazyLogging {
     typed match {
       case StringByte   => readString(in)
       case DocByte      => compact(render(readDocument(in)))
-      case ArrayByte    => readArray(in)
+      case ArrayByte    => unwrapArray(readArray(in))
       case DoubleByte   => in.readDouble()
       case IntByte      => in.readInt()
       case LongByte     => in.readLong()
       case NullByte     => null
       case BooleanByte  => readBoolean(in)
+    }
+  }
+
+  private def unwrapArray(array: JArray): Seq[Any] = {
+    array.values.map {
+      case JString(s) => s
+      case j: JObject => compact(render(j))
+      case j: JArray  => unwrapArray(j)
+      case JDouble(d) => d
+      case JInt(i)    => if (i.isValidInt) i.toInt else i.toLong
+      case JNull      => null
+      case JBool(b)   => b
     }
   }
 
