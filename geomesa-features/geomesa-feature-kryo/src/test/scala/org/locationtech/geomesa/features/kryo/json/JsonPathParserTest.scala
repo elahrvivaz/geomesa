@@ -24,43 +24,43 @@ class JsonPathParserTest extends Specification {
     }
     "correctly parse attribute paths" in {
       val path = JsonPathParser.parse("$.foo")
-      path.elements must haveLength(1)
-      path.elements.head mustEqual PathAttribute("foo")
+      path must haveLength(1)
+      path.head mustEqual PathAttribute("foo")
     }
     "correctly parse array index paths" in {
       val path = JsonPathParser.parse("$.foo[2]")
-      path.elements must haveLength(2)
-      path.elements mustEqual Seq(PathAttribute("foo"), PathIndex(2))
+      path must haveLength(2)
+      path mustEqual Seq(PathAttribute("foo"), PathIndex(2))
     }
     "correctly parse multiple array index paths" in {
       val path = JsonPathParser.parse("$.foo[2,3,4]")
-      path.elements must haveLength(2)
-      path.elements mustEqual Seq(PathAttribute("foo"), PathIndices(Seq(2, 3, 4)))
+      path must haveLength(2)
+      path mustEqual Seq(PathAttribute("foo"), PathIndices(Seq(2, 3, 4)))
     }
     "correctly parse wildcards in attribute paths" in {
       val path = JsonPathParser.parse("$.foo.*.name")
-      path.elements must haveLength(3)
-      path.elements mustEqual Seq(PathAttribute("foo"), PathAttributeWildCard, PathAttribute("name"))
+      path must haveLength(3)
+      path mustEqual Seq(PathAttribute("foo"), PathAttributeWildCard, PathAttribute("name"))
     }
     "correctly parse wildcards in array index paths" in {
       val path = JsonPathParser.parse("$.foo[*]")
-      path.elements must haveLength(2)
-      path.elements mustEqual Seq(PathAttribute("foo"), PathIndexWildCard)
+      path must haveLength(2)
+      path mustEqual Seq(PathAttribute("foo"), PathIndexWildCard)
     }
     "correctly parse deep scan attributes" in {
       val path = JsonPathParser.parse("$..foo[0]")
-      path.elements must haveLength(3)
-      path.elements mustEqual Seq(PathDeepScan, PathAttribute("foo"), PathIndex(0))
+      path must haveLength(3)
+      path mustEqual Seq(PathDeepScan, PathAttribute("foo"), PathIndex(0))
     }
     "correctly parse deep scan wildcards" in {
       val path = JsonPathParser.parse("$..*")
-      path.elements must haveLength(2)
-      path.elements mustEqual Seq(PathDeepScan, PathAttributeWildCard)
+      path must haveLength(2)
+      path mustEqual Seq(PathDeepScan, PathAttributeWildCard)
     }
     "correctly parse nested deep scans" in {
       val path = JsonPathParser.parse("$.foo..bar")
-      path.elements must haveLength(3)
-      path.elements mustEqual Seq(PathAttribute("foo"), PathDeepScan, PathAttribute("bar"))
+      path must haveLength(3)
+      path mustEqual Seq(PathAttribute("foo"), PathDeepScan, PathAttribute("bar"))
     }
   }
 }

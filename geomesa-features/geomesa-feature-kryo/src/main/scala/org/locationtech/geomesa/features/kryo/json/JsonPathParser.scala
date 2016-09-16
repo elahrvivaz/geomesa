@@ -18,38 +18,42 @@ object JsonPathParser {
   private val Parser = new JsonPathParser()
 
   @throws(classOf[ParsingException])
-  def parse(path: String, report: Boolean = true): JsonPath = {
+  def parse(path: String, report: Boolean = true): Seq[PathElement] = {
     val runner = if (report) { ReportingParseRunner(Parser.Path) } else { BasicParseRunner(Parser.Path) }
     val parsing = runner.run(path)
     parsing.result.getOrElse {
-      throw new ParsingException(s"Invalid JSON source:\n${ErrorUtils.printParseErrors(parsing)}")
+      throw new ParsingException(s"Invalid json path: ${ErrorUtils.printParseErrors(parsing)}")
     }
   }
 
-  case class JsonPath(elements: Seq[PathElement])
-
   sealed trait PathElement
 
+  // attribute: .foo
   case class PathAttribute(name: String) extends PathElement
 
+  // enumerated index: [1]
   case class PathIndex(index: Int) extends PathElement
 
+  // enumerated indices: [1,2,5]
   case class PathIndices(indices: Seq[Int]) extends PathElement
 
+  // any attribute: .*
   case object PathAttributeWildCard extends PathElement
 
+  // any index: [*]
   case object PathIndexWildCard extends PathElement
 
+  // deep scan: ..
   case object PathDeepScan extends PathElement
 }
 
 private class JsonPathParser extends Parser {
-  // main parsing rule
-  def Path: Rule1[JsonPath] = rule { "$" ~ zeroOrMore(Element) ~ EOI ~~> JsonPath }
 
-  def Element: Rule1[PathElement] = rule {
-    Attribute | ArrayIndex | ArrayIndices | AttributeWildCard | IndexWildCard | DeepScan
-  }
+  // main parsing rule
+  def Path: Rule1[Seq[PathElement]] = rule { "$" ~ zeroOrMore(Element) ~ EOI }
+
+  def Element: Rule1[PathElement] =
+    rule { Attribute | ArrayIndex | ArrayIndices | AttributeWildCard | IndexWildCard | DeepScan }
 
   def IndexWildCard: Rule1[PathElement] = rule { "[*]" ~ push(PathIndexWildCard) }
 

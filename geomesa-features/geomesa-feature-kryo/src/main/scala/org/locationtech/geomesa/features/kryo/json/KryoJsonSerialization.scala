@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.typesafe.scalalogging.LazyLogging
 import org.json4s.JsonAST._
+import org.locationtech.geomesa.features.kryo.json.JsonPathParser._
 
 object KryoJsonSerialization extends LazyLogging {
 
@@ -26,24 +27,133 @@ object KryoJsonSerialization extends LazyLogging {
   private val IntByte      :Byte = 0x10
   private val LongByte     :Byte = 0x12
 
-  private val BooleanFalse: Byte = 0x00
-  private val BooleanTrue: Byte  = 0x01
+  private val BooleanFalse :Byte = 0x00
+  private val BooleanTrue  :Byte = 0x01
 
   private val nameBuffers = new ThreadLocal[Array[Byte]] {
     override def initialValue(): Array[Byte] = Array.ofDim[Byte](32)
   }
 
+  /**
+    * Serialize a json object
+    *
+    * @param out output to write to
+    * @param json json string to serialize - must be a json object
+    */
   def serialize(out: Output, json: String): Unit = {
     import org.json4s._
     import org.json4s.native.JsonMethods._
-    serialize(out, parse(json).asInstanceOf[JObject])
+    val obj = if (json == null) { null } else { parse(json).asInstanceOf[JObject] }
+    serialize(out, obj)
   }
 
+  /**
+    * Serialize a json object
+    *
+    * @param out output to write to
+    * @param json object to serialize
+    */
   def serialize(out: Output, json: JObject): Unit = {
+    if (json == null) {
+      out.write(BooleanFalse)
+    } else {
+      out.write(BooleanTrue)
+      writeDocument(out, json)
+    }
+  }
+
+  /**
+    * Deserialize the given input. The input should be pointing to the start of
+    * the bytes written by `serialize`. Upon completion, the input will be pointing
+    * to the first byte after the bytes written by `serialize`.
+    *
+    * @param in input, pointing to the start of the json object
+    * @return json as a string
+    */
+  def deserializeAndRender(in: Input): String = {
+    import org.json4s.native.JsonMethods._
+    val json = deserialize(in)
+    if (json == null) {
+      null
+    } else {
+      compact(render(json))
+    }
+  }
+
+  /**
+    * Deserialize the given input. The input should be pointing to the start of
+    * the bytes written by `serialize`. Upon completion, the input will be pointing
+    * to the first byte after the bytes written by `serialize`.
+    *
+    * @param in input, pointing to the start of the json object
+    * @return parsed json object
+    */
+  def deserialize(in: Input): JObject = {
+    if (in.readByte == BooleanFalse) {
+      null
+    } else {
+      readDocument(in: Input)
+    }
+  }
+
+  /**
+    * Deserialize the result of a json-path. The input should be pointing to the start of
+    * the bytes written by `serialize`. There is no guarantee where the input will be
+    * pointing after completion.
+    *
+    * If the path selects leaf elements, they will be returned as primitives. If the path
+    * selects objects, they will be returned as json strings. If more than one item is
+    * selected, they will be returned in a Seq. If nothing is selected, it will return null.
+    *
+    * @param in input, pointing to the start of the json object
+    * @param path json path to evaluate
+    * @return result of the path, if any
+    */
+  def deserialize(in: Input, path: Seq[PathElement]): Any = {
+    if (path.isEmpty) {
+      deserializeAndRender(in)
+    } else if (in.readByte == BooleanFalse) {
+      null
+    } else {
+      // collection of (type, position) for our matches so far
+      var matches: Seq[(Byte, Int)] = Seq((DocByte, in.position()))
+
+      // collect types and indices for each match at each level
+      val paths = path.iterator
+      while (paths.hasNext && matches.nonEmpty) {
+        paths.next match {
+          case PathAttribute(name: String)    => matches = matchPathAttribute(in, matches, Some(name))
+          case PathAttributeWildCard          => matches = matchPathAttribute(in, matches, None)
+          case PathIndex(index: Int)          => matches = matchPathIndex(in, matches, Some(Seq(index)))
+          case PathIndices(indices: Seq[Int]) => matches = matchPathIndex(in, matches, Some(indices))
+          case PathIndexWildCard              => matches = matchPathIndex(in, matches, None)
+          case PathDeepScan                   => throw new NotImplementedError("todo") // TODO
+        }
+      }
+
+      val values = matches.map { case (t, p) => readPathValue(in, t, p) }
+
+      if (values.isEmpty) {
+        null
+      } else if (values.length == 1) {
+        values.head
+      } else {
+        values
+      }
+    }
+  }
+
+  private def writeDocument(out: Output, name: String, value: JObject): Unit = {
+    out.writeByte(DocByte)
+    out.writeName(name)
+    writeDocument(out, value)
+  }
+
+  private def writeDocument(out: Output, value: JObject): Unit = {
     val start = out.position()
     out.setPosition(start + 4) // skip space to write total length
-    json.obj.foreach { case (name, value) =>
-      value match {
+    value.obj.foreach { case (name, elem) =>
+      elem match {
         case v: JString  => writeString(out, name, v)
         case v: JObject  => writeDocument(out, name, v)
         case v: JArray   => writeArray(out, name, v)
@@ -62,59 +172,16 @@ object KryoJsonSerialization extends LazyLogging {
     out.setPosition(end)
   }
 
-  def deserialize(in: Input): String = {
-    import org.json4s.native.JsonMethods._
-    compact(render(deserializeJson(in)))
-  }
-
-  def deserializeJson(in: Input): JObject = {
-    val start = in.position()
-    val end = in.readInt() + start - 1 // last byte is the terminal byte
-    val elements = scala.collection.mutable.ArrayBuffer.empty[JField]
-    while (in.position() < end) {
-      elements.append(readElement(in))
-    }
-    in.skip(1) // skip over terminal byte
-    JObject(elements.toList)
-  }
-
-  def deserialize(in: Input, path: String): Option[Any] = {
-    // TODO
-    None
-  }
-
-  private def readElement(in: Input): JField = {
-    val switch = in.read().toByte
-    val name = in.readName()
-    val value = switch match {
-      case StringByte   => readString(in)
-      case DocByte      => deserializeJson(in)
-      case ArrayByte    => readArray(in)
-      case DoubleByte   => readDouble(in)
-      case IntByte      => readInt(in)
-      case LongByte     => readLong(in)
-      case NullByte     => JNull
-      case BooleanByte  => readBoolean(in)
-    }
-    JField(name, value)
-  }
-
-  private def writeDocument(out: Output, name: String, value: JObject): Unit = {
-    out.writeByte(DocByte)
-    out.writeName(name)
-    serialize(out, value)
-  }
-
   private def writeArray(out: Output, name: String, value: JArray): Unit = {
     out.writeByte(ArrayByte)
     out.writeName(name)
     // we store as an object where array index is the key
     var i = -1
     val withKeys = value.arr.map { element => i += 1; (i.toString, element) } // note: side-effect in map
-    serialize(out, JObject(withKeys))
+    writeDocument(out, JObject(withKeys))
   }
 
-  private def readArray(in: Input): JArray = JArray(deserializeJson(in).obj.map(_._2))
+  private def readArray(in: Input): JArray = JArray(readDocument(in).obj.map(_._2))
 
   private def writeString(out: Output, name: String, value: JString): Unit = {
     out.writeByte(StringByte)
@@ -123,13 +190,6 @@ object KryoJsonSerialization extends LazyLogging {
     out.writeInt(bytes.length)
     out.write(bytes)
     out.writeByte(TerminalByte)
-  }
-
-  private def readString(in: Input): JString = {
-    val bytes = Array.ofDim[Byte](in.readInt())
-    in.read(bytes)
-    in.skip(1) // skip TerminalByte
-    JString(new String(bytes, StandardCharsets.UTF_8))
   }
 
   private def writeDecimal(out: Output, name: String, value: JDecimal): Unit = {
@@ -143,8 +203,6 @@ object KryoJsonSerialization extends LazyLogging {
     out.writeName(name)
     out.writeDouble(value.values)
   }
-
-  private def readDouble(in: Input): JDouble = JDouble(in.readDouble())
 
   private def writeInt(out: Output, name: String, value: JInt): Unit = {
     if (value.values.isValidInt) {
@@ -160,21 +218,106 @@ object KryoJsonSerialization extends LazyLogging {
     }
   }
 
-  private def readInt(in: Input): JInt = JInt(in.readInt())
-
-  private def readLong(in: Input): JInt = JInt(in.readLong())
-
   private def writeBoolean(out: Output, name: String, v: JBool): Unit = {
     out.writeByte(BooleanByte)
     out.writeName(name)
     out.writeByte(if (v.values) BooleanTrue else BooleanFalse)
   }
 
-  private def readBoolean(in: Input): JBool = JBool(in.readByte == BooleanTrue)
-
   private def writeNull(out: Output, name: String): Unit = {
     out.writeByte(NullByte)
     out.writeName(name)
+  }
+
+  private def readDocument(in: Input): JObject = {
+    val end = in.position() + in.readInt() - 1 // last byte is the terminal byte
+    val elements = scala.collection.mutable.ArrayBuffer.empty[JField]
+    while (in.position() < end) {
+      val switch = in.readByte()
+      val name = in.readName()
+      val value = switch match {
+        case StringByte   => JString(readString(in))
+        case DocByte      => readDocument(in)
+        case ArrayByte    => readArray(in)
+        case DoubleByte   => JDouble(in.readDouble())
+        case IntByte      => JInt(in.readInt())
+        case LongByte     => JInt(in.readLong())
+        case NullByte     => JNull
+        case BooleanByte  => JBool(readBoolean(in))
+      }
+      elements.append(JField(name, value))
+    }
+    in.skip(1) // skip over terminal byte
+    JObject(elements.toList)
+  }
+
+  private def skipDocument(in: Input): Unit = in.skip(in.readInt - 4) // length includes bytes storing length
+
+  private def readString(in: Input): String = {
+    val bytes = Array.ofDim[Byte](in.readInt())
+    in.read(bytes)
+    in.skip(1) // skip TerminalByte
+    new String(bytes, StandardCharsets.UTF_8)
+  }
+
+  private def skipString(in: Input): Unit = in.skip(in.readInt() + 1) // skip TerminalByte
+
+  private def readBoolean(in: Input): Boolean = in.readByte == BooleanTrue
+
+  private def skipBoolean(in: Input): Unit = in.skip(1)
+
+  private def matchPathAttribute(in: Input, positions: Seq[(Byte, Int)], name: Option[String]): Seq[(Byte, Int)] = {
+    val docs = positions.collect { case (t, p) if t == DocByte => p }
+    val predicate: () => Boolean = () => name.map(_ == in.readName()).getOrElse { in.skipName(); true }
+    matchObjectPath(in, docs, predicate)
+  }
+
+  private def matchPathIndex(in: Input, positions: Seq[(Byte, Int)], indices: Option[Seq[Int]]): Seq[(Byte, Int)] = {
+    val arrays = positions.collect { case (t, p) if t == ArrayByte => p }
+    val predicate: () => Boolean = () => indices.map(_.contains(in.readName().toInt)).getOrElse { in.skipName(); true }
+    matchObjectPath(in, arrays, predicate)
+  }
+
+  // predicate must consume the 'name' from the input stream
+  private def matchObjectPath(in: Input, positions: Seq[Int], nameConsumingPredicate: () => Boolean): Seq[(Byte, Int)] = {
+    positions.flatMap { position =>
+      in.setPosition(position)
+      val end = position + in.readInt() - 1 // last byte is the terminal byte
+      val elements = scala.collection.mutable.ArrayBuffer.empty[(Byte, Int)]
+      while (in.position() < end) {
+        val switch = in.readByte()
+        if (nameConsumingPredicate()) {
+          elements.append((switch, in.position()))
+        }
+        switch match {
+          case StringByte   => skipString(in)
+          case DocByte      => skipDocument(in)
+          case ArrayByte    => skipDocument(in) // arrays are stored as docs
+          case DoubleByte   => in.skip(8)
+          case IntByte      => in.skip(4)
+          case LongByte     => in.skip(8)
+          case NullByte     => // no-op
+          case BooleanByte  => skipBoolean(in)
+        }
+      }
+      elements
+    }
+  }
+
+  private def readPathValue(in: Input, typed: Byte, position: Int): Any = {
+    import org.json4s.native.JsonMethods._
+
+    in.setPosition(position)
+    typed match {
+      case StringByte   => readString(in)
+      case DocByte      => compact(render(readDocument(in)))
+      case ArrayByte    => readArray(in)
+      case DoubleByte   => in.readDouble()
+      case IntByte      => in.readInt()
+      case LongByte     => in.readLong()
+      case NullByte     => null
+      case BooleanByte  => readBoolean(in)
+    }
   }
 
   private implicit class RichOutput(val out: Output) extends AnyRef {
@@ -203,6 +346,8 @@ object KryoJsonSerialization extends LazyLogging {
       }
       new String(buffer, 0, i, StandardCharsets.UTF_8)
     }
+
+    def skipName(): Unit = while (in.readByte() != TerminalByte) {}
   }
 }
 

@@ -319,7 +319,7 @@ object KryoFeatureSerializer {
       case ObjectType.GEOMETRY =>
         writeNullable((o: Output, v: AnyRef) => KryoGeometrySerialization.serialize(o, v.asInstanceOf[Geometry]))
       case ObjectType.JSON =>
-        writeNullable((o: Output, v: AnyRef) => KryoJsonSerialization.serialize(o, v.asInstanceOf[String]))
+        (o: Output, v: AnyRef) => KryoJsonSerialization.serialize(o, v.asInstanceOf[String])
       case ObjectType.LIST =>
         val valueWriter = matchWriter(bindings.head)
         (o: Output, v: AnyRef) => {
@@ -399,7 +399,7 @@ object KryoFeatureSerializer {
         }
         readNullable(w)
       case ObjectType.GEOMETRY => readNullable((i: Input) => KryoGeometrySerialization.deserialize(i))
-      case ObjectType.JSON => readNullable((i: Input) => KryoJsonSerialization.deserialize(i))
+      case ObjectType.JSON => readNullable((i: Input) => KryoJsonSerialization.deserializeAndRender(i))
       case ObjectType.LIST =>
         val valueReader = matchReader(bindings.head)
         (i: Input) => {

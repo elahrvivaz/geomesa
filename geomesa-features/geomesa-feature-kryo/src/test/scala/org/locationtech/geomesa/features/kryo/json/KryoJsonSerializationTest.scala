@@ -10,6 +10,7 @@ package org.locationtech.geomesa.features.kryo.json
 
 import com.esotericsoftware.kryo.io.{Input, Output}
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.features.kryo.json.JsonPathParser.PathElement
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
@@ -47,17 +48,25 @@ class KryoJsonSerializationTest extends Specification {
   )
 
   "KryoJsonSerialization" should {
+    "correctly de/serialize null" in {
+      val out = new Output(128)
+      KryoJsonSerialization.serialize(out, null.asInstanceOf[String])
+      val bytes = out.toBytes
+      bytes must not(beEmpty)
+      KryoJsonSerialization.deserializeAndRender(new Input(bytes)) must beNull
+      KryoJsonSerialization.deserialize(new Input(bytes)) must beNull
+    }
     "correctly de/serialize basic json" in {
       val out = new Output(128)
       val json = """{ "foo" : false, "bar" : "yes", "baz" : [ 1, 2, 3 ] }"""
       KryoJsonSerialization.serialize(out, json)
       val bytes = out.toBytes
       bytes must not(beEmpty)
-      val recovered = KryoJsonSerialization.deserialize(new Input(bytes))
+      val recovered = KryoJsonSerialization.deserializeAndRender(new Input(bytes))
       recovered mustEqual json.replaceAll(" ", "")
     }
     "correctly de/serialize geojson" in {
-      val out = new Output(512)
+      val out = new Output(768)
       val jsons = geoms.map { geom =>
         s"""{ "type": "Feature", "geometry": $geom, "properties": { "prop0": "value0", "prop1": { "this": "that" } } }"""
       }
@@ -66,9 +75,39 @@ class KryoJsonSerializationTest extends Specification {
         KryoJsonSerialization.serialize(out, json)
         val bytes = out.toBytes
         bytes must not(beEmpty)
-        val recovered = KryoJsonSerialization.deserialize(new Input(bytes))
+        val recovered = KryoJsonSerialization.deserializeAndRender(new Input(bytes))
         recovered mustEqual json.replaceAll("[ \n]", "")
       }
+    }
+    "correctly deserialize json-path" in {
+      implicit def toJsonPath(s: String): Seq[PathElement] = JsonPathParser.parse(s)
+
+      val out = new Output(512)
+      val json =
+        """{
+           |  "type": "Feature",
+           |  "geometry": {
+           |    "type": "Point",
+           |    "coordinates": [30, 10]
+           |  },
+           |  "properties": {
+           |    "type": 20,
+           |    "prop0": "value0",
+           |    "prop1": {
+           |      "this": "that"
+           |    }
+           |  }
+           |}""".stripMargin
+      KryoJsonSerialization.serialize(out, json)
+      val bytes = out.toBytes
+
+      KryoJsonSerialization.deserialize(new Input(bytes), "$.foo") must beNull
+      KryoJsonSerialization.deserialize(new Input(bytes), "$.type") mustEqual "Feature"
+      KryoJsonSerialization.deserialize(new Input(bytes), "$.geometry.type") mustEqual "Point"
+      KryoJsonSerialization.deserialize(new Input(bytes), "$.geometry.coordinates[0]") mustEqual 30
+      KryoJsonSerialization.deserialize(new Input(bytes), "$.geometry.coordinates[0,1]") mustEqual Seq(30, 10)
+      KryoJsonSerialization.deserialize(new Input(bytes), "$.*.type") mustEqual Seq("Point", 20)
+      KryoJsonSerialization.deserialize(new Input(bytes), "$.geometry.coordinates[*]") mustEqual Seq(30, 10)
     }
   }
 }
