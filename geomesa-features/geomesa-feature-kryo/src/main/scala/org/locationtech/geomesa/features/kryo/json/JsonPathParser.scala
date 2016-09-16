@@ -53,7 +53,7 @@ private class JsonPathParser extends Parser {
   def Path: Rule1[Seq[PathElement]] = rule { "$" ~ zeroOrMore(Element) ~ EOI }
 
   def Element: Rule1[PathElement] =
-    rule { Attribute | ArrayIndex | ArrayIndices | AttributeWildCard | IndexWildCard | DeepScan }
+    rule { Attribute | ArrayIndex | ArrayIndices | ArrayIndexRange | AttributeWildCard | IndexWildCard | DeepScan }
 
   def IndexWildCard: Rule1[PathElement] = rule { "[*]" ~ push(PathIndexWildCard) }
 
@@ -71,6 +71,9 @@ private class JsonPathParser extends Parser {
 
   def ArrayIndices: Rule1[PathIndices] =
     rule { "[" ~ Number ~ "," ~ oneOrMore(Number, ",") ~ "]" ~~> ((n0, n) => PathIndices(n.+:(n0))) }
+
+  def ArrayIndexRange: Rule1[PathIndices] =
+    rule { "[" ~ Number ~ ":" ~ Number ~ "]" ~~> ((n0, n1) => PathIndices(n0 until n1)) }
 
   def Attribute: Rule1[PathAttribute] = rule { "." ~ oneOrMore(Character) ~> PathAttribute }
 

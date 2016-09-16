@@ -37,6 +37,11 @@ class JsonPathParserTest extends Specification {
       path must haveLength(2)
       path mustEqual Seq(PathAttribute("foo"), PathIndices(Seq(2, 3, 4)))
     }
+    "correctly parse array index range paths" in {
+      val path = JsonPathParser.parse("$.foo[2:4]")
+      path must haveLength(2)
+      path mustEqual Seq(PathAttribute("foo"), PathIndices(Seq(2, 3)))
+    }
     "correctly parse wildcards in attribute paths" in {
       val path = JsonPathParser.parse("$.foo.*.name")
       path must haveLength(3)
