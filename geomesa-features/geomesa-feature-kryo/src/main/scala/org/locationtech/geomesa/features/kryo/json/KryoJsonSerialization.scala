@@ -130,7 +130,7 @@ object KryoJsonSerialization extends LazyLogging {
           case PathIndex(index: Int)          => matches = matchPathIndex(in, matches, Some(Seq(index)))
           case PathIndices(indices: Seq[Int]) => matches = matchPathIndex(in, matches, Some(indices))
           case PathIndexWildCard              => matches = matchPathIndex(in, matches, None)
-          case PathDeepScan                   => throw new NotImplementedError("todo") // TODO
+          case PathDeepScan                   => matches = matchDeep(in, matches)
           case PathFunction(f)                => function = Some(f) // only 1 trailing function allowed by parser spec
         }
       }
@@ -288,10 +288,10 @@ object KryoJsonSerialization extends LazyLogging {
 
   // predicate must consume the 'name' from the input stream
   private def matchObjectPath(in: Input, positions: Seq[Int], nameConsumingPredicate: () => Boolean): Seq[(Byte, Int)] = {
-    positions.flatMap { position =>
+    val elements = scala.collection.mutable.ArrayBuffer.empty[(Byte, Int)]
+    positions.foreach { position =>
       in.setPosition(position)
       val end = position + in.readInt() - 1 // last byte is the terminal byte
-      val elements = scala.collection.mutable.ArrayBuffer.empty[(Byte, Int)]
       while (in.position() < end) {
         val switch = in.readByte()
         if (nameConsumingPredicate()) {
@@ -308,8 +308,26 @@ object KryoJsonSerialization extends LazyLogging {
           case BooleanByte  => skipBoolean(in)
         }
       }
-      elements
     }
+    elements
+  }
+
+  // matches everything under our current nodes
+  private def matchDeep(in: Input, positions: Seq[(Byte, Int)]): Seq[(Byte, Int)] = {
+    val toSearch = scala.collection.mutable.Queue[(Byte, Int)](positions: _*)
+    val elements = scala.collection.mutable.ArrayBuffer.empty[(Byte, Int)]
+    def predicate(): Boolean = { in.skipName(); true }
+
+    while (toSearch.nonEmpty) {
+      val (typ, position) = toSearch.dequeue()
+      elements.append((typ, position))
+      in.setPosition(position)
+      typ match {
+        case DocByte | ArrayByte => toSearch.enqueue(matchObjectPath(in, Seq(position), predicate): _*)
+        case StringByte | DoubleByte | IntByte | LongByte | NullByte | BooleanByte => // no-op
+      }
+    }
+    elements
   }
 
   private def readPathValue(in: Input, typed: Byte, position: Int): Any = {

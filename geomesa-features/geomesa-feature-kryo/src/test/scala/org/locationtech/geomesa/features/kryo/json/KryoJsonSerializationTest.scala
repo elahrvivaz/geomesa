@@ -111,6 +111,9 @@ class KryoJsonSerializationTest extends Specification {
       KryoJsonSerialization.deserialize(new Input(bytes), "$.*.type") mustEqual Seq("Point", 20)
       KryoJsonSerialization.deserialize(new Input(bytes), "$.geometry.coordinates[*]") mustEqual Seq(30, 10)
       KryoJsonSerialization.deserialize(new Input(bytes), "$.geometry.coordinates.length()") mustEqual 2
+      KryoJsonSerialization.deserialize(new Input(bytes), "$..type") mustEqual Seq("Feature", "Point", 20)
+      KryoJsonSerialization.deserialize(new Input(bytes), "$.properties..*") mustEqual
+          Seq(20, "value0", """{"this":"that"}""", "that")
     }
   }
 }
