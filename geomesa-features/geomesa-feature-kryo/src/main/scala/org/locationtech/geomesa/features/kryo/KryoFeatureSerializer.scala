@@ -399,7 +399,7 @@ object KryoFeatureSerializer {
         }
         readNullable(w)
       case ObjectType.GEOMETRY => readNullable((i: Input) => KryoGeometrySerialization.deserialize(i))
-      case ObjectType.JSON => readNullable((i: Input) => KryoJsonSerialization.deserializeAndRender(i))
+      case ObjectType.JSON => (i: Input) => KryoJsonSerialization.deserializeAndRender(i)
       case ObjectType.LIST =>
         val valueReader = matchReader(bindings.head)
         (i: Input) => {
