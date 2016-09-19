@@ -256,9 +256,9 @@ object KryoFeatureSerializer {
   private[this] val writers = new SoftThreadLocalCache[String, Array[(Output, AnyRef) => Unit]]()
   private[this] val offsets = new SoftThreadLocalCache[String, Array[Int]]()
 
-  def getInput(bytes: Array[Byte]): Input = {
+  def getInput(bytes: Array[Byte], position: Int = 0, count: Int = -1): Input = {
     val in = inputs.getOrElseUpdate(new Input)
-    in.setBuffer(bytes)
+    in.setBuffer(bytes, position, if (count == -1) bytes.length else count)
     in
   }
 
