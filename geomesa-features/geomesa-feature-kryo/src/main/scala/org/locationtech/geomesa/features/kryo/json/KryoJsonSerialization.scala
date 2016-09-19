@@ -17,6 +17,8 @@ import org.json4s.native.JsonMethods.{parse => _, _}
 import org.locationtech.geomesa.features.kryo.json.JsonPathParser.JsonPathFunction.JsonPathFunction
 import org.locationtech.geomesa.features.kryo.json.JsonPathParser._
 
+import scala.util.control.NonFatal
+
 object KryoJsonSerialization extends LazyLogging {
 
   private val TerminalByte :Byte = 0x00
@@ -45,7 +47,15 @@ object KryoJsonSerialization extends LazyLogging {
   def serialize(out: Output, json: String): Unit = {
     import org.json4s._
     import org.json4s.native.JsonMethods._
-    val obj = if (json == null) { null } else { parse(json).asInstanceOf[JObject] }
+    val obj = if (json == null) { null } else {
+      try {
+        parse(json).asInstanceOf[JObject]
+      } catch {
+        case NonFatal(e) =>
+          logger.warn(s"Error parsing json:\n$json", e)
+          null
+      }
+    }
     serialize(out, obj)
   }
 
