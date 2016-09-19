@@ -256,8 +256,11 @@ object SimpleFeatureTypes {
       if (ad.isBinTrackId) {
         options.put(OPT_BIN_TRACK_ID, "true")
       }
-      if (ad.isKeepStats) {
+      if (ad.isKeepStats()) {
         options.put(OPT_STATS, "true")
+      }
+      if (ad.isJson()) {
+        options.put(OPT_JSON, "true")
       }
       ad.getType match {
         case t if simpleTypeMap.contains(t.getBinding.getSimpleName) =>
