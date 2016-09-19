@@ -67,7 +67,11 @@ object JsonPathPropertyAccessor extends PropertyAccessor {
     }
 
     val deserialized = KryoJsonSerialization.deserialize(input, path.tail)
-    Converters.convert(deserialized, target)
+    if (target == null) {
+      deserialized.asInstanceOf[T]
+    } else {
+      Converters.convert(deserialized, target)
+    }
   }
 
   override def set[T](obj: Any, xpath: String, value: T, target: Class[T]): Unit = throw new NotImplementedError()
