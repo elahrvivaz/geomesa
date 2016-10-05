@@ -10,9 +10,8 @@ package org.locationtech.geomesa.accumulo.util
 
 import java.util.Map.Entry
 import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.{Executors, TimeUnit}
+import java.util.concurrent.{Executors, Future, LinkedBlockingQueue, TimeUnit}
 
-import com.google.common.collect.Queues
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.client.ScannerBase
 import org.apache.accumulo.core.data.{Key, Value}
@@ -28,17 +27,16 @@ class BatchMultiScanner(acc: AccumuloConnectorCreator,
                         joinFunction: JoinFunction,
                         numThreads: Int = 10,
                         batchSize: Int = 32768)
-  extends Iterable[java.util.Map.Entry[Key, Value]] with AutoCloseable with LazyLogging {
+    extends Iterable[java.util.Map.Entry[Key, Value]] with AutoCloseable with LazyLogging {
 
   require(batchSize > 0, f"Illegal batchSize ($batchSize%d). Value must be > 0")
   require(numThreads > 0, f"Illegal numThreads ($numThreads%d). Value must be > 0")
-  logger.trace(f"Creating BatchMultiScanner with batchSize $batchSize%d")
+  logger.trace(f"Creating BatchMultiScanner with batchSize $batchSize%d and numThreads $numThreads%d")
 
   val executor = Executors.newFixedThreadPool(numThreads)
-  val monitoringExecutor = Executors.newSingleThreadExecutor()
 
-  val inQ  = Queues.newLinkedBlockingQueue[Entry[Key, Value]](batchSize)
-  val outQ = Queues.newArrayBlockingQueue[Entry[Key, Value]](batchSize)
+  val inQ  = new LinkedBlockingQueue[Entry[Key, Value]](batchSize)
+  val outQ = new LinkedBlockingQueue[Entry[Key, Value]](batchSize)
 
   val inDone  = new AtomicBoolean(false)
   val outDone = new AtomicBoolean(false)
@@ -56,50 +54,39 @@ class BatchMultiScanner(acc: AccumuloConnectorCreator,
   executor.submit(new Runnable {
     override def run(): Unit = {
       try {
+        val tasks = collection.mutable.ListBuffer.empty[Future[_]]
         while (!inDone.get || inQ.size() > 0) {
           val entry = inQ.poll(5, TimeUnit.MILLISECONDS)
           if (entry != null) {
-            val entries = new collection.mutable.ListBuffer[Entry[Key, Value]]()
+            val entries = collection.mutable.ListBuffer(entry)
             inQ.drainTo(entries)
-            executor.submit(new Runnable {
+            val task = executor.submit(new Runnable {
               override def run(): Unit = {
-                val ranges = (List(entry) ++ entries).map(joinFunction)
                 val scanner = acc.getBatchScanner(join.table, join.numThreads)
-                Strategy.configureBatchScanner(scanner, join.copy(ranges = ranges))
-                scanner.iterator().foreach(outQ.put)
-                scanner.close()
+                try {
+                  Strategy.configureBatchScanner(scanner, join.copy(ranges = entries.map(joinFunction)))
+                  scanner.iterator().foreach(outQ.put)
+                } finally {
+                  scanner.close()
+                }
               }
             })
+            tasks.append(task)
           }
         }
-        executor.shutdown()
-      } catch {
-        case _: InterruptedException =>
-      }
-    }
-  })
-
-  monitoringExecutor.submit(new Runnable {
-    override def run(): Unit = {
-      try {
-        while (!executor.isTerminated) {
-          executor.awaitTermination(60, TimeUnit.SECONDS)
-        }
+        tasks.foreach(_.get)
       } catch {
         case _: InterruptedException =>
       } finally {
+        executor.shutdown()
         outDone.set(true)
       }
-      monitoringExecutor.shutdown()
     }
   })
 
   override def close() {
     if (!executor.isShutdown) {
       executor.shutdownNow()
-    }
-    if (!monitoringExecutor.isShutdown) {
-      monitoringExecutor.shutdownNow()
     }
     in.close()
   }
