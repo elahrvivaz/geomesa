@@ -19,7 +19,7 @@ import org.joda.time.format.ISODateTimeFormat
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.TestWithDataStore
 import org.locationtech.geomesa.accumulo.index.QueryHints._
-import org.locationtech.geomesa.accumulo.index.attribute.{AttributeIndex, AttributeQueryableIndex, AttributeWritableIndex}
+import org.locationtech.geomesa.accumulo.index.attribute.{AttributeIndex, AttributeWritableIndex}
 import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator
 import org.locationtech.geomesa.accumulo.util.SelfClosingIterator
 import org.locationtech.geomesa.features.ScalaSimpleFeature
@@ -43,27 +43,33 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
   override val spec = "name:String:index=full,age:Integer:index=true,count:Long:index=true," +
       "weight:Double:index=true,height:Float:index=true,admin:Boolean:index=true," +
       "geom:Point:srid=4326,dtg:Date,indexedDtg:Date:index=true,fingers:List[String]:index=true," +
-      "toes:List[Double]:index=true,track:String;geomesa.indexes.enabled='attr_idx,records'"
+      "toes:List[Double]:index=true,track:String,geom2:Point:srid=4326;geomesa.indexes.enabled='attr_idx,records'"
 
   val geom = WKTUtils.read("POINT(45.0 49.0)")
+  val geom2 = WKTUtils.read("POINT(55.0 59.0)")
 
   val df = ISODateTimeFormat.dateTime()
 
-  val aliceDate   = df.parseDateTime("2012-01-01T12:00:00.000Z").toDate
-  val billDate    = df.parseDateTime("2013-01-01T12:00:00.000Z").toDate
-  val bobDate     = df.parseDateTime("2014-01-01T12:00:00.000Z").toDate
-  val charlesDate = df.parseDateTime("2014-01-01T12:30:00.000Z").toDate
+  val annaDate = df.parseDateTime("2012-01-01T12:00:00.000Z").toDate
+  val billDate = df.parseDateTime("2013-01-01T12:00:00.000Z").toDate
+  val burtDate = df.parseDateTime("2014-01-01T12:00:00.000Z").toDate
+  val carlDate = df.parseDateTime("2014-01-01T12:30:00.000Z").toDate
 
-  val aliceFingers   = List("index")
-  val billFingers    = List("ring", "middle")
-  val bobFingers     = List("index", "thumb", "pinkie")
-  val charlesFingers = List("thumb", "ring", "index", "pinkie", "middle")
+  val annaFingers = List("index")
+  val billFingers = List("ring", "middle")
+  val burtFingers = List("index", "thumb", "pinkie")
+  val carlFingers = List("thumb", "ring", "index", "pinkie", "middle")
+
+  val annaToes = List(1.0)
+  val billToes = List(1.0, 2.0)
+  val burtToes = List(3.0, 2.0, 5.0)
+  val carlToes = List()
 
   val features = Seq(
-    Array("alice",   20,   1, 5.0, 10.0F, true,  geom, aliceDate, aliceDate, aliceFingers, List(1.0), "track1"),
-    Array("bill",    21,   2, 6.0, 11.0F, false, geom, billDate, billDate, billFingers, List(1.0, 2.0), "track2"),
-    Array("bob",     30,   3, 6.0, 12.0F, false, geom, bobDate, bobDate, bobFingers, List(3.0, 2.0, 5.0), "track1"),
-    Array("charles", null, 4, 7.0, 12.0F, false, geom, charlesDate, charlesDate, charlesFingers, List(), "track1")
+    Array("anna", 20,   1, 5.0, 10.0F, true,  geom, annaDate, annaDate, annaFingers, annaToes, "track1", geom2),
+    Array("bill", 21,   2, 6.0, 11.0F, false, geom, billDate, billDate, billFingers, billToes, "track2", geom2),
+    Array("burt", 30,   3, 6.0, 12.0F, false, geom, burtDate, burtDate, burtFingers, burtToes, "track1", geom2),
+    Array("carl", null, 4, 7.0, 12.0F, false, geom, carlDate, carlDate, carlFingers, carlToes, "track1", geom2)
   ).map { entry =>
     val feature = new ScalaSimpleFeature(entry.head.toString, sft)
     feature.setAttributes(entry.asInstanceOf[Array[AnyRef]])
@@ -107,12 +113,12 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       val query = new Query(sftName, ECQL.toFilter("count>=2"))
       query.getHints.put(BIN_TRACK_KEY, "name")
       query.getHints.put(BIN_BATCH_SIZE_KEY, 1000)
-      explain(query).split("\n").map(_.trim).filter(_.startsWith("Join Plan:")) must haveLength(1)
+      forall(ds.getQueryPlan(query))(_ must beAnInstanceOf[JoinPlan])
       val results = runQuery(query).map(_.getAttribute(BIN_ATTRIBUTE_INDEX)).toList
       forall(results)(_ must beAnInstanceOf[Array[Byte]])
       val bins = results.flatMap(_.asInstanceOf[Array[Byte]].grouped(16).map(Convert2ViewerFunction.decode))
       bins must haveSize(3)
-      bins.map(_.trackId) must containAllOf(Seq("bill", "bob", "charles").map(_.hashCode.toString))
+      bins.map(_.trackId) must containAllOf(Seq("bill", "burt", "carl").map(_.hashCode.toString))
     }
 
     "support bin queries against index values" in {
@@ -120,20 +126,20 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       val query = new Query(sftName, ECQL.toFilter("count>=2"))
       query.getHints.put(BIN_TRACK_KEY, "dtg")
       query.getHints.put(BIN_BATCH_SIZE_KEY, 1000)
-      explain(query).split("\n").filter(_.startsWith("Join Table:")) must beEmpty
+      forall(ds.getQueryPlan(query))(_ must not(beAnInstanceOf[JoinPlan]))
       val results = runQuery(query).map(_.getAttribute(BIN_ATTRIBUTE_INDEX)).toList
       forall(results)(_ must beAnInstanceOf[Array[Byte]])
       val bins = results.flatMap(_.asInstanceOf[Array[Byte]].grouped(16).map(Convert2ViewerFunction.decode))
       bins must haveSize(3)
-      bins.map(_.trackId) must containAllOf(Seq(billDate, bobDate, charlesDate).map(_.hashCode.toString))
+      bins.map(_.trackId) must containAllOf(Seq(billDate, burtDate, carlDate).map(_.hashCode.toString))
     }
 
     "support bin queries against full values" in {
       import BinAggregatingIterator.BIN_ATTRIBUTE_INDEX
-      val query = new Query(sftName, ECQL.toFilter("name>'amy'"))
+      val query = new Query(sftName, ECQL.toFilter("name>'april'"))
       query.getHints.put(BIN_TRACK_KEY, "count")
       query.getHints.put(BIN_BATCH_SIZE_KEY, 1000)
-      explain(query).split("\n").filter(_.startsWith("Join Table:")) must beEmpty
+      forall(ds.getQueryPlan(query))(_ must not(beAnInstanceOf[JoinPlan]))
       val results = runQuery(query).map(_.getAttribute(BIN_ATTRIBUTE_INDEX)).toList
       forall(results)(_ must beAnInstanceOf[Array[Byte]])
       val bins = results.flatMap(_.asInstanceOf[Array[Byte]].grouped(16).map(Convert2ViewerFunction.decode))
@@ -141,46 +147,62 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       bins.map(_.trackId) must containAllOf(Seq(2, 3, 4).map(_.hashCode.toString))
     }
 
+    "support bin queries with join queries against alternate geometry" in {
+      import BinAggregatingIterator.BIN_ATTRIBUTE_INDEX
+      val query = new Query(sftName, ECQL.toFilter("count>=2 AND bbox(geom2,50,50,60,60)"))
+      query.getHints.put(BIN_GEOM_KEY, "geom2")
+      query.getHints.put(BIN_TRACK_KEY, "name")
+      query.getHints.put(BIN_BATCH_SIZE_KEY, 1000)
+      forall(ds.getQueryPlan(query))(_ must beAnInstanceOf[JoinPlan])
+      val results = runQuery(query).map(_.getAttribute(BIN_ATTRIBUTE_INDEX)).toList
+      forall(results)(_ must beAnInstanceOf[Array[Byte]])
+      val bins = results.flatMap(_.asInstanceOf[Array[Byte]].grouped(16).map(Convert2ViewerFunction.decode))
+      bins must haveSize(3)
+      bins.map(_.trackId) must containAllOf(Seq("bill", "burt", "carl").map(_.hashCode.toString))
+      bins.map(_.lon) must contain(55f, 55f, 55f)
+      bins.map(_.lat) must contain(59f, 59f, 59f)
+    }
+
     "correctly query equals with date ranges" in {
       val features = execute("height = 12.0 AND " +
           "dtg DURING 2014-01-01T11:45:00.000Z/2014-01-01T12:15:00.000Z")
       features must haveLength(1)
-      features must contain("bob")
+      features must contain("burt")
     }
 
     "correctly query lt with date ranges" in {
       val features = execute("height < 12.0 AND " +
           "dtg DURING 2011-01-01T00:00:00.000Z/2012-01-02T00:00:00.000Z")
       features must haveLength(1)
-      features must contain("alice")
+      features must contain("anna")
     }
 
     "correctly query lte with date ranges" in {
       val features = execute("height <= 12.0 AND " +
           "dtg DURING 2013-01-01T00:00:00.000Z/2014-01-01T12:15:00.000Z")
       features must haveLength(2)
-      features must contain("bill", "bob")
+      features must contain("bill", "burt")
     }
 
     "correctly query gt with date ranges" in {
       val features = execute("height > 11.0 AND " +
           "dtg DURING 2014-01-01T11:45:00.000Z/2014-01-01T12:15:00.000Z")
       features must haveLength(1)
-      features must contain("bob")
+      features must contain("burt")
     }
 
     "correctly query gte with date ranges" in {
       val features = execute("height >= 11.0 AND " +
           "dtg DURING 2014-01-01T11:45:00.000Z/2014-01-01T12:15:00.000Z")
       features must haveLength(1)
-      features must contain("bob")
+      features must contain("burt")
     }
 
     "correctly query between with date ranges" in {
       val features = execute("height between 11.0 AND 12.0 AND " +
           "dtg DURING 2014-01-01T11:45:00.000Z/2014-01-01T12:15:00.000Z")
       features must haveLength(1)
-      features must contain("bob")
+      features must contain("burt")
     }
 
     "support sampling" in {
@@ -254,31 +276,31 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
     "correctly query on floats" in {
       val features = execute("height=12.0")
       features must haveLength(2)
-      features must contain("bob", "charles")
+      features must contain("burt", "carl")
     }
 
     "correctly query on floats in different precisions" in {
       val features = execute("height=10")
       features must haveLength(1)
-      features must contain("alice")
+      features must contain("anna")
     }
 
     "correctly query on doubles" in {
       val features = execute("weight=6.0")
       features must haveLength(2)
-      features must contain("bill", "bob")
+      features must contain("bill", "burt")
     }
 
     "correctly query on doubles in different precisions" in {
       val features = execute("weight=6")
       features must haveLength(2)
-      features must contain("bill", "bob")
+      features must contain("bill", "burt")
     }
 
     "correctly query on booleans" in {
       val features = execute("admin=false")
       features must haveLength(3)
-      features must contain("bill", "bob", "charles")
+      features must contain("bill", "burt", "carl")
     }
 
     "correctly query on strings" in {
@@ -288,57 +310,57 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
     }
 
     "correctly query on OR'd strings" in {
-      val features = execute("name = 'bill' OR name = 'charles'")
+      val features = execute("name = 'bill' OR name = 'carl'")
       features must haveLength(2)
-      features must contain("bill", "charles")
+      features must contain("bill", "carl")
     }
 
     "correctly query on IN strings" in {
-      val features = execute("name IN ('bill', 'charles')")
+      val features = execute("name IN ('bill', 'carl')")
       features must haveLength(2)
-      features must contain("bill", "charles")
+      features must contain("bill", "carl")
     }
 
     "correctly query on OR'd strings with bboxes" in {
-      val features = execute("(name = 'bill' OR name = 'charles') AND bbox(geom,40,45,50,55)")
+      val features = execute("(name = 'bill' OR name = 'carl') AND bbox(geom,40,45,50,55)")
       features must haveLength(2)
-      features must contain("bill", "charles")
+      features must contain("bill", "carl")
     }
 
     "correctly query on IN strings with bboxes" in {
-      val features = execute("name IN ('bill', 'charles') AND bbox(geom,40,45,50,55)")
+      val features = execute("name IN ('bill', 'carl') AND bbox(geom,40,45,50,55)")
       features must haveLength(2)
-      features must contain("bill", "charles")
+      features must contain("bill", "carl")
     }
 
     "correctly query on redundant OR'd strings" in {
-      val features = execute("(name = 'bill' OR name = 'charles') AND name = 'charles'")
+      val features = execute("(name = 'bill' OR name = 'carl') AND name = 'carl'")
       features must haveLength(1)
-      features must contain("charles")
+      features must contain("carl")
     }
 
     "correctly query on date objects" in {
       val features = execute("indexedDtg TEQUALS 2014-01-01T12:30:00.000Z")
       features must haveLength(1)
-      features must contain("charles")
+      features must contain("carl")
     }
 
     "correctly query on date strings in standard format" in {
       val features = execute("indexedDtg = '2014-01-01T12:30:00.000Z'")
       features must haveLength(1)
-      features must contain("charles")
+      features must contain("carl")
     }
 
     "correctly query on lists of strings" in {
       val features = execute("fingers = 'index'")
       features must haveLength(3)
-      features must contain("alice", "bob", "charles")
+      features must contain("anna", "burt", "carl")
     }
 
     "correctly query on lists of doubles" in {
       val features = execute("toes = 2.0")
       features must haveLength(2)
-      features must contain("bill", "bob")
+      features must contain("bill", "burt")
     }
   }
 
@@ -348,27 +370,27 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "lt" >> {
         val features = execute("age<21")
         features must haveLength(1)
-        features must contain("alice")
+        features must contain("anna")
       }
       "gt" >> {
         val features = execute("age>21")
         features must haveLength(1)
-        features must contain("bob")
+        features must contain("burt")
       }
       "lte" >> {
         val features = execute("age<=21")
         features must haveLength(2)
-        features must contain("alice", "bill")
+        features must contain("anna", "bill")
       }
       "gte" >> {
         val features = execute("age>=21")
         features must haveLength(2)
-        features must contain("bill", "bob")
+        features must contain("bill", "burt")
       }
       "between (inclusive)" >> {
         val features = execute("age BETWEEN 20 AND 25")
         features must haveLength(2)
-        features must contain("alice", "bill")
+        features must contain("anna", "bill")
       }
     }
 
@@ -376,27 +398,27 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "lt" >> {
         val features = execute("count<2")
         features must haveLength(1)
-        features must contain("alice")
+        features must contain("anna")
       }
       "gt" >> {
         val features = execute("count>2")
         features must haveLength(2)
-        features must contain("bob", "charles")
+        features must contain("burt", "carl")
       }
       "lte" >> {
         val features = execute("count<=2")
         features must haveLength(2)
-        features must contain("alice", "bill")
+        features must contain("anna", "bill")
       }
       "gte" >> {
         val features = execute("count>=2")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
       "between (inclusive)" >> {
         val features = execute("count BETWEEN 3 AND 7")
         features must haveLength(2)
-        features must contain("bob", "charles")
+        features must contain("burt", "carl")
       }
     }
 
@@ -404,7 +426,7 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "lt" >> {
         val features = execute("height<12.0")
         features must haveLength(2)
-        features must contain("alice", "bill")
+        features must contain("anna", "bill")
       }
       "gt" >> {
         val features = execute("height>12.0")
@@ -413,17 +435,17 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "lte" >> {
         val features = execute("height<=12.0")
         features must haveLength(4)
-        features must contain("alice", "bill", "bob", "charles")
+        features must contain("anna", "bill", "burt", "carl")
       }
       "gte" >> {
         val features = execute("height>=12.0")
         features must haveLength(2)
-        features must contain("bob", "charles")
+        features must contain("burt", "carl")
       }
       "between (inclusive)" >> {
         val features = execute("height BETWEEN 10.0 AND 11.5")
         features must haveLength(2)
-        features must contain("alice", "bill")
+        features must contain("anna", "bill")
       }
     }
 
@@ -431,27 +453,27 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "lt" >> {
         val features = execute("height<11")
         features must haveLength(1)
-        features must contain("alice")
+        features must contain("anna")
       }
       "gt" >> {
         val features = execute("height>11")
         features must haveLength(2)
-        features must contain("bob", "charles")
+        features must contain("burt", "carl")
       }
       "lte" >> {
         val features = execute("height<=11")
         features must haveLength(2)
-        features must contain("alice", "bill")
+        features must contain("anna", "bill")
       }
       "gte" >> {
         val features = execute("height>=11")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
       "between (inclusive)" >> {
         val features = execute("height BETWEEN 11 AND 12")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
     }
 
@@ -459,37 +481,37 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "lt" >> {
         val features = execute("weight<6.0")
         features must haveLength(1)
-        features must contain("alice")
+        features must contain("anna")
       }
       "lt fraction" >> {
         val features = execute("weight<6.1")
         features must haveLength(3)
-        features must contain("alice", "bill", "bob")
+        features must contain("anna", "bill", "burt")
       }
       "gt" >> {
         val features = execute("weight>6.0")
         features must haveLength(1)
-        features must contain("charles")
+        features must contain("carl")
       }
       "gt fractions" >> {
         val features = execute("weight>5.9")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
       "lte" >> {
         val features = execute("weight<=6.0")
         features must haveLength(3)
-        features must contain("alice", "bill", "bob")
+        features must contain("anna", "bill", "burt")
       }
       "gte" >> {
         val features = execute("weight>=6.0")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
       "between (inclusive)" >> {
         val features = execute("weight BETWEEN 5.5 AND 6.5")
         features must haveLength(2)
-        features must contain("bill", "bob")
+        features must contain("bill", "burt")
       }
     }
 
@@ -497,27 +519,27 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "lt" >> {
         val features = execute("weight<6")
         features must haveLength(1)
-        features must contain("alice")
+        features must contain("anna")
       }
       "gt" >> {
         val features = execute("weight>6")
         features must haveLength(1)
-        features must contain("charles")
+        features must contain("carl")
       }
       "lte" >> {
         val features = execute("weight<=6")
         features must haveLength(3)
-        features must contain("alice", "bill", "bob")
+        features must contain("anna", "bill", "burt")
       }
       "gte" >> {
         val features = execute("weight>=6")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
       "between (inclusive)" >> {
         val features = execute("weight BETWEEN 5 AND 6")
         features must haveLength(3)
-        features must contain("alice", "bill", "bob")
+        features must contain("anna", "bill", "burt")
       }
     }
 
@@ -525,27 +547,27 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "lt" >> {
         val features = execute("name<'bill'")
         features must haveLength(1)
-        features must contain("alice")
+        features must contain("anna")
       }
       "gt" >> {
         val features = execute("name>'bill'")
         features must haveLength(2)
-        features must contain("bob", "charles")
+        features must contain("burt", "carl")
       }
       "lte" >> {
         val features = execute("name<='bill'")
         features must haveLength(2)
-        features must contain("alice", "bill")
+        features must contain("anna", "bill")
       }
       "gte" >> {
         val features = execute("name>='bill'")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
       "between (inclusive)" >> {
-        val features = execute("name BETWEEN 'bill' AND 'bob'")
+        val features = execute("name BETWEEN 'bill' AND 'burt'")
         features must haveLength(2)
-        features must contain("bill", "bob")
+        features must contain("bill", "burt")
       }
     }
 
@@ -553,17 +575,17 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "before" >> {
         val features = execute("indexedDtg BEFORE 2014-01-01T12:30:00.000Z")
         features must haveLength(3)
-        features must contain("alice", "bill", "bob")
+        features must contain("anna", "bill", "burt")
       }
       "after" >> {
         val features = execute("indexedDtg AFTER 2013-01-01T12:30:00.000Z")
         features must haveLength(2)
-        features must contain("bob", "charles")
+        features must contain("burt", "carl")
       }
       "during (exclusive)" >> {
         val features = execute("indexedDtg DURING 2012-01-01T11:00:00.000Z/2014-01-01T12:15:00.000Z")
         features must haveLength(3)
-        features must contain("alice", "bill", "bob")
+        features must contain("anna", "bill", "burt")
       }
     }
 
@@ -571,17 +593,17 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "lt" >> {
         val features = execute("indexedDtg < '2014-01-01T12:30:00.000Z'")
         features must haveLength(3)
-        features must contain("alice", "bill", "bob")
+        features must contain("anna", "bill", "burt")
       }
       "gt" >> {
         val features = execute("indexedDtg > '2013-01-01T12:00:00.000Z'")
         features must haveLength(2)
-        features must contain("bob", "charles")
+        features must contain("burt", "carl")
       }
       "between (inclusive)" >> {
         val features = execute("indexedDtg BETWEEN '2012-01-01T12:00:00.000Z' AND '2013-01-01T12:00:00.000Z'")
         features must haveLength(2)
-        features must contain("alice", "bill")
+        features must contain("anna", "bill")
       }
     }
 
@@ -589,22 +611,22 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "lt" >> {
         val features = execute("'bill' > name")
         features must haveLength(1)
-        features must contain("alice")
+        features must contain("anna")
       }
       "gt" >> {
         val features = execute("'bill' < name")
         features must haveLength(2)
-        features must contain("bob", "charles")
+        features must contain("burt", "carl")
       }
       "lte" >> {
         val features = execute("'bill' >= name")
         features must haveLength(2)
-        features must contain("alice", "bill")
+        features must contain("anna", "bill")
       }
       "gte" >> {
         val features = execute("'bill' <= name")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
       "before" >> {
         execute("2014-01-01T12:30:00.000Z AFTER indexedDtg") should throwA[CQLException]
@@ -618,27 +640,27 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "lt" >> {
         val features = execute("fingers<'middle'")
         features must haveLength(3)
-        features must contain("alice", "bob", "charles")
+        features must contain("anna", "burt", "carl")
       }
       "gt" >> {
         val features = execute("fingers>'middle'")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
       "lte" >> {
         val features = execute("fingers<='middle'")
         features must haveLength(4)
-        features must contain("alice", "bill", "bob", "charles")
+        features must contain("anna", "bill", "burt", "carl")
       }
       "gte" >> {
         val features = execute("fingers>='middle'")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
       "between (inclusive)" >> {
         val features = execute("fingers BETWEEN 'pinkie' AND 'thumb'")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
     }
 
@@ -646,41 +668,41 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "lt" >> {
         val features = execute("toes<2.0")
         features must haveLength(2)
-        features must contain("alice", "bill")
+        features must contain("anna", "bill")
       }
       "gt" >> {
         val features = execute("toes>2.0")
         features must haveLength(1)
-        features must contain("bob")
+        features must contain("burt")
       }
       "lte" >> {
         val features = execute("toes<=2.0")
         features must haveLength(3)
-        features must contain("alice", "bill", "bob")
+        features must contain("anna", "bill", "burt")
       }
       "gte" >> {
         val features = execute("toes>=2.0")
         features must haveLength(2)
-        features must contain("bill", "bob")
+        features must contain("bill", "burt")
       }
       "between (inclusive)" >> {
         val features = execute("toes BETWEEN 1.5 AND 2.5")
         features must haveLength(2)
-        features must contain("bill", "bob")
+        features must contain("bill", "burt")
       }
     }
 
     "correctly query on not nulls" in {
       val features = execute("age IS NOT NULL")
       features must haveLength(3)
-      features must contain("alice", "bill", "bob")
+      features must contain("anna", "bill", "burt")
     }
 
     "correctly query on indexed attributes with nonsensical AND queries" >> {
       "redundant int query" >> {
         val features = execute("age > 25 AND age > 15")
         features must haveLength(1)
-        features must contain("bob")
+        features must contain("burt")
       }
 
       "int query that returns nothing" >> {
@@ -691,7 +713,7 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "redundant float query" >> {
         val features = execute("height >= 6 AND height > 4")
         features must haveLength(4)
-        features must contain("alice", "bill", "bob", "charles")
+        features must contain("anna", "bill", "burt", "carl")
       }
 
       "float query that returns nothing" >> {
@@ -702,7 +724,7 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "redundant date query" >> {
         val features = execute("indexedDtg AFTER 2011-01-01T00:00:00.000Z AND indexedDtg AFTER 2012-02-01T00:00:00.000Z")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
 
       "date query that returns nothing" >> {
@@ -713,7 +735,7 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
       "redundant date and float query" >> {
         val features = execute("height >= 6 AND height > 4 AND indexedDtg AFTER 2011-01-01T00:00:00.000Z AND indexedDtg AFTER 2012-02-01T00:00:00.000Z")
         features must haveLength(3)
-        features must contain("bill", "bob", "charles")
+        features must contain("bill", "burt", "carl")
       }
 
       "date and float query that returns nothing" >> {
@@ -728,13 +750,13 @@ class AttributeIndexStrategyTest extends Specification with TestWithDataStore {
     "correctly query on strings" in {
       val features = execute("name LIKE 'b%'")
       features must haveLength(2)
-      features must contain("bill", "bob")
+      features must contain("bill", "burt")
     }
 
     "correctly query on non-strings" in {
       val features = execute("age LIKE '2%'")
       features must haveLength(2)
-      features must contain("alice", "bill")
+      features must contain("anna", "bill")
     }.pendingUntilFixed("Lexicoding does not allow us to prefix search non-strings")
   }
 
