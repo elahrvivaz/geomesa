@@ -73,12 +73,15 @@ class HBaseDataStoreTest extends Specification with LazyLogging {
       val ids = fs.addFeatures(new ListFeatureCollection(sft, toAdd))
       ids.asScala.map(_.getID) must containTheSameElementsAs((0 until 10).map(_.toString))
 
-      forall(Seq(null, Array("geom"), Array("geom", "dtg"), Array("geom", "name"))) { transforms =>
-        testQuery(ds, typeName, "INCLUDE", transforms, toAdd)
-        testQuery(ds, typeName, "IN('0', '2')", transforms, Seq(toAdd(0), toAdd(2)))
-        testQuery(ds, typeName, "bbox(geom,38,48,52,62) and dtg DURING 2014-01-01T00:00:00.000Z/2014-01-08T12:00:00.000Z", transforms, toAdd.dropRight(2))
-        testQuery(ds, typeName, "bbox(geom,42,48,52,62)", transforms, toAdd.drop(2))
-        testQuery(ds, typeName, "name < 'name5'", transforms, toAdd.take(5))
+      forall(Seq(true, false)) { loose =>
+        val ds = DataStoreFinder.getDataStore(params ++ Map(LooseBBoxParam.getName -> loose)).asInstanceOf[HBaseDataStore]
+        forall(Seq(null, Array("geom"), Array("geom", "dtg"), Array("geom", "name"))) { transforms =>
+          testQuery(ds, typeName, "INCLUDE", transforms, toAdd)
+          testQuery(ds, typeName, "IN('0', '2')", transforms, Seq(toAdd(0), toAdd(2)))
+          testQuery(ds, typeName, "bbox(geom,38,48,52,62) and dtg DURING 2014-01-01T00:00:00.000Z/2014-01-08T12:00:00.000Z", transforms, toAdd.dropRight(2))
+          testQuery(ds, typeName, "bbox(geom,42,48,52,62)", transforms, toAdd.drop(2))
+          testQuery(ds, typeName, "name < 'name5'", transforms, toAdd.take(5))
+        }
       }
 
       def testLooseBbox(ds: HBaseDataStore, loose: Boolean) = {
