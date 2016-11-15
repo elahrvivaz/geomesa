@@ -174,7 +174,7 @@ trait Z3Index[DS <: GeoMesaDataStore[DS, F, W], F <: WrappedFeature, W, R] exten
       ranges.toSeq
     }
 
-    val looseBBox = if (hints.containsKey(LOOSE_BBOX)) { Boolean.unbox(hints.get(LOOSE_BBOX)) } else { ds.config.looseBBox }
+    val looseBBox = Option(hints.get(LOOSE_BBOX)).map(Boolean.unbox).getOrElse(ds.config.looseBBox)
     val ecql = if (looseBBox) { filter.secondary } else { filter.filter }
 
     scanPlan(sft, ds, filter, hints, ranges, ecql)
