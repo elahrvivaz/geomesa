@@ -16,7 +16,7 @@ import org.locationtech.geomesa.utils.stats.IndexCoverage
 import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
-trait DescribeSchemaCommand[DS <: GeoMesaDataStore[_, _, _ ,_]] extends DataStoreCommand[DS] {
+trait DescribeSchemaCommand[DS <: GeoMesaDataStore[_, _, _]] extends DataStoreCommand[DS] {
 
   override val name: String = "describe-schema"
   override def params: TypeNameParam

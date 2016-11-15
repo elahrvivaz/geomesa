@@ -24,8 +24,8 @@ import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, _}
 import org.opengis.feature.simple.SimpleFeatureType
 
-trait XZ2Index[DS <: GeoMesaDataStore[DS, F, W, Q], F <: WrappedFeature, W, Q, R] extends GeoMesaFeatureIndex[DS, F, W, Q]
-    with IndexAdapter[DS, F, W, Q, R] with SpatialFilterStrategy[DS, F, W, Q] with LazyLogging {
+trait XZ2Index[DS <: GeoMesaDataStore[DS, F, W], F <: WrappedFeature, W, R] extends GeoMesaFeatureIndex[DS, F, W]
+    with IndexAdapter[DS, F, W, R] with SpatialFilterStrategy[DS, F, W] with LazyLogging {
 
   import IndexAdapter.{DefaultNumSplits, DefaultSplitArrays}
   import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -72,9 +72,9 @@ trait XZ2Index[DS <: GeoMesaDataStore[DS, F, W, Q], F <: WrappedFeature, W, Q, R
 
   override def getQueryPlan(sft: SimpleFeatureType,
                             ds: DS,
-                            filter: FilterStrategy[DS, F, W, Q],
+                            filter: FilterStrategy[DS, F, W],
                             hints: Hints,
-                            explain: Explainer): QueryPlan[DS, F, W, Q] = {
+                            explain: Explainer): QueryPlan[DS, F, W] = {
     import org.locationtech.geomesa.filter.FilterHelper._
 
     if (filter.primary.isEmpty) {

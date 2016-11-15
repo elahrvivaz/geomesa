@@ -11,7 +11,7 @@ package org.locationtech.geomesa.tools.status
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStore
 import org.locationtech.geomesa.tools.DataStoreCommand
 
-trait GetTypeNamesCommand[DS <: GeoMesaDataStore[_, _, _ ,_]] extends DataStoreCommand[DS] {
+trait GetTypeNamesCommand[DS <: GeoMesaDataStore[_, _, _]] extends DataStoreCommand[DS] {
 
   override val name = "get-type-names"
 

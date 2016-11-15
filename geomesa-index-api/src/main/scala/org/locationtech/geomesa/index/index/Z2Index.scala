@@ -17,6 +17,7 @@ import org.geotools.factory.Hints
 import org.locationtech.geomesa.curve.Z2SFC
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.index.api.{FilterStrategy, GeoMesaFeatureIndex, QueryPlan, WrappedFeature}
+import org.locationtech.geomesa.index.conf.QueryHints._
 import org.locationtech.geomesa.index.conf.QueryProperties
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStore
 import org.locationtech.geomesa.index.strategies.SpatialFilterStrategy
@@ -24,8 +25,8 @@ import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, _}
 import org.opengis.feature.simple.SimpleFeatureType
 
-trait Z2Index[DS <: GeoMesaDataStore[DS, F, W, Q], F <: WrappedFeature, W, Q, R] extends GeoMesaFeatureIndex[DS, F, W, Q]
-    with IndexAdapter[DS, F, W, Q, R] with SpatialFilterStrategy[DS, F, W, Q] with LazyLogging {
+trait Z2Index[DS <: GeoMesaDataStore[DS, F, W], F <: WrappedFeature, W, R] extends GeoMesaFeatureIndex[DS, F, W]
+    with IndexAdapter[DS, F, W, R] with SpatialFilterStrategy[DS, F, W] with LazyLogging {
 
   import IndexAdapter.{DefaultNumSplits, DefaultSplitArrays}
   import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -71,9 +72,9 @@ trait Z2Index[DS <: GeoMesaDataStore[DS, F, W, Q], F <: WrappedFeature, W, Q, R]
 
   override def getQueryPlan(sft: SimpleFeatureType,
                             ds: DS,
-                            filter: FilterStrategy[DS, F, W, Q],
+                            filter: FilterStrategy[DS, F, W],
                             hints: Hints,
-                            explain: Explainer): QueryPlan[DS, F, W, Q] = {
+                            explain: Explainer): QueryPlan[DS, F, W] = {
     import org.locationtech.geomesa.filter.FilterHelper._
 
     if (filter.primary.isEmpty) {
@@ -111,7 +112,8 @@ trait Z2Index[DS <: GeoMesaDataStore[DS, F, W, Q], F <: WrappedFeature, W, Q, R]
       }
     }
 
-    val ecql = if (ds.config.looseBBox) { filter.secondary } else { filter.filter }
+    val looseBBox = if (hints.containsKey(LOOSE_BBOX)) { Boolean.unbox(hints.get(LOOSE_BBOX)) } else { ds.config.looseBBox }
+    val ecql = if (looseBBox) { filter.secondary } else { filter.filter }
 
     scanPlan(sft, ds, filter, hints, ranges, ecql)
   }

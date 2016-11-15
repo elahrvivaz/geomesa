@@ -42,7 +42,7 @@ trait CommandWithSubCommands extends Command {
   }
 }
 
-trait DataStoreCommand[DS <: GeoMesaDataStore[_, _, _ ,_]] extends Command {
+trait DataStoreCommand[DS <: GeoMesaDataStore[_, _, _]] extends Command {
 
   def connection: Map[String, String]
 

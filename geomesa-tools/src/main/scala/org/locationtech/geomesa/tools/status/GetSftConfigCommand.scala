@@ -19,7 +19,7 @@ import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.util.control.NonFatal
 
-trait GetSftConfigCommand[DS <: GeoMesaDataStore[_, _, _ ,_]] extends DataStoreCommand[DS] {
+trait GetSftConfigCommand[DS <: GeoMesaDataStore[_, _, _]] extends DataStoreCommand[DS] {
 
   override val name: String = "get-sft-config"
 

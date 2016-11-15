@@ -20,7 +20,7 @@ import org.locationtech.geomesa.utils.geotools.GeneralShapefileIngest
 
 import scala.collection.parallel.ForkJoinTaskSupport
 
-trait IngestCommand[DS <: GeoMesaDataStore[_, _, _ ,_]] extends DataStoreCommand[DS] {
+trait IngestCommand[DS <: GeoMesaDataStore[_, _, _]] extends DataStoreCommand[DS] {
 
   import scala.collection.JavaConversions._
 

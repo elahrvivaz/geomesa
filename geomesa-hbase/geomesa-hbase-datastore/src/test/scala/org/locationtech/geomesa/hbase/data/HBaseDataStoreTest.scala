@@ -72,11 +72,13 @@ class HBaseDataStoreTest extends Specification with LazyLogging {
       val ids = fs.addFeatures(new ListFeatureCollection(sft, toAdd))
       ids.asScala.map(_.getID) must containTheSameElementsAs((0 until 10).map(_.toString))
 
-      testQuery(ds, typeName, "INCLUDE", null, toAdd)
-      testQuery(ds, typeName, "IN('0', '2')", null, Seq(toAdd(0), toAdd(2)))
-      testQuery(ds, typeName, "bbox(geom,38,48,52,62) and dtg DURING 2014-01-01T00:00:00.000Z/2014-01-08T12:00:00.000Z", null, toAdd.dropRight(2))
-      testQuery(ds, typeName, "bbox(geom,42,48,52,62)", null, toAdd.drop(2))
-      testQuery(ds, typeName, "name < 'name5'", null, toAdd.take(5))
+      forall(Seq(null, Array("geom"), Array("geom", "dtg"), Array("geom", "name"))) { transforms =>
+        testQuery(ds, typeName, "INCLUDE", transforms, toAdd)
+        testQuery(ds, typeName, "IN('0', '2')", transforms, Seq(toAdd(0), toAdd(2)))
+        testQuery(ds, typeName, "bbox(geom,38,48,52,62) and dtg DURING 2014-01-01T00:00:00.000Z/2014-01-08T12:00:00.000Z", transforms, toAdd.dropRight(2))
+        testQuery(ds, typeName, "bbox(geom,42,48,52,62)", transforms, toAdd.drop(2))
+        testQuery(ds, typeName, "name < 'name5'", transforms, toAdd.take(5))
+      }
     }
 
     "work with polys" in {
@@ -118,7 +120,17 @@ class HBaseDataStoreTest extends Specification with LazyLogging {
   def testQuery(ds: DataStore, typeName: String, filter: String, transforms: Array[String], results: Seq[SimpleFeature]) = {
     val fr = ds.getFeatureReader(new Query(typeName, ECQL.toFilter(filter), transforms), Transaction.AUTO_COMMIT)
     val features = SelfClosingIterator(fr).toList
-    features must containTheSameElementsAs(results)
+    if (transforms == null) {
+      features must containTheSameElementsAs(results)
+    } else {
+      features.map(_.getID) must containTheSameElementsAs(results.map(_.getID))
+      forall(features) { feature =>
+        feature.getAttributes must haveLength(transforms.length)
+        forall(transforms) { attribute =>
+          feature.getAttribute(attribute) mustEqual results.find(_.getID == feature.getID).get.getAttribute(attribute)
+        }
+      }
+    }
   }
 
   step {

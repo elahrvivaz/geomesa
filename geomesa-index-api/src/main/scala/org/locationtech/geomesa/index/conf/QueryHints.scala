@@ -24,7 +24,7 @@ object QueryHints {
   val TRANSFORMS           = new ClassKey(classOf[String])
   val TRANSFORM_SCHEMA     = new ClassKey(classOf[SimpleFeatureType])
   val RETURN_SFT_KEY       = new ClassKey(classOf[SimpleFeatureType])
-  val QUERY_INDEX_KEY      = new ClassKey(classOf[GeoMesaFeatureIndex[_, _, _, _]])
+  val QUERY_INDEX_KEY      = new ClassKey(classOf[GeoMesaFeatureIndex[_, _, _]])
   val COST_EVALUATION_KEY  = new ClassKey(classOf[CostEvaluation])
 
   val DENSITY_BBOX_KEY     = new ClassKey(classOf[ReferencedEnvelope])
@@ -54,8 +54,8 @@ object QueryHints {
   implicit class RichHints(val hints: Hints) extends AnyRef {
 
     def getReturnSft: SimpleFeatureType = hints.get(RETURN_SFT_KEY).asInstanceOf[SimpleFeatureType]
-    def getRequestedIndex[O <: GeoMesaDataStore[O, F, W, Q], F <: WrappedFeature, W, Q]: Option[GeoMesaFeatureIndex[O, F, W, Q]] =
-      Option(hints.get(QUERY_INDEX_KEY).asInstanceOf[GeoMesaFeatureIndex[O, F, W, Q]])
+    def getRequestedIndex[O <: GeoMesaDataStore[O, F, W], F <: WrappedFeature, W]: Option[GeoMesaFeatureIndex[O, F, W]] =
+      Option(hints.get(QUERY_INDEX_KEY).asInstanceOf[GeoMesaFeatureIndex[O, F, W]])
     def getCostEvaluation: CostEvaluation = {
       Option(hints.get(COST_EVALUATION_KEY).asInstanceOf[CostEvaluation])
           .orElse(QueryProperties.QUERY_COST_TYPE.option.flatMap(t => CostEvaluation.values.find(_.toString.equalsIgnoreCase(t))))
