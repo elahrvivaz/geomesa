@@ -35,7 +35,7 @@ import org.opengis.filter.Filter
 
 import scala.collection.JavaConversions._
 
-object GeoMesaAccumuloInputFormat extends GeoMesaAccumuloInputFormatObject
+object GeoMesaAccumuloInputFormat extends GeoMesaAccumuloInputFormatConfiguration
 
 /**
  * Input format that allows processing of simple features from GeoMesa based on a CQL query

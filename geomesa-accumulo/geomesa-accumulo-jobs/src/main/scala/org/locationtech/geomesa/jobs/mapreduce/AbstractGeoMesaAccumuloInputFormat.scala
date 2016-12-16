@@ -80,7 +80,7 @@ abstract class AbstractGeoMesaAccumuloInputFormat[T] extends InputFormat[Text, T
 /**
   * Base trait to provider configuration for accumulo input formats
   */
-private [mapreduce] trait GeoMesaAccumuloInputFormatObject extends LazyLogging {
+private [mapreduce] trait GeoMesaAccumuloInputFormatConfiguration extends LazyLogging {
 
   val SYS_PROP_SPARK_LOAD_CP = "org.locationtech.geomesa.spark.load-classpath"
 

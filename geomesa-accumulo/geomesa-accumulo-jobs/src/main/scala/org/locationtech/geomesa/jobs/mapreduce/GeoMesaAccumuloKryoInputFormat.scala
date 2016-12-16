@@ -18,7 +18,7 @@ import org.opengis.feature.simple.SimpleFeatureType
 /**
   * Configuration for GeoMesaAccumuloKryoInputFormat
   */
-object GeoMesaAccumuloKryoInputFormat extends GeoMesaAccumuloInputFormatObject
+object GeoMesaAccumuloKryoInputFormat extends GeoMesaAccumuloInputFormatConfiguration
 
 /**
   * Input format that returns kryo-serialized simple features
