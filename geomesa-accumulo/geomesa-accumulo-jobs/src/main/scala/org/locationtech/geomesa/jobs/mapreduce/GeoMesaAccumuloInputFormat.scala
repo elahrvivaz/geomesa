@@ -8,32 +8,17 @@
 
 package org.locationtech.geomesa.jobs.mapreduce
 
-import java.net.{URL, URLClassLoader}
-
-import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.client.mapreduce.{AbstractInputFormat, InputFormatBase}
-import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.data.{Key, Value}
-import org.apache.accumulo.core.security.Authorizations
-import org.apache.accumulo.core.util.{Pair => AccPair}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.io.Text
 import org.apache.hadoop.mapreduce._
-import org.geotools.data.{DataStoreFinder, Query}
 import org.geotools.filter.identity.FeatureIdImpl
-import org.geotools.filter.text.ecql.ECQL
-import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloDataStoreParams}
 import org.locationtech.geomesa.accumulo.index.AccumuloWritableIndex
 import org.locationtech.geomesa.features.SerializationOption.SerializationOptions
 import org.locationtech.geomesa.features.SimpleFeatureSerializer
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
-import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 import org.locationtech.geomesa.jobs.GeoMesaConfigurator
-import org.locationtech.geomesa.jobs.accumulo.AccumuloJobUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
-import org.opengis.filter.Filter
-
-import scala.collection.JavaConversions._
 
 object GeoMesaAccumuloInputFormat extends GeoMesaAccumuloInputFormatConfiguration
 
@@ -55,17 +40,21 @@ class GeoMesaAccumuloInputFormat extends AbstractGeoMesaAccumuloInputFormat[Simp
 }
 
 /**
- * Record reader that delegates to accumulo record readers and transforms the key/values coming back into
- * simple features.
- *
- * @param reader delegate accumulo record reader
- */
+  * Record reader that delegates to accumulo record readers and transforms the key/values coming back into
+  * simple features
+  *
+  * @param sft simple feature type
+  * @param index index table being read
+  * @param delegate delegate record reader
+  * @param hasId feature is serialized with ID or not
+  * @param serializer simple feature serializer
+  */
 class GeoMesaAccumuloRecordReader(sft: SimpleFeatureType,
                                   index: AccumuloWritableIndex,
-                                  reader: RecordReader[Key, Value],
+                                  delegate: RecordReader[Key, Value],
                                   hasId: Boolean,
                                   serializer: SimpleFeatureSerializer)
-    extends AbstractGeoMesaAccumuloRecordReader[SimpleFeature](sft, index, reader) {
+    extends AbstractGeoMesaAccumuloRecordReader[SimpleFeature](sft, index, delegate) {
 
   override protected def createNextValue(id: String, value: Array[Byte]): SimpleFeature = {
     val sf = serializer.deserialize(value)

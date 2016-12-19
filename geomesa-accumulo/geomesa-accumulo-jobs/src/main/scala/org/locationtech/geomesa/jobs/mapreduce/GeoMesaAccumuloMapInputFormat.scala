@@ -17,12 +17,12 @@ import org.locationtech.geomesa.jobs.GeoMesaConfigurator
 import org.opengis.feature.simple.SimpleFeatureType
 
 /**
-  * Configuration for GeoMesaAccumuloKryoInputFormat
+  * Configuration for GeoMesaAccumuloMapInputFormat
   */
 object GeoMesaAccumuloMapInputFormat extends GeoMesaAccumuloInputFormatConfiguration
 
 /**
-  * Input format that returns kryo-serialized simple features
+  * Input format that returns a map of attribute names to values
   */
 class GeoMesaAccumuloMapInputFormat extends AbstractGeoMesaAccumuloInputFormat[Map[String, Any]] {
 
@@ -39,15 +39,18 @@ class GeoMesaAccumuloMapInputFormat extends AbstractGeoMesaAccumuloInputFormat[M
 }
 
 /**
-  * Record reader that delegates to accumulo record readers
+  * Transforms serialized simple feature into map of attributes to values
   *
-  * @param reader delegate accumulo record reader
+  * @param sft simple feature type of serialized bytes
+  * @param index index table being read
+  * @param delegate delegate reader
+  * @param serializer simple feature serializer for the data being read
   */
 class GeoMesaMapRecordReader(sft: SimpleFeatureType,
                              index: AccumuloWritableIndex,
-                             reader: RecordReader[Key, Value],
+                             delegate: RecordReader[Key, Value],
                              serializer: KryoFeatureSerializer)
-    extends AbstractGeoMesaAccumuloRecordReader[Map[String, Any]](sft, index, reader) {
+    extends AbstractGeoMesaAccumuloRecordReader[Map[String, Any]](sft, index, delegate) {
 
   import scala.collection.JavaConversions._
 

@@ -35,14 +35,16 @@ class GeoMesaAccumuloKryoInputFormat extends AbstractGeoMesaAccumuloInputFormat[
 }
 
 /**
-  * Record reader that delegates to accumulo record readers
+  * Returns raw serialized simple feature bytes
   *
-  * @param reader delegate accumulo record reader
+  * @param sft simple feature type of serialized bytes
+  * @param index index table being read
+  * @param delegate delegate reader
   */
 class GeoMesaKryoRecordReader(sft: SimpleFeatureType,
                               index: AccumuloWritableIndex,
-                              reader: RecordReader[Key, Value])
-    extends AbstractGeoMesaAccumuloRecordReader[Array[Byte]](sft, index, reader) {
+                              delegate: RecordReader[Key, Value])
+    extends AbstractGeoMesaAccumuloRecordReader[Array[Byte]](sft, index, delegate) {
 
   override protected def createNextValue(id: String, value: Array[Byte]): Array[Byte] = value
 }
