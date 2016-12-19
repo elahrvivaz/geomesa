@@ -30,7 +30,7 @@ class GeoMesaAccumuloInputFormat extends AbstractGeoMesaAccumuloInputFormat[Simp
   override protected def createRecordReader(delegate: RecordReader[Key, Value],
                                             sft: SimpleFeatureType,
                                             index: AccumuloWritableIndex,
-                                            config: Configuration): RecordReader[Text, SimpleFeature] = {
+                                            config: Configuration): GeoMesaAccumuloRecordReader = {
     val schema = GeoMesaConfigurator.getTransformSchema(config).getOrElse(sft)
     val hasId = index.serializedWithId
     val serializationOptions = if (hasId) { SerializationOptions.none } else { SerializationOptions.withoutId }
