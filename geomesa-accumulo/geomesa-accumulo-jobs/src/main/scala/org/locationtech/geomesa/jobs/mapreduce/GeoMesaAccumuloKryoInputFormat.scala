@@ -12,8 +12,9 @@ import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.io.Text
 import org.apache.hadoop.mapreduce._
+import org.geotools.filter.identity.FeatureIdImpl
 import org.locationtech.geomesa.accumulo.index.AccumuloWritableIndex
-import org.opengis.feature.simple.SimpleFeatureType
+import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 /**
   * Configuration for GeoMesaAccumuloKryoInputFormat
@@ -28,7 +29,7 @@ class GeoMesaAccumuloKryoInputFormat extends AbstractGeoMesaAccumuloInputFormat[
   override protected def createRecordReader(delegate: RecordReader[Key, Value],
                                             sft: SimpleFeatureType,
                                             index: AccumuloWritableIndex,
-                                            config: Configuration): RecordReader[Text, Array[Byte]] = {
+                                            config: Configuration): GeoMesaKryoRecordReader = {
     new GeoMesaKryoRecordReader(sft, index, delegate)
   }
 }
@@ -39,30 +40,9 @@ class GeoMesaAccumuloKryoInputFormat extends AbstractGeoMesaAccumuloInputFormat[
   * @param reader delegate accumulo record reader
   */
 class GeoMesaKryoRecordReader(sft: SimpleFeatureType,
-                              table: AccumuloWritableIndex,
-                              reader: RecordReader[Key, Value]) extends RecordReader[Text, Array[Byte]] {
+                              index: AccumuloWritableIndex,
+                              reader: RecordReader[Key, Value])
+    extends AbstractGeoMesaAccumuloRecordReader[Array[Byte]](sft, index, reader) {
 
-  private val getId = table.getIdFromRow(sft)
-
-  private var currentKey: Text = null
-  private var currentValue: Array[Byte] = null
-
-  override def initialize(split: InputSplit, context: TaskAttemptContext): Unit = reader.initialize(split, context)
-
-  override def getProgress: Float = reader.getProgress
-
-  override def nextKeyValue(): Boolean = {
-    if (!reader.nextKeyValue()) { false } else {
-      val row = reader.getCurrentKey.getRow
-      currentKey = new Text(getId(row.getBytes, 0, row.getLength))
-      currentValue = reader.getCurrentValue.get()
-      true
-    }
-  }
-
-  override def getCurrentValue: Array[Byte] = currentValue
-
-  override def getCurrentKey: Text = currentKey
-
-  override def close(): Unit = reader.close()
+  override protected def createNextValue(id: String, value: Array[Byte]): Array[Byte] = value
 }

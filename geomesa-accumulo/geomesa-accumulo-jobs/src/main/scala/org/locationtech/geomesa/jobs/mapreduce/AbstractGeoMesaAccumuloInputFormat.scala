@@ -74,7 +74,40 @@ abstract class AbstractGeoMesaAccumuloInputFormat[T] extends InputFormat[Text, T
   protected def createRecordReader(delegate: RecordReader[Key, Value],
                                    sft: SimpleFeatureType,
                                    index: AccumuloWritableIndex,
-                                   config: Configuration): RecordReader[Text, T]
+                                   config: Configuration): AbstractGeoMesaAccumuloRecordReader[T]
+}
+
+abstract class AbstractGeoMesaAccumuloRecordReader[T](sft: SimpleFeatureType,
+                                                      table: AccumuloWritableIndex,
+                                                      delegate: RecordReader[Key, Value])
+    extends RecordReader[Text, T] {
+
+  private val getId = table.getIdFromRow(sft)
+  private var currentKey: Text = _
+  private var currentValue: T = _
+
+  protected def createNextValue(id: String, value: Array[Byte]): T
+
+  override def initialize(split: InputSplit, context: TaskAttemptContext): Unit =
+    delegate.initialize(split, context)
+
+  override def getProgress: Float = delegate.getProgress
+
+  override def nextKeyValue(): Boolean = {
+    if (!delegate.nextKeyValue()) { false } else {
+      val row = delegate.getCurrentKey.getRow
+      val id = getId(row.getBytes, 0, row.getLength)
+      currentKey = new Text(id)
+      currentValue = createNextValue(id, delegate.getCurrentValue.get())
+      true
+    }
+  }
+
+  override def getCurrentValue: T = currentValue
+
+  override def getCurrentKey: Text = currentKey
+
+  override def close(): Unit = delegate.close()
 }
 
 /**

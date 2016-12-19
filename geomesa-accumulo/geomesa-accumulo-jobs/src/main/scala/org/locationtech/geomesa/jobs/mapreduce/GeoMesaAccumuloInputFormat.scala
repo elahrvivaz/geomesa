@@ -49,8 +49,8 @@ class GeoMesaAccumuloInputFormat extends AbstractGeoMesaAccumuloInputFormat[Simp
     val schema = GeoMesaConfigurator.getTransformSchema(config).getOrElse(sft)
     val hasId = index.serializedWithId
     val serializationOptions = if (hasId) { SerializationOptions.none } else { SerializationOptions.withoutId }
-    val decoder = new KryoFeatureSerializer(schema, serializationOptions)
-    new GeoMesaRecordReader(sft, index, delegate, hasId, decoder)
+    val serializer = new KryoFeatureSerializer(schema, serializationOptions)
+    new GeoMesaAccumuloRecordReader(sft, index, delegate, hasId, serializer)
   }
 }
 
@@ -60,35 +60,18 @@ class GeoMesaAccumuloInputFormat extends AbstractGeoMesaAccumuloInputFormat[Simp
  *
  * @param reader delegate accumulo record reader
  */
-class GeoMesaRecordReader(sft: SimpleFeatureType,
-                          table: AccumuloWritableIndex,
-                          reader: RecordReader[Key, Value],
-                          hasId: Boolean,
-                          decoder: SimpleFeatureSerializer) extends RecordReader[Text, SimpleFeature] {
+class GeoMesaAccumuloRecordReader(sft: SimpleFeatureType,
+                                  index: AccumuloWritableIndex,
+                                  reader: RecordReader[Key, Value],
+                                  hasId: Boolean,
+                                  serializer: SimpleFeatureSerializer)
+    extends AbstractGeoMesaAccumuloRecordReader[SimpleFeature](sft, index, reader) {
 
-  private var currentFeature: SimpleFeature = null
-
-  private val getId = table.getIdFromRow(sft)
-
-  override def initialize(split: InputSplit, context: TaskAttemptContext): Unit =
-    reader.initialize(split, context)
-
-  override def getProgress: Float = reader.getProgress
-
-  override def nextKeyValue(): Boolean = {
-    if (!reader.nextKeyValue()) { false } else {
-      currentFeature = decoder.deserialize(reader.getCurrentValue.get())
-      if (!hasId) {
-        val row = reader.getCurrentKey.getRow
-        currentFeature.getIdentifier.asInstanceOf[FeatureIdImpl].setID(getId(row.getBytes, 0, row.getLength))
-      }
-      true
+  override protected def createNextValue(id: String, value: Array[Byte]): SimpleFeature = {
+    val sf = serializer.deserialize(value)
+    if (!hasId) {
+      sf.getIdentifier.asInstanceOf[FeatureIdImpl].setID(id)
     }
+    sf
   }
-
-  override def getCurrentValue: SimpleFeature = currentFeature
-
-  override def getCurrentKey: Text = new Text(currentFeature.getID)
-
-  override def close(): Unit = reader.close()
 }
