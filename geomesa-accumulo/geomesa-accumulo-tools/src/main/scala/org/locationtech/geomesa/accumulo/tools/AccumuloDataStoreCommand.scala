@@ -16,6 +16,14 @@ import org.locationtech.geomesa.tools.DataStoreCommand
  */
 trait AccumuloDataStoreCommand extends DataStoreCommand[AccumuloDataStore] {
 
+  // AccumuloDataStoreFactory requires instance ID to be set but it should not be required if mock is set...so set a
+  // fake one but be careful NOT to add a mock zoo since other code will then think it has a zookeeper but doesn't
+  lazy private val mockDefaults = Map[String, String](
+    AccumuloDataStoreParams.instanceIdParam.getName -> "mockInstance",
+    AccumuloDataStoreParams.userParam.getName       -> "mockUser",
+    AccumuloDataStoreParams.passwordParam.getName   -> "mockPassword"
+  )
+
   override def params: AccumuloDataStoreParams
 
   override def connection: Map[String, String] = {
@@ -30,13 +38,10 @@ trait AccumuloDataStoreCommand extends DataStoreCommand[AccumuloDataStore] {
       AccumuloDataStoreParams.mockParam.getName       -> params.mock.toString
     ).filter(_._2 != null)
 
-    // AccumuloDataStoreFactory requires instance ID to be set but it should not be required if mock is set...so set a
-    // fake one but be careful NOT to add a mock zoo since other code will then think it has a zookeeper but doesn't
     if (parsedParams.get(AccumuloDataStoreParams.mockParam.getName).exists(_.toBoolean)) {
+      mockDefaults ++ parsedParams // anything passed in will override defaults
+    } else {
       parsedParams
-        .updated(AccumuloDataStoreParams.instanceIdParam.getName, "mockInstance")
-        .updated(AccumuloDataStoreParams.userParam.getName,       "mockUser")
-        .updated(AccumuloDataStoreParams.passwordParam.getName,   "mockPassword")
-    } else { parsedParams }
+    }
   }
 }
