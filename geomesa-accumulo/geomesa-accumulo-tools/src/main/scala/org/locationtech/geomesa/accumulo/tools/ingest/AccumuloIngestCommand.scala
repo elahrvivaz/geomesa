@@ -12,7 +12,8 @@ import java.io.File
 
 import com.beust.jcommander.{Parameter, Parameters}
 import org.apache.accumulo.core.client.Connector
-import org.geotools.jdbc.JDBCDataStore
+import org.geotools.data.postgis.PostgisNGDataStoreFactory
+import org.geotools.jdbc.{JDBCDataStore, JDBCDataStoreFactory}
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.tools.{AccumuloDataStoreCommand, AccumuloDataStoreParams, RequiredCredentialsParams}
 import org.locationtech.geomesa.tools.ingest.{IngestCommand, IngestParams}
@@ -59,7 +60,9 @@ class PostgisIngestCommand extends IngestCommand[JDBCDataStore] {
       "schema"   -> params.schema,
       "database" -> params.db,
       "user"     -> params.user,
-      "passwd"   -> params.password)
+      "passwd"   -> params.password,
+      JDBCDataStoreFactory.BATCH_INSERT_SIZE.getName -> params.batchSize.toString,
+      PostgisNGDataStoreFactory.PREPARED_STATEMENTS.getName -> "true")
   }
 }
 
@@ -73,5 +76,6 @@ class PostgisIngestParams extends IngestParams with RequiredCredentialsParams {
   var port: Int = 5432
   @Parameter(names = Array("--host"), description = "Server name", required = true)
   var host: String = null
-
+  @Parameter(names = Array("--batch-size"), description = "Database batch insert size", required = true)
+  var batchSize: Int = 0
 }
