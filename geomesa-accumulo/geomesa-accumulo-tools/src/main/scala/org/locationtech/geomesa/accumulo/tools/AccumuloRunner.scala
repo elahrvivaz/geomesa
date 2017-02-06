@@ -12,7 +12,7 @@ import com.beust.jcommander.JCommander
 import org.apache.accumulo.server.client.HdfsZooInstance
 import org.locationtech.geomesa.accumulo.tools.data._
 import org.locationtech.geomesa.accumulo.tools.export.{AccumuloBinExportCommand, AccumuloExportCommand}
-import org.locationtech.geomesa.accumulo.tools.ingest.{AccumuloIngestCommand, IngestRasterCommand}
+import org.locationtech.geomesa.accumulo.tools.ingest.{AccumuloIngestCommand, IngestRasterCommand, PostgisIngestCommand}
 import org.locationtech.geomesa.accumulo.tools.stats._
 import org.locationtech.geomesa.accumulo.tools.status._
 import org.locationtech.geomesa.tools.export.GenerateAvroSchemaCommand
@@ -42,6 +42,7 @@ object AccumuloRunner extends Runner {
     new AccumuloExportCommand,
     new HelpCommand(this, jc),
     new AccumuloIngestCommand,
+    new PostgisIngestCommand,
     new IngestRasterCommand,
     new AccumuloKeywordsCommand,
     new AccumuloGetTypeNamesCommand,

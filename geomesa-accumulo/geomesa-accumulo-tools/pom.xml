@@ -69,6 +69,11 @@
             <groupId>org.apache.commons</groupId>
             <artifactId>commons-csv</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.geotools.jdbc</groupId>
+            <artifactId>gt-jdbc-postgis</artifactId>
+            <version>${gt.version}</version>
+        </dependency>
 
         <!-- provided dependencies -->
         <dependency>
