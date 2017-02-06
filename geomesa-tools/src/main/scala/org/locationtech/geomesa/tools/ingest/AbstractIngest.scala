@@ -117,17 +117,16 @@ abstract class AbstractIngest(val dsParams: Map[String, String],
           val countingStream = new CountingInputStream(new FileInputStream(file))
           val is = PathUtils.handleCompression(countingStream, file.getPath)
           try {
-            val (sft, features) = converter.convert(is)
+            val (_, features) = converter.convert(is)
             if (features.hasNext) {
-              ds.createSchema(sft)
               fw = ds.getFeatureWriterAppend(typeName, Transaction.AUTO_COMMIT)
             }
             features.foreach { sf =>
               val toWrite = fw.next()
               toWrite.setAttributes(sf.getAttributes)
-              toWrite.getIdentifier.asInstanceOf[FeatureIdImpl].setID(sf.getID)
-              toWrite.getUserData.putAll(sf.getUserData)
-              toWrite.getUserData.put(Hints.USE_PROVIDED_FID, java.lang.Boolean.TRUE)
+//              toWrite.getIdentifier.asInstanceOf[FeatureIdImpl].setID(sf.getID)
+//              toWrite.getUserData.putAll(sf.getUserData)
+//              toWrite.getUserData.put(Hints.USE_PROVIDED_FID, java.lang.Boolean.TRUE)
               try {
                 fw.write()
                 written.incrementAndGet()

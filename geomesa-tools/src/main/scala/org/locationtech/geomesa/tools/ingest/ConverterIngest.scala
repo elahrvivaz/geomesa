@@ -22,6 +22,8 @@ import org.locationtech.geomesa.jobs.mapreduce.{ConverterInputFormat, GeoMesaOut
 import org.locationtech.geomesa.tools.Command
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
+import scala.util.Try
+
 /**
   * Ingestion that uses geomesa converters to process input files
   *
@@ -44,8 +46,10 @@ class ConverterIngest(sft: SimpleFeatureType,
 
   override def beforeRunTasks(): Unit = {
     // create schema for the feature prior to Ingest job
-    Command.user.info(s"Creating schema ${sft.getTypeName}")
-    ds.createSchema(sft)
+    if (Try(ds.getSchema(sft.getTypeName)).getOrElse(null) == null) {
+      Command.user.info(s"Creating schema ${sft.getTypeName}")
+      ds.createSchema(sft)
+    }
   }
 
   val factory = new BasePooledObjectFactory[SimpleFeatureConverter[_]] {

@@ -38,6 +38,7 @@ class AccumuloIngestParams extends IngestParams with AccumuloDataStoreParams
 
 class PostgisIngestCommand extends IngestCommand[JDBCDataStore] {
 
+  override val name = "postgis-ingest"
   override val params = new PostgisIngestParams()
 
   override val libjarsFile: String = "org/locationtech/geomesa/accumulo/tools/ingest-libjars.list"
