@@ -17,7 +17,7 @@ trait NormalizedDimension {
     require(x >= min && x <= max, s"Value out of bounds ([$min $max]): $x")
     math.ceil((x - min) / (max - min) * precision).toInt
   }
-  def denormalize(x: Double): Double = (x / precision) * (max - min) + min
+  def denormalize(x: Int): Double = x * (max - min) / (precision + 1) + min
 }
 
 case class NormalizedLat(precision: Long) extends NormalizedDimension {

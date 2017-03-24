@@ -718,8 +718,7 @@ class HistogramTest extends Specification with StatTestHelper {
         val to = new BinnedGeometryArray(10000, toBounds)
         (0 until 10000).foreach(i => from.counts(i) = 1)
 
-        Histogram.copyInto(to, from)
-        ok
+        Histogram.copyInto(to, from) must not(throwAn[Exception])
       }
 
       "clear" >> {

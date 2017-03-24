@@ -212,6 +212,12 @@ class BinnedDateArray(length: Int, bounds: (Date, Date))
 class BinnedGeometryArray(length: Int, bounds: (Geometry, Geometry))
     extends WholeNumberBinnedArray[Geometry](length, bounds) {
 
+  private val (boundsX, boundsY) = {
+    val lo = centroid(bounds._1)
+    val hi = centroid(bounds._2)
+    ((lo.getX, hi.getX), (lo.getY, hi.getY))
+  }
+
   override protected def convertToLong(value: Geometry): Long = {
     val c = centroid(value)
     Z2SFC.index(c.getX, c.getY).z
@@ -222,20 +228,22 @@ class BinnedGeometryArray(length: Int, bounds: (Geometry, Geometry))
     GeometryUtils.geoFactory.createPoint(new Coordinate(x, y))
   }
 
-  override def bounds(index: Int): (Geometry, Geometry) = {
-    val (lo, hi) = super.bounds(index)
-    val loc = centroid(lo)
-    val hic = centroid(hi)
-    if (loc.getX > hic.getX || loc.getY > hic.getY) {
-      val (lox, hix) = if (loc.getX > hic.getX) { (hic.getX, loc.getX) } else { (loc.getX, hic.getX) }
-      val (loy, hiy) = if (loc.getY > hic.getY) { (hic.getY, loc.getY) } else { (loc.getY, hic.getY) }
-      val loNew = GeometryUtils.geoFactory.createPoint(new Coordinate(lox, loy))
-      val hiNew = GeometryUtils.geoFactory.createPoint(new Coordinate(hix, hiy))
-      (loNew, hiNew)
-    } else {
-      (lo, hi)
-    }
-  }
+//  override def bounds(index: Int): (Geometry, Geometry) = {
+//    val (lo, hi) = super.bounds(index)
+//    val loc = centroid(lo)
+//    val hic = centroid(hi)
+//    if (loc.getX > hic.getX || loc.getY > hic.getY) {
+//      val lox = math.min(loc.getX, math.min(hic.getX, boundsX._2))
+//      val hix = math.max(loc.getX, math.max(hic.getX, boundsX._1))
+//      val loy = math.min(loc.getY, math.min(hic.getY, boundsY._2))
+//      val hiy = math.max(loc.getY, math.max(hic.getY, boundsY._1))
+//      val loNew = if (lo == bounds._1) { lo } else { GeometryUtils.geoFactory.createPoint(new Coordinate(lox, loy)) }
+//      val hiNew = if (hi == bounds._2) { hi } else { GeometryUtils.geoFactory.createPoint(new Coordinate(hix, hiy)) }
+//      (loNew, hiNew)
+//    } else {
+//      (lo, hi)
+//    }
+//  }
 
   private def centroid(value: Geometry): Point = {
     import org.locationtech.geomesa.utils.geotools.Conversions.RichGeometry
