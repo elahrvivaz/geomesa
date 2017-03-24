@@ -213,17 +213,36 @@ class BinnedGeometryArray(length: Int, bounds: (Geometry, Geometry))
     extends WholeNumberBinnedArray[Geometry](length, bounds) {
 
   override protected def convertToLong(value: Geometry): Long = {
-    import org.locationtech.geomesa.utils.geotools.Conversions.RichGeometry
-    val centroid = value match {
-      case p: Point => p
-      case g => g.safeCentroid()
-    }
-    Z2SFC.index(centroid.getX, centroid.getY).z
+    val c = centroid(value)
+    Z2SFC.index(c.getX, c.getY).z
   }
 
   override protected def convertFromLong(value: Long): Geometry = {
     val (x, y) = Z2SFC.invert(new Z2(value))
     GeometryUtils.geoFactory.createPoint(new Coordinate(x, y))
+  }
+
+  override def bounds(index: Int): (Geometry, Geometry) = {
+    val (lo, hi) = super.bounds(index)
+    val loc = centroid(lo)
+    val hic = centroid(hi)
+    if (loc.getX > hic.getX || loc.getY > hic.getY) {
+      val (lox, hix) = if (loc.getX > hic.getX) { (hic.getX, loc.getX) } else { (loc.getX, hic.getX) }
+      val (loy, hiy) = if (loc.getY > hic.getY) { (hic.getY, loc.getY) } else { (loc.getY, hic.getY) }
+      val loNew = GeometryUtils.geoFactory.createPoint(new Coordinate(lox, loy))
+      val hiNew = GeometryUtils.geoFactory.createPoint(new Coordinate(hix, hiy))
+      (loNew, hiNew)
+    } else {
+      (lo, hi)
+    }
+  }
+
+  private def centroid(value: Geometry): Point = {
+    import org.locationtech.geomesa.utils.geotools.Conversions.RichGeometry
+    value match {
+      case p: Point => p
+      case g => g.safeCentroid()
+    }
   }
 }
 
