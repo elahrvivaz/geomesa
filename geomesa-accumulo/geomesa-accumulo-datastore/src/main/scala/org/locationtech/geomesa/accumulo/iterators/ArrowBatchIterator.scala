@@ -29,7 +29,7 @@ import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, SimpleFeatureTypes}
-import org.locationtech.geomesa.utils.stats.{EnumerationStat, Stat}
+import org.locationtech.geomesa.utils.stats.{EnumerationStat, Stat, TopK}
 import org.locationtech.geomesa.utils.text.StringSerialization
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
@@ -140,17 +140,26 @@ object ArrowBatchIterator {
                          filter: Option[Filter],
                          fields: Seq[String],
                          provided: Map[String, Seq[AnyRef]]): Map[String, ArrowDictionary] = {
+    def name(i: Int): String = sft.getDescriptor(i).getLocalName
+
     if (fields.isEmpty) { Map.empty } else {
       // note: sort values to return same dictionary cache
       val providedDictionaries = provided.map { case (k, v) => k -> ArrowDictionary.create(sort(v)) }
-      val remaining = fields.filterNot(provided.contains)
-      val queried = if (remaining.isEmpty) { Map.empty } else {
-        // run a live stats query to get the not-provided dictionary values
-        val stats = Stat.SeqStat(fields.map(Stat.Enumeration))
-        val enumerations = ds.stats.runStats[EnumerationStat[String]](sft, stats, filter.getOrElse(Filter.INCLUDE))
-        enumerations.map { e => sft.getDescriptor(e.attribute).getLocalName -> ArrowDictionary.create(sort(e.values.toSeq)) }.toMap
+      val toLookup = fields.filterNot(provided.contains)
+      val lookedUpDictionaries = if (toLookup.isEmpty) { Map.empty } else {
+        // use topk if available, otherwise run a live stats query to get the dictionary values
+        val read = ds.stats.getStats[TopK[AnyRef]](sft, toLookup).map { k =>
+          name(k.attribute) -> ArrowDictionary.create(sort(k.topK(1000).map(_._1)))
+        }.toMap
+        val toQuery = toLookup.filterNot(read.contains)
+        val queried = if (toQuery.isEmpty) { Map.empty } else {
+          val stats = Stat.SeqStat(toQuery.map(Stat.Enumeration))
+          val enumerations = ds.stats.runStats[EnumerationStat[String]](sft, stats, filter.getOrElse(Filter.INCLUDE))
+          enumerations.map { e => name(e.attribute) -> ArrowDictionary.create(sort(e.values.toSeq)) }.toMap
+        }
+        queried ++ read
       }
-      providedDictionaries ++ queried
+      providedDictionaries ++ lookedUpDictionaries
     }
   }
 
