@@ -31,8 +31,23 @@ import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.SimpleFeatureType
 
+/**
+  * Writes a simple feature attribute to an arrow vector
+  */
 trait ArrowAttributeWriter {
+
+  /**
+    * Writes an attribute for the ith feature
+    * @param i index of the feature to write
+    * @param value attribute value to write
+    */
   def apply(i: Int, value: AnyRef): Unit
+
+  /**
+    * Sets the underlying value count, after writing is finished. @see FieldVector.Mutator.setValueCount
+    *
+    * @param count number of features written (or null)
+    */
   def setValueCount(count: Int): Unit = {}
 }
 
@@ -40,14 +55,33 @@ object ArrowAttributeWriter {
 
   import scala.collection.JavaConversions._
 
+  /**
+    * Writer for feature ID
+    *
+    * @param vector simple feature vector
+    * @param includeFids actually write the feature ids, or omit them, in which case the writer is a no-op
+    * @param allocator buffer allocator
+    * @return feature ID writer
+    */
   def id(vector: NullableMapVector, includeFids: Boolean)(implicit allocator: BufferAllocator): ArrowAttributeWriter = {
     if (includeFids) {
-      ArrowAttributeWriter("id", Seq(ObjectType.STRING), classOf[String], vector, None, null)
+      ArrowAttributeWriter(SimpleFeatureVector.FeatureIdField, Seq(ObjectType.STRING), classOf[String], vector, None, null)
     } else {
       ArrowAttributeWriter.ArrowNoopWriter
     }
   }
 
+  /**
+    * Creates a sequence of attribute writers for a simple feature type. Each attribute in the feature type
+    * will map to a writer in the returned sequence.
+    *
+    * @param sft simple feature type
+    * @param vector simple feature vector
+    * @param dictionaries dictionaries, if any
+    * @param precision geometry precision for any geometry attributes
+    * @param allocator buffer allocator
+    * @return attribute writers
+    */
   def apply(sft: SimpleFeatureType,
             vector: NullableMapVector,
             dictionaries: Map[String, ArrowDictionary],
@@ -62,6 +96,18 @@ object ArrowAttributeWriter {
     }
   }
 
+  /**
+    * Creates a writer for a single attribute
+    *
+    * @param name name of the attribute, generally including the class binding so the sft can be re-created
+    * @param bindings object bindings, the attribute type plus any subtypes (e.g. for lists or maps)
+    * @param classBinding the explicit class binding of the attribute
+    * @param vector the simple feature vector to write to
+    * @param dictionary the dictionary for the attribute, if any
+    * @param precision geometry precision (ignored if the attribute is not a geometry)
+    * @param allocator buffer allocator
+    * @return attribute writer
+    */
   def apply(name: String,
             bindings: Seq[ObjectType],
             classBinding: Class[_],
@@ -104,6 +150,9 @@ object ArrowAttributeWriter {
     }
   }
 
+  /**
+    * Converts a value into a dictionary byte and writes it
+    */
   class ArrowDictionaryByteWriter(writer: TinyIntWriter,
                                   val dictionary: ArrowDictionary,
                                   val dictionaryType: TypeBindings) extends ArrowAttributeWriter with HasArrowDictionary {
@@ -113,6 +162,9 @@ object ArrowAttributeWriter {
     }
   }
 
+  /**
+    * Converts a value into a dictionary short and writes it
+    */
   class ArrowDictionaryShortWriter(writer: SmallIntWriter,
                                    val dictionary: ArrowDictionary,
                                    val dictionaryType: TypeBindings) extends ArrowAttributeWriter with HasArrowDictionary {
@@ -122,6 +174,9 @@ object ArrowAttributeWriter {
     }
   }
 
+  /**
+    * Converts a value into a dictionary int and writes it
+    */
   class ArrowDictionaryIntWriter(writer: IntWriter,
                                  val dictionary: ArrowDictionary,
                                  val dictionaryType: TypeBindings) extends ArrowAttributeWriter with HasArrowDictionary {
@@ -131,6 +186,9 @@ object ArrowAttributeWriter {
     }
   }
 
+  /**
+    * Writes geometries - delegates to our JTS geometry vectors
+    */
   class ArrowGeometryWriter(vector: NullableMapVector, name: String, binding: Class[_], precision: GeometryPrecision)
       extends ArrowAttributeWriter {
     private val delegate: GeometryWriter[Geometry] = {
@@ -178,6 +236,9 @@ object ArrowAttributeWriter {
     override def setValueCount(count: Int): Unit = delegate.setValueCount(count)
   }
 
+  /**
+    * Doesn't actually write anything
+    */
   object ArrowNoopWriter extends ArrowAttributeWriter {
     override def apply(i: Int, value: AnyRef): Unit = {}
   }

@@ -51,7 +51,7 @@ class SimpleFeatureArrowFileWriter(val sft: SimpleFeatureType,
   private val provider = new MapDictionaryProvider()
   // container for holding our dictionary vectors
   private val dictionaryContainer = new NullableMapVector("", allocator, null, null)
-  dictionaryContainer.allocateNew()
+  dictionaryContainer.allocateNew() // TODO might need to expand container size
 
   // convert the dictionary values into arrow vectors
   // make sure we load dictionaries before instantiating the stream writer

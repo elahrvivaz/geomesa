@@ -57,7 +57,7 @@ class ArrowDataStoreFactory extends FileDataStoreFactorySpi {
 }
 
 object ArrowDataStoreFactory {
-  val UrlParam = new Param("url", classOf[URL], "url to an arrow file", true, null, Collections.singletonMap(Parameter.EXT, "arrow"))
+  val UrlParam = new Param("url", classOf[URL], "URL to an arrow file", true, null, Collections.singletonMap(Parameter.EXT, "arrow"))
 
   private val DisplayName = "Apache Arrow (GeoMesa)"
 

@@ -36,15 +36,31 @@ import scala.collection.mutable.ArrayBuffer
 class SimpleFeatureArrowFileReader(is: InputStream, filter: Filter = Filter.INCLUDE)
                                   (implicit allocator: BufferAllocator) extends Closeable {
 
+  // reader for current logical 'file'
   private var reader = new SingleFileReader()
   // we track all the readers and close at the end to avoid closing the input stream prematurely
   private val readers = ArrayBuffer(reader)
 
-  // note: may change as features are read, if multiple logical 'files' in the input stream
+  /**
+    * The simple feature type for the file. Note: this may change as features are read,
+    * if there are multiple logical 'files' in the input stream. By convention, we keep
+    * a single file with a single sft, but that is not enforced.
+    *
+    * @return current simple feature type
+    */
   def sft: SimpleFeatureType = reader.sft
-  // note: may change as features are read, if multiple logical 'files' in the input stream
+
+  /**
+    * Dictionaries from the file. Note: this may change as features are read, if there are
+    * multiple logical 'files' in the input stream. This method is exposed for completeness,
+    * but generally would not be needed since dictionary values are automatically decoded
+    * into the returned simple features.
+    *
+    * @return current dictionaries, keyed by attribute
+    */
   def dictionaries: Map[String, ArrowDictionary] = reader.dictionaries
 
+  // iterator of all features read from the input stream
   lazy val features = new Iterator[SimpleFeature] {
     private var done = false
     private var batch: Iterator[SimpleFeature] = reader.features
@@ -55,6 +71,7 @@ class SimpleFeatureArrowFileReader(is: InputStream, filter: Filter = Filter.INCL
       } else if (batch.hasNext) {
         true
       } else if (is.available() > 0) {
+        // new logical file
         reader = new SingleFileReader()
         readers.append(reader)
         batch = reader.features
@@ -71,7 +88,7 @@ class SimpleFeatureArrowFileReader(is: InputStream, filter: Filter = Filter.INCL
   override def close(): Unit = readers.foreach(_.close())
 
   /**
-    * Reads a single logical arrow 'file'
+    * Reads a single logical arrow 'file' from the stream, which may contain multiple record batches
     */
   private class SingleFileReader extends Closeable {
 
@@ -79,15 +96,16 @@ class SimpleFeatureArrowFileReader(is: InputStream, filter: Filter = Filter.INCL
 
     private val reader = new ArrowStreamReader(is, allocator)
     private var firstBatchLoaded = false
+    private var done = false
     private val root = reader.getVectorSchemaRoot
     require(root.getFieldVectors.size() == 1 && root.getFieldVectors.get(0).isInstanceOf[NullableMapVector], "Invalid file")
     private val underlying = root.getFieldVectors.get(0).asInstanceOf[NullableMapVector]
 
     // load any dictionaries into memory
     val dictionaries: Map[String, ArrowDictionary] = underlying.getField.getChildren.flatMap { field =>
-      Option(field.getDictionary).map { encoding =>
+      Option(field.getDictionary).toSeq.map { encoding =>
         if (!firstBatchLoaded) {
-          reader.loadNextBatch() // load the first batch so we get any dictionaries
+          done = !reader.loadNextBatch() // load the first batch so we get any dictionaries
           firstBatchLoaded = true
         }
         val vector = reader.lookup(encoding.getId).getVector
@@ -104,7 +122,7 @@ class SimpleFeatureArrowFileReader(is: InputStream, filter: Filter = Filter.INCL
           i += 1
         }
         field.getName -> new ArrowDictionary(values, encoding)
-      }.toSeq
+      }
     }.toMap
 
     private val vector = SimpleFeatureVector.wrap(underlying, dictionaries)
@@ -113,7 +131,6 @@ class SimpleFeatureArrowFileReader(is: InputStream, filter: Filter = Filter.INCL
 
     // iterator of simple features read from the input stream
     lazy val features: Iterator[SimpleFeature] = new Iterator[SimpleFeature] {
-      private var done = false
       private var batch: Iterator[ArrowSimpleFeature] = filterBatch()
 
       override def hasNext: Boolean = {
@@ -132,20 +149,25 @@ class SimpleFeatureArrowFileReader(is: InputStream, filter: Filter = Filter.INCL
 
       override def next(): SimpleFeature = {
         val n = batch.next()
-        n.load() // load values into memory so that they don't get lost when the next batch is loaded
+        // arrow simple feature attributes are lazily evaluated
+        // load them into memory so that they don't get lost when the next batch is loaded
+        n.load()
         n
       }
     }
 
     /**
       * Evaluate the filter against each vector in the current batch.
-      * This should optimize memory reads for the filtered attributes by checking them all up front
+      *
+      * We could try to load and filter all features at once - this should optimize memory reads
+      * as each attribute in the filter would be accessed sequentially. However, large batches
+      * make this memory intensive, so we evaluate and return features one-by-one.
       *
       * @return
       */
     private def filterBatch(): Iterator[ArrowSimpleFeature] = {
       if (!firstBatchLoaded) {
-        reader.loadNextBatch()
+        done = !reader.loadNextBatch()
         firstBatchLoaded = true
       }
       val all = Iterator.range(0, root.getRowCount).map(vector.reader.get)

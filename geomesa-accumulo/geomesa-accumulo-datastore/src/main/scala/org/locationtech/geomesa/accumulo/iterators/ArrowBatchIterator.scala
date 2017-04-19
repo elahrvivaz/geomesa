@@ -29,11 +29,16 @@ import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, SimpleFeatureTypes}
+import org.locationtech.geomesa.utils.io.WithClose
 import org.locationtech.geomesa.utils.stats.{EnumerationStat, Stat, TopK}
 import org.locationtech.geomesa.utils.text.StringSerialization
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
+/**
+  * Aggregates and returns arrow 'record batches'. An arrow file consists of metadata, n-batches, and a footer.
+  * The metadata and footer are added by the reduce features step.
+  */
 class ArrowBatchIterator extends KryoLazyAggregatingIterator[ArrowBatchAggregate] with SamplingIterator {
 
   import ArrowBatchIterator._
@@ -108,10 +113,9 @@ object ArrowBatchIterator {
 
   val DefaultPriority = 25
 
-  private val BatchSizeKey   = "grp"
+  private val BatchSizeKey   = "batch"
   private val DictionaryKey  = "dict"
   private val IncludeFidsKey = "fids"
-  private val Tab = '\t'
 
   private val aggregateCache = new SoftThreadLocalCache[String, ArrowBatchAggregate]
 
@@ -122,7 +126,7 @@ object ArrowBatchIterator {
                 hints: Hints,
                 deduplicate: Boolean,
                 priority: Int = DefaultPriority): IteratorSetting = {
-    val is = new IteratorSetting(priority, "arrow-iter", classOf[ArrowBatchIterator])
+    val is = new IteratorSetting(priority, "arrow-batch-iter", classOf[ArrowBatchIterator])
     KryoLazyAggregatingIterator.configure(is, sft, index, filter, deduplicate, None)
     hints.getSampling.foreach(SamplingIterator.configure(is, sft, _))
     hints.getArrowBatchSize.foreach(i => is.addOption(BatchSizeKey, i.toString))
@@ -135,17 +139,30 @@ object ArrowBatchIterator {
     is
   }
 
+  /**
+    * Determine dictionary values, as required. Priority:
+    *   1. values provided by the user
+    *   2. cached topk stats
+    *   3. enumeration stats query against result set
+    *
+    * @param ds data store
+    * @param sft simple feature type
+    * @param filter full filter for the query being run, used if querying enumeration values
+    * @param attributes names of attributes to dictionary encode
+    * @param provided provided dictionary values, if any, keyed by attribute name
+    * @return
+    */
   def createDictionaries(ds: AccumuloDataStore,
                          sft: SimpleFeatureType,
                          filter: Option[Filter],
-                         fields: Seq[String],
+                         attributes: Seq[String],
                          provided: Map[String, Seq[AnyRef]]): Map[String, ArrowDictionary] = {
     def name(i: Int): String = sft.getDescriptor(i).getLocalName
 
-    if (fields.isEmpty) { Map.empty } else {
+    if (attributes.isEmpty) { Map.empty } else {
       // note: sort values to return same dictionary cache
       val providedDictionaries = provided.map { case (k, v) => k -> ArrowDictionary.create(sort(v)) }
-      val toLookup = fields.filterNot(provided.contains)
+      val toLookup = attributes.filterNot(provided.contains)
       val lookedUpDictionaries = if (toLookup.isEmpty) { Map.empty } else {
         // use topk if available, otherwise run a live stats query to get the dictionary values
         val read = ds.stats.getStats[TopK[AnyRef]](sft, toLookup).map { k =>
@@ -189,7 +206,7 @@ object ArrowBatchIterator {
 
   /**
     * First feature contains metadata for arrow file and dictionary batch, subsequent features
-    * contain record batches
+    * contain record batches, final feature contains EOF indicator
     *
     * @param sft simple feature types
     * @param hints query hints
@@ -223,11 +240,11 @@ object ArrowBatchIterator {
                            includeFids: Boolean): Array[Byte] = {
     import org.locationtech.geomesa.arrow.allocator
     val out = new ByteArrayOutputStream
-    val writer = new SimpleFeatureArrowFileWriter(sft, out, dictionaries, includeFids, GeometryPrecision.Float)
-    writer.start()
-    val bytes = out.toByteArray // copy bytes before closing so we just get the header metadata
-    writer.close()
-    bytes
+    val precision = GeometryPrecision.Float
+    WithClose(new SimpleFeatureArrowFileWriter(sft, out, dictionaries, includeFids, precision)) { writer =>
+      writer.start()
+      out.toByteArray // copy bytes before closing so we get just the header metadata
+    }
   }
 
   /**

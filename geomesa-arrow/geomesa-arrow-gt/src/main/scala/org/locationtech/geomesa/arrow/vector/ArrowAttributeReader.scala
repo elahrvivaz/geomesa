@@ -39,20 +39,48 @@ import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.SimpleFeatureType
 
+/**
+  * Reads a simple feature attribute from an arrow vector
+  */
 trait ArrowAttributeReader {
+
+  /**
+    * Read an attribute from the ith feature in the simple feature vector
+    *
+    * @param i index of the feature to read
+    * @return the attribute value
+    */
   def apply(i: Int): AnyRef
 }
 
 object ArrowAttributeReader {
 
+  /**
+    * Reads an ID
+    *
+    * @param vector simple feature vector
+    * @param includeFids whether ids are included in the vector or not. If not, will return an incrementing ID value.
+    * @return
+    */
   def id(vector: NullableMapVector, includeFids: Boolean): ArrowAttributeReader = {
     if (includeFids) {
-      ArrowAttributeReader(Seq(ObjectType.STRING), classOf[String], vector.getChild("id"), None, null)
+      val child = vector.getChild(SimpleFeatureVector.FeatureIdField)
+      ArrowAttributeReader(Seq(ObjectType.STRING), classOf[String], child, None, null)
     } else {
       ArrowAttributeReader.ArrowIncrementingFeatureIdReader
     }
   }
 
+  /**
+    * Creates a sequence of attribute readers based on the attributes of the simple feature type. There
+    * will be one reader per attribute.
+    *
+    * @param sft simple feature type
+    * @param vector simple feature vector to read from
+    * @param dictionaries dictionaries, if any
+    * @param precision geometry precision
+    * @return sequence of readers
+    */
   def apply(sft: SimpleFeatureType,
             vector: NullableMapVector,
             dictionaries: Map[String, ArrowDictionary],
@@ -67,6 +95,16 @@ object ArrowAttributeReader {
     }
   }
 
+  /**
+    * Creates an attribute reader for a single attribute
+    *
+    * @param bindings object bindings, the attribute type plus any subtypes (e.g. for lists or maps)
+    * @param classBinding the explicit class binding of the attribute
+    * @param vector the simple feature vector to read from
+    * @param dictionary the dictionary for the attribute, if any
+    * @param precision geometry precision (ignored if the attribute is not a geometry)
+    * @return reader
+    */
   def apply(bindings: Seq[ObjectType],
             classBinding: Class[_],
             vector: FieldVector,
@@ -103,6 +141,9 @@ object ArrowAttributeReader {
     }
   }
 
+  /**
+    * Reads dictionary encoded bytes and converts them to the actual values
+    */
   class ArrowDictionaryByteReader(accessor: NullableTinyIntVector#Accessor,
                                   val dictionary: ArrowDictionary,
                                   val dictionaryType: TypeBindings) extends ArrowAttributeReader with HasArrowDictionary {
@@ -113,6 +154,10 @@ object ArrowAttributeReader {
     }
   }
 
+  /**
+    * Reads dictionary encoded shorts and converts them to the actual values
+    *
+    */
   class ArrowDictionaryShortReader(accessor: NullableSmallIntVector#Accessor,
                                    val dictionary: ArrowDictionary,
                                    val dictionaryType: TypeBindings) extends ArrowAttributeReader with HasArrowDictionary {
@@ -123,6 +168,10 @@ object ArrowAttributeReader {
     }
   }
 
+  /**
+    * Reads dictionary encoded ints and converts them to the actual values
+    *
+    */
   class ArrowDictionaryIntReader(accessor: NullableIntVector#Accessor,
                                  val dictionary: ArrowDictionary,
                                  val dictionaryType: TypeBindings) extends ArrowAttributeReader with HasArrowDictionary {
@@ -133,6 +182,9 @@ object ArrowAttributeReader {
     }
   }
 
+  /**
+    * Reads geometries - delegates to our JTS geometry vectors
+    */
   class ArrowGeometryReader(vector: FieldVector, binding: Class[_], precision: GeometryPrecision)
       extends ArrowAttributeReader {
     private val delegate: GeometryReader[_ <: Geometry] = if (binding == classOf[Point]) {
@@ -174,6 +226,9 @@ object ArrowAttributeReader {
     override def apply(i: Int): AnyRef = delegate.get(i)
   }
 
+  /**
+    * Returns an incrementing Long to use as a feature id
+    */
   object ArrowIncrementingFeatureIdReader extends ArrowAttributeReader {
     private val ids = new AtomicLong(0)
     override def apply(i: Int): AnyRef = ids.getAndIncrement.toString

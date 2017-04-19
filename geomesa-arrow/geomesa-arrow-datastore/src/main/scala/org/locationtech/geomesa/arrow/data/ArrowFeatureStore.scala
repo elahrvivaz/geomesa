@@ -65,8 +65,7 @@ class ArrowFeatureStore(entry: ContentEntry) extends ContentFeatureStore(entry, 
     require((flags | WRITER_ADD) == WRITER_ADD, "Only append supported")
 
     val sft = delegate.ds.getSchema
-    // TODO suport appending to an existing file
-    val os = delegate.ds.createOutputStream(false)
+    val os = delegate.ds.createOutputStream(true)
     val writer = new SimpleFeatureArrowFileWriter(sft, os)
     val flushCount = SystemProperty("geomesa.arrow.batch.size", "10000").get.toLong
 

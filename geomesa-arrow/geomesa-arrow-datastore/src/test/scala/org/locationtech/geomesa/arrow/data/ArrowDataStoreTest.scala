@@ -43,14 +43,25 @@ class ArrowDataStoreTest extends Specification {
         ds.createSchema(sft)
         ds.getSchema(sft.getTypeName) mustEqual sft
 
-        val writer = ds.getFeatureWriterAppend(sft.getTypeName, Transaction.AUTO_COMMIT)
+        var writer = ds.getFeatureWriterAppend(sft.getTypeName, Transaction.AUTO_COMMIT)
         features0.foreach { f =>
           FeatureUtils.copyToWriter(writer, f, overrideFid = true)
           writer.write()
         }
         writer.close()
-        val results = SelfClosingIterator(ds.getFeatureReader(new Query(sft.getTypeName, Filter.INCLUDE), Transaction.AUTO_COMMIT)).toSeq
+
+        var results = SelfClosingIterator(ds.getFeatureReader(new Query(sft.getTypeName, Filter.INCLUDE), Transaction.AUTO_COMMIT)).toSeq
         results must containTheSameElementsAs(features0)
+
+        writer = ds.getFeatureWriterAppend(sft.getTypeName, Transaction.AUTO_COMMIT)
+        features1.foreach { f =>
+          FeatureUtils.copyToWriter(writer, f, overrideFid = true)
+          writer.write()
+        }
+        writer.close()
+
+        results = SelfClosingIterator(ds.getFeatureReader(new Query(sft.getTypeName, Filter.INCLUDE), Transaction.AUTO_COMMIT)).toSeq
+        results must containTheSameElementsAs(features0 ++ features1)
       } finally {
         if (!new File(file.getPath).delete()) {
           new File(file.getPath).deleteOnExit()

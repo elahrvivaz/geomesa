@@ -180,10 +180,10 @@ case object AttributeIndex extends AccumuloFeatureIndex with AccumuloIndexAdapte
         joinQuery(ds, sft, indexSft, filter, hints, dedupe, singleAttrValueOnlyPlan)
       }
     } else if (hints.isArrowQuery) {
-      // check to see if we can execute against the index values
       lazy val dictionaryFields = hints.getArrowDictionaryFields
       lazy val providedDictionaries = hints.getArrowDictionaryEncodedValues
       lazy val dictionaries = ArrowBatchIterator.createDictionaries(ds, sft, filter.filter, dictionaryFields, providedDictionaries)
+      // check to see if we can execute against the index values
       if (IteratorTrigger.canUseAttrIdxValues(sft, ecql, transform)) {
         val (iter, reduce, kvsToFeatures) = if (hints.isArrowComputeDictionaries ||
             dictionaryFields.forall(providedDictionaries.contains)) {
@@ -191,7 +191,7 @@ case object AttributeIndex extends AccumuloFeatureIndex with AccumuloIndexAdapte
           val reduce = Some(ArrowBatchIterator.reduceFeatures(indexSft, hints, dictionaries)(_))
           (iter, reduce, ArrowBatchIterator.kvsToFeatures())
         } else {
-          val iter = ArrowFileIterator.configure(sft, this, ecql, dictionaryFields, hints, dedupe)
+          val iter = ArrowFileIterator.configure(indexSft, this, ecql, dictionaryFields, hints, dedupe)
           (iter, None, ArrowFileIterator.kvsToFeatures())
         }
         val iters = visibilityIter(indexSft) :+ iter

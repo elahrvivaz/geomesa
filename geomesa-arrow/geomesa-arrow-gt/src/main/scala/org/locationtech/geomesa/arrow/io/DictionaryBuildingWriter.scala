@@ -1,10 +1,10 @@
-/*******************************************************************************
+/***********************************************************************
 * Copyright (c) 2013-2017 Commonwealth Computer Research, Inc.
 * All rights reserved. This program and the accompanying materials
 * are made available under the terms of the Apache License, Version 2.0
 * which accompanies this distribution and is available at
 * http://www.opensource.org/licenses/apache2.0.php.
-******************************************************************************/
+*************************************************************************/
 
 package org.locationtech.geomesa.arrow.io
 
@@ -29,6 +29,11 @@ import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.io.WithClose
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
+/**
+  * Writes an arrow file of simple features. Dictionaries will be built up as features are observed.
+  * Dictionaries are encoded a Int(16), i.e. 2-byte shorts. Values will not be correctly encoded if
+  * more than Short.MaxValue distinct values are encountered.
+  */
 class DictionaryBuildingWriter private (val sft: SimpleFeatureType,
                                         val underlying: NullableMapVector,
                                         val dictionaries: Seq[String],
@@ -102,7 +107,7 @@ class DictionaryBuildingWriter private (val sft: SimpleFeatureType,
     root.setRowCount(index)
 
     val container = new NullableMapVector("", allocator, null, null)
-    container.allocateNew()
+    container.allocateNew() // TODO might need to expand this as we add values
 
     val dictionaries = attributeWriters.collect { case w: ArrowAttributeDictionaryBuildingWriter =>
       val name = s"dict-${w.encoding.getId}"
@@ -117,6 +122,7 @@ class DictionaryBuildingWriter private (val sft: SimpleFeatureType,
         }
         i += 1
       }
+      writer.setValueCount(w.size)
       container.getMutator.setValueCount(w.size)
 
       new Dictionary(vector, w.encoding)
@@ -142,6 +148,16 @@ object DictionaryBuildingWriter {
 
   import scala.collection.JavaConversions._
 
+  /**
+    * Creates a new writer
+    *
+    * @param sft simple feature type
+    * @param dictionaries attribute names to dictionary encode
+    * @param includeFids include feature ids in the output file
+    * @param precision geometry precision to be written
+    * @param allocator allocator
+    * @return
+    */
   def create(sft: SimpleFeatureType,
              dictionaries: Seq[String],
              includeFids: Boolean = true,
@@ -152,11 +168,14 @@ object DictionaryBuildingWriter {
     new DictionaryBuildingWriter(sft, underlying, dictionaries, includeFids, precision)
   }
 
-  def attribute(sft: SimpleFeatureType,
-                vector: NullableMapVector,
-                dictionaries: Seq[String],
-                precision: GeometryPrecision = GeometryPrecision.Double)
-               (implicit allocator: BufferAllocator): Seq[ArrowAttributeWriter] = {
+  /**
+    * Gets an attribute writer or a dictionary building writer, as appropriate
+    */
+  private def attribute(sft: SimpleFeatureType,
+                        vector: NullableMapVector,
+                        dictionaries: Seq[String],
+                        precision: GeometryPrecision = GeometryPrecision.Double)
+                       (implicit allocator: BufferAllocator): Seq[ArrowAttributeWriter] = {
     sft.getAttributeDescriptors.map { descriptor =>
       val name = SimpleFeatureTypes.encodeDescriptor(sft, descriptor)
       val classBinding = descriptor.getType.getBinding
@@ -172,27 +191,33 @@ object DictionaryBuildingWriter {
     }
   }
 
+  /**
+    * Tracks values seen and writes dictionary encoded ints instead
+    */
   class ArrowAttributeDictionaryBuildingWriter(writer: SmallIntWriter,
                                                val encoding: DictionaryEncoding,
                                                val dictionaryType: TypeBindings) extends ArrowAttributeWriter {
 
-    private val values = scala.collection.mutable.LinkedHashMap.empty[AnyRef, Short]
+    // next dictionary index to use
     private var counter: Short = 0
-
-    def clear(): Unit = {
-      counter = 0
-      values.clear()
-    }
+    // values that we have seen, and their dictionary index
+    private val values = scala.collection.mutable.LinkedHashMap.empty[AnyRef, Short]
 
     def size: Int = values.size
 
     // ordered list of dictionary values encountered by this writer
     // note: iterator will return in insert order
+    // we need to keep it ordered so that dictionary values match up with their index
     def dictionary: Seq[AnyRef] = values.keys.toSeq
 
     override def apply(i: Int, value: AnyRef): Unit = {
       val index = values.getOrElseUpdate(value, { val i = counter; counter = (counter + 1).toShort; i })
       writer.writeSmallInt(index)
+    }
+
+    def clear(): Unit = {
+      counter = 0
+      values.clear()
     }
   }
 }

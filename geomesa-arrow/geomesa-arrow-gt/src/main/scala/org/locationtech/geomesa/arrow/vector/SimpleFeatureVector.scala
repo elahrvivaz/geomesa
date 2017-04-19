@@ -68,6 +68,7 @@ class SimpleFeatureVector private (val sft: SimpleFeatureType,
     private [arrow] val attributeWriters = ArrowAttributeWriter(sft, vector.underlying, dictionaries, precision).toArray
 
     def set(index: Int, feature: SimpleFeature): Unit = {
+      // make sure we have space to write the value
       while (index > vector.maxIndex ) {
         vector.expand()
       }
@@ -103,6 +104,7 @@ class SimpleFeatureVector private (val sft: SimpleFeatureType,
 object SimpleFeatureVector {
 
   val DefaultCapacity = 8096
+  val FeatureIdField = "id"
 
   object GeometryPrecision extends Enumeration {
     type GeometryPrecision = Value
@@ -150,9 +152,9 @@ object SimpleFeatureVector {
     import scala.collection.JavaConversions._
     val attributes = vector.getField.getChildren.collect {
       // filter out feature id from attributes
-      case field if field.getName != "id" => field.getName
+      case field if field.getName != FeatureIdField => field.getName
     }
-    val includeFids = vector.getField.getChildren.exists(_.getName == "id")
+    val includeFids = vector.getField.getChildren.exists(_.getName == FeatureIdField)
     val sft = SimpleFeatureTypes.createType(vector.getField.getName, attributes.mkString(","))
     val geomVector = Option(vector.getChild(SimpleFeatureTypes.encodeDescriptor(sft, sft.getGeometryDescriptor)))
     val isFloat = geomVector.exists(v => GeometryFields.precisionFromField(v.getField) == FloatingPointPrecision.SINGLE)

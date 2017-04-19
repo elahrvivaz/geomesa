@@ -13,14 +13,13 @@ import java.util.concurrent.atomic.AtomicLong
 
 import com.google.common.collect.ImmutableBiMap
 import org.apache.arrow.vector.types.pojo.{ArrowType, DictionaryEncoding}
-import org.apache.commons.csv.{CSVFormat, CSVParser, CSVPrinter}
 import org.locationtech.geomesa.arrow.TypeBindings
 
 /**
   * Holder for dictionary values
   *
   * @param values dictionary values. When encoded, values are replaced with their index in the seq
-  * @param encoding dictionary id and int width, must be unique per arrow file
+  * @param encoding dictionary id and int width, id must be unique per arrow file
   */
 class ArrowDictionary(val values: Seq[AnyRef], val encoding: DictionaryEncoding) {
 
@@ -33,7 +32,9 @@ class ArrowDictionary(val values: Seq[AnyRef], val encoding: DictionaryEncoding)
       builder.put(value, i)
       i += 1
     }
-    builder.put("[other]", i) // for non-string types, this should evaluate to null
+    // catch-all for encoding/decoding values that aren't in the dictionary
+    // for non-string types, this will evaluate to null
+    builder.put("[other]", i)
     val m = builder.build()
     (m, m.inverse())
   }
@@ -47,7 +48,7 @@ class ArrowDictionary(val values: Seq[AnyRef], val encoding: DictionaryEncoding)
   def index(value: AnyRef): Int = {
     val result = map.get(value)
     if (result == null) {
-      values.size // 'other'
+      map.size - 1// 'other'
     } else {
       result.intValue()
     }
@@ -64,20 +65,32 @@ class ArrowDictionary(val values: Seq[AnyRef], val encoding: DictionaryEncoding)
 
 object ArrowDictionary {
 
+  private val values = new SecureRandom().longs(0, Long.MaxValue).iterator()
+  private val ids = new AtomicLong(values.next)
+
   trait HasArrowDictionary {
     def dictionary: ArrowDictionary
     def dictionaryType: TypeBindings
   }
 
-  private val values = new SecureRandom().longs(0, Long.MaxValue).iterator()
-  private val ids = new AtomicLong(values.next)
-
+  /**
+    * Generates a random long usable as a dictionary ID
+    *
+    * @return random long
+    */
   def nextId: Long = ids.getAndSet(values.next)
 
+  /**
+    * Create a dictionary based off a sequence of values. Encoding will be smallest that will fit all values.
+    *
+    * @param values dictionary values
+    * @return dictionary
+    */
   def create(values: Seq[AnyRef]): ArrowDictionary = new ArrowDictionary(values, createEncoding(nextId, values))
 
   // use the smallest int type possible to minimize bytes used
   private def createEncoding(id: Long, values: Seq[Any]): DictionaryEncoding = {
+    // we check `MaxValue - 1` to allow for the fallback 'other'
     if (values.length < Byte.MaxValue - 1) {
       new DictionaryEncoding(id, false, new ArrowType.Int(8, true))
     } else if (values.length < Short.MaxValue - 1) {

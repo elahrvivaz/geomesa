@@ -36,7 +36,7 @@
         </dependency>
     </dependencies>
 
-   <!-- <build>
+   <build>
         <plugins>
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
@@ -55,8 +55,8 @@
                     <classpathScope>runtime</classpathScope>
                     <arguments>
                         <argument>-classpath</argument>
-                        &lt;!&ndash; automatically creates the classpath using all project dependencies,
-                             also adding the project build directory &ndash;&gt;
+                        <!-- automatically creates the classpath using all project dependencies,
+                             also adding the project build directory -->
                         <classpath />
                         <argument>org.locationtech.geomesa.arrow.tools.ArrowRunner</argument>
                         <argument>help</argument>
@@ -66,5 +66,5 @@
                 </configuration>
             </plugin>
         </plugins>
-    </build>-->
+    </build>
 </project>

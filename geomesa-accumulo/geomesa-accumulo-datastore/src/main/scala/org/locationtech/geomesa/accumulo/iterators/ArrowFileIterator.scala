@@ -25,6 +25,11 @@ import org.locationtech.geomesa.utils.geotools.{GeometryUtils, SimpleFeatureType
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
+/**
+  * Aggregates and returns arrow 'files'. Each value will be a full arrow file with metadata and batches.
+  * This allows us to build up the dictionary values as we encounter the features, instead of
+  * having to look them up ahead of time.
+  */
 class ArrowFileIterator extends KryoLazyAggregatingIterator[ArrowFileAggregate] with SamplingIterator {
 
   import ArrowFileIterator.{BatchSizeKey, DictionaryKey, IncludeFidsKey, aggregateCache}
@@ -81,7 +86,9 @@ class ArrowFileAggregate(sft: SimpleFeatureType, dictionaries: Seq[String], incl
 
 object ArrowFileIterator {
 
-  private val BatchSizeKey   = "grp"
+  import org.locationtech.geomesa.index.conf.QueryHints.RichHints
+
+  private val BatchSizeKey   = "batch"
   private val DictionaryKey  = "dict"
   private val IncludeFidsKey = "fids"
 
@@ -94,9 +101,7 @@ object ArrowFileIterator {
                 hints: Hints,
                 deduplicate: Boolean,
                 priority: Int = ArrowBatchIterator.DefaultPriority): IteratorSetting = {
-    import org.locationtech.geomesa.index.conf.QueryHints.RichHints
-
-    val is = new IteratorSetting(priority, "arrow-iter", classOf[ArrowFileIterator])
+    val is = new IteratorSetting(priority, "arrow-file-iter", classOf[ArrowFileIterator])
     KryoLazyAggregatingIterator.configure(is, sft, index, filter, deduplicate, None)
     hints.getSampling.foreach(SamplingIterator.configure(is, sft, _))
     hints.getArrowBatchSize.foreach(i => is.addOption(BatchSizeKey, i.toString))

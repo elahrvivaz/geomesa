@@ -17,6 +17,7 @@ import org.geotools.feature.visitor._
 import org.geotools.process.factory.{DescribeParameter, DescribeProcess, DescribeResult}
 import org.geotools.process.vector.VectorProcess
 import org.locationtech.geomesa.arrow.io.SimpleFeatureArrowFileWriter
+import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.GeometryPrecision
 import org.locationtech.geomesa.index.conf.QueryHints
 import org.locationtech.geomesa.utils.collection.SelfClosingIterator
 import org.opengis.feature.Feature
@@ -32,15 +33,19 @@ class ArrowConversionProcess extends VectorProcess with LazyLogging {
     * Converts an input feature collection to arrow format
     *
     * @param features input features
-    * @param encodedAttributes attributes to dictionary encode, optional. Currently only supports String attributes
+    * @param dictionaryFields attributes to dictionary encode, optional
     * @return
     */
   @DescribeResult(description = "Encoded feature collection")
   def execute(
-              @DescribeParameter(name = "features", description = "Input feature collection to query ")
+              @DescribeParameter(name = "features", description = "Input feature collection to encode")
               features: SimpleFeatureCollection,
-              @DescribeParameter(name = "encodedAttributes", description = "Attributes to dictionary encode", min = 0, max = 128, collectionType = classOf[String])
-              encodedAttributes: java.util.List[String]
+              @DescribeParameter(name = "dictionaryFields", description = "Attributes to dictionary encode", min = 0, max = 128, collectionType = classOf[String])
+              dictionaryFields: java.util.List[String],
+              @DescribeParameter(name = "includeFids", description = "Include feature IDs in arrow file", min = 0)
+              includeFids: java.lang.Boolean,
+              @DescribeParameter(name = "batchSize", description = "Number of features to include in each record batch", min = 0)
+              batchSize: java.lang.Integer
              ): java.util.Iterator[Array[Byte]] = {
 
     import scala.collection.JavaConversions._
@@ -50,23 +55,23 @@ class ArrowConversionProcess extends VectorProcess with LazyLogging {
     val sft = features.getSchema
 
     // validate inputs
-    val toEncode: Seq[String] = Option(encodedAttributes).map(_.toSeq).getOrElse(Seq.empty)
+    val toEncode: Seq[String] = Option(dictionaryFields).map(_.toSeq).getOrElse(Seq.empty)
     toEncode.foreach { attribute =>
       if (sft.indexOf(attribute) == -1) {
         throw new IllegalArgumentException(s"Attribute $attribute doesn't exist in $sft")
-      } else if (sft.getDescriptor(attribute).getType.getBinding != classOf[String]) {
-        throw new IllegalArgumentException(s"Attribute $attribute is not String type: $sft")
       }
     }
+    val fids = Option(includeFids).forall(_.booleanValue)
+    val batch = Option(batchSize).map(_.intValue).getOrElse(100000)
 
-    val visitor = new ArrowVisitor(sft, toEncode)
+    val visitor = new ArrowVisitor(sft, toEncode, batch, fids)
     features.accepts(visitor, null)
     visitor.close()
     visitor.getResult.results
   }
 }
 
-class ArrowVisitor(sft: SimpleFeatureType, encodedAttributes: Seq[String])
+class ArrowVisitor(sft: SimpleFeatureType, dictionaryFields: Seq[String], batchSize: Int, fids: Boolean)
     extends FeatureCalc with Closeable with LazyLogging {
 
   import org.locationtech.geomesa.arrow.allocator
@@ -76,7 +81,12 @@ class ArrowVisitor(sft: SimpleFeatureType, encodedAttributes: Seq[String])
   // for collecting results manually
   private val manualResults = scala.collection.mutable.Queue.empty[Array[Byte]]
   private val manualBytes = new ByteArrayOutputStream()
-  private lazy val manualWriter = new SimpleFeatureArrowFileWriter(sft, manualBytes)
+  private lazy val manualWriter = {
+    if (dictionaryFields.nonEmpty) {
+      logger.warn("Non-distributed conversion - fields will not be dictionary encoded")
+    }
+    new SimpleFeatureArrowFileWriter(sft, manualBytes, Map.empty, fids, GeometryPrecision.Float)
+  }
   private var manualVisit = 0L
   private var distributedVisit = false
 
@@ -91,7 +101,7 @@ class ArrowVisitor(sft: SimpleFeatureType, encodedAttributes: Seq[String])
   override def visit(feature: Feature): Unit = {
     manualWriter.add(feature.asInstanceOf[SimpleFeature])
     manualVisit += 1
-    if (manualVisit % 10000 == 0) {
+    if (manualVisit % batchSize == 0) {
       unloadManualResults(false)
     }
   }
@@ -116,7 +126,9 @@ class ArrowVisitor(sft: SimpleFeatureType, encodedAttributes: Seq[String])
     logger.debug(s"Visiting source type: ${source.getClass.getName}")
 
     query.getHints.put(QueryHints.ARROW_ENCODE, true)
-    query.getHints.put(QueryHints.ARROW_DICTIONARY_FIELDS, encodedAttributes.mkString(","))
+    query.getHints.put(QueryHints.ARROW_DICTIONARY_FIELDS, dictionaryFields.mkString(","))
+    query.getHints.put(QueryHints.ARROW_INCLUDE_FID, fids)
+    query.getHints.put(QueryHints.ARROW_BATCH_SIZE, batchSize)
 
     val features = SelfClosingIterator(source.getFeatures(query))
     result = result ++ features.map(_.getAttribute(0).asInstanceOf[Array[Byte]])

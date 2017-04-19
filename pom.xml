@@ -89,6 +89,7 @@
         <kafka.09.version>0.9.0.1</kafka.09.version>
         <kafka.10.version>0.10.0.1</kafka.10.version>
         <arrow.version>0.2.1-SNAPSHOT</arrow.version>
+        <netty.version>4.0.41.Final</netty.version>
 
         <!-- Recommended installation versions -->
         <!-- These take into account bugfixes and should be used in documentation -->
@@ -1488,8 +1489,8 @@
             </dependency>
             <dependency>
                 <groupId>org.locationtech.geomesa</groupId>
-                <artifactId>arrow-geometry</artifactId>
-                <version>${arrow.version}</version>
+                <artifactId>geomesa-arrow-jts</artifactId>
+                <version>${project.version}</version>
             </dependency>
             <dependency>
                 <groupId>org.locationtech.geomesa</groupId>
@@ -2313,6 +2314,32 @@
                 <artifactId>cassandra-driver-mapping</artifactId>
                 <version>${cassandra.version}</version>
                 <scope>provided</scope>
+            </dependency>
+            <!-- used by arrow and c* -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-buffer</artifactId>
+                <version>${netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-codec</artifactId>
+                <version>${netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-common</artifactId>
+                <version>${netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-handler</artifactId>
+                <version>${netty.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-transport</artifactId>
+                <version>${netty.version}</version>
             </dependency>
 
             <!-- geoserver 2.9 spring version -->
