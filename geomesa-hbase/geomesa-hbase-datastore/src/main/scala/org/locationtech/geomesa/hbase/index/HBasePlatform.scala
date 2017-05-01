@@ -1,27 +1,31 @@
+/***********************************************************************
+* Copyright (c) 2013-2017 Commonwealth Computer Research, Inc.
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of the Apache License, Version 2.0
+* which accompanies this distribution and is available at
+* http://www.opensource.org/licenses/apache2.0.php.
+*************************************************************************/
+
 package org.locationtech.geomesa.hbase.index
 
 import com.google.common.collect.Lists
 import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.{Get, Query, Result, Scan}
 import org.apache.hadoop.hbase.filter.MultiRowRangeFilter.RowRange
-import org.apache.hadoop.hbase.filter.{Filter, FilterList, MultiRowRangeFilter}
+import org.apache.hadoop.hbase.filter.{FilterList, MultiRowRangeFilter, Filter => HFilter}
 import org.locationtech.geomesa.hbase.HBaseFilterStrategyType
 import org.locationtech.geomesa.hbase.data.{HBaseDataStore, HBaseQueryPlan, ScanPlan}
-import org.locationtech.geomesa.hbase.filters.JSimpleFeatureFilter
-import org.locationtech.geomesa.hbase.index.HBaseFeatureIndex.ScanConfig
 import org.locationtech.geomesa.index.index.IndexAdapter
-import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
-import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
+import org.opengis.feature.simple.SimpleFeature
 
 trait HBasePlatform extends HBaseFeatureIndex {
 
-  override def buildPlatformScanPlan(ds: HBaseDataStore,
-                                     filter: HBaseFilterStrategyType,
-                                     originalRanges: Seq[Query],
-                                     table: TableName,
-                                     hbaseFilters: Seq[Filter],
-                                     toFeatures: (Iterator[Result]) => Iterator[SimpleFeature]): HBaseQueryPlan = {
-
+  override protected def buildPlatformScanPlan(ds: HBaseDataStore,
+                                               filter: HBaseFilterStrategyType,
+                                               originalRanges: Seq[Query],
+                                               table: TableName,
+                                               hbaseFilters: Seq[HFilter],
+                                               toFeatures: (Iterator[Result]) => Iterator[SimpleFeature]): HBaseQueryPlan = {
     // check if these Scans or Gets
     // Only in the case of 'ID IN ()' queries will this be Gets
     val scans = originalRanges.head match {
@@ -32,7 +36,7 @@ trait HBasePlatform extends HBaseFeatureIndex {
     ScanPlan(filter, table, scans, toFeatures)
   }
 
-  private def configureGet(originalRanges: Seq[Query], hbaseFilters: Seq[Filter]): Seq[Scan] = {
+  private def configureGet(originalRanges: Seq[Query], hbaseFilters: Seq[HFilter]): Seq[Scan] = {
     val filterList = new FilterList(hbaseFilters: _*)
     // convert Gets to Scans for Spark SQL compatibility
     originalRanges.map { r =>
@@ -43,7 +47,7 @@ trait HBasePlatform extends HBaseFeatureIndex {
     }
   }
 
-  private def configureMultiRowRangeFilter(ds: HBaseDataStore, originalRanges: Seq[Query], hbaseFilters: Seq[Filter]) = {
+  private def configureMultiRowRangeFilter(ds: HBaseDataStore, originalRanges: Seq[Query], hbaseFilters: Seq[HFilter]) = {
     import scala.collection.JavaConversions._
     val rowRanges = Lists.newArrayList[RowRange]()
     originalRanges.foreach { r =>
@@ -79,27 +83,5 @@ trait HBasePlatform extends HBaseFeatureIndex {
     // Apply Visibilities
     groupedScans.foreach(ds.applySecurity)
     groupedScans
-  }
-
-  override def configurePushDownFilters(config: ScanConfig,
-                                        ecql: Option[org.opengis.filter.Filter],
-                                        transform: Option[(String, SimpleFeatureType)],
-                                        sft: SimpleFeatureType): ScanConfig = {
-    val cqlFilter =
-      if (ecql.isDefined || transform.isDefined) {
-        configureCQLAndTransformPushDown(ecql, transform, sft)
-      } else {
-        Seq.empty[org.apache.hadoop.hbase.filter.Filter]
-      }
-
-    config.copy(hbaseFilters = config.hbaseFilters ++ cqlFilter)
-  }
-
-  private def configureCQLAndTransformPushDown(ecql: Option[org.opengis.filter.Filter],
-                                               transform: Option[(String, SimpleFeatureType)],
-                                               sft: SimpleFeatureType) = {
-    val (tform, tSchema) = transform.getOrElse(("", null))
-    val tSchemaString = Option(tSchema).map(SimpleFeatureTypes.encodeType(_)).getOrElse("")
-    Seq[org.apache.hadoop.hbase.filter.Filter](new JSimpleFeatureFilter(sft, ecql.getOrElse(org.opengis.filter.Filter.INCLUDE), tform, tSchemaString))
   }
 }

@@ -11,7 +11,7 @@ package org.locationtech.geomesa.hbase.index
 
 import org.apache.hadoop.hbase._
 import org.apache.hadoop.hbase.client._
-import org.apache.hadoop.hbase.filter.{KeyOnlyFilter, Filter => HBaseFilter}
+import org.apache.hadoop.hbase.filter.{KeyOnlyFilter, Filter => HFilter}
 import org.apache.hadoop.hbase.util.Bytes
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.hbase._
@@ -45,9 +45,7 @@ object HBaseFeatureIndex extends HBaseIndexManagerType {
   val DataColumnQualifier: Array[Byte] = Bytes.toBytes("d")
   val DataColumnQualifierDescriptor = new HColumnDescriptor(DataColumnQualifier)
 
-  case class ScanConfig(hbaseFilters: Seq[HBaseFilter],
-                        entriesToFeatures: Iterator[Result] => Iterator[SimpleFeature])
-
+  case class ScanConfig(filters: Seq[HFilter], entriesToFeatures: Iterator[Result] => Iterator[SimpleFeature])
 }
 
 trait HBaseFeatureIndex extends HBaseFeatureIndexType
@@ -119,45 +117,6 @@ trait HBaseFeatureIndex extends HBaseFeatureIndexType
     del
   }
 
-  override protected def scanPlan(sft: SimpleFeatureType,
-                                  ds: HBaseDataStore,
-                                  filter: HBaseFilterStrategyType,
-                                  hints: Hints,
-                                  ranges: Seq[Query],
-                                  ecql: Option[Filter]): HBaseQueryPlanType = {
-    if (ranges.isEmpty) EmptyPlan(filter)
-    else {
-      val table = TableName.valueOf(getTableName(sft.getTypeName, ds))
-      val dedupe = hasDuplicates(sft, filter.primary)
-      val ScanConfig(hbaseFilters, toFeatures) = scanConfig(sft, filter, hints, ecql, dedupe)
-      buildPlatformScanPlan(ds, filter, ranges, table, hbaseFilters, toFeatures)
-    }
-  }
-
-  def buildPlatformScanPlan(ds: HBaseDataStore,
-                            filter: HBaseFilterStrategyType,
-                            ranges: Seq[Query],
-                            table: TableName,
-                            hbaseFilters: Seq[HBaseFilter],
-                            toFeatures: (Iterator[Result]) => Iterator[SimpleFeature]): HBaseQueryPlan
-
-  // default implementation does nothing, override in subclasses
-  def configurePushDownFilters(config: ScanConfig,
-                               ecql: Option[Filter],
-                               transform: Option[(String, SimpleFeatureType)],
-                               sft: SimpleFeatureType): ScanConfig = {
-    // TODO: configure priority of filters since Z3 is ending up after ECQL and Transform
-    val remoteFilters =
-      if (ecql.isDefined || transform.isDefined) {
-        val (tform, tSchema) = transform.getOrElse(("", null))
-        val tSchemaString = Option(tSchema).map(SimpleFeatureTypes.encodeType(_)).getOrElse("")
-        Seq(new JSimpleFeatureFilter(sft, ecql.getOrElse(Filter.INCLUDE), tform, tSchemaString))
-      } else {
-        Seq.empty
-      }
-    config.copy(hbaseFilters = config.hbaseFilters ++ remoteFilters)
-  }
-
   override protected def range(start: Array[Byte], end: Array[Byte]): Query =
     new Scan(start, end).addColumn(DataColumnFamily, DataColumnQualifier)
 
@@ -170,12 +129,24 @@ trait HBaseFeatureIndex extends HBaseFeatureIndexType
       cell.getValueArray, cell.getValueOffset, cell.getValueLength)
   }
 
-  protected def hasDuplicates(sft: SimpleFeatureType, filter: Option[Filter]): Boolean = false
-
+  override protected def scanPlan(sft: SimpleFeatureType,
+                                  ds: HBaseDataStore,
+                                  filter: HBaseFilterStrategyType,
+                                  hints: Hints,
+                                  ranges: Seq[Query],
+                                  ecql: Option[Filter]): HBaseQueryPlanType = {
+    if (ranges.isEmpty) { EmptyPlan(filter) } else {
+      val table = TableName.valueOf(getTableName(sft.getTypeName, ds))
+      val dedupe = hasDuplicates(sft, filter.primary)
+      val ScanConfig(hbaseFilters, toFeatures) = scanConfig(ds, sft, filter, hints, ecql, dedupe)
+      buildPlatformScanPlan(ds, filter, ranges, table, hbaseFilters, toFeatures)
+    }
+  }
 
   /**
     * Sets up everything needed to execute the scan - iterators, column families, deserialization, etc
     *
+    * @param ds     data store
     * @param sft    simple feature type
     * @param filter hbase filter strategy type
     * @param hints  query hints
@@ -183,7 +154,8 @@ trait HBaseFeatureIndex extends HBaseFeatureIndexType
     * @param dedupe scan may have duplicate results or not
     * @return
     */
-  protected def scanConfig(sft: SimpleFeatureType,
+  protected def scanConfig(ds: HBaseDataStore,
+                           sft: SimpleFeatureType,
                            filter: HBaseFilterStrategyType,
                            hints: Hints,
                            ecql: Option[Filter],
@@ -191,13 +163,37 @@ trait HBaseFeatureIndex extends HBaseFeatureIndexType
 
     import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
-    /** This function is used to implement custom client filters for HBase **/
-    val transform = hints.getTransform // will eventually be used to support remote transforms
-    val schema = transform.map(_._2).getOrElse(sft) // schema coming back from server
+    val transform: Option[(String, SimpleFeatureType)] = hints.getTransform
 
-    // ECQL is now pushed down in HBase so don't need to apply it client side
-    val toFeatures = resultsToFeatures(schema, None, None)
+    if (!ds.config.remoteFilter) {
+      // everything is done client side
+      ScanConfig(Seq.empty, resultsToFeatures(sft, ecql, transform))
+    } else {
+      val (remoteTdefArg, returnSchema) = transform.getOrElse(("", sft))
+      val toFeatures = resultsToFeatures(returnSchema, None, None)
+      val filterTransform: Seq[HFilter] = if (ecql.isEmpty && transform.isEmpty) { Seq.empty } else {
+        // transforms and filters are applied server-side
+        val remoteCQLFilter: Filter = ecql.getOrElse(Filter.INCLUDE)
+        Seq(new JSimpleFeatureFilter(sft, remoteCQLFilter, remoteTdefArg, SimpleFeatureTypes.encodeType(returnSchema)))
+      }
 
-    configurePushDownFilters(ScanConfig(Nil, toFeatures), ecql, transform, sft)
+      val additionalFilters = createPushDownFilters(ds, sft, filter, transform)
+      ScanConfig(filterTransform ++ additionalFilters, toFeatures)
+    }
   }
+
+  protected def hasDuplicates(sft: SimpleFeatureType, filter: Option[Filter]): Boolean = false
+
+  // default implementation does nothing, override in subclasses
+  protected def createPushDownFilters(ds: HBaseDataStore,
+                                      sft: SimpleFeatureType,
+                                      filter: HBaseFilterStrategyType,
+                                      transform: Option[(String, SimpleFeatureType)]): Seq[HFilter] = Seq.empty
+
+  protected def buildPlatformScanPlan(ds: HBaseDataStore,
+                                      filter: HBaseFilterStrategyType,
+                                      ranges: Seq[Query],
+                                      table: TableName,
+                                      hbaseFilters: Seq[HFilter],
+                                      toFeatures: (Iterator[Result]) => Iterator[SimpleFeature]): HBaseQueryPlan
 }

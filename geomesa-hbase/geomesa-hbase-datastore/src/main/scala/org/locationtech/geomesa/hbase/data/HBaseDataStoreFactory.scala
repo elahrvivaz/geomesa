@@ -54,6 +54,7 @@ class HBaseDataStoreFactory extends DataStoreFactorySpi with LazyLogging {
 
     val catalog = BigTableNameParam.lookup[String](params)
 
+    val remoteFilters = RemoteParam.lookupWithDefault[Boolean](params)
     val generateStats = GenerateStatsParam.lookupWithDefault[Boolean](params)
     val audit = if (AuditQueriesParam.lookupWithDefault[Boolean](params)) {
       Some(AuditLogger, Option(AuditProvider.Loader.load(params)).getOrElse(NoOpAuditProvider), "hbase")
@@ -71,11 +72,13 @@ class HBaseDataStoreFactory extends DataStoreFactorySpi with LazyLogging {
        Some(HBaseDataStoreFactory.buildAuthsProvider(connection, params))
       } else None
 
-    buildDataStore(catalog, generateStats, audit, queryThreads, queryTimeout, maxRangesPerExtendedScan, looseBBox, caching, authsProvider, connection)
+    buildDataStore(catalog, remoteFilters, generateStats, audit, queryThreads, queryTimeout,
+      maxRangesPerExtendedScan, looseBBox, caching, authsProvider, connection)
   }
 
   // overidden by BigtableFactory
   def buildDataStore(catalog: String,
+                     remoteFilters: Boolean,
                      generateStats: Boolean,
                      audit: Option[(AuditWriter, AuditProvider, String)],
                      queryThreads: Int,
@@ -85,7 +88,8 @@ class HBaseDataStoreFactory extends DataStoreFactorySpi with LazyLogging {
                      caching: Boolean,
                      authsProvider: Option[AuthorizationsProvider],
                      connection: Connection): HBaseDataStore = {
-    val config = HBaseDataStoreConfig(catalog, generateStats, audit, queryThreads, queryTimeout, maxRangesPerExtendedScan, looseBBox, caching, authsProvider)
+    val config = HBaseDataStoreConfig(catalog, remoteFilters, generateStats, audit, queryThreads, queryTimeout,
+      maxRangesPerExtendedScan, looseBBox, caching, authsProvider)
     new HBaseDataStore(connection, config)
   }
 
@@ -97,6 +101,7 @@ class HBaseDataStoreFactory extends DataStoreFactorySpi with LazyLogging {
   override def getParametersInfo: Array[Param] =
     Array(
       BigTableNameParam,
+      RemoteParam,
       QueryThreadsParam,
       QueryTimeoutParam,
       GenerateStatsParam,
@@ -118,6 +123,7 @@ class HBaseDataStoreFactory extends DataStoreFactorySpi with LazyLogging {
 object HBaseDataStoreParams {
   val BigTableNameParam    = new Param("bigtable.table.name", classOf[String], "Table name", true)
   val ConnectionParam      = new Param("connection", classOf[Connection], "Connection", false)
+  val RemoteParam          = new Param("remote.filtering", classOf[java.lang.Boolean], "Remote filtering", false)
   val LooseBBoxParam       = GeoMesaDataStoreFactory.LooseBBoxParam
   val QueryThreadsParam    = GeoMesaDataStoreFactory.QueryThreadsParam
   val MaxRangesPerExtendedScan    = new Param("max.ranges.per.extended.scan", classOf[java.lang.Integer], "Max Ranges per Extended Scan", false, 100)
@@ -140,6 +146,7 @@ object HBaseDataStoreFactory {
   private [geomesa] val BigTableParamCheck = "google.bigtable.instance.id"
 
   case class HBaseDataStoreConfig(catalog: String,
+                                  remoteFilter: Boolean,
                                   generateStats: Boolean,
                                   audit: Option[(AuditWriter, AuditProvider, String)],
                                   queryThreads: Int,

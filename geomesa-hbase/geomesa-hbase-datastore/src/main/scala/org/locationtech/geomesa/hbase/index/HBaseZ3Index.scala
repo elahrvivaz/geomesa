@@ -9,7 +9,9 @@
 package org.locationtech.geomesa.hbase.index
 
 import org.apache.hadoop.hbase.client._
+import org.apache.hadoop.hbase.filter.{Filter => HFilter}
 import org.locationtech.geomesa.curve.Z3SFC
+import org.locationtech.geomesa.hbase.HBaseFilterStrategyType
 import org.locationtech.geomesa.hbase.data._
 import org.locationtech.geomesa.hbase.filters.Z3HBaseFilter
 import org.locationtech.geomesa.index.filters.Z3Filter
@@ -17,22 +19,19 @@ import org.locationtech.geomesa.index.index.{Z3Index, Z3ProcessingValues}
 import org.opengis.feature.simple.SimpleFeatureType
 
 case object HBaseZ3Index extends HBaseLikeZ3Index with HBasePlatform {
-  override def configurePushDownFilters(config: HBaseFeatureIndex.ScanConfig, ecql: Option[org.opengis.filter.Filter],
-                                        transform: Option[(String, SimpleFeatureType)],
-                                        sft: SimpleFeatureType): HBaseFeatureIndex.ScanConfig = {
-    val z3Filter =
-      org.locationtech.geomesa.index.index.Z3Index.currentProcessingValues match {
-        case None                                           => Seq.empty[org.apache.hadoop.hbase.filter.Filter]
-        case Some(Z3ProcessingValues(sfc, _, xy, _, times)) => configureZ3PushDown(sfc, xy, times)
-      }
-
-    val copy = super.configurePushDownFilters(config, ecql, transform, sft)
-    copy.copy(hbaseFilters = copy.hbaseFilters ++ z3Filter)
+  override protected def createPushDownFilters(ds: HBaseDataStore,
+                                               sft: SimpleFeatureType,
+                                               filter: HBaseFilterStrategyType,
+                                               transform: Option[(String, SimpleFeatureType)]): Seq[HFilter] = {
+    val z3Filter = Z3Index.currentProcessingValues.map { case Z3ProcessingValues(sfc, _, xy, _, times) =>
+      configureZ3PushDown(sfc, xy, times)
+    }
+    super.createPushDownFilters(ds, sft, filter, transform) ++ z3Filter.toSeq
   }
 
   private def configureZ3PushDown(sfc: Z3SFC,
                                   xy: Seq[(Double, Double, Double, Double)],
-                                  times: Map[Short, Seq[(Long, Long)]]) = {
+                                  times: Map[Short, Seq[(Long, Long)]]): HFilter = {
     // we know we're only going to scan appropriate periods, so leave out whole ones
     val wholePeriod = Seq((sfc.time.min.toLong, sfc.time.max.toLong))
     val filteredTimes = times.filter(_._2 != wholePeriod)
@@ -52,15 +51,10 @@ case object HBaseZ3Index extends HBaseLikeZ3Index with HBasePlatform {
     }.toArray
 
     // TODO: deal with non-points in the XZ filter
-    val filt = new Z3HBaseFilter(new Z3Filter(
-      normalizedXY, tOpts, minEpoch.toShort, maxEpoch.toShort, 1, 8)
-    )
-
-    Seq(filt)
+    new Z3HBaseFilter(new Z3Filter(normalizedXY, tOpts, minEpoch.toShort, maxEpoch.toShort, 1, 8))
   }
 }
 
-trait HBaseLikeZ3Index
-  extends HBaseFeatureIndex with Z3Index[HBaseDataStore, HBaseFeature, Mutation, Query]  {
+trait HBaseLikeZ3Index extends HBaseFeatureIndex with Z3Index[HBaseDataStore, HBaseFeature, Mutation, Query]  {
   override val version: Int = 1
 }
