@@ -47,7 +47,7 @@ class ArrowFileIteratorTest extends TestWithDataStore {
       val in = new ByteArrayInputStream(out.toByteArray)
       WithClose(SimpleFeatureArrowFileReader.streaming(() => in)) { reader =>
         // sft name gets dropped, so we can't compare directly
-        reader.features().map(f => (f.getID, f.getAttributes)).toSeq must
+        SelfClosingIterator(reader.features()).map(f => (f.getID, f.getAttributes)).toSeq must
             containTheSameElementsAs(features.map(f => (f.getID, f.getAttributes)))
       }
     }

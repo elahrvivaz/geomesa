@@ -44,7 +44,8 @@ class ArrowBatchIteratorTest extends TestWithDataStore {
       results.foreach(sf => out.write(sf.getAttribute(0).asInstanceOf[Array[Byte]]))
       val in = new ByteArrayInputStream(out.toByteArray)
       WithClose(SimpleFeatureArrowFileReader.streaming(() => in)) { reader =>
-        reader.features().map(ScalaSimpleFeature.create).toSeq must containTheSameElementsAs(features)
+        SelfClosingIterator(reader.features()).map(ScalaSimpleFeature.create).toSeq must
+            containTheSameElementsAs(features)
       }
     }
     "return arrow dictionary encoded data" in {
@@ -56,7 +57,8 @@ class ArrowBatchIteratorTest extends TestWithDataStore {
       results.foreach(sf => out.write(sf.getAttribute(0).asInstanceOf[Array[Byte]]))
       val in = new ByteArrayInputStream(out.toByteArray)
       WithClose(SimpleFeatureArrowFileReader.streaming(() => in)) { reader =>
-        reader.features().map(ScalaSimpleFeature.create).toSeq must containTheSameElementsAs(features)
+        SelfClosingIterator(reader.features()).map(ScalaSimpleFeature.create).toSeq must
+            containTheSameElementsAs(features)
       }
     }
     "return arrow dictionary encoded data with provided dictionaries" in {
@@ -76,7 +78,8 @@ class ArrowBatchIteratorTest extends TestWithDataStore {
             e.setAttribute(0, "[other]")
             e
         }
-        reader.features().map(ScalaSimpleFeature.create).toSeq must containTheSameElementsAs(expected)
+        SelfClosingIterator(reader.features()).map(ScalaSimpleFeature.create).toSeq must
+            containTheSameElementsAs(expected)
       }
     }
     "return arrow encoded projections" in {
@@ -88,7 +91,7 @@ class ArrowBatchIteratorTest extends TestWithDataStore {
       results.foreach(sf => out.write(sf.getAttribute(0).asInstanceOf[Array[Byte]]))
       val in = new ByteArrayInputStream(out.toByteArray)
       WithClose(SimpleFeatureArrowFileReader.streaming(() => in)) { reader =>
-        reader.features().map(_.getAttributes.asScala).toSeq must
+        SelfClosingIterator(reader.features()).map(_.getAttributes.asScala).toSeq must
             containTheSameElementsAs(features.map(f => List(f.getAttribute("dtg"), f.getAttribute("geom"))))
       }
     }
@@ -101,7 +104,7 @@ class ArrowBatchIteratorTest extends TestWithDataStore {
       results.foreach(sf => out.write(sf.getAttribute(0).asInstanceOf[Array[Byte]]))
       val in = new ByteArrayInputStream(out.toByteArray)
       WithClose(SimpleFeatureArrowFileReader.streaming(() => in)) { reader =>
-        val results = reader.features().map(ScalaSimpleFeature.create).toSeq
+        val results = SelfClosingIterator(reader.features()).map(ScalaSimpleFeature.create).toSeq
         results must haveLength(2)
         foreach(results)(features must contain(_))
       }
