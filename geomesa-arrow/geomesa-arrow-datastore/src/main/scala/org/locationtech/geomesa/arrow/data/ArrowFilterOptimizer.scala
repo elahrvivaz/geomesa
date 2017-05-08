@@ -32,7 +32,7 @@ object ArrowFilterOptimizer extends LazyLogging {
   def rewrite(filter: Filter, sft: SimpleFeatureType, dictionaries: Map[String, ArrowDictionary]): Filter = {
     val bound =
       filter.accept(new BindingFilterVisitor(sft), null).asInstanceOf[Filter]
-        .accept(new QueryPlanFilterVisitor(sft), new FastFilterFactory).asInstanceOf[Filter]
+        .accept(new QueryPlanFilterVisitor(sft), ff).asInstanceOf[Filter]
     _rewrite(bound, sft, dictionaries)
   }
 
@@ -46,25 +46,25 @@ object ArrowFilterOptimizer extends LazyLogging {
     }
   }
 
-  private def rewritePropertyIsEqualTo(f: PropertyIsEqualTo,
+  private def rewritePropertyIsEqualTo(filter: PropertyIsEqualTo,
                                        sft: SimpleFeatureType,
                                        dictionaries: Map[String, ArrowDictionary]): Filter = {
     try {
-      val props = checkOrderUnsafe(f.getExpression1, f.getExpression2)
+      val props = checkOrderUnsafe(filter.getExpression1, filter.getExpression2)
       // TODO: pass dictionaries around with better attribute names rather than 'actor1Name:String' (requires arrow metadata)
       dictionaries.get(s"${props.name}:String") match {
-        case None => f
+        case None => filter
         case Some(dictionary) =>
           val attrIndex = sft.indexOf(props.name)
           val numericValue = dictionary.index(props.literal.evaluate(null))
-          FastEquals(numericValue, attrIndex)
+          EncodedDictionaryEquals(numericValue, attrIndex)
       }
     } catch {
-      case NonFatal(e) => logger.warn(s"Error re-writing filter $f", e); f
+      case NonFatal(e) => logger.warn(s"Error re-writing filter $filter", e); filter
     }
   }
 
-  case class FastEquals(v: Int, attrIndex: Int) extends Filter {
+  case class EncodedDictionaryEquals(v: Int, attrIndex: Int) extends Filter {
     override def accept(visitor: FilterVisitor, extraData: AnyRef): AnyRef = extraData
     override def evaluate(o: AnyRef): Boolean = o.asInstanceOf[ArrowSimpleFeature].getAttributeEncoded(attrIndex) == v
   }
