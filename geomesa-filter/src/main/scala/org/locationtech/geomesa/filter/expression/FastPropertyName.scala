@@ -21,7 +21,7 @@ import org.xml.sax.helpers.NamespaceSupport
 class FastPropertyName(name: String) extends PropertyName with org.opengis.filter.expression.Expression
   with SimpleFeaturePropertyAccessor with LazyLogging {
 
-  private var getProperty: (SimpleFeature) => AnyRef = null
+  private var getProperty: (SimpleFeature) => AnyRef = _
 
   override def getPropertyName: String = name
 

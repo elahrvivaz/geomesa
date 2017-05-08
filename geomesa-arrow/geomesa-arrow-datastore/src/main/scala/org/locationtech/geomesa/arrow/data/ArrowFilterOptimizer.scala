@@ -9,11 +9,12 @@
 package org.locationtech.geomesa.arrow.data
 
 import com.typesafe.scalalogging.LazyLogging
-import org.geotools.filter.text.ecql.ECQL
+import org.geotools.filter.visitor.BindingFilterVisitor
 import org.locationtech.geomesa.arrow.features.ArrowSimpleFeature
 import org.locationtech.geomesa.arrow.vector.ArrowDictionary
 import org.locationtech.geomesa.filter.checkOrderUnsafe
 import org.locationtech.geomesa.filter.factory.FastFilterFactory
+import org.locationtech.geomesa.filter.visitor.QueryPlanFilterVisitor
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter._
 
@@ -28,12 +29,21 @@ object ArrowFilterOptimizer extends LazyLogging {
 
   private val ff: FilterFactory2 = new FastFilterFactory
 
-  def rewrite(f: Filter, sft: SimpleFeatureType, dictionaries: Map[String, ArrowDictionary]): Filter = f match {
-    case a: And => ff.and(a.getChildren.map(rewrite(_, sft, dictionaries)))
-    case o: Or => ff.or(o.getChildren.map(rewrite(_, sft, dictionaries)))
-    case f: PropertyIsEqualTo => rewritePropertyIsEqualTo(f, sft, dictionaries)
-    case f: Not => ff.not(rewrite(f.getFilter, sft, dictionaries))
-    case _ => FastFilterFactory.toFilter(ECQL.toCQL(f))
+  def rewrite(filter: Filter, sft: SimpleFeatureType, dictionaries: Map[String, ArrowDictionary]): Filter = {
+    val bound =
+      filter.accept(new BindingFilterVisitor(sft), null).asInstanceOf[Filter]
+        .accept(new QueryPlanFilterVisitor(sft), new FastFilterFactory).asInstanceOf[Filter]
+    _rewrite(bound, sft, dictionaries)
+  }
+
+  private def _rewrite(filter: Filter, sft: SimpleFeatureType, dictionaries: Map[String, ArrowDictionary]): Filter = {
+    filter match {
+      case a: And => ff.and(a.getChildren.map(_rewrite(_, sft, dictionaries)))
+      case o: Or => ff.or(o.getChildren.map(_rewrite(_, sft, dictionaries)))
+      case f: PropertyIsEqualTo => rewritePropertyIsEqualTo(f, sft, dictionaries)
+      case f: Not => ff.not(_rewrite(f.getFilter, sft, dictionaries))
+      case _ => filter
+    }
   }
 
   private def rewritePropertyIsEqualTo(f: PropertyIsEqualTo,
