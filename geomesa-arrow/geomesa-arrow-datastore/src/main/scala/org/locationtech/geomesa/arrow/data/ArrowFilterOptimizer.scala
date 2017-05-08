@@ -37,7 +37,7 @@ object ArrowFilterOptimizer extends LazyLogging {
         case None => f
         case Some(dictionary) =>
           val attrIndex = sft.indexOf(props.name)
-          val numericValue = dictionary.index(props.literal)
+          val numericValue = dictionary.index(props.literal.evaluate(null))
           FastEquals(numericValue, attrIndex)
       }
     } catch {
@@ -47,7 +47,6 @@ object ArrowFilterOptimizer extends LazyLogging {
 
   case class FastEquals(v: Int, attrIndex: Int) extends Filter {
     override def accept(visitor: FilterVisitor, extraData: AnyRef): AnyRef = extraData
-    override def evaluate(o: AnyRef): Boolean =
-      o.asInstanceOf[ArrowSimpleFeature].getAttributeEncoded(attrIndex).asInstanceOf[Int] == v
+    override def evaluate(o: AnyRef): Boolean = o.asInstanceOf[ArrowSimpleFeature].getAttributeEncoded(attrIndex) == v
   }
 }

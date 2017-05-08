@@ -47,8 +47,7 @@ class ArrowSimpleFeature(sft: SimpleFeatureType,
     * @param i index of the attribute to get
     * @return dictionary encoded int/short/byte
     */
-  def getAttributeEncoded(i: Int): AnyRef =
-    attributeReaders(i).asInstanceOf[ArrowDictionaryReader[_]].getEncoded(index).asInstanceOf[AnyRef]
+  def getAttributeEncoded(i: Int): Any = attributeReaders(i).asInstanceOf[ArrowDictionaryReader[_]].getEncoded(index)
 
   override def getID: String = idReader.apply(index).asInstanceOf[String]
   override def getIdentifier: FeatureId = new ImmutableFeatureId(getID)
