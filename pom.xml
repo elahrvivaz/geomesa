@@ -88,7 +88,7 @@
         <kafka.08.version>0.8.2.1</kafka.08.version>
         <kafka.09.version>0.9.0.1</kafka.09.version>
         <kafka.10.version>0.10.0.1</kafka.10.version>
-        <arrow.version>0.2.1-SNAPSHOT</arrow.version>
+        <arrow.version>0.3.0</arrow.version>
         <netty.version>4.0.41.Final</netty.version>
 
         <!-- Recommended installation versions -->
@@ -1486,6 +1486,13 @@
                 <groupId>org.locationtech.geomesa</groupId>
                 <artifactId>geomesa-accumulo-datastore_${scala.binary.version}</artifactId>
                 <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.locationtech.geomesa</groupId>
+                <artifactId>geomesa-accumulo-datastore_${scala.binary.version}</artifactId>
+                <type>test-jar</type>
+                <version>${project.version}</version>
+                <scope>test</scope>
             </dependency>
             <dependency>
                 <groupId>org.locationtech.geomesa</groupId>
