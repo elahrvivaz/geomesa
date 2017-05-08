@@ -15,7 +15,7 @@ import java.util.{Date, UUID}
 import com.vividsolutions.jts.geom._
 import org.apache.arrow.vector._
 import org.apache.arrow.vector.complex.{FixedSizeListVector, ListVector, NullableMapVector}
-import org.apache.arrow.vector.holders.{NullableDateMilliHolder, NullableVarCharHolder}
+import org.apache.arrow.vector.holders._
 import org.joda.time.DateTime
 import org.locationtech.geomesa.arrow.TypeBindings
 import org.locationtech.geomesa.arrow.vector.ArrowDictionary.HasArrowDictionary
@@ -54,7 +54,7 @@ trait ArrowAttributeReader {
   def apply(i: Int): AnyRef
 }
 
-trait ArrowDictionaryReader[T] extends ArrowAttributeReader with HasArrowDictionary {
+trait ArrowDictionaryReader extends ArrowAttributeReader with HasArrowDictionary {
 
   /**
     * Gets the raw underlying value without dictionary decoding it
@@ -62,7 +62,7 @@ trait ArrowDictionaryReader[T] extends ArrowAttributeReader with HasArrowDiction
     * @param i index of the feature to read
     * @return
     */
-  def getEncoded(i: Int): T
+  def getEncoded(i: Int): Int
 }
 
 object ArrowAttributeReader {
@@ -158,14 +158,16 @@ object ArrowAttributeReader {
     */
   class ArrowDictionaryByteReader(accessor: NullableTinyIntVector#Accessor,
                                   val dictionary: ArrowDictionary,
-                                  val dictionaryType: TypeBindings) extends ArrowDictionaryReader[Byte] {
+                                  val dictionaryType: TypeBindings) extends ArrowDictionaryReader {
+    private val holder = new NullableTinyIntHolder
     override def apply(i: Int): AnyRef = {
-      if (accessor.isNull(i)) { null } else {
-        dictionary.lookup(accessor.get(i))
+      accessor.get(i, holder)
+      if (holder.isSet == 0) { null } else {
+        dictionary.lookup(holder.value)
       }
     }
 
-    override def getEncoded(i: Int): Byte = accessor.get(i)
+    override def getEncoded(i: Int): Int = accessor.get(i)
   }
 
   /**
@@ -174,14 +176,16 @@ object ArrowAttributeReader {
     */
   class ArrowDictionaryShortReader(accessor: NullableSmallIntVector#Accessor,
                                    val dictionary: ArrowDictionary,
-                                   val dictionaryType: TypeBindings) extends ArrowDictionaryReader[Short] {
+                                   val dictionaryType: TypeBindings) extends ArrowDictionaryReader {
+    private val holder = new NullableSmallIntHolder
     override def apply(i: Int): AnyRef = {
-      if (accessor.isNull(i)) { null } else {
-        dictionary.lookup(accessor.get(i))
+      accessor.get(i, holder)
+      if (holder.isSet == 0) { null } else {
+        dictionary.lookup(holder.value)
       }
     }
 
-    override def getEncoded(i: Int): Short = accessor.get(i)
+    override def getEncoded(i: Int): Int = accessor.get(i)
   }
 
   /**
@@ -190,10 +194,12 @@ object ArrowAttributeReader {
     */
   class ArrowDictionaryIntReader(accessor: NullableIntVector#Accessor,
                                  val dictionary: ArrowDictionary,
-                                 val dictionaryType: TypeBindings) extends ArrowDictionaryReader[Int] {
+                                 val dictionaryType: TypeBindings) extends ArrowDictionaryReader {
+    private val holder = new NullableIntHolder
     override def apply(i: Int): AnyRef = {
-      if (accessor.isNull(i)) { null } else {
-        dictionary.lookup(accessor.get(i))
+      accessor.get(i, holder)
+      if (holder.isSet == 0) { null } else {
+        dictionary.lookup(holder.value)
       }
     }
 
