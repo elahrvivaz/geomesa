@@ -1,10 +1,10 @@
-/*******************************************************************************
- * Copyright (c) 2013-2017 Commonwealth Computer Research, Inc.
- * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Apache License, Version 2.0
- * which accompanies this distribution and is available at
- * http://www.opensource.org/licenses/apache2.0.php.
- ******************************************************************************/
+/***********************************************************************
+* Copyright (c) 2013-2017 Commonwealth Computer Research, Inc.
+* All rights reserved. This program and the accompanying materials
+* are made available under the terms of the Apache License, Version 2.0
+* which accompanies this distribution and is available at
+* http://www.opensource.org/licenses/apache2.0.php.
+*************************************************************************/
 
 package org.locationtech.geomesa.arrow.features
 
@@ -12,8 +12,7 @@ import java.util.{Collection => jCollection, List => jList, Map => jMap}
 
 import com.vividsolutions.jts.geom.Geometry
 import org.geotools.geometry.jts.ReferencedEnvelope
-import org.locationtech.geomesa.arrow.vector.ArrowAttributeReader
-import org.locationtech.geomesa.arrow.vector.ArrowAttributeReader.ArrowDictionaryReader
+import org.locationtech.geomesa.arrow.vector.{ArrowAttributeReader, ArrowDictionaryReader}
 import org.locationtech.geomesa.utils.geotools.ImmutableFeatureId
 import org.opengis.feature.`type`.Name
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
@@ -41,6 +40,16 @@ class ArrowSimpleFeature(sft: SimpleFeatureType,
 
   override def getAttribute(i: Int): AnyRef = attributeReaders(i).apply(index)
 
+  /**
+    * Optimized method to get the underlying dictionary encoded value without decoding it. Note
+    * that the field must be dictionary encoded or this will throw an exception
+    *
+    * @param i index of the attribute to get
+    * @return dictionary encoded int/short/byte
+    */
+  def getAttributeEncoded(i: Int): AnyRef =
+    attributeReaders(i).asInstanceOf[ArrowDictionaryReader[_]].getEncoded(index).asInstanceOf[AnyRef]
+
   override def getID: String = idReader.apply(index).asInstanceOf[String]
   override def getIdentifier: FeatureId = new ImmutableFeatureId(getID)
 
@@ -50,7 +59,6 @@ class ArrowSimpleFeature(sft: SimpleFeatureType,
   override def getFeatureType: SimpleFeatureType = sft
   override def getName: Name = sft.getName
 
-  def getAttributeRaw(i: Int): AnyRef = attributeReaders(i).asInstanceOf[ArrowDictionaryReader[_]].getRaw(index).asInstanceOf[AnyRef]
   override def getAttribute(name: Name): AnyRef = getAttribute(name.getLocalPart)
   override def getAttribute(name: String): Object = {
     val index = sft.indexOf(name)

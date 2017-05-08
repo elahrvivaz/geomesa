@@ -15,6 +15,7 @@ import java.util.{Date, UUID}
 import com.vividsolutions.jts.geom._
 import org.apache.arrow.vector._
 import org.apache.arrow.vector.complex.{FixedSizeListVector, ListVector, NullableMapVector}
+import org.apache.arrow.vector.holders.{NullableDateMilliHolder, NullableVarCharHolder}
 import org.joda.time.DateTime
 import org.locationtech.geomesa.arrow.TypeBindings
 import org.locationtech.geomesa.arrow.vector.ArrowDictionary.HasArrowDictionary
@@ -51,6 +52,17 @@ trait ArrowAttributeReader {
     * @return the attribute value
     */
   def apply(i: Int): AnyRef
+}
+
+trait ArrowDictionaryReader[T] extends ArrowAttributeReader with HasArrowDictionary {
+
+  /**
+    * Gets the raw underlying value without dictionary decoding it
+    *
+    * @param i index of the feature to read
+    * @return
+    */
+  def getEncoded(i: Int): T
 }
 
 object ArrowAttributeReader {
@@ -141,10 +153,6 @@ object ArrowAttributeReader {
     }
   }
 
-  trait ArrowDictionaryReader[T] extends ArrowAttributeReader with HasArrowDictionary {
-    def getRaw(i: Int): T
-  }
-
   /**
     * Reads dictionary encoded bytes and converts them to the actual values
     */
@@ -157,7 +165,7 @@ object ArrowAttributeReader {
       }
     }
 
-    override def getRaw(i: Int): Byte = accessor.get(i)
+    override def getEncoded(i: Int): Byte = accessor.get(i)
   }
 
   /**
@@ -173,7 +181,7 @@ object ArrowAttributeReader {
       }
     }
 
-    override def getRaw(i: Int): Short = accessor.get(i)
+    override def getEncoded(i: Int): Short = accessor.get(i)
   }
 
   /**
@@ -189,7 +197,7 @@ object ArrowAttributeReader {
       }
     }
 
-    override def getRaw(i: Int): Int = accessor.get(i)
+    override def getEncoded(i: Int): Int = accessor.get(i)
   }
 
   /**
@@ -245,9 +253,17 @@ object ArrowAttributeReader {
   }
 
   class ArrowStringReader(accessor: NullableVarCharVector#Accessor) extends ArrowAttributeReader {
+    private val holder = new NullableVarCharHolder
+    private var bytes = Array.empty[Byte]
     override def apply(i: Int): AnyRef = {
-      if (accessor.isNull(i)) { null } else {
-        new String(accessor.get(i), StandardCharsets.UTF_8)
+      accessor.get(i, holder)
+      if (holder.isSet == 0) { null } else {
+        val length = holder.end - holder.start
+        if (bytes.length < length) {
+          bytes = Array.ofDim(length)
+        }
+        holder.buffer.getBytes(holder.start, bytes, 0, length)
+        new String(bytes, 0, length, StandardCharsets.UTF_8)
       }
     }
   }
@@ -273,9 +289,11 @@ object ArrowAttributeReader {
   }
 
   class ArrowDateReader(accessor: NullableDateMilliVector#Accessor) extends ArrowAttributeReader {
+    private val holder = new NullableDateMilliHolder
     override def apply(i: Int): AnyRef = {
-      if (accessor.isNull(i)) { null } else {
-        new Date(accessor.get(i))
+      accessor.get(i, holder)
+      if (holder.isSet == 0) { null } else {
+        new Date(holder.value)
       }
     }
   }

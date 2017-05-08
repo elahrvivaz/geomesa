@@ -28,7 +28,7 @@ class ArrowFeatureSource(entry: ContentEntry, reader: SimpleFeatureArrowFileRead
   override def getCountInternal(query: Query): Int = -1
 
   override def getReaderInternal(query: Query): FeatureReader[SimpleFeatureType, SimpleFeature] = {
-    val optimized = FilterOptimizer.rewrite(query.getFilter, getSchema, reader.dictionaries)
+    val optimized = ArrowFilterOptimizer.rewrite(query.getFilter, getSchema, reader.dictionaries)
     val features = reader.features(optimized)
     new FeatureReader[SimpleFeatureType, SimpleFeature] {
       override def getFeatureType: SimpleFeatureType = reader.sft
