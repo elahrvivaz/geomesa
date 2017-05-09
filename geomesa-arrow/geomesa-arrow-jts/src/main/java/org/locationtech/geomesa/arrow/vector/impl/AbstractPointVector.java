@@ -119,15 +119,19 @@ public abstract class AbstractPointVector implements GeometryVector<Point, Fixed
     @Override
     public Point get(int index) {
       reader.setPosition(index);
-      reader.next();
-      double y = readOrdinal(subReader);
-      reader.next();
-      double x = readOrdinal(subReader);
-      return factory.createPoint(new Coordinate(x, y));
+      if (reader.isSet()) {
+        reader.next();
+        double y = readOrdinal(subReader);
+        reader.next();
+        double x = readOrdinal(subReader);
+        return factory.createPoint(new Coordinate(x, y));
+      } else {
+        return null;
+      }
     }
 
     /**
-     * Specialized read methods to return a single ordinate at a time.
+     * Specialized read methods to return a single ordinate at a time. Does not check for null values.
      * Call getCoordinateY(index), then getCoordinateX()
      *
      * @param index index of the ordinate to read
@@ -141,7 +145,8 @@ public abstract class AbstractPointVector implements GeometryVector<Point, Fixed
     }
 
     /**
-     * Gets the x ordinate associated with the last call to getCoordinateY
+     * Gets the x ordinate associated with the last call to getCoordinateY. Behavior is not defined if access
+     * pattern is not followed.
      *
      * @return x ordinate
      */
