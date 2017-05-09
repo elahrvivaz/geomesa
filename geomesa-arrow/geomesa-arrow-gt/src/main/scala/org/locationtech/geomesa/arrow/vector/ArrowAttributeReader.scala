@@ -34,6 +34,7 @@ import org.locationtech.geomesa.arrow.vector.floats.MultiPointFloatVector.MultiP
 import org.locationtech.geomesa.arrow.vector.floats.MultiPolygonFloatVector.MultiPolygonFloatReader
 import org.locationtech.geomesa.arrow.vector.floats.PointFloatVector.PointFloatReader
 import org.locationtech.geomesa.arrow.vector.floats.PolygonFloatVector.PolygonFloatReader
+import org.locationtech.geomesa.arrow.vector.impl.AbstractPointVector
 import org.locationtech.geomesa.features.serialization.ObjectType
 import org.locationtech.geomesa.features.serialization.ObjectType.ObjectType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -248,6 +249,23 @@ object ArrowAttributeReader {
     }
 
     override def apply(i: Int): AnyRef = delegate.get(i)
+
+    /**
+      * Reads the first (y) ordinal for the given point. See `readPointX` to get the corresponding x ordinal.
+      * Only valid for point vectors
+      *
+      * @param i index of the point to read
+      * @return y ordinal
+      */
+    def readPointY(i: Int): Double = delegate.asInstanceOf[AbstractPointVector.PointReader].getCoordinateY(i)
+
+    /**
+      * Reads the second (x) ordinal for the previously read y ordinal from `readPointY`. Behavior is not defined
+      * if the access pattern is not followed. Only valid for point vectors.
+      *
+      * @return x ordinal
+      */
+    def readPointX(): Double = delegate.asInstanceOf[AbstractPointVector.PointReader].getCoordinateX
   }
 
   /**
@@ -295,11 +313,20 @@ object ArrowAttributeReader {
   }
 
   class ArrowDateReader(accessor: NullableDateMilliVector#Accessor) extends ArrowAttributeReader {
+
     private val holder = new NullableDateMilliHolder
+
     override def apply(i: Int): AnyRef = {
       accessor.get(i, holder)
       if (holder.isSet == 0) { null } else {
         new Date(holder.value)
+      }
+    }
+
+    def getTime(i: Int): Long = {
+      accessor.get(i, holder)
+      if (holder.isSet == 0) { 0L } else {
+        holder.value
       }
     }
   }

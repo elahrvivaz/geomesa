@@ -41,13 +41,19 @@ class ArrowSimpleFeature(sft: SimpleFeatureType,
   override def getAttribute(i: Int): AnyRef = attributeReaders(i).apply(index)
 
   /**
-    * Optimized method to get the underlying dictionary encoded value without decoding it. Note
-    * that the field must be dictionary encoded or this will throw an exception
+    * Gets the underlying arrow reader for this feature
     *
-    * @param i index of the attribute to get
-    * @return dictionary encoded int/short/byte
+    * @param i attribute to be read
+    * @return reader
     */
-  def getAttributeEncoded(i: Int): Int = attributeReaders(i).asInstanceOf[ArrowDictionaryReader].getEncoded(index)
+  def getReader(i: Int): ArrowAttributeReader = attributeReaders(i)
+
+  /**
+    * Gets the index of this feature, for use with the attribute reader
+    *
+    * @return
+    */
+  def getIndex: Int = index
 
   override def getID: String = idReader.apply(index).asInstanceOf[String]
   override def getIdentifier: FeatureId = new ImmutableFeatureId(getID)

@@ -119,15 +119,35 @@ public abstract class AbstractPointVector implements GeometryVector<Point, Fixed
     @Override
     public Point get(int index) {
       reader.setPosition(index);
-      if (reader.isSet()) {
-        reader.next();
-        double y = readOrdinal(subReader);
-        reader.next();
-        double x = readOrdinal(subReader);
-        return factory.createPoint(new Coordinate(x, y));
-      } else {
-        return null;
-      }
+      reader.next();
+      double y = readOrdinal(subReader);
+      reader.next();
+      double x = readOrdinal(subReader);
+      return factory.createPoint(new Coordinate(x, y));
+    }
+
+    /**
+     * Specialized read methods to return a single ordinate at a time.
+     * Call getCoordinateY(index), then getCoordinateX()
+     *
+     * @param index index of the ordinate to read
+     * @return y ordinate
+     */
+    public double getCoordinateY(int index) {
+      reader.setPosition(index);
+      reader.next();
+      return readOrdinal(subReader);
+
+    }
+
+    /**
+     * Gets the x ordinate associated with the last call to getCoordinateY
+     *
+     * @return x ordinate
+     */
+    public double getCoordinateX() {
+      reader.next();
+      return readOrdinal(subReader);
     }
 
     protected abstract double readOrdinal(FieldReader reader);
