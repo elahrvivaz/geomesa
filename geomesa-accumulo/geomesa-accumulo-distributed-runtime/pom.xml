@@ -73,7 +73,6 @@
                             </transformers>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <shadedArtifactAttached>false</shadedArtifactAttached> <!-- replaces original artifact -->
-                            <finalName>geomesa-accumulo-distributed-runtime_${scala.binary.version}-${project.version}</finalName>
                         </configuration>
                     </execution>
                 </executions>
