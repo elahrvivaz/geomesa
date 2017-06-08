@@ -11,6 +11,7 @@ package org.locationtech.geomesa.hbase.coprocessor.aggregators
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.hbase.HBaseFeatureIndexType
+import org.locationtech.geomesa.hbase.coprocessor.GeoMesaCoprocessor
 import org.locationtech.geomesa.hbase.index.HBaseFeatureIndex
 import org.locationtech.geomesa.index.iterators.DensityScan
 import org.locationtech.geomesa.utils.geotools.GeometryUtils
@@ -38,6 +39,6 @@ object HBaseDensityAggregator {
                 filter: Option[Filter],
                 hints: Hints): Map[String, String] = {
     DensityScan.configure(sft, index, filter, hints) ++
-        Map(GeoMesaHBaseAggregator.AGGREGATOR_CLASS -> classOf[HBaseDensityAggregator].getName)
+        Map(GeoMesaCoprocessor.AggregatorClass -> classOf[HBaseDensityAggregator].getName)
   }
 }

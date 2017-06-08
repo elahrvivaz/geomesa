@@ -20,7 +20,6 @@ import org.apache.hadoop.hbase.filter.FilterList
 import org.apache.hadoop.hbase.ipc.BlockingRpcCallback
 import org.apache.hadoop.hbase.protobuf.ResponseConverter
 import org.apache.hadoop.hbase.{Cell, Coprocessor, CoprocessorEnvironment}
-import org.locationtech.geomesa.hbase.coprocessor.aggregators.GeoMesaHBaseAggregator
 import org.locationtech.geomesa.hbase.coprocessor.utils.{GeoMesaHBaseCallBack, GeoMesaHBaseRpcController}
 import org.locationtech.geomesa.hbase.proto.GeoMesaProto
 import org.locationtech.geomesa.hbase.proto.GeoMesaProto.{GeoMesaCoprocessorRequest, GeoMesaCoprocessorResponse, GeoMesaCoprocessorService}
@@ -53,7 +52,7 @@ class GeoMesaCoprocessor extends GeoMesaCoprocessorService with Coprocessor with
                 done: RpcCallback[GeoMesaProto.GeoMesaCoprocessorResponse]): Unit = {
     val options: Map[String, String] = deserializeOptions(request.getOptions.toByteArray)
     val aggregator = {
-      val classname = options(GeoMesaHBaseAggregator.AGGREGATOR_CLASS)
+      val classname = options(GeoMesaCoprocessor.AggregatorClass)
       Class.forName(classname).newInstance().asInstanceOf[AggregatingScan[_]]
     }
     aggregator.init(options)
@@ -108,6 +107,8 @@ class GeoMesaCoprocessor extends GeoMesaCoprocessorService with Coprocessor with
 }
 
 object GeoMesaCoprocessor {
+
+  val AggregatorClass = "geomesa.hbase.aggregator.class"
 
   /**
     * Executes a geomesa coprocessor
