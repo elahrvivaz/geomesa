@@ -10,7 +10,7 @@ package org.locationtech.geomesa.convert
 
 import java.util.Date
 
-import org.locationtech.geomesa.curve.BinnedTime
+import org.locationtech.geomesa.curve.time.BinnedTime
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 trait SimpleFeatureValidator {

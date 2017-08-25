@@ -19,7 +19,7 @@ import com.typesafe.config.{Config, ConfigFactory, ConfigRenderOptions, ConfigVa
 import com.vividsolutions.jts.geom.{Geometry, Point}
 import org.geotools.data.DataAccessFactory.Param
 import org.joda.time.{DateTime, DateTimeZone}
-import org.locationtech.geomesa.curve.Z2SFC
+import org.locationtech.geomesa.curve.z.Z2SFC
 import org.locationtech.geomesa.filter.FilterHelper.extractGeometries
 import org.locationtech.geomesa.filter.{FilterHelper, FilterValues}
 import org.locationtech.geomesa.fs.storage.api.PartitionScheme

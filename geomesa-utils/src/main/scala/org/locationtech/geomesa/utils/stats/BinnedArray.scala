@@ -12,7 +12,7 @@ import java.lang.{Double => jDouble, Float => jFloat, Long => jLong}
 import java.util.{Date, Locale}
 
 import com.vividsolutions.jts.geom.{Coordinate, Geometry, Point}
-import org.locationtech.geomesa.curve.Z2SFC
+import org.locationtech.geomesa.curve.z.Z2SFC
 import org.locationtech.geomesa.utils.geotools.GeometryUtils
 import org.locationtech.sfcurve.zorder.Z2
 

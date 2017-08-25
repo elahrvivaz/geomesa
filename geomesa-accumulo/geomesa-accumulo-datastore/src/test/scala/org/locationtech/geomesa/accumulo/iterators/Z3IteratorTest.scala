@@ -16,7 +16,8 @@ import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIt
 import org.apache.hadoop.io.Text
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.index.legacy.z3.Z3IndexV2
-import org.locationtech.geomesa.curve.{LegacyZ3SFC, TimePeriod}
+import org.locationtech.geomesa.curve.time.TimePeriod
+import org.locationtech.geomesa.curve.z.LegacyZ3SFC
 import org.locationtech.sfcurve.zorder.Z3
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner

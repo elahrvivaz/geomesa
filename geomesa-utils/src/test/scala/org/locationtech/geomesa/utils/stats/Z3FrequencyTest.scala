@@ -9,7 +9,7 @@
 package org.locationtech.geomesa.utils.stats
 
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.curve.TimePeriod
+import org.locationtech.geomesa.curve.time.TimePeriod
 import org.locationtech.geomesa.utils.geotools.GeoToolsDateFormat
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.specs2.mutable.Specification

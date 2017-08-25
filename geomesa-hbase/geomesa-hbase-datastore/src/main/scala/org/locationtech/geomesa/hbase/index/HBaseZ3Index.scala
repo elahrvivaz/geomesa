@@ -10,7 +10,7 @@ package org.locationtech.geomesa.hbase.index
 
 import org.apache.hadoop.hbase.client._
 import org.apache.hadoop.hbase.filter.{Filter => HFilter}
-import org.locationtech.geomesa.curve.Z3SFC
+import org.locationtech.geomesa.curve.z.Z3SFC
 import org.locationtech.geomesa.hbase.HBaseFilterStrategyType
 import org.locationtech.geomesa.hbase.data._
 import org.locationtech.geomesa.hbase.filters.Z3HBaseFilter

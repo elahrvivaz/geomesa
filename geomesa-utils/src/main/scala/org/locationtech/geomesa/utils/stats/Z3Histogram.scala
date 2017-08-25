@@ -13,8 +13,9 @@ import java.util.Date
 import com.typesafe.scalalogging.LazyLogging
 import com.vividsolutions.jts.geom.{Coordinate, Geometry, Point}
 import org.geotools.geometry.jts.JTSFactoryFinder
-import org.locationtech.geomesa.curve.TimePeriod.TimePeriod
-import org.locationtech.geomesa.curve.{BinnedTime, TimePeriod, Z3SFC}
+import org.locationtech.geomesa.curve.time.{BinnedTime, TimePeriod}
+import org.locationtech.geomesa.curve.time.TimePeriod.TimePeriod
+import org.locationtech.geomesa.curve.TimePeriod
 import org.locationtech.geomesa.utils.stats.MinMax.MinMaxGeometry
 import org.locationtech.sfcurve.zorder.Z3
 import org.opengis.feature.simple.SimpleFeature

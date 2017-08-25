@@ -6,9 +6,10 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  ***********************************************************************/
 
-package org.locationtech.geomesa.curve
+package org.locationtech.geomesa.curve.xz
 
-import org.locationtech.geomesa.curve.XZ2SFC.{QueryWindow, XElement}
+import org.locationtech.geomesa.curve.SpaceFillingExtentsCurve2D
+import org.locationtech.geomesa.curve.xz.XZ2SFC.{QueryWindow, XElement}
 import org.locationtech.sfcurve.IndexRange
 
 import scala.collection.mutable.ArrayBuffer
@@ -21,36 +22,12 @@ import scala.collection.mutable.ArrayBuffer
   *
   * @param g resolution level of the curve - i.e. how many times the space will be recursively quartered
   */
-class XZ2SFC(g: Short, xBounds: (Double, Double), yBounds: (Double, Double)) {
+class XZ2SFC(g: Short, xBounds: (Double, Double), yBounds: (Double, Double))
+    extends SpaceFillingExtentsCurve2D(xBounds, yBounds) {
 
   // TODO see what the max value of g can be where we can use Ints instead of Longs and possibly refactor to use Ints
 
-  private val xLo = xBounds._1
-  private val xHi = xBounds._2
-  private val yLo = yBounds._1
-  private val yHi = yBounds._2
-
-  private val xSize = xHi - xLo
-  private val ySize = yHi - yLo
-
-  /**
-    * Index a polygon by it's bounding box
-    *
-    * @param bounds (xmin, ymin, xmax, ymax)
-    * @return z value for the bounding box
-    */
-  def index(bounds: (Double, Double, Double, Double)): Long = index(bounds._1, bounds._2, bounds._3, bounds._4)
-
-  /**
-    * Index a polygon by it's bounding box
-    *
-    * @param xmin min x value in xBounds
-    * @param ymin min y value in yBounds
-    * @param xmax max x value in xBounds, must be >= xmin
-    * @param ymax max y value in yBounds, must be >= ymin
-    * @return z value for the bounding box
-    */
-  def index(xmin: Double, ymin: Double, xmax: Double, ymax: Double): Long = {
+  override def index(xmin: Double, ymin: Double, xmax: Double, ymax: Double): Long = {
     // normalize inputs to [0,1]
     val (nxmin, nymin, nxmax, nymax) = normalize(xmin, ymin, xmax, ymax)
 
@@ -78,55 +55,12 @@ class XZ2SFC(g: Short, xBounds: (Double, Double), yBounds: (Double, Double)) {
   /**
     * Determine XZ-curve ranges that will cover a given query window
     *
-    * @param query a window to cover in the form (xmin, ymin, xmax, ymax) where: all values are in user space
-    * @return
-    */
-  def ranges(query: (Double, Double, Double, Double)): Seq[IndexRange] = ranges(Seq(query))
-
-  /**
-    * Determine XZ-curve ranges that will cover a given query window
-    *
-    * @param query a window to cover in the form (xmin, ymin, xmax, ymax) where all values are in user space
-    * @param maxRanges a rough upper limit on the number of ranges to generate
-    * @return
-    */
-  def ranges(query: (Double, Double, Double, Double), maxRanges: Option[Int]): Seq[IndexRange] =
-    ranges(Seq(query), maxRanges)
-
-  /**
-    * Determine XZ-curve ranges that will cover a given query window
-    *
-    * @param xmin min x value in user space
-    * @param ymin min y value in user space
-    * @param xmax max x value in user space, must be >= xmin
-    * @param ymax max y value in user space, must be >= ymin
-    * @return
-    */
-  def ranges(xmin: Double, ymin: Double, xmax: Double, ymax: Double): Seq[IndexRange] =
-    ranges(Seq((xmin, ymin, xmax, ymax)))
-
-  /**
-    * Determine XZ-curve ranges that will cover a given query window
-    *
-    * @param xmin min x value in user space
-    * @param ymin min y value in user space
-    * @param xmax max x value in user space, must be >= xmin
-    * @param ymax max y value in user space, must be >= ymin
-    * @param maxRanges a rough upper limit on the number of ranges to generate
-    * @return
-    */
-  def ranges(xmin: Double, ymin: Double, xmax: Double, ymax: Double, maxRanges: Option[Int]): Seq[IndexRange] =
-    ranges(Seq((xmin, ymin, xmax, ymax)), maxRanges)
-
-  /**
-    * Determine XZ-curve ranges that will cover a given query window
-    *
     * @param queries a sequence of OR'd windows to cover. Each window is in the form
     *                (xmin, ymin, xmax, ymax) where all values are in user space
     * @param maxRanges a rough upper limit on the number of ranges to generate
     * @return
     */
-  def ranges(queries: Seq[(Double, Double, Double, Double)], maxRanges: Option[Int] = None): Seq[IndexRange] = {
+  override def ranges(queries: Seq[(Double, Double, Double, Double)], maxRanges: Option[Int] = None): Seq[IndexRange] = {
     // normalize inputs to [0,1]
     val windows = queries.map { case (xmin, ymin, xmax, ymax) =>
       val (nxmin, nymin, nxmax, nymax) = normalize(xmin, ymin, xmax, ymax)
@@ -303,31 +237,6 @@ class XZ2SFC(g: Short, xBounds: (Double, Double), yBounds: (Double, Double)) {
     }
     (min, max)
   }
-
-  /**
-    * Normalize user space values to [0,1]
-    *
-    * @param xmin min x value in user space
-    * @param ymin min y value in user space
-    * @param xmax max x value in user space, must be >= xmin
-    * @param ymax max y value in user space, must be >= ymin
-    * @return
-    */
-  private def normalize(xmin: Double,
-                        ymin: Double,
-                        xmax: Double,
-                        ymax: Double): (Double, Double, Double, Double) = {
-    require(xmin <= xmax && ymin <= ymax, s"Bounds must be ordered: [$xmin $xmax] [$ymin $ymax]")
-    require(xmin >= xLo && xmax <= xHi && ymin >= yLo && ymax <= yHi,
-      s"Values out of bounds ([$xLo $xHi] [$yLo $yHi]): [$xmin $xmax] [$ymin $ymax]")
-
-    val nxmin = (xmin - xLo) / xSize
-    val nymin = (ymin - yLo) / ySize
-    val nxmax = (xmax - xLo) / xSize
-    val nymax = (ymax - yLo) / ySize
-
-    (nxmin, nymin, nxmax, nymax)
-  }
 }
 
 object XZ2SFC {
@@ -374,8 +283,8 @@ object XZ2SFC {
   private case class XElement(xmin: Double, ymin: Double, xmax: Double, ymax: Double, length: Double) {
 
     // extended x and y bounds
-    lazy val xext = xmax + length
-    lazy val yext = ymax + length
+    lazy private val xext = xmax + length
+    lazy private val yext = ymax + length
 
     def isContained(window: QueryWindow): Boolean =
       window.xmin <= xmin && window.ymin <= ymin && window.xmax >= xext && window.ymax >= yext

@@ -12,7 +12,8 @@ import java.util.Date
 
 import com.vividsolutions.jts.geom.Geometry
 import org.joda.time.DateTime
-import org.locationtech.geomesa.curve.{BinnedTime, Z2SFC, Z3SFC}
+import org.locationtech.geomesa.curve.time.BinnedTime
+import org.locationtech.geomesa.curve.z.Z3SFC
 import org.locationtech.geomesa.filter.Bounds.Bound
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType

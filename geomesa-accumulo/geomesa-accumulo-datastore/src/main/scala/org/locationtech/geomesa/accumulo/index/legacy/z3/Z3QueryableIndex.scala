@@ -17,7 +17,8 @@ import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloFeatur
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators.{Z3DensityIterator, _}
 import org.locationtech.geomesa.accumulo.{AccumuloFeatureIndexType, AccumuloFilterStrategyType}
-import org.locationtech.geomesa.curve.{BinnedTime, LegacyZ3SFC}
+import org.locationtech.geomesa.curve.time.BinnedTime
+import org.locationtech.geomesa.curve.z.LegacyZ3SFC
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.index.conf.QueryProperties
 import org.locationtech.geomesa.index.strategies.SpatioTemporalFilterStrategy

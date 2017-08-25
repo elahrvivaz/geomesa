@@ -9,6 +9,7 @@
 package org.locationtech.geomesa.curve
 
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.curve.z.{LegacyZ2SFC, Z2SFC}
 import org.locationtech.sfcurve.CoveredRange
 import org.locationtech.sfcurve.zorder.{Z2, ZRange}
 import org.specs2.mutable.Specification
@@ -20,7 +21,7 @@ import scala.util.Random
 class Z2Test extends Specification {
 
   val rand = new Random(-574)
-  val maxInt = Z2SFC.lon.maxIndex
+  val maxInt = Z2SFC.dx.maxIndex
   def nextDim(): Int = rand.nextInt(maxInt)
 
   def padTo(s: String): String = (new String(Array.fill(62)('0')) + s).takeRight(62)
@@ -47,7 +48,7 @@ class Z2Test extends Specification {
 
     "apply and unapply max values" >> {
       foreach(Seq(Z2SFC, LegacyZ2SFC)) { sfc =>
-        val (x, y) = (sfc.lon.maxIndex, sfc.lat.maxIndex)
+        val (x, y) = (sfc.dx.maxIndex, sfc.dy.maxIndex)
         val z = Z2(x.toInt, y.toInt)
         z match { case Z2(zx, zy) =>
           zx mustEqual x
@@ -130,7 +131,7 @@ class Z2Test extends Specification {
           (sfc.index(51.0, 51.0),     sfc.index(51.0000001, 51.0000001)) // 60 bits in common
         )
 
-        def print(l: Z2, u: Z2, size: Int): Unit =
+        def print(l: Long, u: Long, size: Int): Unit =
           println(s"${round(sfc.invert(l))} ${round(sfc.invert(u))}\t$size")
         def round(z: (Double, Double)): (Double, Double) =
           (math.round(z._1 * 1000.0) / 1000.0, math.round(z._2 * 1000.0) / 1000.0)

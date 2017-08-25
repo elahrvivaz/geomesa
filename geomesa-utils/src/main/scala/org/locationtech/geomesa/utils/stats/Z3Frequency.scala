@@ -13,8 +13,9 @@ import java.util.Date
 import com.clearspring.analytics.stream.frequency.{CountMinSketch, RichCountMinSketch}
 import com.typesafe.scalalogging.LazyLogging
 import com.vividsolutions.jts.geom.Geometry
-import org.locationtech.geomesa.curve.TimePeriod.TimePeriod
-import org.locationtech.geomesa.curve.{BinnedTime, Z3SFC}
+import org.locationtech.geomesa.curve.time.TimePeriod.TimePeriod
+import org.locationtech.geomesa.curve.time.BinnedTime
+import org.locationtech.geomesa.curve.z.Z3SFC
 import org.opengis.feature.simple.SimpleFeature
 
 import scala.collection.immutable.ListMap

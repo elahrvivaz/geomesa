@@ -12,7 +12,7 @@ import java.time.{Instant, ZoneOffset}
 import java.util.Date
 
 import com.typesafe.scalalogging.LazyLogging
-import org.locationtech.geomesa.curve.BinnedTime
+import org.locationtech.geomesa.curve.time.BinnedTime
 import org.locationtech.geomesa.filter.visitor.QueryPlanFilterVisitor
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStore
 import org.locationtech.geomesa.index.metadata.{GeoMesaMetadata, HasGeoMesaMetadata, MetadataSerializer}

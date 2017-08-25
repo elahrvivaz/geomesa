@@ -10,6 +10,8 @@ package org.locationtech.geomesa.curve
 
 import com.typesafe.scalalogging.LazyLogging
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.curve.time.{BinnedTime, TimePeriod}
+import org.locationtech.geomesa.curve.xz.XZ3SFC
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 

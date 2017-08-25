@@ -16,7 +16,8 @@ import com.typesafe.scalalogging.LazyLogging
 import com.vividsolutions.jts.geom.{Geometry, Point}
 import org.geotools.factory.Hints
 import org.joda.time.DateTime
-import org.locationtech.geomesa.curve.{BinnedTime, LegacyZ3SFC, Z3SFC}
+import org.locationtech.geomesa.curve.time.BinnedTime
+import org.locationtech.geomesa.curve.z.{LegacyZ3SFC, Z3SFC}
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.index.api.{FilterStrategy, GeoMesaFeatureIndex, QueryPlan, WrappedFeature}
 import org.locationtech.geomesa.index.conf.QueryHints._

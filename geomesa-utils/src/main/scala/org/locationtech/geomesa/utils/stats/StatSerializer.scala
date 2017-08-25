@@ -16,7 +16,7 @@ import com.clearspring.analytics.stream.cardinality.HyperLogLog
 import com.clearspring.analytics.stream.frequency.RichCountMinSketch
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.vividsolutions.jts.geom.Geometry
-import org.locationtech.geomesa.curve.TimePeriod
+import org.locationtech.geomesa.curve.time.TimePeriod
 import org.locationtech.geomesa.utils.cache.{CacheKeyGenerator, SoftThreadLocal}
 import org.locationtech.geomesa.utils.stats.MinMax.MinMaxDefaults
 import org.locationtech.geomesa.utils.text.WKBUtils

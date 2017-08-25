@@ -13,7 +13,7 @@ import org.apache.accumulo.core.data.{ByteSequence, Key, Value, Range => AccRang
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.index.legacy.z3.Z3IndexV2
-import org.locationtech.geomesa.curve.Z3SFC
+import org.locationtech.geomesa.curve.z.Z3SFC
 import org.locationtech.geomesa.index.filters.Z3Filter
 import org.locationtech.sfcurve.zorder.Z3
 

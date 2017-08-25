@@ -10,6 +10,7 @@ package org.locationtech.geomesa.curve
 
 import org.joda.time.{DateTime, Seconds, Weeks}
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.curve.time.{BinnedTime, TimePeriod}
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 

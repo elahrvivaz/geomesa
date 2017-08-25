@@ -6,11 +6,12 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  ***********************************************************************/
 
-package org.locationtech.geomesa.curve
+package org.locationtech.geomesa.curve.z
 
-object XZSFC {
+import org.locationtech.geomesa.curve.NormalizedDimension.{SemiNormalizedLat, SemiNormalizedLon}
 
-  val DefaultPrecision: Short = 12
-
-  val LogPointFive = math.log(0.5)
+@deprecated("Z2SFC", "1.3.2")
+object LegacyZ2SFC extends Z2SFC(31) {
+  override val dx = SemiNormalizedLon(math.pow(2, 31).toLong - 1)
+  override val dy = SemiNormalizedLat(math.pow(2, 31).toLong - 1)
 }

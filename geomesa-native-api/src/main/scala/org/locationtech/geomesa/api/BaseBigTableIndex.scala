@@ -20,7 +20,7 @@ import org.geotools.data.simple.SimpleFeatureWriter
 import org.geotools.factory.Hints
 import org.geotools.filter.identity.FeatureIdImpl
 import org.geotools.filter.text.ecql.ECQL
-import org.locationtech.geomesa.curve.TimePeriod
+import org.locationtech.geomesa.curve.time.TimePeriod
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStore
 import org.locationtech.geomesa.security.SecurityUtils
 import org.locationtech.geomesa.utils.collection.SelfClosingIterator

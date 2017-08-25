@@ -8,7 +8,7 @@
 
 package org.locationtech.geomesa.index.strategies
 
-import org.locationtech.geomesa.curve.BinnedTime
+import org.locationtech.geomesa.curve.time.BinnedTime
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.filter.visitor.FilterExtractingVisitor
 import org.locationtech.geomesa.index.api.{FilterStrategy, GeoMesaFeatureIndex, WrappedFeature}

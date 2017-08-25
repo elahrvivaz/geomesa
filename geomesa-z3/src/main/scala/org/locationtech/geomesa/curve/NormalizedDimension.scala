@@ -62,7 +62,7 @@ object NormalizedDimension {
     private val normalizer = bins / (max - min)
     private val denormalizer = (max - min) / bins
 
-    override val maxIndex = (bins - 1).toInt // note: call .toInt after subtracting 1 to avoid sign issues
+    override val maxIndex: Int = (bins - 1).toInt // note: call .toInt after subtracting 1 to avoid sign issues
 
     override def normalize(x: Double): Int =
       if (x >= max) { maxIndex } else { math.floor((x - min) * normalizer).toInt }

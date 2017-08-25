@@ -14,7 +14,7 @@ import com.google.common.primitives.{Bytes, Longs}
 import com.typesafe.scalalogging.LazyLogging
 import com.vividsolutions.jts.geom.{Geometry, Point}
 import org.geotools.factory.Hints
-import org.locationtech.geomesa.curve.LegacyZ2SFC
+import org.locationtech.geomesa.curve.z.LegacyZ2SFC
 import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.index.api.{FilterStrategy, GeoMesaFeatureIndex, QueryPlan, WrappedFeature}
 import org.locationtech.geomesa.index.conf.QueryHints._

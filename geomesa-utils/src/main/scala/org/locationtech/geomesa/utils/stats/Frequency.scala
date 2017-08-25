@@ -12,8 +12,9 @@ import java.util.{Date, Locale}
 
 import com.clearspring.analytics.stream.frequency.{CountMinSketch, IFrequency, RichCountMinSketch}
 import com.vividsolutions.jts.geom.Geometry
-import org.locationtech.geomesa.curve.TimePeriod.TimePeriod
-import org.locationtech.geomesa.curve.{BinnedTime, Z2SFC}
+import org.locationtech.geomesa.curve.time.TimePeriod.TimePeriod
+import org.locationtech.geomesa.curve.time.BinnedTime
+import org.locationtech.geomesa.curve.z.Z2SFC
 import org.locationtech.sfcurve.IndexRange
 import org.opengis.feature.simple.SimpleFeature
 

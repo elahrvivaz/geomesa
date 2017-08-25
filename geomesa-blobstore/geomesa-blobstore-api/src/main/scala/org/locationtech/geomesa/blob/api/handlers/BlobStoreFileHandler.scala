@@ -17,7 +17,7 @@ import org.geotools.factory.Hints
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.locationtech.geomesa.blob.api.FileHandler
 import org.locationtech.geomesa.blob.api.GeoMesaBlobStoreSFT._
-import org.locationtech.geomesa.curve.TimePeriod
+import org.locationtech.geomesa.curve.time.TimePeriod
 import org.locationtech.geomesa.utils.uuid.{Z3FeatureIdGenerator, Z3UuidGenerator}
 import org.opengis.feature.simple.SimpleFeature
 

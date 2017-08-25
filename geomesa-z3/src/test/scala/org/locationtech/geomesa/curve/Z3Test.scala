@@ -9,6 +9,8 @@
 package org.locationtech.geomesa.curve
 
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.curve.time.TimePeriod
+import org.locationtech.geomesa.curve.z.{LegacyZ3SFC, Z3SFC}
 import org.locationtech.sfcurve.CoveredRange
 import org.locationtech.sfcurve.zorder.{Z3, ZRange}
 import org.specs2.mutable.Specification
@@ -20,7 +22,7 @@ import scala.util.Random
 class Z3Test extends Specification {
 
   val rand = new Random(-574)
-  val maxInt = Z3SFC(TimePeriod.Week).lon.maxIndex
+  val maxInt = Z3SFC(TimePeriod.Week).dx.maxIndex
   def nextDim(): Int = rand.nextInt(maxInt)
 
   def padTo(s: String): String = (new String(Array.fill(63)('0')) + s).takeRight(63)
@@ -49,7 +51,7 @@ class Z3Test extends Specification {
 
     "apply and unapply max values" >> {
       foreach(Seq(Z3SFC(TimePeriod.Week), LegacyZ3SFC(TimePeriod.Week))) { sfc =>
-        val (x, y, t) = (sfc.lon.maxIndex, sfc.lat.maxIndex, sfc.time.maxIndex)
+        val (x, y, t) = (sfc.dx.maxIndex, sfc.dy.maxIndex, sfc.dz.maxIndex)
         val z = Z3(x.toInt, y.toInt, t.toInt)
         z match { case Z3(zx, zy, zt) =>
           zx mustEqual x
@@ -66,10 +68,10 @@ class Z3Test extends Specification {
           (180.1, 0d, 0L),
           (0d, -90.1, 0L),
           (0d, 90.1, 0L),
-          (0d, 0d, sfc.time.min.toLong - 1),
-          (0d, 0d, sfc.time.max.toLong + 1),
-          (-181d, -91d, sfc.time.min.toLong - 1),
-          (181d, 91d, sfc.time.max.toLong + 1)
+          (0d, 0d, sfc.dz.min.toLong - 1),
+          (0d, 0d, sfc.dz.max.toLong + 1),
+          (-181d, -91d, sfc.dz.min.toLong - 1),
+          (181d, 91d, sfc.dz.max.toLong + 1)
         )
         foreach(toFail) { case (x, y, t) => sfc.index(x, y, t) must throwAn[IllegalArgumentException] }
       }
@@ -182,9 +184,9 @@ class Z3Test extends Specification {
 
     "return non-empty ranges for a number of cases" >> {
       foreach(Seq(Z3SFC(TimePeriod.Week), LegacyZ3SFC(TimePeriod.Week))) { sfc =>
-        val week = sfc.time.max.toLong
-        val day = sfc.time.max.toLong / 7
-        val hour = sfc.time.max.toLong / 168
+        val week = sfc.dz.max.toLong
+        val day = sfc.dz.max.toLong / 7
+        val hour = sfc.dz.max.toLong / 168
 
         val ranges = Seq(
           (sfc.index(-180, -90, 0), sfc.index(180, 90, week)), // whole world, full week
@@ -192,7 +194,7 @@ class Z3Test extends Specification {
           (sfc.index(-180, -90, hour * 10), sfc.index(180, 90, hour * 11)), // whole world, 1 hour
           (sfc.index(-180, -90, hour * 10), sfc.index(180, 90, hour * 64)), // whole world, 54 hours
           (sfc.index(-180, -90, day * 2), sfc.index(180, 90, week)), // whole world, 5 day
-          (sfc.index(-90, -45, sfc.time.max.toLong / 4), sfc.index(90, 45, 3 * sfc.time.max.toLong / 4)), // half world, half week
+          (sfc.index(-90, -45, sfc.dz.max.toLong / 4), sfc.index(90, 45, 3 * sfc.dz.max.toLong / 4)), // half world, half week
           (sfc.index(35, 65, 0), sfc.index(45, 75, day)), // 10^2 degrees, 1 day
           (sfc.index(35, 55, 0), sfc.index(45, 65, week)), // 10^2 degrees, full week
           (sfc.index(35, 55, day), sfc.index(45, 75, day * 2)), // 10x20 degrees, 1 day
@@ -203,12 +205,12 @@ class Z3Test extends Specification {
           (sfc.index(39.999, 60.999, day + 3000), sfc.index(40.001, 61.001, day + 3120)), // small bounds
           (sfc.index(51.0, 51.0, 6000), sfc.index(51.1, 51.1, 6100)), // small bounds
           (sfc.index(51.0, 51.0, 30000), sfc.index(51.001, 51.001, 30100)), // small bounds
-          (Z3(sfc.index(51.0, 51.0, 30000).z - 1), Z3(sfc.index(51.0, 51.0, 30000).z + 1)) // 62 bits in common
+          (sfc.index(51.0, 51.0, 30000) - 1, sfc.index(51.0, 51.0, 30000) + 1) // 62 bits in common
         )
 
-        def print(l: Z3, u: Z3, size: Int): Unit =
+        def print(l: Long, u: Long, size: Int): Unit =
           println(s"${round(sfc.invert(l))} ${round(sfc.invert(u))}\t$size")
-        def round(z: (Double, Double, Long)): (Double, Double, Long) =
+        def round(z: (Double, Double, Double)): (Double, Double, Double) =
           (math.round(z._1 * 1000.0) / 1000.0, math.round(z._2 * 1000.0) / 1000.0, z._3)
 
         val start = System.currentTimeMillis()

@@ -14,7 +14,8 @@ import java.util.Date
 import com.vividsolutions.jts.geom.Geometry
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.curve.{BinnedTime, TimePeriod, Z2SFC}
+import org.locationtech.geomesa.curve.time.{BinnedTime, TimePeriod}
+import org.locationtech.geomesa.curve.TimePeriod
 import org.locationtech.geomesa.utils.geotools.GeoToolsDateFormat
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.locationtech.sfcurve.zorder.Z2

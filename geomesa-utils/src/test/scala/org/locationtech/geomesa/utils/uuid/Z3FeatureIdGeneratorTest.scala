@@ -13,7 +13,7 @@ import java.util.{Date, UUID}
 import com.vividsolutions.jts.geom.{Geometry, Point, Polygon}
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.curve.TimePeriod._
+import org.locationtech.geomesa.curve.time.TimePeriod._
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.text.WKTUtils
 import org.opengis.feature.simple.SimpleFeature

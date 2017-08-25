@@ -20,8 +20,8 @@ import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.AccumuloVersion
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloFeature}
 import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex
-import org.locationtech.geomesa.curve.BinnedTime.TimeToBinnedTime
-import org.locationtech.geomesa.curve.{BinnedTime, LegacyZ3SFC}
+import org.locationtech.geomesa.curve.time.BinnedTime.TimeToBinnedTime
+import org.locationtech.geomesa.curve.z.LegacyZ3SFC
 import org.locationtech.geomesa.index.api.GeoMesaFeatureIndex
 import org.locationtech.geomesa.index.utils.SplitArrays
 import org.locationtech.geomesa.utils.geotools.Conversions._

@@ -13,7 +13,7 @@ import org.apache.accumulo.core.data.{ByteSequence, Key, Value, Range => AccRang
 import org.apache.accumulo.core.iterators.{IteratorEnvironment, SortedKeyValueIterator}
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.index.legacy.z2.Z2IndexV1
-import org.locationtech.geomesa.curve.LegacyZ2SFC
+import org.locationtech.geomesa.curve.z.LegacyZ2SFC
 import org.locationtech.geomesa.index.filters.Z2Filter
 import org.locationtech.sfcurve.zorder.Z2
 import org.opengis.feature.simple.SimpleFeatureType

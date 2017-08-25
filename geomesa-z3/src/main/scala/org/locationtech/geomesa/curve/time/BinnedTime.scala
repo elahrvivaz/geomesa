@@ -6,10 +6,10 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  ***********************************************************************/
 
-package org.locationtech.geomesa.curve
+package org.locationtech.geomesa.curve.time
 
 import org.joda.time._
-import org.locationtech.geomesa.curve.TimePeriod.TimePeriod
+import org.locationtech.geomesa.curve.time.TimePeriod.TimePeriod
 
 /**
   * Represents a time by an offset into a binned bucket. The bin represents days, weeks,
@@ -55,10 +55,10 @@ object BinnedTime {
   val ZMinDate: DateTime = Epoch
 
   // max values (exclusive)
-  val DaysMaxDate   = Epoch.plus(Days.days(Short.MaxValue.toInt + 1))
-  val WeeksMaxDate  = Epoch.plus(Weeks.weeks(Short.MaxValue.toInt + 1))
-  val MonthsMaxDate = Epoch.plus(Months.months(Short.MaxValue.toInt + 1))
-  val YearsMaxDate  = Epoch.plus(Years.years(Short.MaxValue.toInt + 1))
+  val DaysMaxDate:   DateTime = Epoch.plus(Days.days(Short.MaxValue.toInt + 1))
+  val WeeksMaxDate:  DateTime = Epoch.plus(Weeks.weeks(Short.MaxValue.toInt + 1))
+  val MonthsMaxDate: DateTime = Epoch.plus(Months.months(Short.MaxValue.toInt + 1))
+  val YearsMaxDate:  DateTime = Epoch.plus(Years.years(Short.MaxValue.toInt + 1))
 
   /**
     * Gets period index (e.g. weeks since the epoch) and offset into that interval (e.g. seconds in week)
@@ -214,14 +214,4 @@ object BinnedTime {
 
   private def fromYearAndMinutes(date: BinnedTime): DateTime =
     Epoch.plusYears(date.bin).plus(date.offset * 60000L)
-}
-
-object TimePeriod extends Enumeration {
-
-  type TimePeriod = Value
-
-  val Day   = Value("day")
-  val Week  = Value("week")
-  val Month = Value("month")
-  val Year  = Value("year")
 }

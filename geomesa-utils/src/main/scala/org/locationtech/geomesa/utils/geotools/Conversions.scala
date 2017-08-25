@@ -19,8 +19,9 @@ import org.geotools.geometry.DirectPosition2D
 import org.geotools.temporal.`object`.{DefaultInstant, DefaultPeriod, DefaultPosition}
 import org.joda.time.DateTime
 import org.locationtech.geomesa.CURRENT_SCHEMA_VERSION
-import org.locationtech.geomesa.curve.TimePeriod.TimePeriod
-import org.locationtech.geomesa.curve.{TimePeriod, XZSFC}
+import org.locationtech.geomesa.curve.time.TimePeriod.TimePeriod
+import org.locationtech.geomesa.curve.time.TimePeriod
+import org.locationtech.geomesa.curve.xz.XZSFC
 import org.locationtech.geomesa.utils.index.IndexMode.IndexMode
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.locationtech.geomesa.utils.index.VisibilityLevel.VisibilityLevel

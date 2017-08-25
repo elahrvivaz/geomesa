@@ -14,7 +14,7 @@ import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex
 import org.locationtech.geomesa.accumulo.index.legacy.z3.Z3IndexV2
 import org.locationtech.geomesa.accumulo.iterators.Z2DensityIterator.TableSharingKey
-import org.locationtech.geomesa.curve.LegacyZ3SFC
+import org.locationtech.geomesa.curve.z.LegacyZ3SFC
 import org.locationtech.geomesa.index.iterators.DensityScan
 import org.locationtech.geomesa.index.iterators.DensityScan.DensityResult
 import org.locationtech.sfcurve.zorder.Z3

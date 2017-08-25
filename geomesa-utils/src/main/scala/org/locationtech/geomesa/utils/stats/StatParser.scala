@@ -9,8 +9,8 @@
 package org.locationtech.geomesa.utils.stats
 
 import org.geotools.data.DataUtilities
-import org.locationtech.geomesa.curve.TimePeriod
 import org.locationtech.geomesa.curve.TimePeriod._
+import org.locationtech.geomesa.curve.time.TimePeriod
 import org.locationtech.geomesa.utils.stats.MinMax.MinMaxDefaults
 import org.locationtech.geomesa.utils.text.BasicParser
 import org.opengis.feature.simple.SimpleFeatureType
