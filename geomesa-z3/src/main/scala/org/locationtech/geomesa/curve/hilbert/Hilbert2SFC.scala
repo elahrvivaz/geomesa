@@ -35,14 +35,14 @@ class Hilbert2SFC(precision: Int) extends SpaceFillingPointCurve2D {
   override def ranges(xy: Seq[(Double, Double, Double, Double)],
                       precision: Int,
                       maxRanges: Option[Int]): Seq[IndexRange] = {
-    val xranges = OrdinalRanges(xy.map { case (xmin, _, xmax, _) =>
-      OrdinalPair(dx.normalize(xmin).toLong, dx.normalize(xmax).toLong)
-    }: _*)
-    val yranges = OrdinalRanges(xy.map { case (_, ymin, _, ymax) =>
-      OrdinalPair(dy.normalize(ymin).toLong, dy.normalize(ymax).toLong)
-    }: _*)
+    val query = xy.map { case (xmin, ymin, xmax, ymax) =>
+      OrdinalRanges(
+        OrdinalPair(dx.normalize(xmin).toLong, dx.normalize(xmax).toLong),
+        OrdinalPair(dy.normalize(ymin).toLong, dy.normalize(ymax).toLong)
+      )
+    }
     // TODO precision, maxRanges, covered vs not
-    hilbert.getRangesCoveringQuery(Query(Seq(xranges, yranges))).map { case OrdinalPair(lo, hi) => CoveredRange(lo, hi) }.toSeq
+    hilbert.getRangesCoveringQuery(Query(query)).map { case OrdinalPair(lo, hi) => CoveredRange(lo, hi) }.toSeq
   }
 }
 
