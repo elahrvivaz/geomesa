@@ -9,17 +9,17 @@
 package org.locationtech.geomesa.curve
 
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.curve.hilbert.EichelbergerHilbert2SFC
+import org.locationtech.geomesa.curve.hilbert.UzaygezenHilbert2SFC
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
 import scala.util.Random
 
 @RunWith(classOf[JUnitRunner])
-class Hilbert2Test extends Specification {
+class Uzaygezen2Test extends Specification {
 
   val rand = new Random(-574)
-  val maxInt = EichelbergerHilbert2SFC.dx.maxIndex
+  val maxInt = UzaygezenHilbert2SFC.dx.maxIndex
   def nextDim(): Int = rand.nextInt(maxInt)
 
   def padTo(s: String): String = (new String(Array.fill(62)('0')) + s).takeRight(62)
@@ -27,14 +27,14 @@ class Hilbert2Test extends Specification {
   "Hilbert2" should {
 
     "fail for out-of-bounds values" >> {
-      val sfc = EichelbergerHilbert2SFC
+      val sfc = UzaygezenHilbert2SFC
       foreach(Seq((-180.1, 0d), (0d, -90.1), (180.1, 0d), (0d, 90.1), (-181d, -91d), (181d, 91d))) {
         case (x, y) => sfc.index(x, y) must throwAn[IllegalArgumentException]
       }
     }
 
     "return non-empty ranges for a number of cases" >> {
-      val sfc = EichelbergerHilbert2SFC
+      val sfc = UzaygezenHilbert2SFC
       val ranges = Seq[(Double, Double, Double, Double)](
         (-180, -90, 180, 90),                // whole world
         (-90, -45, 90, 45),                  // half world

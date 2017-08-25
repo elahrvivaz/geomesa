@@ -14,7 +14,7 @@ import org.locationtech.geomesa.curve.hilbert.impl.SpaceFillingCurve.{OrdinalPai
 import org.locationtech.geomesa.curve.{NormalizedDimension, SpaceFillingPointCurve2D}
 import org.locationtech.sfcurve.{CoveredRange, IndexRange}
 
-class Hilbert2SFC(precision: Int) extends SpaceFillingPointCurve2D {
+class EichelbergerHilbert2SFC(precision: Int) extends SpaceFillingPointCurve2D {
 
   require(precision > 0 && precision < 32, "Precision (bits) per dimension must be in [1,31]")
 
@@ -46,4 +46,4 @@ class Hilbert2SFC(precision: Int) extends SpaceFillingPointCurve2D {
   }
 }
 
-object Hilbert2SFC extends Hilbert2SFC(31)
+object EichelbergerHilbert2SFC extends EichelbergerHilbert2SFC(31)

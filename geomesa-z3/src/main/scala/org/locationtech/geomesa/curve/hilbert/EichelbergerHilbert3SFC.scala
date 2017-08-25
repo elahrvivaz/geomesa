@@ -16,7 +16,7 @@ import org.locationtech.geomesa.curve.time.{BinnedTime, TimePeriod}
 import org.locationtech.geomesa.curve.{NormalizedDimension, SpaceFillingPointCurve3D}
 import org.locationtech.sfcurve.{CoveredRange, IndexRange}
 
-class Hilbert3SFC(period: TimePeriod, precision: Int = 21) extends SpaceFillingPointCurve3D {
+class EichelbergerHilbert3SFC(period: TimePeriod, precision: Int = 21) extends SpaceFillingPointCurve3D {
 
   require(precision > 0 && precision < 22, "Precision (bits) per dimension must be in [1,21]")
 
@@ -52,14 +52,14 @@ class Hilbert3SFC(period: TimePeriod, precision: Int = 21) extends SpaceFillingP
   }
 }
 
-object Hilbert3SFC {
+object EichelbergerHilbert3SFC {
 
-  private val SfcDay   = new Hilbert3SFC(TimePeriod.Day)
-  private val SfcWeek  = new Hilbert3SFC(TimePeriod.Week)
-  private val SfcMonth = new Hilbert3SFC(TimePeriod.Month)
-  private val SfcYear  = new Hilbert3SFC(TimePeriod.Year)
+  private val SfcDay   = new EichelbergerHilbert3SFC(TimePeriod.Day)
+  private val SfcWeek  = new EichelbergerHilbert3SFC(TimePeriod.Week)
+  private val SfcMonth = new EichelbergerHilbert3SFC(TimePeriod.Month)
+  private val SfcYear  = new EichelbergerHilbert3SFC(TimePeriod.Year)
 
-  def apply(period: TimePeriod): Hilbert3SFC = period match {
+  def apply(period: TimePeriod): EichelbergerHilbert3SFC = period match {
     case TimePeriod.Day   => SfcDay
     case TimePeriod.Week  => SfcWeek
     case TimePeriod.Month => SfcMonth
