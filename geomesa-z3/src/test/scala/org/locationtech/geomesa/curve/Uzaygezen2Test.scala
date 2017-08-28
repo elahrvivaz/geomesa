@@ -36,9 +36,9 @@ class Uzaygezen2Test extends Specification {
     "return non-empty ranges for a number of cases" >> {
       val sfc = UzaygezenHilbert2SFC
       val ranges = Seq[(Double, Double, Double, Double)](
-        (-180, -90, 180, 90),                // whole world
+//        (-180, -90, 180, 90),                // whole world
         (-90, -45, 90, 45),                  // half world
-        (35, 65, 45, 75),                    // 10^2 degrees
+//        (35, 65, 45, 75),                    // 10^2 degrees
         (35, 55, 45, 75),                    // 10x20 degrees
         (35, 65, 37, 68),                    // 2x3 degrees
         (35, 65, 40, 70),                    // 5^2 degrees

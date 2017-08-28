@@ -21,17 +21,22 @@ class UzaygezenHilbert2SFC(precision: Int) extends SpaceFillingPointCurve2D {
 
   import scala.collection.JavaConversions._
 
-  private val hilbert = new CompactHilbertCurve(Array(precision, precision))
+  // TODO thread safe?
+  private val hilbert = new ThreadLocal[CompactHilbertCurve]() {
+    override def initialValue: CompactHilbertCurve = new CompactHilbertCurve(Array(precision, precision))
+  }
 
   override val dx: NormalizedDimension = NormalizedLon(precision)
   override val dy: NormalizedDimension = NormalizedLat(precision)
 
   override def index(x: Double, y: Double): Long = {
+    require(x >= dx.min && x <= dx.max && y >= dy.min && y <= dy.max,
+      s"Value(s) out of bounds ([${dx.min},${dx.max}], [${dy.min},${dy.max}]): $x, $y")
     val p = Array.fill(2)(BitVectorFactories.OPTIMAL.apply(precision))
     p(0).copyFrom(dx.normalize(x))
     p(1).copyFrom(dy.normalize(y))
     val chi = BitVectorFactories.OPTIMAL.apply(precision * 2)
-    hilbert.index(p, 0, chi)
+    hilbert.get.index(p, 0, chi)
     chi.toLong
   }
 
@@ -39,7 +44,7 @@ class UzaygezenHilbert2SFC(precision: Int) extends SpaceFillingPointCurve2D {
     // TODO cache arrays
     val p = Array.fill(2)(BitVectorFactories.OPTIMAL.apply(precision))
     val chi = BitVectorFactories.OPTIMAL.apply(precision * 2)
-    hilbert.indexInverse(chi, p)
+    hilbert.get.indexInverse(chi, p)
     (dx.denormalize(p(0).toLong.toInt), dy.denormalize(p(1).toLong.toInt))
   }
 
@@ -49,8 +54,10 @@ class UzaygezenHilbert2SFC(precision: Int) extends SpaceFillingPointCurve2D {
     // TODO this might not work with 63 bits
     val query = xy.map { case (xmin, ymin, xmax, ymax) =>
       val query = new java.util.ArrayList[LongRange](2)
-      query.add(LongRange.of(dx.normalize(xmin), dx.normalize(xmax) + 1))
-      query.add(LongRange.of(dy.normalize(ymin), dy.normalize(ymax) + 1))
+      println(s"$xmin/$xmax -> ${dx.normalize(xmin)}/${dx.normalize(xmax)}")
+      println(s"$ymin/$ymax -> ${dy.normalize(ymin)}/${dy.normalize(ymax)}")
+      query.add(LongRange.of(dx.normalize(xmin), dx.normalize(xmax))) // TODO + 1 ?
+      query.add(LongRange.of(dy.normalize(ymin), dy.normalize(ymax)))
       query
     }
 
@@ -60,7 +67,8 @@ class UzaygezenHilbert2SFC(precision: Int) extends SpaceFillingPointCurve2D {
     // TODO precision, maxRanges
 
     val filter = Functions.constant("").asInstanceOf[com.google.common.base.Function[LongRange, AnyRef]]
-    val regionInspector:  RegionInspector[AnyRef, LongContent] = SimpleRegionInspector.create[AnyRef, java.lang.Long, LongContent, LongRange](query, one, filter, LongRangeHome.INSTANCE, zero)
+    val regionInspector:  RegionInspector[AnyRef, LongContent] =
+      SimpleRegionInspector.create[AnyRef, java.lang.Long, LongContent, LongRange](query, one, filter, LongRangeHome.INSTANCE, zero)
 
     // PlainFilterCombiner since we're not using sub-ranges here
     val combiner: PlainFilterCombiner[AnyRef, java.lang.Long, LongContent, LongRange] = new PlainFilterCombiner(filter)
@@ -70,13 +78,14 @@ class UzaygezenHilbert2SFC(precision: Int) extends SpaceFillingPointCurve2D {
     val queryBuilder: QueryBuilder[AnyRef, LongRange] = BacktrackingQueryBuilder.create(
       regionInspector, combiner, max, true, LongRangeHome.INSTANCE, zero)
 
-    hilbert.accept(new ZoomingSpaceVisitorAdapter(hilbert, queryBuilder))
+    hilbert.get.accept(new ZoomingSpaceVisitorAdapter(hilbert.get, queryBuilder))
 
     queryBuilder.get().getFilteredIndexRanges.map { range =>
       if (range.isPotentialOverSelectivity) {
-        OverlappingRange(range.getIndexRange.getStart, range.getIndexRange.getEnd)
+        // TODO validate ranges are actually in expected range?
+        IndexRange(range.getIndexRange.getStart, range.getIndexRange.getEnd, contained = false)
       } else {
-        CoveredRange(range.getIndexRange.getStart, range.getIndexRange.getEnd)
+        IndexRange(range.getIndexRange.getStart, range.getIndexRange.getEnd, contained = true)
       }
     }
   }
