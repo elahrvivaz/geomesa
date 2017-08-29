@@ -11,52 +11,55 @@ package org.locationtech.geomesa.curve.hilbert
 import com.google.common.base.Functions
 import com.google.uzaygezen.core._
 import com.google.uzaygezen.core.ranges.{LongRange, LongRangeHome}
-import org.locationtech.geomesa.curve.NormalizedDimension.{NormalizedLat, NormalizedLon}
-import org.locationtech.geomesa.curve.{NormalizedDimension, SpaceFillingPointCurve2D}
+import org.locationtech.geomesa.curve.NormalizedDimension.{NormalizedLat, NormalizedLon, NormalizedTime}
+import org.locationtech.geomesa.curve.time.{BinnedTime, TimePeriod}
+import org.locationtech.geomesa.curve.time.TimePeriod.TimePeriod
+import org.locationtech.geomesa.curve.{NormalizedDimension, SpaceFillingPointCurve3D}
 import org.locationtech.sfcurve.IndexRange
 
-class UzaygezenHilbert2SFC(precision: Int = 31) extends SpaceFillingPointCurve2D {
+class UzaygezenHilbert3SFC(period: TimePeriod, precision: Int = 20) extends SpaceFillingPointCurve3D {
 
-  require(precision > 0 && precision < 32, "Precision (bits) per dimension must be in [1,31]")
+  // restrict to 20 bits to allow use of Longs (max 62 bits)
+  require(precision > 0 && precision < 21, "Precision (bits) per dimension must be in [1,20]")
 
   import scala.collection.JavaConversions._
 
   private val state = new ThreadLocal[(CompactHilbertCurve, Array[BitVector], BitVector)] {
     override def initialValue: (CompactHilbertCurve, Array[BitVector], BitVector) =
-      (new CompactHilbertCurve(Array(precision, precision)),
-          Array.fill(2)(BitVectorFactories.OPTIMAL.apply(precision)),
-          BitVectorFactories.OPTIMAL.apply(precision * 2))
+      (new CompactHilbertCurve(Array(precision, precision, precision)),
+          Array.fill(3)(BitVectorFactories.OPTIMAL.apply(precision)),
+          BitVectorFactories.OPTIMAL.apply(precision * 3))
   }
 
   override val dx: NormalizedDimension = NormalizedLon(precision)
   override val dy: NormalizedDimension = NormalizedLat(precision)
+  override val dz: NormalizedDimension = NormalizedTime(precision, BinnedTime.maxOffset(period).toDouble)
 
-  override def index(x: Double, y: Double): Long = {
+  override def index(x: Double, y: Double, z: Double): Long = {
     require(x >= dx.min && x <= dx.max && y >= dy.min && y <= dy.max,
       s"Value(s) out of bounds ([${dx.min},${dx.max}], [${dy.min},${dy.max}]): $x, $y")
     val (hilbert, p, chi) = state.get
     p(0).copyFrom(dx.normalize(x))
     p(1).copyFrom(dy.normalize(y))
+    p(2).copyFrom(dz.normalize(z))
     hilbert.index(p, 0, chi)
     chi.toLong
   }
 
-  override def invert(i: Long): (Double, Double) = {
+  override def invert(i: Long): (Double, Double, Double) = {
     val (hilbert, p, chi) = state.get
     hilbert.indexInverse(chi, p)
-    (dx.denormalize(p(0).toLong.toInt), dy.denormalize(p(1).toLong.toInt))
+    (dx.denormalize(p(0).toLong.toInt), dy.denormalize(p(1).toLong.toInt), dz.denormalize(p(2).toLong.toInt))
   }
 
-  override def ranges(xy: Seq[(Double, Double, Double, Double)],
+  override def ranges(xyz: Seq[(Double, Double, Double, Double, Double, Double)],
                       precision: Int,
                       maxRanges: Option[Int]): Seq[IndexRange] = {
-    // TODO this might not work with 63 bits
-    val query = xy.map { case (xmin, ymin, xmax, ymax) =>
-      val query = new java.util.ArrayList[LongRange](2)
-      println(s"$xmin/$xmax -> ${dx.normalize(xmin)}/${dx.normalize(xmax)}")
-      println(s"$ymin/$ymax -> ${dy.normalize(ymin)}/${dy.normalize(ymax)}")
+    val query = xyz.map { case (xmin, ymin, zmin, xmax, ymax, zmax) =>
+      val query = new java.util.ArrayList[LongRange](3)
       query.add(LongRange.of(dx.normalize(xmin).toLong, dx.normalize(xmax).toLong + 1L))
       query.add(LongRange.of(dy.normalize(ymin).toLong, dy.normalize(ymax).toLong + 1L))
+      query.add(LongRange.of(dz.normalize(zmin).toLong, dz.normalize(zmax).toLong + 1L))
       query
     }
 
@@ -89,4 +92,17 @@ class UzaygezenHilbert2SFC(precision: Int = 31) extends SpaceFillingPointCurve2D
   }
 }
 
-object UzaygezenHilbert2SFC extends UzaygezenHilbert2SFC
+object UzaygezenHilbert3SFC {
+
+  private val SfcDay   = new UzaygezenHilbert3SFC(TimePeriod.Day)
+  private val SfcWeek  = new UzaygezenHilbert3SFC(TimePeriod.Week)
+  private val SfcMonth = new UzaygezenHilbert3SFC(TimePeriod.Month)
+  private val SfcYear  = new UzaygezenHilbert3SFC(TimePeriod.Year)
+
+  def apply(period: TimePeriod): UzaygezenHilbert3SFC = period match {
+    case TimePeriod.Day   => SfcDay
+    case TimePeriod.Week  => SfcWeek
+    case TimePeriod.Month => SfcMonth
+    case TimePeriod.Year  => SfcYear
+  }
+}
