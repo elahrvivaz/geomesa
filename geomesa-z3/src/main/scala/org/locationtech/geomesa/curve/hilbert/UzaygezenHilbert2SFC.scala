@@ -37,7 +37,7 @@ class UzaygezenHilbert2SFC(precision: Int) extends SpaceFillingPointCurve2D {
     p(1).copyFrom(dy.normalize(y))
     val chi = BitVectorFactories.OPTIMAL.apply(precision * 2)
     hilbert.get.index(p, 0, chi)
-    chi.toLong
+    chi.toExactLong
   }
 
   override def invert(i: Long): (Double, Double) = {
@@ -45,7 +45,7 @@ class UzaygezenHilbert2SFC(precision: Int) extends SpaceFillingPointCurve2D {
     val p = Array.fill(2)(BitVectorFactories.OPTIMAL.apply(precision))
     val chi = BitVectorFactories.OPTIMAL.apply(precision * 2)
     hilbert.get.indexInverse(chi, p)
-    (dx.denormalize(p(0).toLong.toInt), dy.denormalize(p(1).toLong.toInt))
+    (dx.denormalize(p(0).toExactLong.toInt), dy.denormalize(p(1).toExactLong.toInt))
   }
 
   override def ranges(xy: Seq[(Double, Double, Double, Double)],
@@ -56,8 +56,8 @@ class UzaygezenHilbert2SFC(precision: Int) extends SpaceFillingPointCurve2D {
       val query = new java.util.ArrayList[LongRange](2)
       println(s"$xmin/$xmax -> ${dx.normalize(xmin)}/${dx.normalize(xmax)}")
       println(s"$ymin/$ymax -> ${dy.normalize(ymin)}/${dy.normalize(ymax)}")
-      query.add(LongRange.of(dx.normalize(xmin), dx.normalize(xmax))) // TODO + 1 ?
-      query.add(LongRange.of(dy.normalize(ymin), dy.normalize(ymax)))
+      query.add(LongRange.of(dx.normalize(xmin).toLong, dx.normalize(xmax).toLong + 1L))
+      query.add(LongRange.of(dy.normalize(ymin).toLong, dy.normalize(ymax).toLong + 1L))
       query
     }
 
