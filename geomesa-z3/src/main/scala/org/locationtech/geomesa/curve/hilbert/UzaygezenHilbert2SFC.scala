@@ -83,8 +83,8 @@ class UzaygezenHilbert2SFC(precision: Int = 31) extends SpaceFillingPointCurve2D
 
     queryBuilder.get().getFilteredIndexRanges.map { range =>
       // TODO validate ranges are actually in expected range?
-      // TODO contained correct or flipped?
-      IndexRange(range.getIndexRange.getStart, range.getIndexRange.getEnd, !range.isPotentialOverSelectivity)
+      // TODO range is inclusive on both ends, is that expected in IndexRange?
+      IndexRange(range.getIndexRange.getStart, range.getIndexRange.getEnd - 1, !range.isPotentialOverSelectivity)
     }
   }
 }

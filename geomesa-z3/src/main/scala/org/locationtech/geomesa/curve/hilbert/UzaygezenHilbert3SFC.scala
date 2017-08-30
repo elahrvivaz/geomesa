@@ -86,8 +86,8 @@ class UzaygezenHilbert3SFC(period: TimePeriod, precision: Int = 20) extends Spac
 
     queryBuilder.get().getFilteredIndexRanges.map { range =>
       // TODO validate ranges are actually in expected range?
-      // TODO contained correct or flipped?
-      IndexRange(range.getIndexRange.getStart, range.getIndexRange.getEnd, !range.isPotentialOverSelectivity)
+      // TODO range is inclusive on both ends, is that expected in IndexRange?
+      IndexRange(range.getIndexRange.getStart, range.getIndexRange.getEnd - 1, !range.isPotentialOverSelectivity)
     }
   }
 }
