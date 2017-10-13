@@ -79,7 +79,7 @@ class LambdaQueryRunner(persistence: DataStore, transients: LoadingCache[String,
         val dictionaries = ArrowBatchScan.createDictionaries(stats, sft, filter, dictionaryFields,
           providedDictionaries, query.getHints.isArrowCachedDictionaries)
         // set the merged dictionaries in the query where they'll be picked up by our delegates
-        query.getHints.setArrowDictionaryEncodedValues(dictionaries.map { case (k, v) => (k, v.values) })
+        query.getHints.setArrowDictionaryEncodedValues(dictionaries.map { case (k, v) => (k, v.iterator.toSeq) })
         query.getHints.put(QueryHints.Internal.SKIP_REDUCE, java.lang.Boolean.TRUE)
         val arrowSft = query.getHints.getTransformSchema.getOrElse(sft)
         ArrowBatchScan.reduceFeatures(arrowSft, query.getHints, dictionaries)(standardQuery(sft, query, explain))

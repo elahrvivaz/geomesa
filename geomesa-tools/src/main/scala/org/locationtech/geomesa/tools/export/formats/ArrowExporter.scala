@@ -26,7 +26,7 @@ import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.collection.mutable.ArrayBuffer
 
-class ArrowExporter(hints: Hints, os: OutputStream, queryDictionaries: => Map[String, Seq[AnyRef]])
+class ArrowExporter(hints: Hints, os: OutputStream, queryDictionaries: => Map[String, Array[AnyRef]])
     extends FeatureExporter {
 
   import org.locationtech.geomesa.arrow.allocator
@@ -47,7 +47,7 @@ class ArrowExporter(hints: Hints, os: OutputStream, queryDictionaries: => Map[St
 
       if (hints.isArrowComputeDictionaries || dictionaryFields.isEmpty) {
         val dictionaries = (queryDictionaries ++ hints.getArrowDictionaryEncodedValues(sft)).map {
-          case (k, v) => k -> ArrowDictionary.create(v)
+          case (k, v) => k -> ArrowDictionary.create(ArrowDictionary.nextId, v)
         }
         WithClose(new SimpleFeatureArrowFileWriter(sft, os, dictionaries, encoding, sort)) { writer =>
           writer.start()
@@ -92,7 +92,7 @@ object ArrowExporter {
 
   import org.locationtech.geomesa.arrow.allocator
 
-  def queryDictionaries(ds: DataStore, query: Query): Map[String, Seq[AnyRef]] = {
+  def queryDictionaries(ds: DataStore, query: Query): Map[String, Array[AnyRef]] = {
     import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
     import scala.collection.JavaConversions._
@@ -111,7 +111,7 @@ object ArrowExporter {
       SelfClosingIterator(ds.getFeatureReader(dictionaryQuery, Transaction.AUTO_COMMIT)).foreach { sf =>
         map.foreach { case (k, values) => Option(sf.getAttribute(k)).foreach(values.add) }
       }
-      map.map { case (k, values) => (k, values.toSeq) }
+      map.map { case (k, values) => (k, values.toArray) }
     }
   }
 

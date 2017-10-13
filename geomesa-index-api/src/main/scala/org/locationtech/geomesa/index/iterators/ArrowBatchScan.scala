@@ -216,11 +216,12 @@ object ArrowBatchScan {
                          sft: SimpleFeatureType,
                          filter: Option[Filter],
                          attributes: Seq[String],
-                         provided: Map[String, Seq[AnyRef]],
+                         provided: Map[String, Array[AnyRef]],
                          useCached: Boolean): Map[String, ArrowDictionary] = {
+    var id = -1L
     if (attributes.isEmpty) { Map.empty } else {
       // note: sort values to return same dictionary cache
-      val providedDictionaries = provided.map { case (k, v) => k -> ArrowDictionary.create(sort(v)) }
+      val providedDictionaries = provided.map { case (k, v) => id += 1; sort(v); k -> ArrowDictionary.create(id, v) }
       val toLookup = attributes.filterNot(provided.contains)
       val queriedDictionaries = if (toLookup.isEmpty) { Map.empty } else {
         // use topk if available, otherwise run a live stats query to get the dictionary values
@@ -231,7 +232,12 @@ object ArrowBatchScan {
           Map.empty[String, TopK[AnyRef]]
         }
         if (toLookup.forall(cached.contains)) {
-          cached.map { case (name, k) => name -> ArrowDictionary.create(sort(k.topK(1000).map(_._1).toSeq)) }
+          cached.map { case (name, k) =>
+            id += 1
+            val values = k.topK(1000).map(_._1).toArray
+            sort(values)
+            name -> ArrowDictionary.create(id, values)
+          }
         } else {
           // if we have to run a query, might as well generate all values
           val query = Stat.SeqStat(toLookup.map(Stat.Enumeration))
@@ -239,21 +245,24 @@ object ArrowBatchScan {
           // enumerations should come back in the same order
           // we can't use the enumeration attribute number b/c it may reflect a transform sft
           val nameIter = toLookup.iterator
-          enumerations.map(e => nameIter.next -> ArrowDictionary.create(sort(e.values.toSeq))).toMap
+          enumerations.map { e =>
+            id += 1
+            val values = e.values.toArray[AnyRef]
+            sort(values)
+            nameIter.next -> ArrowDictionary.create(id, values)
+          }.toMap
         }
       }
       providedDictionaries ++ queriedDictionaries
     }
   }
 
-  private def sort(values: Seq[AnyRef]): Seq[AnyRef] = {
-    if (values.isEmpty || !classOf[Comparable[_]].isAssignableFrom(values.head.getClass)) {
-      values
-    } else {
+  private def sort(values: Array[AnyRef]): Unit = {
+    if (values.nonEmpty && classOf[Comparable[_]].isAssignableFrom(values.head.getClass)) {
       val ordering = new Ordering[AnyRef] {
         def compare(left: AnyRef, right: AnyRef): Int = left.asInstanceOf[Comparable[AnyRef]].compareTo(right)
       }
-      values.sorted(ordering)
+      java.util.Arrays.sort(values, ordering)
     }
   }
 
@@ -320,7 +329,9 @@ object ArrowBatchScan {
     * @return
     */
   private def encodeDictionaries(dictionaries: Map[String, ArrowDictionary]): String =
-    StringSerialization.encodeSeqMap(dictionaries.map { case (k, v) => k -> v.values })
+    StringSerialization.encodeSeqMap(dictionaries.map { case (k, v) => k -> v.iterator.toSeq })
+
+  // TODO optimize these
 
   /**
     * Decodes an encoded dictionary string from an iterator config
@@ -328,6 +339,11 @@ object ArrowBatchScan {
     * @param encoded dictionary string
     * @return
     */
-  private def decodeDictionaries(sft: SimpleFeatureType, encoded: String): Map[String, ArrowDictionary] =
-    StringSerialization.decodeSeqMap(sft, encoded).map { case (k, v) => k -> ArrowDictionary.create(v) }
+  private def decodeDictionaries(sft: SimpleFeatureType, encoded: String): Map[String, ArrowDictionary] = {
+    var id = -1L
+    StringSerialization.decodeSeqMap(sft, encoded).map { case (k, v) =>
+      id += 1
+      k -> ArrowDictionary.create(id, v.toArray)
+    }
+  }
 }

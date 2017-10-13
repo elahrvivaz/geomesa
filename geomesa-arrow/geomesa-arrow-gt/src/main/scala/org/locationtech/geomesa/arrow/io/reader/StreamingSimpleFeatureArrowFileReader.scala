@@ -46,6 +46,8 @@ class StreamingSimpleFeatureArrowFileReader(is: () => InputStream)(implicit allo
 
   override def dictionaries: Map[String, ArrowDictionary] = metadata.dictionaries
 
+  override def vectors: Seq[SimpleFeatureVector] = throw new NotImplementedError()
+
   override def features(filter: Filter): Iterator[ArrowSimpleFeature] with Closeable = {
     val stream = is()
     val skip = new SkipIndicator

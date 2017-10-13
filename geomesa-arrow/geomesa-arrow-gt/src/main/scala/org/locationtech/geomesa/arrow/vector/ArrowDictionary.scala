@@ -10,7 +10,6 @@ package org.locationtech.geomesa.arrow.vector
 
 import java.util.concurrent.atomic.AtomicLong
 
-import com.google.common.collect.ImmutableBiMap
 import org.apache.arrow.vector.types.pojo.{ArrowType, DictionaryEncoding}
 import org.locationtech.geomesa.arrow.TypeBindings
 
@@ -20,22 +19,17 @@ import org.locationtech.geomesa.arrow.TypeBindings
   * @param values dictionary values. When encoded, values are replaced with their index in the seq
   * @param encoding dictionary id and int width, id must be unique per arrow file
   */
-class ArrowDictionary(val values: Seq[AnyRef], val encoding: DictionaryEncoding) {
+class ArrowDictionary(val encoding: DictionaryEncoding, values: Array[_ <: AnyRef], val length: Int) {
 
   def id: Long = encoding.getId
 
-  lazy private val (map, inverse) = {
-    val builder = ImmutableBiMap.builder[AnyRef, Integer]
-    var i = 0
-    values.foreach { value =>
-      builder.put(value, i)
-      i += 1
-    }
-    // catch-all for encoding/decoding values that aren't in the dictionary
-    // for non-string types, this will evaluate to null
-    builder.put("[other]", i)
-    val m = builder.build()
-    (m, m.inverse())
+  lazy private val map = {
+    import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichArray
+
+    val builder = scala.collection.mutable.Map.newBuilder[AnyRef, Int]
+    builder.sizeHint(values.length)
+    values.foreachIndex { case (value, i) => builder += ((value, i)) }
+    builder.result()
   }
 
   /**
@@ -44,14 +38,7 @@ class ArrowDictionary(val values: Seq[AnyRef], val encoding: DictionaryEncoding)
     * @param value value to encode
     * @return dictionary encoded int
     */
-  def index(value: AnyRef): Int = {
-    val result = map.get(value)
-    if (result == null) {
-      map.size - 1 // 'other'
-    } else {
-      result.intValue()
-    }
-  }
+  def index(value: AnyRef): Int = map.getOrElse(value, length)
 
   /**
     * Decode a dictionary int to a value
@@ -59,7 +46,29 @@ class ArrowDictionary(val values: Seq[AnyRef], val encoding: DictionaryEncoding)
     * @param i dictionary encoded int
     * @return value
     */
-  def lookup(i: Int): AnyRef = inverse.get(i)
+  def lookup(i: Int): AnyRef = {
+    if (i < length) {
+      values(i)
+    } else {
+      // catch-all for decoding values that aren't in the dictionary
+      // for non-string types, this will evaluate to null
+      "[other]"
+    }
+  }
+
+  def foreach[U](f: AnyRef => U): Unit = {
+    var i = 0
+    while (i < length) {
+      f(values(i))
+      i += 1
+    }
+  }
+
+  def iterator: Iterator[AnyRef] = new Iterator[AnyRef] {
+    private var i = 0
+    override def hasNext: Boolean = i < ArrowDictionary.this.length
+    override def next(): AnyRef = try { values(i) } finally { i += 1 }
+  }
 }
 
 object ArrowDictionary {
@@ -86,14 +95,18 @@ object ArrowDictionary {
     * @param values dictionary values
     * @return dictionary
     */
-  def create(values: Seq[AnyRef]): ArrowDictionary = new ArrowDictionary(values, createEncoding(nextId, values))
+  def create[T <: AnyRef](id: Long, values: Array[T]): ArrowDictionary =
+    new ArrowDictionary(createEncoding(id, values.length), values, values.length)
+
+  def create[T <: AnyRef](id: Long, values: Array[T], length: Int): ArrowDictionary =
+    new ArrowDictionary(createEncoding(id, length), values, length)
 
   // use the smallest int type possible to minimize bytes used
-  private def createEncoding(id: Long, values: Seq[Any]): DictionaryEncoding = {
+  private def createEncoding(id: Long, count: Int): DictionaryEncoding = {
     // we check `MaxValue - 1` to allow for the fallback 'other'
-    if (values.length < Byte.MaxValue - 1) {
+    if (count < Byte.MaxValue - 1) {
       new DictionaryEncoding(id, false, new ArrowType.Int(8, true))
-    } else if (values.length < Short.MaxValue - 1) {
+    } else if (count < Short.MaxValue - 1) {
       new DictionaryEncoding(id, false, new ArrowType.Int(16, true))
     } else {
       new DictionaryEncoding(id, false, new ArrowType.Int(32, true))

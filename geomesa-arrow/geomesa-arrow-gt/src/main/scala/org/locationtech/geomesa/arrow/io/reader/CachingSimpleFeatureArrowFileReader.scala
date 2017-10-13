@@ -34,16 +34,18 @@ class CachingSimpleFeatureArrowFileReader(is: InputStream)(implicit allocator: B
   private val readers = createReaders()
   private val sort = SimpleFeatureArrowIO.getSortFromMetadata(readers.head.metadata)
 
-  override def sft: SimpleFeatureType = readers.head.sft
+  override val sft: SimpleFeatureType = readers.head.sft
 
-  override def dictionaries: Map[String, ArrowDictionary] = readers.head.dictionaries
+  override val dictionaries: Map[String, ArrowDictionary] = readers.head.dictionaries
+
+  override val vectors: Seq[SimpleFeatureVector] = readers.flatMap(_.vectors)
 
   override def features(filter: Filter): Iterator[ArrowSimpleFeature] with Closeable = {
     val skip = new SkipIndicator
     val nextBatch = SimpleFeatureArrowFileReader.features(sft, filter, skip, sort, dictionaries)
     new Iterator[ArrowSimpleFeature] with Closeable {
       // short-circuit if skip is toggled
-      val iter = readers.iterator.takeWhile(_ => !skip.skip).flatMap(_.features(nextBatch, skip))
+      private val iter = readers.iterator.takeWhile(_ => !skip.skip).flatMap(_.features(nextBatch, skip))
       override def hasNext: Boolean = iter.hasNext
       override def next(): ArrowSimpleFeature = iter.next
       override def close(): Unit = {}
@@ -81,7 +83,7 @@ private class CachingSingleFileReader(is: ReadableByteChannel)(implicit allocato
 
   private val opened = ArrayBuffer.empty[SimpleFeatureVector]
 
-  private val vectors: Stream[SimpleFeatureVector] = {
+  val vectors: Stream[SimpleFeatureVector] = {
     val hasMore = reader.loadNextBatch() // load dictionaries and the first batch
     val root = reader.getVectorSchemaRoot
     require(root.getFieldVectors.size() == 1 && root.getFieldVectors.get(0).isInstanceOf[NullableMapVector], "Invalid file")

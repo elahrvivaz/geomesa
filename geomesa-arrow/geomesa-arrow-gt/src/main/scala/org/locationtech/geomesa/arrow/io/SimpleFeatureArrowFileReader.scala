@@ -26,8 +26,6 @@ import org.locationtech.geomesa.utils.geotools.SimpleFeatureSpecParser
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
-import scala.collection.mutable.ArrayBuffer
-
 /**
   * For reading simple features from an arrow file written by SimpleFeatureArrowFileWriter.
   *
@@ -53,6 +51,8 @@ trait SimpleFeatureArrowFileReader extends Closeable {
     * @return current dictionaries, keyed by attribute
     */
   def dictionaries: Map[String, ArrowDictionary]
+
+  def vectors: Seq[SimpleFeatureVector]
 
   /**
     * Reads features from the underlying arrow file
@@ -98,7 +98,7 @@ object SimpleFeatureArrowFileReader {
   private [io] def loadDictionaries(fields: Seq[Field], provider: DictionaryProvider): Map[String, ArrowDictionary] = {
     import scala.collection.JavaConversions._
 
-    val tuples = fields.flatMap { field =>
+    fields.flatMap { field =>
       Option(field.getDictionary).toSeq.map { dictionaryEncoding =>
         val vector = provider.lookup(dictionaryEncoding.getId).getVector
         val spec = SimpleFeatureSpecParser.parseAttribute(field.getMetadata.get(SimpleFeatureVector.DescriptorKey))
@@ -112,16 +112,15 @@ object SimpleFeatureArrowFileReader {
         val encoding = SimpleFeatureEncoding(fids = false, geomPrecision, datePrecision)
         val attributeReader = ArrowAttributeReader(bindings.+:(objectType), spec.clazz, vector, None, encoding)
 
-        val values = ArrayBuffer.empty[AnyRef]
+        val values = Array.ofDim[AnyRef](vector.getAccessor.getValueCount)
         var i = 0
         while (i < vector.getAccessor.getValueCount) {
-          values.append(attributeReader.apply(i))
+          values(i) = attributeReader.apply(i)
           i += 1
         }
-        field.getName -> new ArrowDictionary(values, dictionaryEncoding)
+        field.getName -> new ArrowDictionary(dictionaryEncoding, values, values.length)
       }
-    }
-    tuples.toMap
+    }.toMap
   }
 
   /**

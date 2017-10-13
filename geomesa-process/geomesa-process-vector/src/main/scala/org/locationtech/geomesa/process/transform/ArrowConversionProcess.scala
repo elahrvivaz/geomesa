@@ -57,7 +57,9 @@ class ArrowConversionProcess extends GeoMesaProcess with LazyLogging {
               @DescribeParameter(name = "sortReverse", description = "Reverse the default sort order", min = 0)
               sortReverse: java.lang.Boolean,
               @DescribeParameter(name = "batchSize", description = "Number of features to include in each record batch", min = 0)
-              batchSize: java.lang.Integer
+              batchSize: java.lang.Integer,
+              @DescribeParameter(name = "singlePass", description = "Build dictionaries and results in a single scan (experimental)", min = 0)
+              singlePass: java.lang.Boolean
              ): java.util.Iterator[Array[Byte]] = {
 
     import scala.collection.JavaConversions._
@@ -77,8 +79,9 @@ class ArrowConversionProcess extends GeoMesaProcess with LazyLogging {
     val encoding = SimpleFeatureEncoding.min(Option(includeFids).forall(_.booleanValue))
     val reverse = Option(sortReverse).map(_.booleanValue())
     val batch = Option(batchSize).map(_.intValue).getOrElse(100000)
+    val single = Option(singlePass).exists(_.booleanValue())
 
-    val visitor = new ArrowVisitor(sft, encoding, toEncode, cacheDictionaries, Option(sortField), reverse, batch)
+    val visitor = new ArrowVisitor(sft, encoding, toEncode, cacheDictionaries, Option(sortField), reverse, batch, single)
     features.accepts(visitor, null)
     visitor.getResult.results
   }
@@ -92,7 +95,8 @@ object ArrowConversionProcess {
                      cacheDictionaries: Option[Boolean],
                      sortField: Option[String],
                      sortReverse: Option[Boolean],
-                     batchSize: Int)
+                     batchSize: Int,
+                     singlePass: Boolean)
       extends GeoMesaProcessVisitor with LazyLogging {
 
     import scala.collection.JavaConversions._
@@ -132,6 +136,7 @@ object ArrowConversionProcess {
       query.getHints.put(QueryHints.ARROW_DICTIONARY_FIELDS, dictionaryFields.mkString(","))
       query.getHints.put(QueryHints.ARROW_INCLUDE_FID, encoding.fids)
       query.getHints.put(QueryHints.ARROW_BATCH_SIZE, batchSize)
+      query.getHints.put(QueryHints.ARROW_SINGLE_PASS, singlePass)
       cacheDictionaries.foreach(query.getHints.put(QueryHints.ARROW_DICTIONARY_CACHED, _))
       sortField.foreach(query.getHints.put(QueryHints.ARROW_SORT_FIELD, _))
       sortReverse.foreach(query.getHints.put(QueryHints.ARROW_SORT_REVERSE, _))
@@ -213,7 +218,7 @@ object ArrowConversionProcess {
         features.foreach { f =>
           indicesAndValues.foreach { case (_, i, v) => v.add(f.getAttribute(i)) }
         }
-        indicesAndValues.map { case (n, _, v) => n -> ArrowDictionary.create(v.toSeq) }.toMap
+        indicesAndValues.map { case (n, i, v) => n -> ArrowDictionary.create(i, v.toArray) }.toMap
       }
 
       val ordering = sort.map { case (field, reverse) =>

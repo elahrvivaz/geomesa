@@ -10,7 +10,8 @@ package org.locationtech.geomesa.arrow.io
 
 import java.util.Date
 
-import org.apache.arrow.memory.RootAllocator
+import org.apache.arrow.memory.BufferAllocator
+import org.apache.arrow.vector.DirtyRootAllocator
 import org.apache.arrow.vector.complex.NullableMapVector
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.arrow.io.records.{RecordBatchLoader, RecordBatchUnloader}
@@ -25,7 +26,7 @@ import org.specs2.runner.JUnitRunner
 @RunWith(classOf[JUnitRunner])
 class SimpleFeatureArrowIOTest extends Specification {
 
-  implicit val allocator = new RootAllocator(Long.MaxValue)
+  implicit val allocator: BufferAllocator = new DirtyRootAllocator(Long.MaxValue, 6.toByte)
 
   val sft = SimpleFeatureTypes.createType("test", "name:String,foo:String,dtg:Date,*geom:Point:srid=4326")
 

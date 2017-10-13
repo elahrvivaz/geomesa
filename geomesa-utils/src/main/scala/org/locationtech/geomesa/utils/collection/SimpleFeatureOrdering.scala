@@ -8,7 +8,6 @@
 
 package org.locationtech.geomesa.utils.collection
 
-import org.locationtech.geomesa.utils.conversions.ScalaImplicits.TieredOrdering
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.expression.PropertyName
 import org.opengis.filter.sort.{SortBy, SortOrder}
