@@ -28,8 +28,8 @@ import org.locationtech.geomesa.index.utils.{Explainer, KryoLazyStatsUtils}
 import org.locationtech.geomesa.security.{AuthorizationsProvider, SecurityUtils, VisibilityEvaluator}
 import org.locationtech.geomesa.utils.bin.BinaryOutputEncoder
 import org.locationtech.geomesa.utils.bin.BinaryOutputEncoder.EncodingOptions
-import org.locationtech.geomesa.utils.collection.{CloseableIterator, SimpleFeatureOrdering}
-import org.locationtech.geomesa.utils.geotools.{GeometryUtils, GridSnap}
+import org.locationtech.geomesa.utils.collection.CloseableIterator
+import org.locationtech.geomesa.utils.geotools.{GeometryUtils, GridSnap, SimpleFeatureOrdering}
 import org.locationtech.geomesa.utils.stats.Stat
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
@@ -112,8 +112,12 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
       statsTransform(features, sft, hints.getTransform, hints.getStatsQuery, hints.isStatsEncode || hints.isSkipReduce)
     } else {
       hints.getTransform match {
-        case None => noTransform(sft, features, SimpleFeatureOrdering(sft, sortBy))
-        case Some((defs, tsft)) => projectionTransform(features, sft, tsft, defs, SimpleFeatureOrdering(tsft, sortBy))
+        case None =>
+          val sort = Option(sortBy).filter(_.length > 0).map(SimpleFeatureOrdering(sft, _))
+          noTransform(sft, features, sort)
+        case Some((defs, tsft)) =>
+          val sort = Option(sortBy).filter(_.length > 0).map(SimpleFeatureOrdering(tsft, _))
+          projectionTransform(features, sft, tsft, defs, sort)
       }
     }
   }
@@ -151,10 +155,14 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
 
     val (transforms, arrowSft) = hints.getTransform match {
       case None =>
-        val sorting = sort.map { case (field, reverse) => SimpleFeatureOrdering(sft, field, reverse) }
+        val sorting = sort.map { case (field, reverse) =>
+          if (reverse) { SimpleFeatureOrdering(sft, field).reverse } else { SimpleFeatureOrdering(sft, field) }
+        }
         (noTransform(sft, features, sorting), sft)
       case Some((definitions, tsft)) =>
-        val sorting = sort.map { case (field, reverse) => SimpleFeatureOrdering(tsft, field, reverse) }
+        val sorting = sort.map { case (field, reverse) =>
+          if (reverse) { SimpleFeatureOrdering(tsft, field).reverse } else { SimpleFeatureOrdering(tsft, field) }
+        }
         (projectionTransform(features, sft, tsft, definitions, sorting), tsft)
     }
 

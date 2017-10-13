@@ -11,17 +11,22 @@ package org.locationtech.geomesa.index.iterators
 import java.io.ByteArrayOutputStream
 
 import org.geotools.factory.Hints
+import org.locationtech.geomesa.accumulo.iterators.{ArrowBatchIterator, ArrowFileIterator, ArrowIterator}
 import org.locationtech.geomesa.arrow.io.{SimpleFeatureArrowFileWriter, SimpleFeatureArrowIO}
 import org.locationtech.geomesa.arrow.vector.ArrowDictionary
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
 import org.locationtech.geomesa.arrow.{ArrowEncodedSft, ArrowProperties}
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.index.api.GeoMesaFeatureIndex
+import org.locationtech.geomesa.index.conf.QueryHints
+import org.locationtech.geomesa.index.iterators.ArrowBatchScan.sort
 import org.locationtech.geomesa.index.iterators.ArrowScan.ArrowAggregate
+import org.locationtech.geomesa.index.stats.GeoMesaStats
 import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, SimpleFeatureOrdering}
 import org.locationtech.geomesa.utils.io.WithClose
+import org.locationtech.geomesa.utils.stats.{EnumerationStat, Stat, TopK}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
@@ -74,15 +79,16 @@ object ArrowScan {
 
   private val aggregateCache = new SoftThreadLocalCache[String, ArrowAggregate]
 
-  private val ordering = new Ordering[Comparable[Any]] {
-    override def compare(x: Comparable[Any], y: Comparable[Any]): Int = {
-      if (x == null) {
-        if (y == null) { 0 } else { -1 }
-      } else if (y == null) {
-        1
-      } else {
-        x.compareTo(y)
-      }
+  private val ordering = new Ordering[AnyRef] {
+    override def compare(x: AnyRef, y: AnyRef): Int = SimpleFeatureOrdering.nullCompare(x, y)
+
+  def setup(sft: SimpleFeatureType, stats: GeoMesaStats, filter: Option[Filter], hints: Hints): ArrowScanConfig = {
+    if (Option(hints.get(QueryHints.ARROW_SINGLE_PASS)).exists(_.asInstanceOf[Boolean])) {
+      ArrowSinglePassConfig(hints.getArrowDictionaryFields)
+    } else {
+      val dictionaries = createDictionaries(stats, sft, filter, hints.getArrowDictionaryFields,
+        hints.getArrowDictionaryEncodedValues(sft), hints.isArrowCachedDictionaries)
+      ArrowDoublePassConfig(dictionaries)
     }
   }
 
@@ -155,6 +161,66 @@ object ArrowScan {
           SimpleFeatureArrowIO.mergeFiles(sft, files, dictionaryFields, encoding, sort, batchSize).map(toFeature)
         }
       }
+    }
+  }
+
+
+  /**
+    * Determine dictionary values, as required. Priority:
+    *   1. values provided by the user
+    *   2. cached topk stats
+    *   3. enumeration stats query against result set
+    *
+    * @param stats stats
+    * @param sft simple feature type
+    * @param filter full filter for the query being run, used if querying enumeration values
+    * @param attributes names of attributes to dictionary encode
+    * @param provided provided dictionary values, if any, keyed by attribute name
+    * @param useCached use cached stats for dictionary values, or do a query to determine exact values
+    * @return
+    */
+  private def createDictionaries(stats: GeoMesaStats,
+                                 sft: SimpleFeatureType,
+                                 filter: Option[Filter],
+                                 attributes: Seq[String],
+                                 provided: Map[String, Array[AnyRef]],
+                                 useCached: Boolean): Map[String, ArrowDictionary] = {
+    var id = -1L
+    if (attributes.isEmpty) { Map.empty } else {
+      // note: sort values to return same dictionary cache
+      val providedDictionaries = provided.map { case (k, v) => id += 1; sort(v); k -> ArrowDictionary.create(id, v) }
+      val toLookup = attributes.filterNot(provided.contains)
+      val queriedDictionaries = if (toLookup.isEmpty) { Map.empty } else {
+        // use topk if available, otherwise run a live stats query to get the dictionary values
+        val cached = if (useCached) {
+          def name(i: Int): String = sft.getDescriptor(i).getLocalName
+          stats.getStats[TopK[AnyRef]](sft, toLookup).map(k => name(k.attribute) -> k).toMap
+        } else {
+          Map.empty[String, TopK[AnyRef]]
+        }
+        if (toLookup.forall(cached.contains)) {
+          cached.map { case (name, k) =>
+            id += 1
+            val values = k.topK(1000).map(_._1).toArray
+            sort(values)
+            name -> ArrowDictionary.create(id, values)
+          }
+        } else {
+          // if we have to run a query, might as well generate all values
+          val query = Stat.SeqStat(toLookup.map(Stat.Enumeration))
+          val enumerations = stats.runStats[EnumerationStat[String]](sft, query, filter.getOrElse(Filter.INCLUDE))
+          // enumerations should come back in the same order
+          // we can't use the enumeration attribute number b/c it may reflect a transform sft
+          val nameIter = toLookup.iterator
+          enumerations.map { e =>
+            id += 1
+            val values = e.values.toArray[AnyRef]
+            sort(values)
+            nameIter.next -> ArrowDictionary.create(id, values)
+          }.toMap
+        }
+      }
+      providedDictionaries ++ queriedDictionaries
     }
   }
 
@@ -245,4 +311,9 @@ object ArrowScan {
       os.toByteArray
     }
   }
+
+  sealed trait ArrowScanConfig
+
+  case class ArrowSinglePassConfig(dictionaries: Seq[String]) extends ArrowScanConfig
+  case class ArrowDoublePassConfig(dictionaries: Map[String, ArrowDictionary]) extends ArrowScanConfig
 }
