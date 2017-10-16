@@ -24,6 +24,7 @@ import org.locationtech.geomesa.index.iterators.ArrowScan.ArrowAggregate
 import org.locationtech.geomesa.index.stats.GeoMesaStats
 import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
 import org.locationtech.geomesa.utils.collection.CloseableIterator
+import org.locationtech.geomesa.utils.conf.GeoMesaSystemProperties.SystemProperty
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, SimpleFeatureOrdering}
 import org.locationtech.geomesa.utils.io.WithClose
 import org.locationtech.geomesa.utils.stats.{EnumerationStat, Stat, TopK}
@@ -77,32 +78,67 @@ object ArrowScan {
     val SortReverseKey = "sort-rev"
   }
 
+  val TopKDictionary = SystemProperty("geomesa.arrow.dictionary.top", "1000")
+
   private val aggregateCache = new SoftThreadLocalCache[String, ArrowAggregate]
 
   private val ordering = new Ordering[AnyRef] {
-    override def compare(x: AnyRef, y: AnyRef): Int = SimpleFeatureOrdering.nullCompare(x, y)
-
-  def setup(sft: SimpleFeatureType, stats: GeoMesaStats, filter: Option[Filter], hints: Hints): ArrowScanConfig = {
-    if (Option(hints.get(QueryHints.ARROW_SINGLE_PASS)).exists(_.asInstanceOf[Boolean])) {
-      ArrowSinglePassConfig(hints.getArrowDictionaryFields)
-    } else {
-      val dictionaries = createDictionaries(stats, sft, filter, hints.getArrowDictionaryFields,
-        hints.getArrowDictionaryEncodedValues(sft), hints.isArrowCachedDictionaries)
-      ArrowDoublePassConfig(dictionaries)
-    }
+    override def compare(x: AnyRef, y: AnyRef): Int =
+      SimpleFeatureOrdering.nullCompare(x.asInstanceOf[Comparable[Any]], y)
   }
 
   /**
     * Configure the iterator
     */
-  def configure(sft: SimpleFeatureType,
+  def configure(stats: GeoMesaStats,
+                sft: SimpleFeatureType,
                 index: GeoMesaFeatureIndex[_, _, _],
                 filter: Option[Filter],
-                dictionaries: Seq[String],
-                hints: Hints): Map[String, String] = {
+                hints: Hints): ArrowScanConfig = {
     import AggregatingScan.{OptionToConfig, StringToConfig}
     import Configuration._
 
+    val dictionaryFields = hints.getArrowDictionaryFields
+    val providedDictionaries = hints.getArrowDictionaryEncodedValues(sft)
+    val cachedDictionaries = if (hints.isArrowCachedDictionaries) {
+      def name(i: Int): String = sft.getDescriptor(i).getLocalName
+      val toLookup = dictionaryFields.filterNot(providedDictionaries.contains)
+      stats.getStats[TopK[AnyRef]](sft, toLookup).map(k => name(k.attribute) -> k).toMap
+    } else {
+      Map.empty[String, TopK[AnyRef]]
+    }
+
+    if (hints.isArrowDoublePass || dictionaryFields.forall(f => providedDictionaries.contains(f) || cachedDictionaries.contains(f))) {
+      // we have all the dictionary values, or we will run a query to determine them up front
+      val dictionaries = createDictionaries(stats, sft, filter, dictionaryFields, providedDictionaries, cachedDictionaries)
+
+    } else if (hints.isArrowMultiFile) {
+
+
+    } else {
+
+    }
+
+    if (Option(hints.get(QueryHints.ARROW_SINGLE_PASS)).exists(_.asInstanceOf[Boolean])) {
+      val dictionaries = hints.getArrowDictionaryFields
+      val iter = ArrowIterator.configure(sft, this, ecql, dictionaries, hints, dedupe)
+      val reduce = Some(ArrowScan.reduceFeatures(hints.getTransformSchema.getOrElse(sft), dictionaries, hints))
+      ScanConfig(ranges, FullColumnFamily, Seq(iter), ArrowIterator.kvsToFeatures(), reduce, duplicates = false)
+    } else {
+      val dictionaryFields = hints.getArrowDictionaryFields
+      val providedDictionaries = hints.getArrowDictionaryEncodedValues(sft)
+      if (hints.getArrowSort.isDefined || hints.isArrowComputeDictionaries ||
+          dictionaryFields.forall(providedDictionaries.contains)) {
+        val dictionaries = ArrowBatchScan.createDictionaries(ds.stats, sft, filter.filter, dictionaryFields,
+          providedDictionaries, hints.isArrowCachedDictionaries)
+        val iter = ArrowBatchIterator.configure(sft, this, ecql, dictionaries, hints, dedupe)
+        val reduce = Some(ArrowBatchScan.reduceFeatures(hints.getTransformSchema.getOrElse(sft), hints, dictionaries))
+        ScanConfig(ranges, FullColumnFamily, Seq(iter), ArrowBatchIterator.kvsToFeatures(), reduce, duplicates = false)
+      } else {
+        val iter = ArrowFileIterator.configure(sft, this, ecql, dictionaryFields, hints, dedupe)
+        ScanConfig(ranges, FullColumnFamily, Seq(iter), ArrowFileIterator.kvsToFeatures(), None, duplicates = false)
+      }
+    }
     val base = AggregatingScan.configure(sft, index, filter, hints.getTransform, hints.getSampling)
     base ++ AggregatingScan.optionalMap(
       BatchSizeKey   -> getBatchSize(hints).toString,
@@ -122,7 +158,7 @@ object ArrowScan {
     * @param hints query hints
     * @return
     */
-  def reduceFeatures(sft: SimpleFeatureType, dictionaryFields: Seq[String], hints: Hints):
+  def reduceSinglePass(sft: SimpleFeatureType, dictionaryFields: Seq[String], hints: Hints):
       CloseableIterator[SimpleFeature] => CloseableIterator[SimpleFeature] = {
 
     val encoding = SimpleFeatureEncoding.min(hints.isArrowIncludeFid)
@@ -176,7 +212,6 @@ object ArrowScan {
     * @param filter full filter for the query being run, used if querying enumeration values
     * @param attributes names of attributes to dictionary encode
     * @param provided provided dictionary values, if any, keyed by attribute name
-    * @param useCached use cached stats for dictionary values, or do a query to determine exact values
     * @return
     */
   private def createDictionaries(stats: GeoMesaStats,
@@ -184,7 +219,8 @@ object ArrowScan {
                                  filter: Option[Filter],
                                  attributes: Seq[String],
                                  provided: Map[String, Array[AnyRef]],
-                                 useCached: Boolean): Map[String, ArrowDictionary] = {
+                                 cached: Map[String, TopK[AnyRef]]): Map[String, ArrowDictionary] = {
+    val cached = cachedDictionaries.map { case (k, v) => (k, v.topK(TopKDictionary.get.toInt).map(_._1).toArray) }
     var id = -1L
     if (attributes.isEmpty) { Map.empty } else {
       // note: sort values to return same dictionary cache
@@ -312,8 +348,6 @@ object ArrowScan {
     }
   }
 
-  sealed trait ArrowScanConfig
-
-  case class ArrowSinglePassConfig(dictionaries: Seq[String]) extends ArrowScanConfig
-  case class ArrowDoublePassConfig(dictionaries: Map[String, ArrowDictionary]) extends ArrowScanConfig
+  case class ArrowScanConfig(config: Map[String, String],
+                             reduce: Option[CloseableIterator[SimpleFeature] => CloseableIterator[SimpleFeature]])
 }
