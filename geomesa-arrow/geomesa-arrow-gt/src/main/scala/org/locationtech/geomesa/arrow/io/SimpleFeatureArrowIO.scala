@@ -108,9 +108,27 @@ object SimpleFeatureArrowIO {
           val accessor = child.getAccessor
           val mapping = mappings(child.getField.getName)
           to.getMutator match {
-            case m: NullableTinyIntVector#Mutator => (index: Int) => m.setSafe(index, mapping(accessor.getObject(index).asInstanceOf[Number].intValue).toByte)
-            case m: NullableSmallIntVector#Mutator => (index: Int) => m.setSafe(index, mapping(accessor.getObject(index).asInstanceOf[Number].intValue).toShort)
-            case m: NullableIntVector#Mutator => (index: Int) => m.setSafe(index, mapping(accessor.getObject(index).asInstanceOf[Number].intValue))
+            case m: NullableTinyIntVector#Mutator => (index: Int) => {
+              if (accessor.isNull(index)) {
+                m.setNull(index)
+              } else {
+                m.setSafe(index, mapping(accessor.getObject(index).asInstanceOf[Number].intValue).toByte)
+              }
+            }
+            case m: NullableSmallIntVector#Mutator => (index: Int) => {
+              if (accessor.isNull(index)) {
+                m.setNull(index)
+              } else {
+                m.setSafe(index, mapping(accessor.getObject(index).asInstanceOf[Number].intValue).toShort)
+              }
+            }
+            case m: NullableIntVector#Mutator => (index: Int) => {
+              if (accessor.isNull(index)) {
+                m.setNull(index)
+              } else {
+                m.setSafe(index, mapping(accessor.getObject(index).asInstanceOf[Number].intValue))
+              }
+            }
             case m => throw new IllegalStateException(s"Expected NullableIntVector#Mutator, got $m")
           }
         }
@@ -169,9 +187,27 @@ object SimpleFeatureArrowIO {
           val mapping = mappings(child.getField.getName)
           val accessor = child.getAccessor
           to.getMutator match {
-            case m: NullableTinyIntVector#Mutator => (fromIndex: Int, toIndex: Int) => m.setSafe(toIndex, mapping(accessor.getObject(fromIndex).asInstanceOf[Number].intValue).toByte)
-            case m: NullableSmallIntVector#Mutator => (fromIndex: Int, toIndex: Int) => m.setSafe(toIndex, mapping(accessor.getObject(fromIndex).asInstanceOf[Number].intValue).toShort)
-            case m: NullableIntVector#Mutator => (fromIndex: Int, toIndex: Int) => m.setSafe(toIndex, mapping(accessor.getObject(fromIndex).asInstanceOf[Number].intValue))
+            case m: NullableTinyIntVector#Mutator => (fromIndex: Int, toIndex: Int) => {
+              if (accessor.isNull(fromIndex)) {
+                m.setNull(toIndex)
+              } else {
+                m.setSafe(toIndex, mapping(accessor.getObject(fromIndex).asInstanceOf[Number].intValue).toByte)
+              }
+            }
+            case m: NullableSmallIntVector#Mutator => (fromIndex: Int, toIndex: Int) => {
+              if (accessor.isNull(fromIndex)) {
+                m.setNull(toIndex)
+              } else {
+                m.setSafe(toIndex, mapping(accessor.getObject(fromIndex).asInstanceOf[Number].intValue).toShort)
+              }
+            }
+            case m: NullableIntVector#Mutator => (fromIndex: Int, toIndex: Int) => {
+              if (accessor.isNull(fromIndex)) {
+                m.setNull(toIndex)
+              } else {
+                m.setSafe(toIndex, mapping(accessor.getObject(fromIndex).asInstanceOf[Number].intValue))
+              }
+            }
             case m => throw new IllegalStateException(s"Expected NullableIntVector#Mutator, got $m")
           }
         }
@@ -267,7 +303,7 @@ object SimpleFeatureArrowIO {
     val dictionaries = dictionaryFields.mapWithIndex { case (field, dictionaryId) =>
       var maxDictionaryLength = 0
       val dictionaries: Array[Iterator[AnyRef]] = toMerge.map { dicts =>
-        val dict = dicts.apply(field)
+        val dict = dicts(field)
         if (dict.length > maxDictionaryLength) {
           maxDictionaryLength = dict.length
         }
@@ -298,7 +334,7 @@ object SimpleFeatureArrowIO {
       // copy the next sorted value and then queue and sort the next element out of the batch we copied from
       while (queue.nonEmpty) {
         val (value, i, batch) = queue.dequeue()
-        if (count == 0 || values(count) != value) {
+        if (count == 0 || values(count - 1) != value) {
           if (count == values.length - 1) {
             val tmp = Array.ofDim[AnyRef](values.length * 2)
             System.arraycopy(values, 0, tmp, 0, count)

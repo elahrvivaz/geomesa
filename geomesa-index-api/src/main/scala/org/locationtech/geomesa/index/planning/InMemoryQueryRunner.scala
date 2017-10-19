@@ -22,7 +22,9 @@ import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, SimpleFeatureVect
 import org.locationtech.geomesa.arrow.{ArrowEncodedSft, ArrowProperties}
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, TransformSimpleFeature}
 import org.locationtech.geomesa.filter.factory.FastFilterFactory
-import org.locationtech.geomesa.index.iterators.{ArrowBatchScan, DensityScan}
+import org.locationtech.geomesa.index.iterators.ArrowScan.Configuration.{DictionaryKey, TypeKey}
+import org.locationtech.geomesa.index.iterators.ArrowScan._
+import org.locationtech.geomesa.index.iterators.{ArrowScan, DensityScan}
 import org.locationtech.geomesa.index.stats.GeoMesaStats
 import org.locationtech.geomesa.index.utils.{Explainer, KryoLazyStatsUtils}
 import org.locationtech.geomesa.security.{AuthorizationsProvider, SecurityUtils, VisibilityEvaluator}
@@ -30,7 +32,7 @@ import org.locationtech.geomesa.utils.bin.BinaryOutputEncoder
 import org.locationtech.geomesa.utils.bin.BinaryOutputEncoder.EncodingOptions
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, GridSnap, SimpleFeatureOrdering}
-import org.locationtech.geomesa.utils.stats.Stat
+import org.locationtech.geomesa.utils.stats.{Stat, TopK}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 import org.opengis.filter.sort.SortBy
@@ -147,10 +149,6 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
                              sft: SimpleFeatureType,
                              hints: Hints,
                              filter: Filter): Iterator[SimpleFeature] = {
-    val batchSize = hints.getArrowBatchSize.getOrElse(ArrowProperties.BatchSize.get.toInt)
-    val dictionaryFields = hints.getArrowDictionaryFields
-    val providedDictionaries = hints.getArrowDictionaryEncodedValues(sft)
-    val encoding = SimpleFeatureEncoding.min(hints.isArrowIncludeFid)
     val sort = hints.getArrowSort
 
     val (transforms, arrowSft) = hints.getTransform match {
@@ -166,18 +164,55 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
         (projectionTransform(features, sft, tsft, definitions, sorting), tsft)
     }
 
-    if (sort.isDefined || hints.isArrowComputeDictionaries ||
-        dictionaryFields.forall(providedDictionaries.contains)) {
-      val dictionaries = ArrowBatchScan.createDictionaries(stats, sft, Option(filter), dictionaryFields,
-        providedDictionaries, hints.isArrowCachedDictionaries)
-      val arrows = arrowBatchTransform(transforms, arrowSft, encoding, dictionaries, batchSize)
-      if (hints.isSkipReduce) { arrows } else {
-        // note: already completely sorted
-        ArrowBatchScan.reduceFeatures(arrowSft, hints, dictionaries, skipSort = true)(arrows)
-      }
-    } else {
-      arrowFileTransform(transforms, arrowSft, encoding, dictionaryFields, batchSize)
+    val batchSize = ArrowScan.getBatchSize(hints)
+    val dictionaryFields = hints.getArrowDictionaryFields
+    val providedDictionaries = hints.getArrowDictionaryEncodedValues(sft)
+    val cachedDictionaries: Map[String, TopK[AnyRef]] = if (!hints.isArrowCachedDictionaries) { Map.empty } else {
+      def name(i: Int): String = sft.getDescriptor(i).getLocalName
+      val toLookup = dictionaryFields.filterNot(providedDictionaries.contains)
+      stats.getStats[TopK[AnyRef]](sft, toLookup).map(k => name(k.attribute) -> k).toMap
     }
+
+//    if (hints.isArrowDoublePass ||
+//        dictionaryFields.forall(f => providedDictionaries.contains(f) || cachedDictionaries.contains(f))) {
+//      // we have all the dictionary values, or we will run a query to determine them up front
+//      val dictionaries = createDictionaries(stats, sft, filter, dictionaryFields, providedDictionaries, cachedDictionaries)
+//      val config = baseConfig ++ Map(
+//        DictionaryKey -> encodeDictionaries(dictionaries),
+//        TypeKey       -> Configuration.Types.BatchType
+//      )
+//      val reduce = mergeBatches(arrowSft, dictionaries, encoding, batchSize, sort)
+//      ArrowScanConfig(config, reduce)
+//    } else if (hints.isArrowMultiFile) {
+//      val config = baseConfig ++ Map(
+//        DictionaryKey -> dictionaryFields.mkString(","),
+//        TypeKey       -> Configuration.Types.FileType
+//      )
+//      val reduce = mergeFiles(arrowSft, dictionaryFields, encoding, sort)
+//      ArrowScanConfig(config, reduce)
+//    } else {
+//      val config = baseConfig ++ Map(
+//        DictionaryKey -> dictionaryFields.mkString(","),
+//        TypeKey       -> Configuration.Types.SinglePassType
+//      )
+//      val reduce = mergeBatchesAndDictionaries(arrowSft, dictionaryFields, encoding, batchSize, sort)
+//      ArrowScanConfig(config, reduce)
+//    }
+//
+//    if (sort.isDefined || hints.isArrowComputeDictionaries ||
+//        dictionaryFields.forall(providedDictionaries.contains)) {
+//      val dictionaries = ArrowBatchScan.createDictionaries(stats, sft, Option(filter), dictionaryFields,
+//        providedDictionaries, hints.isArrowCachedDictionaries)
+//      val arrows = arrowBatchTransform(transforms, arrowSft, encoding, dictionaries, batchSize)
+//      if (hints.isSkipReduce) { arrows } else {
+//        // note: already completely sorted
+//        ArrowBatchScan.reduceFeatures(arrowSft, hints, dictionaries, skipSort = true)(arrows)
+//      }
+//    } else {
+//      arrowFileTransform(transforms, arrowSft, encoding, dictionaryFields, batchSize)
+//    }
+    // TODO
+    Iterator.empty
   }
 
   private def arrowBatchTransform(features: Iterator[SimpleFeature],

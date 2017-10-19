@@ -16,8 +16,10 @@ import org.geotools.factory.Hints
 import org.locationtech.geomesa.accumulo.AccumuloFeatureIndexType
 import org.locationtech.geomesa.arrow.ArrowEncodedSft
 import org.locationtech.geomesa.features.ScalaSimpleFeature
+import org.locationtech.geomesa.index.api.QueryPlan
 import org.locationtech.geomesa.index.iterators.ArrowScan
-import org.locationtech.geomesa.index.iterators.ArrowScan.ArrowAggregate
+import org.locationtech.geomesa.index.iterators.ArrowScan.{ArrowAggregate, ArrowScanConfig}
+import org.locationtech.geomesa.index.stats.GeoMesaStats
 import org.locationtech.geomesa.utils.geotools.GeometryUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
@@ -30,15 +32,16 @@ object ArrowIterator {
 
   def configure(sft: SimpleFeatureType,
                 index: AccumuloFeatureIndexType,
+                stats: GeoMesaStats,
                 filter: Option[Filter],
-                dictionaries: Seq[String],
                 hints: Hints,
                 deduplicate: Boolean,
-                priority: Int = DefaultPriority): IteratorSetting = {
+                priority: Int = DefaultPriority): (IteratorSetting, QueryPlan.Reducer) = {
     val is = new IteratorSetting(priority, "arrow-iter", classOf[ArrowIterator])
     BaseAggregatingIterator.configure(is, deduplicate, None)
-    ArrowScan.configure(sft, index, filter, dictionaries, hints).foreach { case (k, v) => is.addOption(k, v) }
-    is
+    val ArrowScanConfig(config, reduce) = ArrowScan.configure(sft, index, stats, filter, hints)
+    config.foreach { case (k, v) => is.addOption(k, v) }
+    (is, reduce)
   }
 
   /**
