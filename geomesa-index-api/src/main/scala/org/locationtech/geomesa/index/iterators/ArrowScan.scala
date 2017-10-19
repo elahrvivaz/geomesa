@@ -18,8 +18,10 @@ import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, SimpleFeatureVect
 import org.locationtech.geomesa.arrow.{ArrowEncodedSft, ArrowProperties}
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.index.api.GeoMesaFeatureIndex
+import org.locationtech.geomesa.index.iterators.ArrowBatchScan.Configuration._
 import org.locationtech.geomesa.index.iterators.ArrowBatchScan.fileMetadata
-import org.locationtech.geomesa.index.iterators.ArrowScan.ArrowAggregate
+import org.locationtech.geomesa.index.iterators.ArrowScan.{ArrowAggregate, toFeature}
+import org.locationtech.geomesa.index.iterators.ArrowScan.Configuration.BatchSizeKey
 import org.locationtech.geomesa.index.stats.GeoMesaStats
 import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
 import org.locationtech.geomesa.utils.collection.CloseableIterator
@@ -27,6 +29,7 @@ import org.locationtech.geomesa.utils.conf.GeoMesaSystemProperties.SystemPropert
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, SimpleFeatureOrdering}
 import org.locationtech.geomesa.utils.io.WithClose
 import org.locationtech.geomesa.utils.stats.{EnumerationStat, Stat, TopK}
+import org.locationtech.geomesa.utils.text.StringSerialization
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
@@ -70,14 +73,16 @@ object ArrowScan {
   import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
   object Configuration {
-    val BatchSizeKey   = "batch"
-    val DictionaryKey  = "dict"
-    val IncludeFidsKey = "fids"
-    val SortKey        = "sort"
-    val SortReverseKey = "sort-rev"
+    val IncludeFidsKey      = "fids"
+    val DictionaryFieldsKey = "dict-f"
+    val DictionariesKey     = "dict"
+    val MultiFileKey        = "multi"
+    val SortKey             = "sort"
+    val SortReverseKey      = "sort-rev"
+    val BatchSizeKey        = "batch"
   }
 
-  val TopKDictionary = SystemProperty("geomesa.arrow.dictionary.top", "1000")
+  val DictionaryTopK = SystemProperty("geomesa.arrow.dictionary.top", "1000")
 
   private val aggregateCache = new SoftThreadLocalCache[String, ArrowAggregate]
 
@@ -93,122 +98,130 @@ object ArrowScan {
                 sft: SimpleFeatureType,
                 index: GeoMesaFeatureIndex[_, _, _],
                 filter: Option[Filter],
-                hints: Hints): ArrowScanConfig = {
+                hints: Hints,
+                skipSort: Boolean = false): ArrowScanConfig = {
     import AggregatingScan.{OptionToConfig, StringToConfig}
     import Configuration._
 
-    val config = {
+    val arrowSft = hints.getTransformSchema.getOrElse(sft)
+    val includeFids = hints.isArrowIncludeFid
+    val sort = hints.getArrowSort
+    val batchSize = getBatchSize(hints)
+    val encoding = SimpleFeatureEncoding.min(includeFids)
+
+    val baseConfig = {
       val base = AggregatingScan.configure(sft, index, filter, hints.getTransform, hints.getSampling)
       base ++ AggregatingScan.optionalMap(
-        BatchSizeKey   -> getBatchSize(hints).toString,
-        IncludeFidsKey -> hints.isArrowIncludeFid.toString,
-        SortKey        -> hints.getArrowSort.map(_._1),
-        SortReverseKey -> hints.getArrowSort.map(_._2.toString)
+        IncludeFidsKey -> includeFids.toString,
+        SortKey        -> sort.map(_._1),
+        SortReverseKey -> sort.map(_._2.toString),
+        BatchSizeKey   -> batchSize.toString
       )
     }
-//      DictionaryKey  -> dictionaries.mkString(","),
-
 
     val dictionaryFields = hints.getArrowDictionaryFields
     val providedDictionaries = hints.getArrowDictionaryEncodedValues(sft)
-    val cachedDictionaries = if (hints.isArrowCachedDictionaries) {
+    val cachedDictionaries: Map[String, TopK[AnyRef]] = if (!hints.isArrowCachedDictionaries) { Map.empty } else {
       def name(i: Int): String = sft.getDescriptor(i).getLocalName
       val toLookup = dictionaryFields.filterNot(providedDictionaries.contains)
       stats.getStats[TopK[AnyRef]](sft, toLookup).map(k => name(k.attribute) -> k).toMap
-    } else {
-      Map.empty[String, TopK[AnyRef]]
     }
-    val sort = hints.getArrowSort
 
-    if (hints.isArrowDoublePass || dictionaryFields.forall(f => providedDictionaries.contains(f) || cachedDictionaries.contains(f))) {
+    if (hints.isArrowDoublePass ||
+          dictionaryFields.forall(f => providedDictionaries.contains(f) || cachedDictionaries.contains(f))) {
       // we have all the dictionary values, or we will run a query to determine them up front
       val dictionaries = createDictionaries(stats, sft, filter, dictionaryFields, providedDictionaries, cachedDictionaries)
-      val iter = ArrowBatchIterator.configure(sft, this, ecql, dictionaries, hints, dedupe)
-      val reduce = Some(ArrowBatchScan.reduceFeatures(hints.getTransformSchema.getOrElse(sft), hints, dictionaries))
-      ScanConfig(ranges, FullColumnFamily, Seq(iter), ArrowBatchIterator.kvsToFeatures(), reduce, duplicates = false)
+      val config = baseConfig + (DictionaryKey -> encodeDictionaries(dictionaries))
+      val reduce = mergeBatches(arrowSft, dictionaries, encoding, batchSize, sort)
+      ArrowScanConfig(config, Some(reduce))
     } else if (hints.isArrowMultiFile) {
-      val iter = ArrowFileIterator.configure(sft, this, ecql, dictionaryFields, hints, dedupe)
-      ScanConfig(ranges, FullColumnFamily, Seq(iter), ArrowFileIterator.kvsToFeatures(), None, duplicates = false)
+      val config = baseConfig ++ Map(
+        DictionaryFieldsKey -> dictionaryFields.mkString(","),
+        MultiFileKey        -> "true"
+      )
+      val reduce = mergeFiles(arrowSft, dictionaryFields, encoding, sort)
+      ArrowScanConfig(config, Some(reduce))
     } else {
-      val dictionaries = hints.getArrowDictionaryFields
-      val iter = ArrowIterator.configure(sft, this, ecql, dictionaries, hints, dedupe)
-      val reduce = Some(ArrowScan.reduceFeatures(hints.getTransformSchema.getOrElse(sft), dictionaries, hints))
-      ScanConfig(ranges, FullColumnFamily, Seq(iter), ArrowIterator.kvsToFeatures(), reduce, duplicates = false)
+      val config = baseConfig + (DictionaryFieldsKey -> dictionaryFields.mkString(","))
+      val reduce = mergeBatchesAndDictionaries(arrowSft, dictionaryFields, encoding, batchSize, sort)
+      ArrowScanConfig(config, Some(reduce))
     }
-
-    base
   }
 
-  def mergeBatches: (CloseableIterator[SimpleFeature]) => CloseableIterator[SimpleFeature] = {
-    val encoding = SimpleFeatureEncoding.min(hints.isArrowIncludeFid)
-    val sortField = hints.getArrowSort
-    val header = new ScalaSimpleFeature(ArrowEncodedSft, "",
-      Array(fileMetadata(sft, dictionaries, encoding, sortField), GeometryUtils.zeroPoint))
-    // per arrow streaming format footer is the encoded int '0'
-    val footer = new ScalaSimpleFeature(ArrowEncodedSft, "", Array(Array[Byte](0, 0, 0, 0), GeometryUtils.zeroPoint))
-    val sort: CloseableIterator[SimpleFeature] => CloseableIterator[SimpleFeature] =
-      if (skipSort || sortField.isEmpty) { (iter) => iter } else {
-        val (attribute, reverse) = sortField.get
-        val batchSize = hints.getArrowBatchSize.getOrElse(ArrowProperties.BatchSize.get.toInt)
-        (iter) => {
-          import SimpleFeatureArrowIO.sortBatches
-          val sf = new ScalaSimpleFeature(ArrowEncodedSft, "", Array(null, GeometryUtils.zeroPoint))
-          val bytes = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
-          val sorted = sortBatches(sft, dictionaries, encoding, attribute, reverse, batchSize, bytes)
-          sorted.map { bytes => sf.setAttribute(0, bytes); sf }
-        }
-
+  def mergeFiles(sft: SimpleFeatureType,
+                 dictionaryFields: Seq[String],
+                 encoding: SimpleFeatureEncoding,
+                 sort: Option[(String, Boolean)]):
+      CloseableIterator[SimpleFeature] => CloseableIterator[SimpleFeature] = {
+    // we don't need to manipulate anything, just return the file batches from the distributed scan
+    (iter) => {
+      // ensure that we return something
+      if (iter.hasNext) { iter } else {
+        val bytes = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
+        createFile(sft, createEmptyDictionaries(dictionaryFields), encoding, sort)(bytes)
       }
-    (iter) => CloseableIterator(Iterator(header)) ++ sort(iter) ++ CloseableIterator(Iterator(footer))
+    }
   }
 
   /**
     * First feature contains metadata for arrow file and dictionary batch, subsequent features
     * contain record batches, final feature contains EOF indicator
     *
-    * @param sft simple feature types
-    * @param dictionaryFields dictionaries
-    * @param hints query hints
+    * @param sft simple feature type
+    * @param dictionaries dictionaries
+    * @param encoding encoding
+    * @param batchSize batch size
+    * @param sort sort
     * @return
     */
-  def mergeBatchesAndDictionaries(sft: SimpleFeatureType, dictionaryFields: Seq[String], hints: Hints):
+  def mergeBatches(sft: SimpleFeatureType,
+                   dictionaries: Map[String, ArrowDictionary],
+                   encoding: SimpleFeatureEncoding,
+                   batchSize: Int,
+                   sort: Option[(String, Boolean)]):
+      CloseableIterator[SimpleFeature] => CloseableIterator[SimpleFeature] = {
+    def sorted(iter: CloseableIterator[SimpleFeature]): CloseableIterator[Array[Byte]] = {
+      val bytes = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
+      if (sort.isEmpty) { bytes } else {
+        val (attribute, reverse) = sort.get
+        SimpleFeatureArrowIO.sortBatches(sft, dictionaries, encoding, attribute, reverse, batchSize, bytes)
+      }
+    }
+    (iter) => createFile(sft, dictionaries, encoding, sort)(sorted(iter))
+  }
+
+  /**
+    * First feature contains metadata for arrow file and dictionary batch, subsequent features
+    * contain record batches, final feature contains EOF indicator
+    *
+    * @param sft simple feature type
+    * @param dictionaryFields dictionaries
+    * @param encoding encoding
+    * @param batchSize batch size
+    * @param sort sort
+    * @return
+    */
+  def mergeBatchesAndDictionaries(sft: SimpleFeatureType,
+                                  dictionaryFields: Seq[String],
+                                  encoding: SimpleFeatureEncoding,
+                                  batchSize: Int,
+                                  sort: Option[(String, Boolean)]):
       CloseableIterator[SimpleFeature] => CloseableIterator[SimpleFeature] = {
 
-    val encoding = SimpleFeatureEncoding.min(hints.isArrowIncludeFid)
-    val sort = hints.getArrowSort
-
-    def emptyFile(): SimpleFeature = {
-      import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableLike
-      // construct an empty arrow file to return
-      val out = new ByteArrayOutputStream
-      val dictionaries = dictionaryFields.mapWithIndex { case (name, i) =>
-        name -> ArrowDictionary.create(i, Array.empty)
-      }.toMap
-      WithClose(new SimpleFeatureArrowFileWriter(sft, out, dictionaries, encoding, sort))(_.start())
-      toFeature(out.toByteArray)
-    }
-
-    if (hints.isArrowBatchFiles) {
-      // we don't need to manipulate anything, just return the file batches from the distributed scan
-      (iter) => {
+    // merge the files coming back into a single file with batches
+    (iter) => {
+      // note: get bytes before expanding to array as the simple feature may be re-used
+      val files = try { iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]]).toArray } finally { iter.close() }
+      if (files.isEmpty) {
         // ensure that we return something
-        if (iter.hasNext) { iter } else { CloseableIterator(Iterator.single(emptyFile()), iter.close()) }
-      }
-    } else {
-      // merge the files coming back into a single file with batches
-      (iter) => {
-        // note: get bytes before expanding to array as the simple feature may be re-used
-        val files = try { iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]]).toArray } finally { iter.close() }
-        if (files.isEmpty) {
-          // ensure that we return something
-          CloseableIterator(Iterator.single(emptyFile()), iter.close())
-        } else if (files.length == 1) {
-          // if only a single batch, we can just return it
-          CloseableIterator(files.iterator.map(toFeature))
-        } else {
-          val batchSize = getBatchSize(hints)
-          SimpleFeatureArrowIO.mergeFiles(sft, files, dictionaryFields, encoding, sort, batchSize).map(toFeature)
-        }
+        createFile(sft, createEmptyDictionaries(dictionaryFields), encoding, sort)(CloseableIterator.empty)
+      } else if (files.length == 1) {
+        // if only a single batch, we can just return it
+        CloseableIterator(files.iterator.map(toFeature))
+      } else {
+        val sf = toFeature(null)
+        val result = SimpleFeatureArrowIO.mergeFiles(sft, files, dictionaryFields, encoding, sort, batchSize)
+        result.map { bytes => sf.setAttribute(0, bytes); sf }
       }
     }
   }
@@ -233,7 +246,7 @@ object ArrowScan {
                                  attributes: Seq[String],
                                  provided: Map[String, Array[AnyRef]],
                                  cached: Map[String, TopK[AnyRef]]): Map[String, ArrowDictionary] = {
-    val cached = cachedDictionaries.map { case (k, v) => (k, v.topK(TopKDictionary.get.toInt).map(_._1).toArray) }
+    val cached = cachedDictionaries.map { case (k, v) => (k, v.topK(DictionaryTopK.get.toInt).map(_._1).toArray) }
     var id = -1L
     if (attributes.isEmpty) { Map.empty } else {
       // note: sort values to return same dictionary cache
@@ -273,11 +286,73 @@ object ArrowScan {
     }
   }
 
+  private def createEmptyDictionaries(fields: Seq[String]): Map[String, ArrowDictionary] = {
+    import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableLike
+    fields.mapWithIndex { case (name, i) => name -> ArrowDictionary.create(i, Array.empty) }.toMap
+  }
+
+  private def createFile(sft: SimpleFeatureType,
+                         dictionaries: Map[String, ArrowDictionary],
+                         encoding: SimpleFeatureEncoding,
+                         sort: Option[(String, Boolean)])
+                        (body: CloseableIterator[Array[Byte]]): CloseableIterator[SimpleFeature] = {
+    val sf = toFeature(null)
+    val header = Iterator.single(toFeature(fileMetadata(sft, dictionaries, encoding, sort)))
+    // per arrow streaming format footer is the encoded int '0'
+    val footer = Iterator.single(toFeature(Array[Byte](0, 0, 0, 0)))
+    CloseableIterator(header ++ body.map { b => sf.setAttribute(0, b); sf } ++ footer, body.close())
+  }
+
+  /**
+    * Creates the header for the arrow file, which includes the schema and any dictionaries
+    *
+    * @param sft simple feature type
+    * @param dictionaries dictionaries
+    * @param encoding encoding options
+    * @param sort data is sorted or not
+    * @return
+    */
+  private def fileMetadata(sft: SimpleFeatureType,
+                           dictionaries: Map[String, ArrowDictionary],
+                           encoding: SimpleFeatureEncoding,
+                           sort: Option[(String, Boolean)]): Array[Byte] = {
+    val out = new ByteArrayOutputStream
+    WithClose(new SimpleFeatureArrowFileWriter(sft, out, dictionaries, encoding, sort)) { writer =>
+      writer.start()
+      out.toByteArray // copy bytes before closing so we get just the header metadata
+    }
+  }
+
   private def getBatchSize(hints: Hints): Int =
     hints.getArrowBatchSize.getOrElse(ArrowProperties.BatchSize.get.toInt)
 
   private def toFeature(b: Array[Byte]): SimpleFeature =
     new ScalaSimpleFeature(ArrowEncodedSft, "", Array(b, GeometryUtils.zeroPoint))
+
+  /**
+    * Encodes the dictionaries as a string for passing to the iterator config
+    *
+    * @param dictionaries dictionaries
+    * @return
+    */
+  private def encodeDictionaries(dictionaries: Map[String, ArrowDictionary]): String =
+    StringSerialization.encodeSeqMap(dictionaries.map { case (k, v) => k -> v.iterator.toSeq })
+
+  // TODO optimize these
+
+  /**
+    * Decodes an encoded dictionary string from an iterator config
+    *
+    * @param encoded dictionary string
+    * @return
+    */
+  private def decodeDictionaries(sft: SimpleFeatureType, encoded: String): Map[String, ArrowDictionary] = {
+    var id = -1L
+    StringSerialization.decodeSeqMap(sft, encoded).map { case (k, v) =>
+      id += 1
+      k -> ArrowDictionary.create(id, v.toArray)
+    }
+  }
 
   /**
     * Trait for aggregating arrow files
