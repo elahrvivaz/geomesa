@@ -24,11 +24,13 @@ class ArrowDictionary(val encoding: DictionaryEncoding, values: Array[_ <: AnyRe
   def id: Long = encoding.getId
 
   lazy private val map = {
-    import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichArray
-
     val builder = scala.collection.mutable.Map.newBuilder[AnyRef, Int]
-    builder.sizeHint(values.length)
-    values.foreachIndex { case (value, i) => builder += ((value, i)) }
+    builder.sizeHint(length)
+    var i = 0
+    while (i < length) {
+      builder += ((values(i), i))
+      i += 1
+    }
     builder.result()
   }
 

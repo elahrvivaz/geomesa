@@ -35,9 +35,6 @@ object SimpleFeatureArrowIO {
       x._1.compareTo(y._1)
   }
 
-  // per arrow streaming format footer is the encoded int '0'
-  private val footerBytes = Array[Byte](0, 0, 0, 0)
-
   /**
     * Checks schema metadata for sort fields
     *
@@ -88,16 +85,13 @@ object SimpleFeatureArrowIO {
                          readers: Seq[SimpleFeatureArrowFileReader],
                          dictionaryMappings: Seq[Map[String, scala.collection.Map[Int, Int]]],
                          encoding: SimpleFeatureEncoding): CloseableIterator[Array[Byte]] = {
-    import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichIterator
-
     import scala.collection.JavaConversions._
-
+// TODO aggregate batches
     val result = SimpleFeatureVector.create(sft, dictionaries, encoding)
     val unloader = new RecordBatchUnloader(result)
 
-    val batches = readers.iterator.mapWithIndex { case (reader, i) =>
+    val batches = readers.iterator.zip(dictionaryMappings.iterator).map { case (reader, mappings) =>
       result.clear()
-      val mappings = dictionaryMappings(i)
       val from = reader.vectors.head.underlying // should only be a single reader vector per batch
       val transfers: Seq[(Int) => Unit] = from.getChildrenFromFields.map { child =>
         val to = result.underlying.getChild(child.getField.getName)
@@ -109,24 +103,27 @@ object SimpleFeatureArrowIO {
           val mapping = mappings(child.getField.getName)
           to.getMutator match {
             case m: NullableTinyIntVector#Mutator => (index: Int) => {
-              if (accessor.isNull(index)) {
+              val n = accessor.getObject(index)
+              if (n == null) {
                 m.setNull(index)
               } else {
-                m.setSafe(index, mapping(accessor.getObject(index).asInstanceOf[Number].intValue).toByte)
+                m.setSafe(index, mapping(n.asInstanceOf[Number].intValue).toByte)
               }
             }
             case m: NullableSmallIntVector#Mutator => (index: Int) => {
-              if (accessor.isNull(index)) {
+              val n = accessor.getObject(index)
+              if (n == null) {
                 m.setNull(index)
               } else {
-                m.setSafe(index, mapping(accessor.getObject(index).asInstanceOf[Number].intValue).toShort)
+                m.setSafe(index, mapping(n.asInstanceOf[Number].intValue).toShort)
               }
             }
             case m: NullableIntVector#Mutator => (index: Int) => {
-              if (accessor.isNull(index)) {
+              val n = accessor.getObject(index)
+              if (n == null) {
                 m.setNull(index)
               } else {
-                m.setSafe(index, mapping(accessor.getObject(index).asInstanceOf[Number].intValue))
+                m.setSafe(index, mapping(n.asInstanceOf[Number].intValue))
               }
             }
             case m => throw new IllegalStateException(s"Expected NullableIntVector#Mutator, got $m")
@@ -142,9 +139,7 @@ object SimpleFeatureArrowIO {
       unloader.unload(j)
     }
 
-    val header = Iterator.single(fileMetadata(sft, dictionaries, encoding, None))
-    val footer = Iterator.single(footerBytes)
-    CloseableIterator(header ++ batches ++ footer, readers.foreach(CloseWithLogging.apply))
+    CloseableIterator(createFile(sft, dictionaries, encoding, None)(batches), readers.foreach(CloseWithLogging.apply))
   }
 
   private def mergeSortedFiles(sft: SimpleFeatureType,
@@ -188,24 +183,27 @@ object SimpleFeatureArrowIO {
           val accessor = child.getAccessor
           to.getMutator match {
             case m: NullableTinyIntVector#Mutator => (fromIndex: Int, toIndex: Int) => {
-              if (accessor.isNull(fromIndex)) {
+              val n = accessor.getObject(fromIndex)
+              if (n == null) {
                 m.setNull(toIndex)
               } else {
-                m.setSafe(toIndex, mapping(accessor.getObject(fromIndex).asInstanceOf[Number].intValue).toByte)
+                m.setSafe(toIndex, mapping(n.asInstanceOf[Number].intValue).toByte)
               }
             }
             case m: NullableSmallIntVector#Mutator => (fromIndex: Int, toIndex: Int) => {
-              if (accessor.isNull(fromIndex)) {
+              val n = accessor.getObject(fromIndex)
+              if (n == null) {
                 m.setNull(toIndex)
               } else {
-                m.setSafe(toIndex, mapping(accessor.getObject(fromIndex).asInstanceOf[Number].intValue).toShort)
+                m.setSafe(toIndex, mapping(n.asInstanceOf[Number].intValue).toShort)
               }
             }
             case m: NullableIntVector#Mutator => (fromIndex: Int, toIndex: Int) => {
-              if (accessor.isNull(fromIndex)) {
+              val n = accessor.getObject(fromIndex)
+              if (n == null) {
                 m.setNull(toIndex)
               } else {
-                m.setSafe(toIndex, mapping(accessor.getObject(fromIndex).asInstanceOf[Number].intValue))
+                m.setSafe(toIndex, mapping(n.asInstanceOf[Number].intValue))
               }
             }
             case m => throw new IllegalStateException(s"Expected NullableIntVector#Mutator, got $m")
@@ -284,10 +282,7 @@ object SimpleFeatureArrowIO {
       inputs.foreach(i => CloseWithLogging(i._1))
     }
 
-    val header = Iterator.single(fileMetadata(sft, dictionaries, encoding, None))
-    val footer = Iterator.single(footerBytes)
-
-    CloseableIterator(header ++ batches ++ footer, closeAll())
+    CloseableIterator(createFile(sft, dictionaries, encoding, None)(batches), closeAll())
   }
 
   private def mergeDictionaries(dictionaryFields: Seq[String],
@@ -478,23 +473,22 @@ object SimpleFeatureArrowIO {
     }
   }
 
-  /**
-    * Creates the header for the arrow file, which includes the schema and any dictionaries
-    *
-    * @param sft simple feature type
-    * @param dictionaries dictionaries
-    * @param encoding encoding options
-    * @param sort data is sorted or not
-    * @return
-    */
-  private def fileMetadata(sft: SimpleFeatureType,
-                           dictionaries: Map[String, ArrowDictionary],
-                           encoding: SimpleFeatureEncoding,
-                           sort: Option[(String, Boolean)]): Array[Byte] = {
-    val out = new ByteArrayOutputStream
-    WithClose(new SimpleFeatureArrowFileWriter(sft, out, dictionaries, encoding, sort)) { writer =>
-      writer.start()
-      out.toByteArray // copy bytes before closing so we get just the header metadata
+  def createFile(sft: SimpleFeatureType,
+                 dictionaries: Map[String, ArrowDictionary],
+                 encoding: SimpleFeatureEncoding,
+                 sort: Option[(String, Boolean)])
+                (body: CloseableIterator[Array[Byte]]): CloseableIterator[Array[Byte]] = {
+    // header with schema and dictionaries
+    val headerBytes = {
+      val out = new ByteArrayOutputStream
+      WithClose(new SimpleFeatureArrowFileWriter(sft, out, dictionaries, encoding, sort)) { writer =>
+        writer.start()
+        out.toByteArray // copy bytes before closing so we get just the header metadata
+      }
     }
+    val header = Iterator.single(headerBytes)
+    // per arrow streaming format footer is the encoded int '0'
+    val footer = Iterator.single(Array[Byte](0, 0, 0, 0))
+    CloseableIterator(header ++ body ++ footer, body.close())
   }
 }

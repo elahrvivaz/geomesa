@@ -46,7 +46,7 @@ class ArrowBatchIteratorTest extends TestWithDataStore {
   val filters = Seq(
     "bbox(geom, 38, 59, 42, 70)",
     "bbox(geom, 38, 59, 42, 70) and dtg DURING 2017-02-03T00:00:00.000Z/2017-02-03T01:00:00.000Z",
-//    "name IN('name0', 'name1')",
+    "name IN('name0', 'name1')",
     s"IN(${features.map(_.getID).mkString("'", "', '", "'")})").map(ECQL.toFilter)
 
   addFeatures(features)

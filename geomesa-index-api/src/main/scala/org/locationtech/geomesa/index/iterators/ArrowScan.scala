@@ -178,6 +178,8 @@ object ArrowScan {
     }
   }
 
+  def getBatchSize(hints: Hints): Int = hints.getArrowBatchSize.getOrElse(ArrowProperties.BatchSize.get.toInt)
+
   /**
     * Reduce function for whole arrow files coming back from the aggregating scan. Each feature
     * will have a single arrow file
@@ -196,8 +198,12 @@ object ArrowScan {
     (iter) => {
       // ensure that we return something
       if (iter.hasNext) { iter } else {
+        // iterator is empty but this will pass it through to be closed
         val bytes = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
-        createFile(sft, createEmptyDictionaries(dictionaryFields), encoding, sort)(bytes)
+        val dictionaries = createEmptyDictionaries(dictionaryFields)
+        val result = SimpleFeatureArrowIO.createFile(sft, dictionaries, encoding, sort)(bytes)
+        val sf = resultFeature()
+        result.map { bytes => sf.setAttribute(0, bytes); sf }
       }
     }
   }
@@ -227,7 +233,11 @@ object ArrowScan {
         SimpleFeatureArrowIO.sortBatches(sft, dictionaries, encoding, attribute, reverse, batchSize, bytes)
       }
     }
-    (iter) => createFile(sft, dictionaries, encoding, sort)(sorted(iter))
+    (iter) => {
+      val result = SimpleFeatureArrowIO.createFile(sft, dictionaries, encoding, sort)(sorted(iter))
+      val sf = resultFeature()
+      result.map { bytes => sf.setAttribute(0, bytes); sf }
+    }
   }
 
   /**
@@ -253,17 +263,18 @@ object ArrowScan {
     (iter) => {
       // note: get bytes before expanding to array as the simple feature may be re-used
       val files = try { iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]]).toArray } finally { iter.close() }
-      if (files.isEmpty) {
+      val result = if (files.isEmpty) {
         // ensure that we return something
-        createFile(sft, createEmptyDictionaries(dictionaryFields), encoding, sort)(CloseableIterator.empty)
+        val dictionaries = createEmptyDictionaries(dictionaryFields)
+        SimpleFeatureArrowIO.createFile(sft, dictionaries, encoding, sort)(CloseableIterator.empty)
       } else if (files.length == 1) {
         // if only a single batch, we can just return it
-        CloseableIterator(files.iterator.map(toFeature))
+        CloseableIterator(files.iterator)
       } else {
-        val sf = toFeature(null)
-        val result = SimpleFeatureArrowIO.mergeFiles(sft, files, dictionaryFields, encoding, sort, batchSize)
-        result.map { bytes => sf.setAttribute(0, bytes); sf }
+        SimpleFeatureArrowIO.mergeFiles(sft, files, dictionaryFields, encoding, sort, batchSize)
       }
+      val sf = resultFeature()
+      result.map { bytes => sf.setAttribute(0, bytes); sf }
     }
   }
 
@@ -327,30 +338,8 @@ object ArrowScan {
     fields.mapWithIndex { case (name, i) => name -> ArrowDictionary.create(i, Array.empty) }.toMap
   }
 
-  private def createFile(sft: SimpleFeatureType,
-                         dictionaries: Map[String, ArrowDictionary],
-                         encoding: SimpleFeatureEncoding,
-                         sort: Option[(String, Boolean)])
-                        (body: CloseableIterator[Array[Byte]]): CloseableIterator[SimpleFeature] = {
-    val sf = toFeature(null)
-    // header with schema and dictionaries
-    val headerBytes = {
-      val out = new ByteArrayOutputStream
-      WithClose(new SimpleFeatureArrowFileWriter(sft, out, dictionaries, encoding, sort)) { writer =>
-        writer.start()
-        out.toByteArray // copy bytes before closing so we get just the header metadata
-      }
-    }
-    val header = Iterator.single(toFeature(headerBytes))
-    // per arrow streaming format footer is the encoded int '0'
-    val footer = Iterator.single(toFeature(Array[Byte](0, 0, 0, 0)))
-    CloseableIterator(header ++ body.map { b => sf.setAttribute(0, b); sf } ++ footer, body.close())
-  }
-
-  def getBatchSize(hints: Hints): Int = hints.getArrowBatchSize.getOrElse(ArrowProperties.BatchSize.get.toInt)
-
-  private def toFeature(b: Array[Byte]): SimpleFeature =
-    new ScalaSimpleFeature(ArrowEncodedSft, "", Array(b, GeometryUtils.zeroPoint))
+  private def resultFeature(): SimpleFeature =
+    new ScalaSimpleFeature(ArrowEncodedSft, "", Array(null, GeometryUtils.zeroPoint))
 
   /**
     * Encodes the dictionaries as a string for passing to the iterator config
