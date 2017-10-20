@@ -44,10 +44,12 @@ class ArrowExporter(hints: Hints, os: OutputStream, queryDictionaries: => Map[St
       val sort = hints.getArrowSort
       val batchSize = hints.getArrowBatchSize.getOrElse(ArrowProperties.BatchSize.get.toInt)
       val dictionaryFields = hints.getArrowDictionaryFields
+      val providedDictionaries = hints.getArrowDictionaryEncodedValues(sft)
 
-      if (hints.isArrowComputeDictionaries || dictionaryFields.isEmpty) {
-        val dictionaries = (queryDictionaries ++ hints.getArrowDictionaryEncodedValues(sft)).map {
-          case (k, v) => k -> ArrowDictionary.create(ArrowDictionary.nextId, v)
+      if (dictionaryFields.forall(providedDictionaries.contains)) {
+        var id = -1
+        val dictionaries = (queryDictionaries ++ providedDictionaries).map {
+          case (k, v) => id += 1; k -> ArrowDictionary.create(id, v)
         }
         WithClose(new SimpleFeatureArrowFileWriter(sft, os, dictionaries, encoding, sort)) { writer =>
           writer.start()
@@ -103,7 +105,7 @@ object ArrowExporter {
       hints.getArrowDictionaryFields.filterNot(provided.contains)
     }
 
-    if (dictionaryFields.isEmpty || !hints.isArrowComputeDictionaries) { Map.empty } else {
+    if (dictionaryFields.isEmpty) { Map.empty } else {
       // TODO could do a stats query?
       val dictionaryQuery = new Query(query.getTypeName, query.getFilter)
       dictionaryQuery.setPropertyNames(dictionaryFields)

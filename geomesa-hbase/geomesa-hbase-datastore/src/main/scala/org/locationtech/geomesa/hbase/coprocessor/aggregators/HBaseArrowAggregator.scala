@@ -12,26 +12,27 @@ import org.geotools.factory.Hints
 import org.locationtech.geomesa.arrow.ArrowEncodedSft
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.hbase.coprocessor.GeoMesaCoprocessor
-import org.locationtech.geomesa.index.api.GeoMesaFeatureIndex
+import org.locationtech.geomesa.index.api.{GeoMesaFeatureIndex, QueryPlan}
 import org.locationtech.geomesa.index.iterators.ArrowScan
 import org.locationtech.geomesa.index.iterators.ArrowScan.ArrowAggregate
+import org.locationtech.geomesa.index.stats.GeoMesaStats
 import org.locationtech.geomesa.utils.geotools.GeometryUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
-class ArrowAggregator extends ArrowScan with HBaseAggregator[ArrowAggregate]
+class HBaseArrowAggregator extends ArrowScan with HBaseAggregator[ArrowAggregate]
 
-object ArrowAggregator {
+object HBaseArrowAggregator {
 
   def bytesToFeatures(bytes: Array[Byte]): SimpleFeature =
     new ScalaSimpleFeature(ArrowEncodedSft, "", Array(bytes, GeometryUtils.zeroPoint))
 
   def configure(sft: SimpleFeatureType,
                 index: GeoMesaFeatureIndex[_, _, _],
+                stats: GeoMesaStats,
                 filter: Option[Filter],
-                dictionaries: Seq[String],
-                hints: Hints): Map[String, String] = {
-    ArrowScan.configure(sft, index, filter, dictionaries, hints) ++
-        Map(GeoMesaCoprocessor.AggregatorClass -> classOf[ArrowAggregator].getName)
+                hints: Hints): (Map[String, String], QueryPlan.Reducer) = {
+    val conf = ArrowScan.configure(sft, index, stats, filter, hints)
+    (conf.config ++ Map(GeoMesaCoprocessor.AggregatorClass -> classOf[HBaseArrowAggregator].getName), conf.reduce)
   }
 }
