@@ -108,12 +108,12 @@ object ArrowScan {
 
   val DictionaryTopK = SystemProperty("geomesa.arrow.dictionary.top", "1000")
 
-  private val aggregateCache = new SoftThreadLocalCache[String, ArrowAggregate]
-
-  private val ordering = new Ordering[AnyRef] {
+  val DictionaryOrdering: Ordering[AnyRef] = new Ordering[AnyRef] {
     override def compare(x: AnyRef, y: AnyRef): Int =
       SimpleFeatureOrdering.nullCompare(x.asInstanceOf[Comparable[Any]], y)
   }
+
+  private val aggregateCache = new SoftThreadLocalCache[String, ArrowAggregate]
 
   /**
     * Configure the iterator
@@ -190,10 +190,10 @@ object ArrowScan {
     * @param sort sort
     * @return
     */
-  private def mergeFiles(sft: SimpleFeatureType,
-                         dictionaryFields: Seq[String],
-                         encoding: SimpleFeatureEncoding,
-                         sort: Option[(String, Boolean)]): QueryPlan.Reducer = {
+  def mergeFiles(sft: SimpleFeatureType,
+                 dictionaryFields: Seq[String],
+                 encoding: SimpleFeatureEncoding,
+                 sort: Option[(String, Boolean)]): QueryPlan.Reducer = {
     // we don't need to manipulate anything, just return the file batches from the distributed scan
     (iter) => {
       // ensure that we return something
@@ -221,11 +221,11 @@ object ArrowScan {
     * @param sort sort
     * @return
     */
-  private def mergeBatches(sft: SimpleFeatureType,
-                           dictionaries: Map[String, ArrowDictionary],
-                           encoding: SimpleFeatureEncoding,
-                           batchSize: Int,
-                           sort: Option[(String, Boolean)]): QueryPlan.Reducer = {
+  def mergeBatches(sft: SimpleFeatureType,
+                   dictionaries: Map[String, ArrowDictionary],
+                   encoding: SimpleFeatureEncoding,
+                   batchSize: Int,
+                   sort: Option[(String, Boolean)]): QueryPlan.Reducer = {
     def sorted(iter: CloseableIterator[SimpleFeature]): CloseableIterator[Array[Byte]] = {
       val bytes = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
       if (sort.isEmpty) { bytes } else {
@@ -253,12 +253,11 @@ object ArrowScan {
     * @param sort sort
     * @return
     */
-  private def mergeBatchesAndDictionaries(sft: SimpleFeatureType,
-                                          dictionaryFields: Seq[String],
-                                          encoding: SimpleFeatureEncoding,
-                                          batchSize: Int,
-                                          sort: Option[(String, Boolean)]): QueryPlan.Reducer = {
-
+  def mergeBatchesAndDictionaries(sft: SimpleFeatureType,
+                                  dictionaryFields: Seq[String],
+                                  encoding: SimpleFeatureEncoding,
+                                  batchSize: Int,
+                                  sort: Option[(String, Boolean)]): QueryPlan.Reducer = {
     // merge the files coming back into a single file with batches
     (iter) => {
       // note: get bytes before expanding to array as the simple feature may be re-used
@@ -291,13 +290,13 @@ object ArrowScan {
     * @param provided provided dictionary values, if any, keyed by attribute name
     * @return
     */
-  private def createDictionaries(stats: GeoMesaStats,
-                                 sft: SimpleFeatureType,
-                                 filter: Option[Filter],
-                                 attributes: Seq[String],
-                                 provided: Map[String, Array[AnyRef]],
-                                 cached: Map[String, TopK[AnyRef]]): Map[String, ArrowDictionary] = {
-    def sort(values: Array[AnyRef]): Unit = java.util.Arrays.sort(values, ordering)
+  def createDictionaries(stats: GeoMesaStats,
+                         sft: SimpleFeatureType,
+                         filter: Option[Filter],
+                         attributes: Seq[String],
+                         provided: Map[String, Array[AnyRef]],
+                         cached: Map[String, TopK[AnyRef]]): Map[String, ArrowDictionary] = {
+    def sort(values: Array[AnyRef]): Unit = java.util.Arrays.sort(values, DictionaryOrdering)
 
     if (attributes.isEmpty) { Map.empty } else {
       var id = -1L
@@ -338,7 +337,7 @@ object ArrowScan {
     fields.mapWithIndex { case (name, i) => name -> ArrowDictionary.create(i, Array.empty) }.toMap
   }
 
-  private def resultFeature(): SimpleFeature =
+  def resultFeature(): SimpleFeature =
     new ScalaSimpleFeature(ArrowEncodedSft, "", Array(null, GeometryUtils.zeroPoint))
 
   /**
@@ -610,7 +609,7 @@ object ArrowScan {
           i += 1
         }
         // note: we sort the dictionary values to make them easier to merge later
-        java.util.Arrays.sort(values, 0, count, ArrowScan.ordering)
+        java.util.Arrays.sort(values, 0, count, DictionaryOrdering)
         name -> ArrowDictionary.create(dictionaryId, values, count)
       }.toMap
 
