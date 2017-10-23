@@ -144,29 +144,28 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
     }
   }
 
-  private def arrowTransform(features: Iterator[SimpleFeature],
+  private def arrowTransform(original: Iterator[SimpleFeature],
                              sft: SimpleFeatureType,
                              hints: Hints,
                              filter: Option[Filter]): Iterator[SimpleFeature] = {
 
     import org.locationtech.geomesa.arrow.allocator
 
-    val includeFids = hints.isArrowIncludeFid
     val sort = hints.getArrowSort
     val batchSize = ArrowScan.getBatchSize(hints)
-    val encoding = SimpleFeatureEncoding.min(includeFids)
+    val encoding = SimpleFeatureEncoding.min(hints.isArrowIncludeFid)
 
-    val (transforms, arrowSft) = hints.getTransform match {
+    val (features, arrowSft) = hints.getTransform match {
       case None =>
         val sorting = sort.map { case (field, reverse) =>
           if (reverse) { SimpleFeatureOrdering(sft, field).reverse } else { SimpleFeatureOrdering(sft, field) }
         }
-        (noTransform(sft, features, sorting), sft)
+        (noTransform(sft, original, sorting), sft)
       case Some((definitions, tsft)) =>
         val sorting = sort.map { case (field, reverse) =>
           if (reverse) { SimpleFeatureOrdering(tsft, field).reverse } else { SimpleFeatureOrdering(tsft, field) }
         }
-        (projectionTransform(features, sft, tsft, definitions, sorting), tsft)
+        (projectionTransform(original, sft, tsft, definitions, sorting), tsft)
     }
 
     val dictionaryFields = hints.getArrowDictionaryFields
@@ -183,7 +182,7 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
       val dictionaries = ArrowScan.createDictionaries(stats, sft, filter, dictionaryFields,
         providedDictionaries, cachedDictionaries)
 
-      val vector = SimpleFeatureVector.create(sft, dictionaries, encoding)
+      val vector = SimpleFeatureVector.create(arrowSft, dictionaries, encoding)
       val batchWriter = new RecordBatchUnloader(vector)
 
       val sf = ArrowScan.resultFeature()
@@ -206,7 +205,7 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
         ArrowScan.mergeBatches(arrowSft, dictionaries, encoding, batchSize, sort)(arrows)
       }
     } else if (hints.isArrowMultiFile) {
-      val writer = DictionaryBuildingWriter.create(sft, dictionaryFields, encoding)
+      val writer = DictionaryBuildingWriter.create(arrowSft, dictionaryFields, encoding)
       val os = new ByteArrayOutputStream()
 
       val sf = ArrowScan.resultFeature()
@@ -249,7 +248,7 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
           }
           val dictionaries = dictionaryFields.mapWithIndex { case (name, dictionaryId) =>
             val values = Array.ofDim[AnyRef](index) // TODO re-use?
-            val attribute = sft.indexOf(name)
+            val attribute = arrowSft.indexOf(name)
             val seen = scala.collection.mutable.HashSet.empty[AnyRef]
             var count = 0
             var i = 0
@@ -266,7 +265,7 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
             name -> ArrowDictionary.create(dictionaryId, values, count)
           }.toMap
 
-          WithClose(new SimpleFeatureArrowFileWriter(sft, os, dictionaries, encoding, sort)) { writer =>
+          WithClose(new SimpleFeatureArrowFileWriter(arrowSft, os, dictionaries, encoding, sort)) { writer =>
             var i = 0
             while (i < index) {
               writer.add(cache(i))

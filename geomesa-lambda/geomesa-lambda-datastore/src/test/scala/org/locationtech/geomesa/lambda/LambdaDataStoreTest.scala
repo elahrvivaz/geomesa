@@ -80,7 +80,8 @@ class LambdaDataStoreTest extends LambdaTest with LazyLogging {
     val iter = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT))
     val bytes = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]]).reduceLeftOption(_ ++ _).getOrElse(Array.empty[Byte])
     WithClose(SimpleFeatureArrowFileReader.streaming(() => new ByteArrayInputStream(bytes))) { reader =>
-      SelfClosingIterator(reader.features()).map(ScalaSimpleFeature.copy).toSeq must
+      // TODO have to change the sft as it doesn't come back with a name from the iterator
+      SelfClosingIterator(reader.features()).map(ScalaSimpleFeature.copy(sft, _)).toSeq must
           containTheSameElementsAs(features)
     }
   }

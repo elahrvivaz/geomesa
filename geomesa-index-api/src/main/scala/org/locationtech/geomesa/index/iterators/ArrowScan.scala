@@ -34,6 +34,8 @@ trait ArrowScan extends AggregatingScan[ArrowAggregate] {
 
   private var batchSize: Int = _
 
+  // TODO file metadata created in the iterator has an empty sft name
+
   override def initResult(sft: SimpleFeatureType,
                           transform: Option[SimpleFeatureType],
                           options: Map[String, String]): ArrowAggregate = {
