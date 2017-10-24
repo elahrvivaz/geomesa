@@ -64,6 +64,17 @@ object SimpleFeatureArrowIO {
     Map(Metadata.SortField -> field, Metadata.SortOrder -> (if (reverse) { "descending" } else { "ascending" }))
   }
 
+  /**
+    * Merges multiple arrow files into a single file
+    *
+    * @param sft simple feature type
+    * @param files full arrow files encoded per streaming format
+    * @param dictionaryFields dictionaries
+    * @param encoding encoding
+    * @param sort sort
+    * @param batchSize record batch size
+    * @return
+    */
   def mergeFiles(sft: SimpleFeatureType,
                  files: Seq[Array[Byte]],
                  dictionaryFields: Seq[String],
@@ -75,18 +86,24 @@ object SimpleFeatureArrowIO {
     val MergedDictionaries(dictionaries, mappings) = mergeDictionaries(dictionaryFields, readers)
 
     sort match {
-      case None => mergeFiles(sft, dictionaries, readers, mappings, encoding)
-      case Some((field, reverse)) => mergeSortedFiles(sft, dictionaries, readers, mappings, encoding, field, reverse, batchSize)
+      case None =>
+        mergeFiles(sft, dictionaries, readers, mappings, encoding)
+
+      case Some((field, reverse)) =>
+        mergeSortedFiles(sft, dictionaries, readers, mappings, encoding, field, reverse, batchSize)
     }
   }
 
+  /**
+    * Merges files without sorting
+    */
   private def mergeFiles(sft: SimpleFeatureType,
                          dictionaries: Map[String, ArrowDictionary],
                          readers: Seq[SimpleFeatureArrowFileReader],
                          dictionaryMappings: Seq[Map[String, scala.collection.Map[Int, Int]]],
                          encoding: SimpleFeatureEncoding): CloseableIterator[Array[Byte]] = {
     import scala.collection.JavaConversions._
-// TODO aggregate batches
+
     val result = SimpleFeatureVector.create(sft, dictionaries, encoding)
     val unloader = new RecordBatchUnloader(result)
 
@@ -142,6 +159,9 @@ object SimpleFeatureArrowIO {
     CloseableIterator(createFile(sft, dictionaries, encoding, None)(batches), readers.foreach(CloseWithLogging.apply))
   }
 
+  /**
+    * Merges files with sorting
+    */
   private def mergeSortedFiles(sft: SimpleFeatureType,
                                dictionaries: Map[String, ArrowDictionary],
                                readers: Seq[SimpleFeatureArrowFileReader],
@@ -306,6 +326,7 @@ object SimpleFeatureArrowIO {
       }
       val mapping: Array[scala.collection.mutable.Map[Int, Int]] = mappings.map(_.apply(field))
 
+      // estimate 150% for the initial array size and grow later if needed
       var values = Array.ofDim[AnyRef]((maxDictionaryLength * 1.5).toInt)
       var count = 0
 

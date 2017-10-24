@@ -164,24 +164,22 @@ object DictionaryBuildingWriter {
       val (objectType, bindings) = ObjectType.selectType(classBinding, descriptor.getUserData)
       if (dictionaries.contains(name)) {
         dictionaryId += 1
+        val dictionaryType = TypeBindings(bindings.+:(objectType), classBinding, encoding)
         if (maxSize <= Byte.MaxValue) {
           val dictionaryEncoding = new DictionaryEncoding(dictionaryId, false, new ArrowType.Int(8, true))
           val fieldType = new FieldType(true, MinorType.TINYINT.getType, dictionaryEncoding, metadata)
-          val dictionaryVector = vector.addOrGet(name, fieldType, classOf[NullableTinyIntVector])
-          val dictionaryType = TypeBindings(bindings.+:(objectType), classBinding, encoding)
-          new ArrowAttributeByteDictionaryBuildingWriter(dictionaryVector.getMutator, dictionaryEncoding, dictionaryType)
+          val mutator = vector.addOrGet(name, fieldType, classOf[NullableTinyIntVector]).getMutator
+          new ArrowAttributeByteDictionaryBuildingWriter(mutator, dictionaryEncoding, dictionaryType)
         } else if (maxSize <= Short.MaxValue) {
           val dictionaryEncoding = new DictionaryEncoding(dictionaryId, false, new ArrowType.Int(16, true))
           val fieldType = new FieldType(true, MinorType.SMALLINT.getType, dictionaryEncoding, metadata)
-          val dictionaryVector = vector.addOrGet(name, fieldType, classOf[NullableSmallIntVector])
-          val dictionaryType = TypeBindings(bindings.+:(objectType), classBinding, encoding)
-          new ArrowAttributeShortDictionaryBuildingWriter(dictionaryVector.getMutator, dictionaryEncoding, dictionaryType)
+          val mutator = vector.addOrGet(name, fieldType, classOf[NullableSmallIntVector]).getMutator
+          new ArrowAttributeShortDictionaryBuildingWriter(mutator, dictionaryEncoding, dictionaryType)
         } else if (maxSize <= Int.MaxValue) {
           val dictionaryEncoding = new DictionaryEncoding(dictionaryId, false, new ArrowType.Int(32, true))
           val fieldType = new FieldType(true, MinorType.INT.getType, dictionaryEncoding, metadata)
-          val dictionaryVector = vector.addOrGet(name, fieldType, classOf[NullableIntVector])
-          val dictionaryType = TypeBindings(bindings.+:(objectType), classBinding, encoding)
-          new ArrowAttributeIntDictionaryBuildingWriter(dictionaryVector.getMutator, dictionaryEncoding, dictionaryType)
+          val mutator = vector.addOrGet(name, fieldType, classOf[NullableIntVector]).getMutator
+          new ArrowAttributeIntDictionaryBuildingWriter(mutator, dictionaryEncoding, dictionaryType)
         } else {
           throw new IllegalArgumentException(s"MaxSize must be less than or equal to Int.MaxValue (${Int.MaxValue})")
         }
@@ -194,8 +192,10 @@ object DictionaryBuildingWriter {
   /**
     * Tracks values seen and writes dictionary encoded ints instead
     */
-  abstract class ArrowAttributeDictionaryBuildingWriter[T](val encoding: DictionaryEncoding, val dictionaryType: TypeBindings)
+  abstract class ArrowAttributeDictionaryBuildingWriter[T](val encoding: DictionaryEncoding,
+                                                           val dictionaryType: TypeBindings)
       extends ArrowAttributeWriter {
+
     // next dictionary index to use
     protected var counter: Int = 0
     // values that we have seen, and their dictionary index

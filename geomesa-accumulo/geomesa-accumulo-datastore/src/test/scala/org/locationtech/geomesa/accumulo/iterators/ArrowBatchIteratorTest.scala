@@ -28,8 +28,6 @@ class ArrowBatchIteratorTest extends TestWithDataStore {
 
   sequential
 
-  val start = System.currentTimeMillis
-
   override val spec = "name:String:index=true,team:String:index-value=true,age:Int,weight:Int,dtg:Date,*geom:Point:srid=4326"
 
   implicit val allocator: BufferAllocator = new RootAllocator(Long.MaxValue)
@@ -267,7 +265,6 @@ class ArrowBatchIteratorTest extends TestWithDataStore {
   }
 
   step {
-    println("took " + (System.currentTimeMillis - start))
     allocator.close()
   }
 }
