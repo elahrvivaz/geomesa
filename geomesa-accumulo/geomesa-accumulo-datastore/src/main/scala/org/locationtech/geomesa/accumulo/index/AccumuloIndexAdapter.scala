@@ -98,7 +98,7 @@ trait AccumuloIndexAdapter extends IndexAdapter[AccumuloDataStore, AccumuloFeatu
       val iter = BinAggregatingIterator.configureDynamic(sft, this, ecql, hints, dedupe)
       ScanConfig(ranges, FullColumnFamily, Seq(iter), BinAggregatingIterator.kvsToFeatures(), None, duplicates = false)
     } else if (hints.isArrowQuery) {
-      val (iter, reduce) = ArrowIterator.configure(sft, this, ds.stats, ecql, hints, dedupe)
+      val (iter, reduce) = ArrowIterator.configure(sft, this, ds.stats, filter.filter, ecql, hints, dedupe)
       ScanConfig(ranges, FullColumnFamily, Seq(iter), ArrowIterator.kvsToFeatures(), Some(reduce), duplicates = false)
     } else if (hints.isDensityQuery) {
       val iter = KryoLazyDensityIterator.configure(sft, this, ecql, hints, dedupe)

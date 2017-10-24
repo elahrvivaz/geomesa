@@ -135,13 +135,13 @@ trait AttributeQueryableIndex extends AccumuloFeatureIndex with LazyLogging {
       }
     } else if (hints.isArrowQuery) {
       if (descriptor.getIndexCoverage() == IndexCoverage.FULL) {
-        val (iter, reduce) = ArrowIterator.configure(sft, this, ds.stats, filter.secondary, hints, hasDupes)
+        val (iter, reduce) = ArrowIterator.configure(sft, this, ds.stats, filter.filter, filter.secondary, hints, hasDupes)
         val iters = visibilityIter(sft) :+ iter
         BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, ArrowIterator.kvsToFeatures(), Some(reduce), attrThreads, hasDuplicates = false)
       } else if (IteratorTrigger.canUseAttrIdxValues(sft, filter.secondary, transform)) {
         // ^ check to see if we can execute against the index values
         val indexSft = IndexValueEncoder.getIndexSft(sft)
-        val (iter, reduce) = ArrowIterator.configure(indexSft, this, ds.stats, filter.secondary, hints, hasDupes)
+        val (iter, reduce) = ArrowIterator.configure(indexSft, this, ds.stats, filter.filter, filter.secondary, hints, hasDupes)
         val iters = visibilityIter(indexSft) :+ iter
         BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, ArrowIterator.kvsToFeatures(), Some(reduce), attrThreads, hasDuplicates = false)
       } else if (IteratorTrigger.canUseAttrKeysPlusValues(attribute, sft, filter.secondary, transform)) {
@@ -151,7 +151,7 @@ trait AttributeQueryableIndex extends AccumuloFeatureIndex with LazyLogging {
         hints.clearTransforms() // clear the transforms as we've already accounted for them
         val indexSft = IndexValueEncoder.getIndexSft(sft)
         // note: ECQL is handled below, so we don't pass it to the arrow iter here
-        val (iter, reduce) = ArrowIterator.configure(transformSft, this, ds.stats, None, hints, hasDupes)
+        val (iter, reduce) = ArrowIterator.configure(transformSft, this, ds.stats, filter.filter, None, hints, hasDupes)
         val indexValueIter = AttributeIndexValueIterator.configure(this, indexSft, transformSft, attribute, filter.secondary)
         val iters = visibilityIter(indexSft) :+ indexValueIter :+ iter
         BatchScanPlan(filter, attrTable, ranges, iters, Seq.empty, ArrowIterator.kvsToFeatures(), Some(reduce), attrThreads, hasDuplicates = false)
@@ -228,7 +228,7 @@ trait AttributeQueryableIndex extends AccumuloFeatureIndex with LazyLogging {
       throw new RuntimeException("Record index does not exist for join query")
     }
     val (recordIter, kvsToFeatures, reduce) = if (hints.isArrowQuery) {
-      val (iter, reduce) = ArrowIterator.configure(sft, recordIndex, ds.stats, ecqlFilter, hints, deduplicate = false)
+      val (iter, reduce) = ArrowIterator.configure(sft, recordIndex, ds.stats, filter.filter, ecqlFilter, hints, deduplicate = false)
       val kvs = ArrowIterator.kvsToFeatures()
       (Seq(iter), kvs, Some(reduce))
     } else if (hints.isStatsQuery) {

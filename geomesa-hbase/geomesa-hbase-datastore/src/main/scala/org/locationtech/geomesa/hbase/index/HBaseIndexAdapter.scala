@@ -91,7 +91,7 @@ trait HBaseIndexAdapter extends HBaseFeatureIndexType
         val options = HBaseDensityAggregator.configure(sft, this, ecql, hints)
         Some(CoprocessorConfig(options, HBaseDensityAggregator.bytesToFeatures))
       } else if (hints.isArrowQuery) {
-        val (options, reduce) = HBaseArrowAggregator.configure(sft, this, ds.stats, ecql, hints)
+        val (options, reduce) = HBaseArrowAggregator.configure(sft, this, ds.stats, filter.filter, ecql, hints)
         Some(CoprocessorConfig(options, HBaseArrowAggregator.bytesToFeatures, reduce))
       } else if (hints.isStatsQuery) {
         val options = HBaseStatsAggregator.configure(sft, filter.index, ecql, hints)

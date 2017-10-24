@@ -221,7 +221,7 @@ trait AccumuloAttributeIndex extends AccumuloFeatureIndex with AccumuloIndexAdap
     } else if (hints.isArrowQuery) {
       // check to see if we can execute against the index values
       if (IteratorTrigger.canUseAttrIdxValues(sft, ecql, transform)) {
-        val (iter, reduce) = ArrowIterator.configure(indexSft, this, ds.stats, ecql, hints, dedupe)
+        val (iter, reduce) = ArrowIterator.configure(indexSft, this, ds.stats, filter.filter, ecql, hints, dedupe)
         val iters = visibilityIter(indexSft) :+ iter
         ScanConfig(ranges, cf, iters, ArrowIterator.kvsToFeatures(), Some(reduce), duplicates = false)
       } else if (IteratorTrigger.canUseAttrKeysPlusValues(attribute, sft, ecql, transform)) {
@@ -230,7 +230,7 @@ trait AccumuloAttributeIndex extends AccumuloFeatureIndex with AccumuloIndexAdap
         }
         hints.clearTransforms() // clear the transforms as we've already accounted for them
         // note: ECQL is handled below, so we don't pass it to the arrow iter here
-        val (iter, reduce) = ArrowIterator.configure(transformSft, this, ds.stats, None, hints, dedupe)
+        val (iter, reduce) = ArrowIterator.configure(transformSft, this, ds.stats, filter.filter, None, hints, dedupe)
         val indexValueIter = AttributeIndexValueIterator.configure(this, indexSft, transformSft, attribute, ecql)
         val iters = visibilityIter(indexSft) :+ indexValueIter :+ iter
         ScanConfig(ranges, cf, iters, ArrowIterator.kvsToFeatures(), Some(reduce), duplicates = false)
@@ -340,7 +340,7 @@ trait AccumuloAttributeIndex extends AccumuloFeatureIndex with AccumuloIndexAdap
       throw new RuntimeException("Record index does not exist for join query")
     }
     val (recordIter, reduce, kvsToFeatures) = if (hints.isArrowQuery) {
-      val (iter, reduce) = ArrowIterator.configure(sft, recordIndex, ds.stats, ecqlFilter, hints, deduplicate = false)
+      val (iter, reduce) = ArrowIterator.configure(sft, recordIndex, ds.stats, filter.filter, ecqlFilter, hints, deduplicate = false)
       (Seq(iter), Some(reduce), ArrowIterator.kvsToFeatures())
     } else if (hints.isStatsQuery) {
       val iter = KryoLazyStatsIterator.configure(sft, recordIndex, ecqlFilter, hints, deduplicate = false)

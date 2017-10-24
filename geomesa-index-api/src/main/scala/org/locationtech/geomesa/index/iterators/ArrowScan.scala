@@ -119,13 +119,21 @@ object ArrowScan {
 
   /**
     * Configure the iterator
+    *
+    * @param sft simple feature type
+    * @param index feature index
+    * @param stats stats, used for querying dictionaries
+    * @param filter full filter from the query, if any
+    * @param ecql secondary push down filter, if any
+    * @param hints query hints
+    * @return
     */
   def configure(sft: SimpleFeatureType,
                 index: GeoMesaFeatureIndex[_, _, _],
                 stats: GeoMesaStats,
                 filter: Option[Filter],
-                hints: Hints,
-                skipSort: Boolean = false): ArrowScanConfig = {
+                ecql: Option[Filter],
+                hints: Hints): ArrowScanConfig = {
     import AggregatingScan.{OptionToConfig, StringToConfig}
     import Configuration._
 
@@ -136,7 +144,7 @@ object ArrowScan {
     val encoding = SimpleFeatureEncoding.min(includeFids)
 
     val baseConfig = {
-      val base = AggregatingScan.configure(sft, index, filter, hints.getTransform, hints.getSampling)
+      val base = AggregatingScan.configure(sft, index, ecql, hints.getTransform, hints.getSampling)
       base ++ AggregatingScan.optionalMap(
         IncludeFidsKey -> includeFids.toString,
         SortKey        -> sort.map(_._1),

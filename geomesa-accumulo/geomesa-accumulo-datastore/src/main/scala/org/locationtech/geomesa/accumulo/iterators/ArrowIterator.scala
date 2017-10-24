@@ -34,12 +34,13 @@ object ArrowIterator {
                 index: AccumuloFeatureIndexType,
                 stats: GeoMesaStats,
                 filter: Option[Filter],
+                ecql: Option[Filter],
                 hints: Hints,
                 deduplicate: Boolean,
                 priority: Int = DefaultPriority): (IteratorSetting, QueryPlan.Reducer) = {
     val is = new IteratorSetting(priority, "arrow-iter", classOf[ArrowIterator])
     BaseAggregatingIterator.configure(is, deduplicate, None)
-    val ArrowScanConfig(config, reduce) = ArrowScan.configure(sft, index, stats, filter, hints)
+    val ArrowScanConfig(config, reduce) = ArrowScan.configure(sft, index, stats, filter, ecql, hints)
     config.foreach { case (k, v) => is.addOption(k, v) }
     (is, reduce)
   }

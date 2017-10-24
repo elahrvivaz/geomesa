@@ -106,7 +106,7 @@ trait Z3QueryableIndex extends AccumuloFeatureIndexType
       val iter = Z3DensityIterator.configure(sft, this, ecql, hints)
       (Seq(iter), KryoLazyDensityIterator.kvsToFeatures(), None, FullColumnFamily, false)
     } else if (hints.isArrowQuery) {
-      val (iter, reduce) = ArrowIterator.configure(sft, this, ds.stats, ecql, hints, sft.nonPoints)
+      val (iter, reduce) = ArrowIterator.configure(sft, this, ds.stats, filter.filter, ecql, hints, sft.nonPoints)
       (Seq(iter), ArrowIterator.kvsToFeatures(), Some(reduce), FullColumnFamily, false)
     } else if (hints.isStatsQuery) {
       val iter = KryoLazyStatsIterator.configure(sft, this, ecql, hints, sft.nonPoints)

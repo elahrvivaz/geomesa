@@ -16,6 +16,7 @@ import org.locationtech.geomesa.arrow.io.records.{RecordBatchLoader, RecordBatch
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
 import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, ArrowDictionaryReader, SimpleFeatureVector}
 import org.locationtech.geomesa.utils.collection.CloseableIterator
+import org.locationtech.geomesa.utils.geotools.SimpleFeatureOrdering
 import org.locationtech.geomesa.utils.io.{CloseWithLogging, WithClose}
 import org.opengis.feature.simple.SimpleFeatureType
 
@@ -32,7 +33,7 @@ object SimpleFeatureArrowIO {
 
   private val ordering = new Ordering[(Comparable[Any], Int, Int)] {
     override def compare(x: (Comparable[Any], Int, Int), y: (Comparable[Any], Int, Int)): Int =
-      x._1.compareTo(y._1)
+      SimpleFeatureOrdering.nullCompare(x._1, y._1)
   }
 
   /**

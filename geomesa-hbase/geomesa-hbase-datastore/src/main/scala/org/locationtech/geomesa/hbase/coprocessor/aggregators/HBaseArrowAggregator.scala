@@ -31,8 +31,9 @@ object HBaseArrowAggregator {
                 index: GeoMesaFeatureIndex[_, _, _],
                 stats: GeoMesaStats,
                 filter: Option[Filter],
+                ecql: Option[Filter],
                 hints: Hints): (Map[String, String], QueryPlan.Reducer) = {
-    val conf = ArrowScan.configure(sft, index, stats, filter, hints)
+    val conf = ArrowScan.configure(sft, index, stats, filter, ecql, hints)
     (conf.config ++ Map(GeoMesaCoprocessor.AggregatorClass -> classOf[HBaseArrowAggregator].getName), conf.reduce)
   }
 }
