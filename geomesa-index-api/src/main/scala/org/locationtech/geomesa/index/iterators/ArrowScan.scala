@@ -206,15 +206,10 @@ object ArrowScan {
                  sort: Option[(String, Boolean)]): QueryPlan.Reducer = {
     // we don't need to manipulate anything, just return the file batches from the distributed scan
     (iter) => {
-      // ensure that we return something
-      if (iter.hasNext) { iter } else {
-        // iterator is empty but this will pass it through to be closed
-        val bytes = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
-        val dictionaries = createEmptyDictionaries(dictionaryFields)
-        val result = SimpleFeatureArrowIO.createFile(sft, dictionaries, encoding, sort)(bytes)
-        val sf = resultFeature()
-        result.map { bytes => sf.setAttribute(0, bytes); sf }
-      }
+      val bytes = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
+      val result = SimpleFeatureArrowIO.concatFiles(sft, dictionaryFields, encoding, sort)(bytes)
+      val sf = resultFeature()
+      result.map { bytes => sf.setAttribute(0, bytes); sf }
     }
   }
 
@@ -236,15 +231,10 @@ object ArrowScan {
                    encoding: SimpleFeatureEncoding,
                    batchSize: Int,
                    sort: Option[(String, Boolean)]): QueryPlan.Reducer = {
-    def sorted(iter: CloseableIterator[SimpleFeature]): CloseableIterator[Array[Byte]] = {
-      val bytes = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
-      if (sort.isEmpty) { bytes } else {
-        val (attribute, reverse) = sort.get
-        SimpleFeatureArrowIO.sortBatches(sft, dictionaries, encoding, attribute, reverse, batchSize, bytes)
-      }
-    }
+    // merge the files coming back into a single file with batches
     (iter) => {
-      val result = SimpleFeatureArrowIO.createFile(sft, dictionaries, encoding, sort)(sorted(iter))
+      val batches = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
+      val result = SimpleFeatureArrowIO.mergeBatches(sft, dictionaries, encoding, sort, batchSize)(batches)
       val sf = resultFeature()
       result.map { bytes => sf.setAttribute(0, bytes); sf }
     }
@@ -270,18 +260,8 @@ object ArrowScan {
                                   sort: Option[(String, Boolean)]): QueryPlan.Reducer = {
     // merge the files coming back into a single file with batches
     (iter) => {
-      // note: get bytes before expanding to array as the simple feature may be re-used
-      val files = try { iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]]).toArray } finally { iter.close() }
-      val result = if (files.isEmpty) {
-        // ensure that we return something
-        val dictionaries = createEmptyDictionaries(dictionaryFields)
-        SimpleFeatureArrowIO.createFile(sft, dictionaries, encoding, sort)(CloseableIterator.empty)
-      } else if (files.length == 1) {
-        // if only a single batch, we can just return it
-        CloseableIterator(files.iterator)
-      } else {
-        SimpleFeatureArrowIO.mergeFiles(sft, files, dictionaryFields, encoding, sort, batchSize)
-      }
+      val files = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
+      val result = SimpleFeatureArrowIO.mergeFiles(sft, dictionaryFields, encoding, sort, batchSize)(files)
       val sf = resultFeature()
       result.map { bytes => sf.setAttribute(0, bytes); sf }
     }
@@ -340,11 +320,6 @@ object ArrowScan {
         queried ++ providedDictionaries
       }
     }
-  }
-
-  private def createEmptyDictionaries(fields: Seq[String]): Map[String, ArrowDictionary] = {
-    import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableLike
-    fields.mapWithIndex { case (name, i) => name -> ArrowDictionary.create(i, Array.empty) }.toMap
   }
 
   def resultFeature(): SimpleFeature =

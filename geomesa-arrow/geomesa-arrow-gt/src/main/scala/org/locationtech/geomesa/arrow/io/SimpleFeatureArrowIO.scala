@@ -9,16 +9,21 @@
 package org.locationtech.geomesa.arrow.io
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
+import java.nio.channels.Channels
 
+import com.google.common.primitives.Longs
 import org.apache.arrow.vector.complex.NullableMapVector
+import org.apache.arrow.vector.file.WriteChannel
+import org.apache.arrow.vector.stream.MessageSerializer
 import org.apache.arrow.vector.{NullableIntVector, NullableSmallIntVector, NullableTinyIntVector}
 import org.locationtech.geomesa.arrow.io.records.{RecordBatchLoader, RecordBatchUnloader}
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
 import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, ArrowDictionaryReader, SimpleFeatureVector}
+import org.locationtech.geomesa.index.api.QueryPlan
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureOrdering
 import org.locationtech.geomesa.utils.io.{CloseWithLogging, WithClose}
-import org.opengis.feature.simple.SimpleFeatureType
+import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.math.Ordering
 
@@ -37,72 +42,95 @@ object SimpleFeatureArrowIO {
   }
 
   /**
-    * Checks schema metadata for sort fields
     *
-    * @param metadata schema metadata
-    * @return (sort field, reverse sorted or not)
+    * @param sft
+    * @param dictionaryFields
+    * @param encoding
+    * @param sort
+    * @param files
+    * @return
     */
-  def getSortFromMetadata(metadata: java.util.Map[String, String]): Option[(String, Boolean)] = {
-    Option(metadata.get(Metadata.SortField)).map { field =>
-      val reverse = Option(metadata.get(Metadata.SortOrder)).exists {
-        case "descending" => true
-        case _ => false
-      }
-      (field, reverse)
+  def concatFiles(sft: SimpleFeatureType,
+                  dictionaryFields: Seq[String],
+                  encoding: SimpleFeatureEncoding,
+                  sort: Option[(String, Boolean)])
+                 (files: CloseableIterator[Array[Byte]]): CloseableIterator[Array[Byte]] = {
+    // ensure we return something
+    if (files.hasNext) { files } else {
+      // files is empty but this will pass it through to be closed
+      createFile(sft, createEmptyDictionaries(dictionaryFields), encoding, sort)(files)
     }
   }
 
   /**
-    * Creates metadata for sort fields
     *
-    * @param field sort field
-    * @param reverse reverse sorted or not
-    * @return metadata map
+    * @param sft
+    * @param dictionaries
+    * @param encoding
+    * @param sort
+    * @param batchSize
+    * @param batches
+    * @return
     */
-  def getSortAsMetadata(field: String, reverse: Boolean): java.util.Map[String, String] = {
-    import scala.collection.JavaConversions._
-    // note: reverse == descending
-    Map(Metadata.SortField -> field, Metadata.SortOrder -> (if (reverse) { "descending" } else { "ascending" }))
+  def mergeBatches(sft: SimpleFeatureType,
+                   dictionaries: Map[String, ArrowDictionary],
+                   encoding: SimpleFeatureEncoding,
+                   sort: Option[(String, Boolean)],
+                   batchSize: Int)
+                  (batches: CloseableIterator[Array[Byte]]): CloseableIterator[Array[Byte]] = {
+    val sorted = sort match {
+      case None => batches
+      case Some((field, reverse)) => sortBatches(sft, dictionaries, encoding, field, reverse, batchSize, batches)
+    }
+    createFile(sft, dictionaries, encoding, sort)(sorted)
   }
 
   /**
     * Merges multiple arrow files into a single file
     *
     * @param sft simple feature type
-    * @param files full arrow files encoded per streaming format
     * @param dictionaryFields dictionaries
     * @param encoding encoding
     * @param sort sort
     * @param batchSize record batch size
+    * @param files full arrow files encoded per streaming format
     * @return
     */
   def mergeFiles(sft: SimpleFeatureType,
-                 files: Seq[Array[Byte]],
                  dictionaryFields: Seq[String],
                  encoding: SimpleFeatureEncoding,
                  sort: Option[(String, Boolean)],
-                 batchSize: Int): CloseableIterator[Array[Byte]] = {
-    val readers = files.map(bytes => SimpleFeatureArrowFileReader.caching(new ByteArrayInputStream(bytes)))
+                 batchSize: Int)
+                (files: CloseableIterator[Array[Byte]]): CloseableIterator[Array[Byte]] = {
 
-    val MergedDictionaries(dictionaries, mappings) = mergeDictionaries(dictionaryFields, readers)
+    val bytes = try { files.toSeq } finally { files.close() }
 
-    sort match {
-      case None =>
-        mergeFiles(sft, dictionaries, readers, mappings, encoding)
+    if (bytes.isEmpty) {
+      // ensure that we return something
+      createFile(sft, createEmptyDictionaries(dictionaryFields), encoding, sort)(CloseableIterator.empty)
+    } else if (bytes.length == 1) {
+      // if only a single batch, we can just return it
+      CloseableIterator(bytes.iterator)
+    } else {
+      val readers = bytes.map(b => SimpleFeatureArrowFileReader.caching(new ByteArrayInputStream(b)))
 
-      case Some((field, reverse)) =>
-        mergeSortedFiles(sft, dictionaries, readers, mappings, encoding, field, reverse, batchSize)
+      val MergedDictionaries(dictionaries, mappings) = mergeDictionaries(dictionaryFields, readers)
+
+      sort match {
+        case None => mergeUnsortedFiles(sft, dictionaries, readers, mappings, encoding)
+        case Some((field, reverse)) => mergeSortedFiles(sft, dictionaries, readers, mappings, encoding, field, reverse, batchSize)
+      }
     }
   }
 
   /**
     * Merges files without sorting
     */
-  private def mergeFiles(sft: SimpleFeatureType,
-                         dictionaries: Map[String, ArrowDictionary],
-                         readers: Seq[SimpleFeatureArrowFileReader],
-                         dictionaryMappings: Seq[Map[String, scala.collection.Map[Int, Int]]],
-                         encoding: SimpleFeatureEncoding): CloseableIterator[Array[Byte]] = {
+  private def mergeUnsortedFiles(sft: SimpleFeatureType,
+                                 dictionaries: Map[String, ArrowDictionary],
+                                 readers: Seq[SimpleFeatureArrowFileReader],
+                                 dictionaryMappings: Seq[Map[String, scala.collection.Map[Int, Int]]],
+                                 encoding: SimpleFeatureEncoding): CloseableIterator[Array[Byte]] = {
     import scala.collection.JavaConversions._
 
     val result = SimpleFeatureVector.create(sft, dictionaries, encoding)
@@ -373,6 +401,60 @@ object SimpleFeatureArrowIO {
     MergedDictionaries(dictionaries, mappings)
   }
 
+  /**
+    *
+    * @param sft
+    * @param dictionaryFields
+    * @param encoding
+    * @param sort
+    * @param batchSize
+    * @param deltas
+    * @return
+    */
+  def mergeDeltas(sft: SimpleFeatureType,
+                  dictionaryFields: Seq[String],
+                  encoding: SimpleFeatureEncoding,
+                  sort: Option[(String, Boolean)],
+                  batchSize: Int)
+                 (deltas: CloseableIterator[Array[Byte]]): CloseableIterator[Array[Byte]] = {
+    import scala.collection.JavaConversions._
+
+    val threaded = try { batches.toSeq.groupBy(Longs.fromByteArray).values } finally { batches.close() }
+
+    val MergedDictionaries(dictionaries, mappings) = mergeDictionaries(dictionaryFields, readers)
+
+    val dictionaryValues = scala.collection.mutable.Map(dictionaryFields.map(f => ()))
+    val dictionaries = batches
+    //    * 8 bytes long - threading key
+    //        * (foreach dictionaryField) -> {
+    //          *   4 byte int - length of dictionary batch
+    //              *   anyref vector batch with dictionary delta values
+    //          * }
+    //    * (foreach field) -> {
+    //      *   4 byte int - length of record batch
+    //          *   anyref vector batch (may be dictionary encodings)
+    //      * }
+
+    val result = SimpleFeatureVector.create(sft, )
+
+    // note: for some reason we have to allow the batch loader to create the vectors or this doesn't work
+    val field = result.underlying.getField
+    val loader = new RecordBatchLoader(field)
+    val vector = SimpleFeatureVector.wrap(loader.vector.asInstanceOf[NullableMapVector], dictionaries)
+    loader.load(bytes)
+    val transfer = vector.underlying.makeTransferPair(result.underlying)
+
+    def unload(count: Int): Array[Byte] = {
+      os.reset()
+      vector.writer.setValueCount(count)
+      root.setRowCount(count)
+      WithClose(loader.getRecordBatch) { batch =>
+        MessageSerializer.serialize(new WriteChannel(Channels.newChannel(os)), batch)
+      }
+      os.toByteArray
+    }
+  }
+
   private case class MergedDictionaries(dictionaries: Map[String, ArrowDictionary],
                                         mappings: Seq[Map[String, scala.collection.Map[Int, Int]]])
 
@@ -512,5 +594,39 @@ object SimpleFeatureArrowIO {
     // per arrow streaming format footer is the encoded int '0'
     val footer = Iterator.single(Array[Byte](0, 0, 0, 0))
     CloseableIterator(header ++ body ++ footer, body.close())
+  }
+
+  /**
+    * Checks schema metadata for sort fields
+    *
+    * @param metadata schema metadata
+    * @return (sort field, reverse sorted or not)
+    */
+  def getSortFromMetadata(metadata: java.util.Map[String, String]): Option[(String, Boolean)] = {
+    Option(metadata.get(Metadata.SortField)).map { field =>
+      val reverse = Option(metadata.get(Metadata.SortOrder)).exists {
+        case "descending" => true
+        case _ => false
+      }
+      (field, reverse)
+    }
+  }
+
+  /**
+    * Creates metadata for sort fields
+    *
+    * @param field sort field
+    * @param reverse reverse sorted or not
+    * @return metadata map
+    */
+  def getSortAsMetadata(field: String, reverse: Boolean): java.util.Map[String, String] = {
+    import scala.collection.JavaConversions._
+    // note: reverse == descending
+    Map(Metadata.SortField -> field, Metadata.SortOrder -> (if (reverse) { "descending" } else { "ascending" }))
+  }
+
+  private def createEmptyDictionaries(fields: Seq[String]): Map[String, ArrowDictionary] = {
+    import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableLike
+    fields.mapWithIndex { case (name, i) => name -> ArrowDictionary.create(i, Array.empty) }.toMap
   }
 }
