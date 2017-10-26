@@ -13,15 +13,12 @@ import java.nio.channels.Channels
 
 import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.vector._
-import org.apache.arrow.vector.complex.NullableMapVector
-import org.apache.arrow.vector.dictionary.Dictionary
 import org.apache.arrow.vector.dictionary.DictionaryProvider.MapDictionaryProvider
 import org.apache.arrow.vector.stream.ArrowStreamWriter
 import org.apache.arrow.vector.types.pojo.Schema
-import org.locationtech.geomesa.arrow.TypeBindings
-import org.locationtech.geomesa.arrow.vector.ArrowDictionary.HasArrowDictionary
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
-import org.locationtech.geomesa.arrow.vector.{ArrowAttributeWriter, ArrowDictionary, SimpleFeatureVector}
+import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, SimpleFeatureVector}
+import org.locationtech.geomesa.utils.io.CloseWithLogging
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 /**
@@ -47,30 +44,9 @@ class SimpleFeatureArrowFileWriter(val sft: SimpleFeatureType,
 
   private val vector = SimpleFeatureVector.create(sft, dictionaries, encoding)
 
-  private val provider = new MapDictionaryProvider()
-  // container for holding our dictionary vectors
-  private val dictionaryContainer = NullableMapVector.empty("", allocator)
-  dictionaryContainer.allocateNew()
-
   // convert the dictionary values into arrow vectors
   // make sure we load dictionaries before instantiating the stream writer
-  vector.writer.attributeWriters.foreach {
-    case hasDictionary: HasArrowDictionary =>
-      val name = s"dictionary-${hasDictionary.dictionary.id}"
-      val TypeBindings(bindings, classBinding, precision) = hasDictionary.dictionaryType
-      val writer = ArrowAttributeWriter(name, bindings, classBinding, dictionaryContainer, None, Map.empty, precision)
-      val vector = dictionaryContainer.getChild(name)
-      var i = 0
-      hasDictionary.dictionary.foreach { value =>
-        writer.apply(i, value)
-        i += 1
-      }
-      writer.setValueCount(i)
-      vector.getMutator.setValueCount(i)
-      provider.put(new Dictionary(vector, hasDictionary.dictionary.encoding))
-
-    case _ => // no-op
-  }
+  private val provider = new MapDictionaryProvider(dictionaries.values.map(_.toDictionary(encoding)).toSeq: _*)
 
   private val schema = {
     val metadata = sort.map { case (field, reverse) => SimpleFeatureArrowIO.getSortAsMetadata(field, reverse) }.orNull
@@ -117,8 +93,8 @@ class SimpleFeatureArrowFileWriter(val sft: SimpleFeatureType,
   override def close(): Unit = {
     flush()
     writer.end()
-    writer.close()
-    root.close()
-    dictionaryContainer.close()
+    CloseWithLogging(writer)
+    CloseWithLogging(root)
+    provider.getDictionaryIds.foreach(id => CloseWithLogging(provider.lookup(id).getVector))
   }
 }

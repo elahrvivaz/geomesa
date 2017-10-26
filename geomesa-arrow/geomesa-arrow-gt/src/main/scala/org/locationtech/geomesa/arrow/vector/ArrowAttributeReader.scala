@@ -18,22 +18,21 @@ import org.apache.arrow.vector.complex.{FixedSizeListVector, ListVector, Nullabl
 import org.apache.arrow.vector.holders._
 import org.joda.time.{DateTimeZone, LocalDateTime}
 import org.locationtech.geomesa.arrow.TypeBindings
-import org.locationtech.geomesa.arrow.vector.ArrowDictionary.HasArrowDictionary
 import org.locationtech.geomesa.arrow.vector.GeometryVector.GeometryReader
+import org.locationtech.geomesa.arrow.vector.LineStringFloatVector.LineStringFloatReader
 import org.locationtech.geomesa.arrow.vector.LineStringVector.LineStringDoubleReader
+import org.locationtech.geomesa.arrow.vector.MultiLineStringFloatVector.MultiLineStringFloatReader
 import org.locationtech.geomesa.arrow.vector.MultiLineStringVector.MultiLineStringDoubleReader
+import org.locationtech.geomesa.arrow.vector.MultiPointFloatVector.MultiPointFloatReader
 import org.locationtech.geomesa.arrow.vector.MultiPointVector.MultiPointDoubleReader
+import org.locationtech.geomesa.arrow.vector.MultiPolygonFloatVector.MultiPolygonFloatReader
 import org.locationtech.geomesa.arrow.vector.MultiPolygonVector.MultiPolygonDoubleReader
+import org.locationtech.geomesa.arrow.vector.PointFloatVector.PointFloatReader
 import org.locationtech.geomesa.arrow.vector.PointVector.PointDoubleReader
+import org.locationtech.geomesa.arrow.vector.PolygonFloatVector.PolygonFloatReader
 import org.locationtech.geomesa.arrow.vector.PolygonVector.PolygonDoubleReader
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.EncodingPrecision.EncodingPrecision
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.{EncodingPrecision, SimpleFeatureEncoding}
-import LineStringFloatVector.LineStringFloatReader
-import MultiLineStringFloatVector.MultiLineStringFloatReader
-import MultiPointFloatVector.MultiPointFloatReader
-import MultiPolygonFloatVector.MultiPolygonFloatReader
-import PointFloatVector.PointFloatReader
-import PolygonFloatVector.PolygonFloatReader
 import org.locationtech.geomesa.arrow.vector.impl.{AbstractLineStringVector, AbstractPointVector}
 import org.locationtech.geomesa.features.serialization.ObjectType
 import org.locationtech.geomesa.features.serialization.ObjectType.ObjectType
@@ -54,7 +53,7 @@ trait ArrowAttributeReader {
   def apply(i: Int): AnyRef
 }
 
-trait ArrowDictionaryReader extends ArrowAttributeReader with HasArrowDictionary {
+trait ArrowDictionaryReader extends ArrowAttributeReader {
 
   /**
     * Gets the raw underlying value without dictionary decoding it

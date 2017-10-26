@@ -15,11 +15,12 @@ import com.google.common.primitives.Longs
 import org.apache.arrow.vector.complex.NullableMapVector
 import org.apache.arrow.vector.file.WriteChannel
 import org.apache.arrow.vector.stream.MessageSerializer
-import org.apache.arrow.vector.{NullableIntVector, NullableSmallIntVector, NullableTinyIntVector}
+import org.apache.arrow.vector.types.pojo.{ArrowType, Field}
+import org.apache.arrow.vector.util.TransferPair
+import org.apache.arrow.vector.{FieldVector, NullableIntVector, NullableSmallIntVector, NullableTinyIntVector}
 import org.locationtech.geomesa.arrow.io.records.{RecordBatchLoader, RecordBatchUnloader}
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
 import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, ArrowDictionaryReader, SimpleFeatureVector}
-import org.locationtech.geomesa.index.api.QueryPlan
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureOrdering
 import org.locationtech.geomesa.utils.io.{CloseWithLogging, WithClose}
@@ -419,9 +420,9 @@ object SimpleFeatureArrowIO {
                  (deltas: CloseableIterator[Array[Byte]]): CloseableIterator[Array[Byte]] = {
     import scala.collection.JavaConversions._
 
-    val threaded = try { batches.toSeq.groupBy(Longs.fromByteArray).values } finally { batches.close() }
+    val threaded = try { deltas.toSeq.groupBy(Longs.fromByteArray).values.toSeq } finally { deltas.close() }
 
-    val MergedDictionaries(dictionaries, mappings) = mergeDictionaries(dictionaryFields, readers)
+    val MergedDictionaries(dictionaries, mappings) = mergeDictionaryDeltas(dictionaryFields, readers)
 
     val dictionaryValues = scala.collection.mutable.Map(dictionaryFields.map(f => ()))
     val dictionaries = batches
@@ -453,6 +454,106 @@ object SimpleFeatureArrowIO {
       }
       os.toByteArray
     }
+  }
+
+  /**
+    *
+    * @param dictionaryFields dictionary fields
+    * @param deltas Seq of threaded dictionary deltas
+    * @return
+    */
+  private def mergeDictionaryDeltas(dictionaryFields: Seq[String],
+                                    deltas: Seq[Seq[Array[Byte]]]): MergedDictionaries = {
+    import org.locationtech.geomesa.utils.conversions.ScalaImplicits.{RichTraversableLike, RichTraversableOnce}
+
+    val working = dictionaryFields.map { f =>
+      val vector = Field.nullable(f, new ArrowType.Int(32, true)).createVector(allocator)
+      vector.allocateNew()
+      vector
+    }.toArray
+
+    val aggregated = deltas.map { delta =>
+      val vectors = Array.ofDim[FieldVector](dictionaryFields.length)
+      val transfers = Array.ofDim[TransferPair](dictionaryFields.length)
+
+      dictionaryFields.foreachIndex { case (f, i) =>
+        val vector = Field.nullable(f, new ArrowType.Int(32, true)).createVector(allocator)
+        vector.allocateNew()
+        vectors(i) = vector
+        transfers(i) = working(i).makeTransferPair(vector)
+      }
+
+      delta.foreach { bytes =>
+        var i = 8 // start after threading key
+        dictionaryFields.foreach { f =>
+
+        }
+      }
+
+      vectors
+    }
+
+    val toMerge: Array[Map[String, ArrowDictionary]] = readers.map { reader =>
+      dictionaryFields.map(f => f -> reader.dictionaries(f)).toMap
+    }.toArray
+
+    val mappings = toMerge.map(d => d.map { case (f, _) => f -> scala.collection.mutable.Map.empty[Int, Int] })
+
+    val dictionaries = dictionaryFields.mapWithIndex { case (field, dictionaryId) =>
+      var maxDictionaryLength = 0
+      val dictionaries: Array[Iterator[AnyRef]] = toMerge.map { dicts =>
+        val dict = dicts(field)
+        if (dict.length > maxDictionaryLength) {
+          maxDictionaryLength = dict.length
+        }
+        dict.iterator
+      }
+      val mapping: Array[scala.collection.mutable.Map[Int, Int]] = mappings.map(_.apply(field))
+
+      // estimate 150% for the initial array size and grow later if needed
+      var values = Array.ofDim[AnyRef]((maxDictionaryLength * 1.5).toInt)
+      var count = 0
+
+      // we do a merge sort of each batch
+      // sorted queue of [(current batch value, current index in that batch, number of the batch)]
+      val queue = {
+        // populate with the first element from each batch
+        // note: need to flip ordering here as highest sorted values come off the queue first
+        val heads = scala.collection.mutable.PriorityQueue.empty[(Comparable[Any], Int, Int)](ordering.reverse)
+        var i = 0
+        while (i < dictionaries.length) {
+          val iterator = dictionaries(i)
+          if (iterator.hasNext) {
+            heads.+=((iterator.next.asInstanceOf[Comparable[Any]], 0, i))
+          }
+          i += 1
+        }
+        heads
+      }
+
+      // copy the next sorted value and then queue and sort the next element out of the batch we copied from
+      while (queue.nonEmpty) {
+        val (value, i, batch) = queue.dequeue()
+        if (count == 0 || values(count - 1) != value) {
+          if (count == values.length - 1) {
+            val tmp = Array.ofDim[AnyRef](values.length * 2)
+            System.arraycopy(values, 0, tmp, 0, count)
+            values = tmp
+          }
+          values(count) = value.asInstanceOf[AnyRef]
+          count += 1
+        }
+        mapping(batch).put(i, count - 1)
+        val iterator = dictionaries(batch)
+        if (iterator.hasNext) {
+          queue.+=((iterator.next.asInstanceOf[Comparable[Any]], i + 1, batch))
+        }
+      }
+
+      field -> ArrowDictionary.create(dictionaryId, values, count)
+    }.toMap
+
+    MergedDictionaries(dictionaries, mappings)
   }
 
   private case class MergedDictionaries(dictionaries: Map[String, ArrowDictionary],

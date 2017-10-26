@@ -19,7 +19,6 @@ import org.apache.arrow.vector.complex.{ListVector, NullableMapVector}
 import org.apache.arrow.vector.types.Types.MinorType
 import org.apache.arrow.vector.types.pojo.{ArrowType, FieldType}
 import org.locationtech.geomesa.arrow.TypeBindings
-import org.locationtech.geomesa.arrow.vector.ArrowDictionary.HasArrowDictionary
 import org.locationtech.geomesa.arrow.vector.GeometryVector.GeometryWriter
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.EncodingPrecision.EncodingPrecision
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.{EncodingPrecision, SimpleFeatureEncoding}
@@ -218,7 +217,7 @@ object ArrowAttributeWriter {
     */
   class ArrowDictionaryByteWriter(mutator: NullableTinyIntVector#Mutator,
                                   val dictionary: ArrowDictionary,
-                                  val dictionaryType: TypeBindings) extends ArrowAttributeWriter with HasArrowDictionary {
+                                  val dictionaryType: TypeBindings) extends ArrowAttributeWriter {
     override def apply(i: Int, value: AnyRef): Unit =
       if (value == null) {
         mutator.setNull(i) // note: calls .setSafe internally
@@ -232,7 +231,7 @@ object ArrowAttributeWriter {
     */
   class ArrowDictionaryShortWriter(mutator: NullableSmallIntVector#Mutator,
                                    val dictionary: ArrowDictionary,
-                                   val dictionaryType: TypeBindings) extends ArrowAttributeWriter with HasArrowDictionary {
+                                   val dictionaryType: TypeBindings) extends ArrowAttributeWriter {
     override def apply(i: Int, value: AnyRef): Unit =
       if (value == null) {
         mutator.setNull(i) // note: calls .setSafe internally
@@ -246,7 +245,7 @@ object ArrowAttributeWriter {
     */
   class ArrowDictionaryIntWriter(mutator: NullableIntVector#Mutator,
                                  val dictionary: ArrowDictionary,
-                                 val dictionaryType: TypeBindings) extends ArrowAttributeWriter with HasArrowDictionary {
+                                 val dictionaryType: TypeBindings) extends ArrowAttributeWriter {
     override def apply(i: Int, value: AnyRef): Unit =
       if (value == null) {
         mutator.setNull(i) // note: calls .setSafe internally
