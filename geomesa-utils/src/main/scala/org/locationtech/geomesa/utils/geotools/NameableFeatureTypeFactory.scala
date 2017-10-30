@@ -17,6 +17,9 @@ import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 import org.opengis.util.InternationalString
 
+/**
+  * Feature type factory that allows for changing type name
+  */
 class NameableFeatureTypeFactory extends FeatureTypeFactoryImpl {
 
   override def createSimpleFeatureType(name: Name,
