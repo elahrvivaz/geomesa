@@ -426,24 +426,28 @@ object SimpleFeatureArrowIO {
     val result = SimpleFeatureVector.create(sft, dictionaries, encoding)
     val unloader = new RecordBatchUnloader(result)
 
-    val toMerge = threaded.flatMap { batches =>
-      batches.map { bytes =>
-        // note: for some reason we have to allow the batch loader to create the vectors or this doesn't work
-        val loader = RecordBatchLoader(result.underlying.getField)
-        // skip the dictionary batches
-        var offset = 8
-        dictionaryFields.foreach { _ =>
-          offset += Ints.fromBytes(bytes(offset), bytes(offset + 1), bytes(offset + 2), bytes(offset + 3))
+    val toMerge = Array.tabulate(threaded.length) { i =>
+      threaded.flatMap { batches =>
+        batches.map { bytes =>
+          // note: for some reason we have to allow the batch loader to create the vectors or this doesn't work
+          val loader = RecordBatchLoader(result.underlying.getField)
+          // skip the dictionary batches
+          var offset = 8
+          dictionaryFields.foreach { _ =>
+            offset += Ints.fromBytes(bytes(offset), bytes(offset + 1), bytes(offset + 2), bytes(offset + 3))
+          }
+          // load the record batch
+          loader.load(bytes, offset, bytes.length - offset)
+          val transfer = loader.vector.makeTransferPair(result.underlying)
+          (loader.vector, transfer, mappings)
+          null
         }
-        // load the record batch
-        loader.load(bytes, offset, bytes.length - offset)
-        val transfer = loader.vector.makeTransferPair(result.underlying)
-        null
-      }
 
-      batches
-      mappings
+        batches
+        mappings
+      }
     }
+
     //    * 8 bytes long - threading key
     //        * (foreach dictionaryField) -> {
     //          *   4 byte int - length of dictionary batch
