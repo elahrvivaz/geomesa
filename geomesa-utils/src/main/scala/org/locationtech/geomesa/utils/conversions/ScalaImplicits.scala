@@ -55,5 +55,10 @@ object ScalaImplicits {
         i += 1
       }
     }
+
+    def mapWithIndex[B](f: (T, Int) => B): Array[B] = {
+      var i = -1
+      array.map { v => i += 1; f(v, i) }
+    }
   }
 }

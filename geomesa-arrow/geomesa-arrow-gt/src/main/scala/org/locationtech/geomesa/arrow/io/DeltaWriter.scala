@@ -68,6 +68,7 @@ class DeltaWriter(val sft: SimpleFeatureType,
   private val out = new ByteArrayOutputStream
 
   private val vector = NullableMapVector.empty(sft.getTypeName, allocator)
+  private val dictionaryVector = NullableMapVector.empty(sft.getTypeName, allocator)
 
   // empty provider
   private val provider = new MapDictionaryProvider()
@@ -92,16 +93,12 @@ class DeltaWriter(val sft: SimpleFeatureType,
     os.reset() // discard the metadata, we only care about the record batches
     val dictionary = if (!isDictionary) { None } else {
       var i = 0
-      var dictionaryName: String = null
-      // ensure unique name
-      do {
-        dictionaryName = s"$name-dict-$i"
-        i += 1
-      } while (sft.indexOf(dictionaryName) != -1)
+      // TODO ensure unique name? not sure it matters
+      var dictionaryName: String = s"$name-dict-$i"
       val classBinding = descriptor.getType.getBinding
       val (objectType, bindings) = ObjectType.selectType(classBinding, descriptor.getUserData)
-      val attribute = ArrowAttributeWriter(dictionaryName, bindings.+:(objectType), classBinding, vector, None, Map.empty, encoding)
-      val child = vector.getChild(dictionaryName)
+      val attribute = ArrowAttributeWriter(dictionaryName, bindings.+:(objectType), classBinding, dictionaryVector, None, Map.empty, encoding)
+      val child = dictionaryVector.getChild(dictionaryName)
       val schema = new Schema(Collections.singletonList(child.getField))
       val root = new VectorSchemaRoot(schema, Collections.singletonList(child), 0)
       val os = new ByteArrayOutputStream // TODO re-use byte arrays?
@@ -112,6 +109,13 @@ class DeltaWriter(val sft: SimpleFeatureType,
     }
     Writer(name, sft.indexOf(name), attribute, root, writer, os, dictionary)
   }
+
+  val schema = new Schema(Collections.singletonList(child.getField))
+  val root = new VectorSchemaRoot(schema, Collections.singletonList(child), 0)
+  // TODO re-use byte arrays?
+  val writer = new ArrowStreamWriter(root, provider, Channels.newChannel(os))
+  writer.start()
+  os.reset() // discard the metadata, we only care about the record batches
 
   // set capacity after all child vectors have been created by the writers, then allocate
   vector.setInitialCapacity(batchSize)
