@@ -10,15 +10,16 @@ package org.locationtech.geomesa.arrow.io
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
 import java.nio.channels.Channels
+import java.util.Collections
 
 import com.google.common.collect.HashBiMap
 import com.google.common.primitives.{Ints, Longs}
 import org.apache.arrow.vector.complex.NullableMapVector
 import org.apache.arrow.vector.file.WriteChannel
 import org.apache.arrow.vector.stream.MessageSerializer
-import org.apache.arrow.vector.types.pojo.{ArrowType, Field}
+import org.apache.arrow.vector.types.pojo.{ArrowType, Field, Schema}
 import org.apache.arrow.vector.util.TransferPair
-import org.apache.arrow.vector.{FieldVector, NullableIntVector, NullableSmallIntVector, NullableTinyIntVector}
+import org.apache.arrow.vector._
 import org.locationtech.geomesa.arrow.io.records.{RecordBatchLoader, RecordBatchUnloader}
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
 import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, ArrowDictionaryReader, SimpleFeatureVector}
@@ -421,7 +422,25 @@ object SimpleFeatureArrowIO {
 
     val MergedDictionaryDeltas(dictionaries, mappings) = mergeDictionaryDeltas(dictionaryFields, threaded)
 
+    // TODO don't create this just for the field
+    val result = SimpleFeatureVector.create(sft, dictionaries, encoding)
+    val unloader = new RecordBatchUnloader(result)
+
     val toMerge = threaded.flatMap { batches =>
+      batches.map { bytes =>
+        // note: for some reason we have to allow the batch loader to create the vectors or this doesn't work
+        val loader = RecordBatchLoader(result.underlying.getField)
+        // skip the dictionary batches
+        var offset = 8
+        dictionaryFields.foreach { _ =>
+          offset += Ints.fromBytes(bytes(offset), bytes(offset + 1), bytes(offset + 2), bytes(offset + 3))
+        }
+        // load the record batch
+        loader.load(bytes, offset, bytes.length - offset)
+        val transfer = loader.vector.makeTransferPair(result.underlying)
+        null
+      }
+
       batches
       mappings
     }
@@ -430,29 +449,10 @@ object SimpleFeatureArrowIO {
     //          *   4 byte int - length of dictionary batch
     //              *   anyref vector batch with dictionary delta values
     //          * }
-    //    * (foreach field) -> {
-    //      *   4 byte int - length of record batch
-    //          *   anyref vector batch (may be dictionary encodings)
-    //      * }
-
-    val result = SimpleFeatureVector.create(sft, dictionaries, encoding)
-
-    // note: for some reason we have to allow the batch loader to create the vectors or this doesn't work
-    val field = result.underlying.getField
-    val loader = RecordBatchLoader(field)
-    val vector = SimpleFeatureVector.wrap(loader.vector.asInstanceOf[NullableMapVector], dictionaries)
+    //    * 4 byte int - length of record batch
+    //    * record batch (may be dictionary encodings)
     loader.load(bytes)
-    val transfer = vector.underlying.makeTransferPair(result.underlying)
-
-    def unload(count: Int): Array[Byte] = {
-      os.reset()
-      vector.writer.setValueCount(count)
-      root.setRowCount(count)
-      WithClose(loader.getRecordBatch) { batch =>
-        MessageSerializer.serialize(new WriteChannel(Channels.newChannel(os)), batch)
-      }
-      os.toByteArray
-    }
+    unloader.unload(count)
   }
 
   /**
@@ -761,6 +761,11 @@ object SimpleFeatureArrowIO {
     import scala.collection.JavaConversions._
     // note: reverse == descending
     Map(Metadata.SortField -> field, Metadata.SortOrder -> (if (reverse) { "descending" } else { "ascending" }))
+  }
+
+  def createRoot(vector: FieldVector): VectorSchemaRoot = {
+    val schema = new Schema(Collections.singletonList(vector.getField))
+    new VectorSchemaRoot(schema, Collections.singletonList(vector), vector.getAccessor.getValueCount)
   }
 
   private def createEmptyDictionaries(fields: Seq[String]): Map[String, ArrowDictionary] = {

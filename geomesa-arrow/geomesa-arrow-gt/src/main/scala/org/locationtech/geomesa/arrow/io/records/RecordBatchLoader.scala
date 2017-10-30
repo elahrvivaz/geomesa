@@ -18,6 +18,7 @@ import org.apache.arrow.vector.schema.ArrowRecordBatch
 import org.apache.arrow.vector.stream.MessageSerializer
 import org.apache.arrow.vector.types.pojo.Field
 import org.apache.arrow.vector.{FieldVector, VectorLoader, VectorSchemaRoot}
+import org.locationtech.geomesa.arrow.io.SimpleFeatureArrowIO
 import org.locationtech.geomesa.utils.io.WithClose
 
 /**
@@ -28,8 +29,7 @@ import org.locationtech.geomesa.utils.io.WithClose
   */
 class RecordBatchLoader(val vector: FieldVector)(implicit allocator: BufferAllocator) {
 
-  private val root = new VectorSchemaRoot(Collections.singletonList(vector.getField),
-    Collections.singletonList(vector), vector.getAccessor.getValueCount)
+  private val root = SimpleFeatureArrowIO.createRoot(vector)
   private val loader = new VectorLoader(root)
 
   def load(bytes: Array[Byte]): Unit = load(bytes, 0, bytes.length)

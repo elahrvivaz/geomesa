@@ -8,25 +8,19 @@
 
 package org.locationtech.geomesa.arrow.io
 
-import java.io.{ByteArrayOutputStream, Closeable}
+import java.io.{ByteArrayOutputStream, Closeable, OutputStream}
 import java.nio.channels.Channels
-import java.util.Collections
 
 import com.google.common.primitives.{Ints, Longs}
-import org.apache.arrow.vector.{VectorLoader, VectorSchemaRoot, VectorUnloader}
+import org.apache.arrow.vector.FieldVector
 import org.apache.arrow.vector.complex.NullableMapVector
 import org.apache.arrow.vector.dictionary.DictionaryProvider.MapDictionaryProvider
-import org.apache.arrow.vector.file.WriteChannel
-import org.apache.arrow.vector.stream.{ArrowStreamWriter, MessageSerializer}
-import org.apache.arrow.vector.types.pojo.Schema
-import org.locationtech.geomesa.arrow.io.SimpleFeatureArrowIO.{MergedDictionaries, mergeDictionaries}
-import org.locationtech.geomesa.arrow.io.records.RecordBatchLoader
-import org.locationtech.geomesa.arrow.vector.{ArrowAttributeWriter, SimpleFeatureVector}
+import org.apache.arrow.vector.stream.ArrowStreamWriter
+import org.locationtech.geomesa.arrow.vector.ArrowAttributeWriter
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
 import org.locationtech.geomesa.features.serialization.ObjectType
-import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureOrdering
-import org.locationtech.geomesa.utils.io.{CloseWithLogging, WithClose}
+import org.locationtech.geomesa.utils.io.CloseWithLogging
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.util.Random
@@ -38,19 +32,38 @@ object DeltaWriter {
       SimpleFeatureOrdering.nullCompare(x.asInstanceOf[Comparable[Any]], y)
   }
 
-  private case class Writer(name: String,
-                            index: Int,
-                            attribute: ArrowAttributeWriter,
-                            root: VectorSchemaRoot,
-                            writer: ArrowStreamWriter,
-                            os: ByteArrayOutputStream,
-                            dictionary: Option[DictionaryWriter] = None)
+  // empty provider
+  private val provider = new MapDictionaryProvider()
 
-  private case class DictionaryWriter(attribute: ArrowAttributeWriter,
-                                      root: VectorSchemaRoot,
-                                      writer: ArrowStreamWriter,
-                                      os: ByteArrayOutputStream,
+  private case class FieldWriter(name: String,
+                                 index: Int,
+                                 attribute: ArrowAttributeWriter,
+                                 dictionary: Option[DictionaryWriter] = None)
+
+  private case class DictionaryWriter(index: Int,
+                                      attribute: ArrowAttributeWriter,
+                                      writer: BatchWriter,
                                       values: scala.collection.mutable.Map[AnyRef, Integer])
+
+  private class BatchWriter(vector: FieldVector) extends Closeable {
+    private val root = SimpleFeatureArrowIO.root(vector)
+    private val os = new ByteArrayOutputStream()
+    private val writer = new ArrowStreamWriter(root, provider, Channels.newChannel(os))
+    writer.start() // start the writer - we'll discard the metadata later, as we only care about the record batches
+
+    def writeBatch(count: Int, to: OutputStream): Unit = {
+      os.reset()
+      root.setRowCount(count)
+      writer.writeBatch()
+      to.write(Ints.toByteArray(os.size()))
+      os.writeTo(to)
+    }
+
+    override def close(): Unit = {
+      CloseWithLogging(writer)
+      CloseWithLogging(root)
+    }
+  }
 }
 
 class DeltaWriter(val sft: SimpleFeatureType,
@@ -65,13 +78,11 @@ class DeltaWriter(val sft: SimpleFeatureType,
   import scala.collection.JavaConversions._
 
   private val threadingKey = Random.nextLong()
-  private val out = new ByteArrayOutputStream
+  private val result = new ByteArrayOutputStream
 
   private val vector = NullableMapVector.empty(sft.getTypeName, allocator)
   private val dictionaryVector = NullableMapVector.empty(sft.getTypeName, allocator)
 
-  // empty provider
-  private val provider = new MapDictionaryProvider()
 
   private val ordering = sort.map { case (field, reverse) =>
     val o = SimpleFeatureOrdering(sft.indexOf(field))
@@ -84,13 +95,6 @@ class DeltaWriter(val sft: SimpleFeatureType,
     val classBinding = if (isDictionary) { classOf[Integer] } else { descriptor.getType.getBinding }
     val (objectType, bindings) = ObjectType.selectType(classBinding, descriptor.getUserData)
     val attribute = ArrowAttributeWriter(name, bindings.+:(objectType), classBinding, vector, None, Map.empty, encoding)
-    val child = vector.getChild(name)
-    val schema = new Schema(Collections.singletonList(child.getField))
-    val root = new VectorSchemaRoot(schema, Collections.singletonList(child), 0)
-    val os = new ByteArrayOutputStream // TODO re-use byte arrays?
-    val writer = new ArrowStreamWriter(root, provider, Channels.newChannel(os))
-    writer.start()
-    os.reset() // discard the metadata, we only care about the record batches
     val dictionary = if (!isDictionary) { None } else {
       var i = 0
       // TODO ensure unique name? not sure it matters
@@ -98,28 +102,21 @@ class DeltaWriter(val sft: SimpleFeatureType,
       val classBinding = descriptor.getType.getBinding
       val (objectType, bindings) = ObjectType.selectType(classBinding, descriptor.getUserData)
       val attribute = ArrowAttributeWriter(dictionaryName, bindings.+:(objectType), classBinding, dictionaryVector, None, Map.empty, encoding)
-      val child = dictionaryVector.getChild(dictionaryName)
-      val schema = new Schema(Collections.singletonList(child.getField))
-      val root = new VectorSchemaRoot(schema, Collections.singletonList(child), 0)
-      val os = new ByteArrayOutputStream // TODO re-use byte arrays?
-      val writer = new ArrowStreamWriter(root, provider, Channels.newChannel(os))
-      writer.start()
-      os.reset() // discard the metadata, we only care about the record batches
-      Some(DictionaryWriter(attribute, root, writer, os, scala.collection.mutable.Map.empty))
+      val writer = new BatchWriter(dictionaryVector.getChild(dictionaryName))
+      Some(DictionaryWriter(sft.indexOf(name), attribute, writer, scala.collection.mutable.Map.empty))
     }
-    Writer(name, sft.indexOf(name), attribute, root, writer, os, dictionary)
+    FieldWriter(name, sft.indexOf(name), attribute, dictionary)
   }
 
-  val schema = new Schema(Collections.singletonList(child.getField))
-  val root = new VectorSchemaRoot(schema, Collections.singletonList(child), 0)
-  // TODO re-use byte arrays?
-  val writer = new ArrowStreamWriter(root, provider, Channels.newChannel(os))
-  writer.start()
-  os.reset() // discard the metadata, we only care about the record batches
+  private val dictionaryWriters = dictionaryFields.map(f => writers.find(_.name == f).get.dictionary.get)
+
+  private val writer = new BatchWriter(vector)
 
   // set capacity after all child vectors have been created by the writers, then allocate
-  vector.setInitialCapacity(batchSize)
-  vector.allocateNew()
+  Seq(vector, dictionaryVector).foreach { v =>
+    v.setInitialCapacity(batchSize)
+    v.allocateNew()
+  }
 
   /**
     * Clear any existing dictionary values
@@ -134,10 +131,8 @@ class DeltaWriter(val sft: SimpleFeatureType,
     *   4 byte int - length of dictionary batch
     *   anyref vector batch with dictionary delta values
     * }
-    * (foreach field) -> {
-    *   4 byte int - length of record batch
-    *   anyref vector batch (may be dictionary encodings)
-    * }
+    * 4 byte int - length of record batch
+    * record batch (may be dictionary encodings)
     *
     * Note: will sort the feature array in place if sorting is defined
     *
@@ -147,19 +142,17 @@ class DeltaWriter(val sft: SimpleFeatureType,
     */
   def writeBatch(features: Array[SimpleFeature], count: Int): Array[Byte] = {
 
-    out.reset()
-    out.write(Longs.toByteArray(threadingKey))
+    result.reset()
+    result.write(Longs.toByteArray(threadingKey))
 
     ordering.foreach(java.util.Arrays.sort(features, 0, count, _))
 
-    dictionaryFields.foreach { field =>
-      val attribute = sft.indexOf(field)
-      val dictionary = writers.find(_.name == field).get.dictionary.get
+    dictionaryWriters.foreach { dictionary =>
       // come up with the delta of new dictionary values
       val delta = scala.collection.mutable.SortedSet.empty[AnyRef](DictionaryOrdering)
       var i = 0
       while (i < count) {
-        val value = features(i).getAttribute(attribute)
+        val value = features(i).getAttribute(dictionary.index)
         if (!dictionary.values.contains(value)) {
           delta.add(value)
         }
@@ -175,11 +168,7 @@ class DeltaWriter(val sft: SimpleFeatureType,
       }
       // write out the dictionary batch
       dictionary.attribute.setValueCount(i)
-      dictionary.root.setRowCount(count)
-      dictionary.os.reset()
-      dictionary.writer.writeBatch()
-      out.write(Ints.toByteArray(dictionary.os.size()))
-      dictionary.os.writeTo(out)
+      dictionary.writer.writeBatch(i, result)
     }
 
     writers.foreach { writer =>
@@ -193,28 +182,20 @@ class DeltaWriter(val sft: SimpleFeatureType,
         i += 1
       }
       writer.attribute.setValueCount(count)
-      writer.root.setRowCount(count)
-      writer.os.reset()
-      writer.writer.writeBatch()
-      out.write(Ints.toByteArray(writer.os.size()))
-      writer.os.writeTo(out)
     }
 
-    out.toByteArray
+    writer.writeBatch(count, result)
+
+    result.toByteArray
   }
 
   /**
     * Close the writer
     */
   override def close(): Unit = {
-    writers.foreach { writer =>
-      CloseWithLogging(writer.root)
-      CloseWithLogging(writer.writer)
-      writer.dictionary.foreach { dictionary =>
-        CloseWithLogging(dictionary.root)
-        CloseWithLogging(dictionary.writer)
-      }
-    }
+    CloseWithLogging(writer)
+    dictionaryWriters.foreach(w => CloseWithLogging(w.writer))
     CloseWithLogging(vector)
+    CloseWithLogging(dictionaryVector)
   }
 }
