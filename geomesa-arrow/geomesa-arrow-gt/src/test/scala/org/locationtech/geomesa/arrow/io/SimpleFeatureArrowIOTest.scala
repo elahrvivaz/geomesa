@@ -60,7 +60,7 @@ class SimpleFeatureArrowIOTest extends Specification {
       val sorted =
         SimpleFeatureArrowIO.sortBatches(sft, dictionaries, encoding, "dtg", reverse = false, 10, batches.iterator)
 
-      val loader = new RecordBatchLoader(field)
+      val loader = RecordBatchLoader(field)
       val features = WithClose(SimpleFeatureVector.wrap(loader.vector.asInstanceOf[NullableMapVector], dictionaries)) { vector =>
         sorted.flatMap { batch =>
           vector.clear()

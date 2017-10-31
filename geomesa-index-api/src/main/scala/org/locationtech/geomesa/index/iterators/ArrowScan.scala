@@ -12,7 +12,7 @@ import java.io.ByteArrayOutputStream
 
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.arrow.io.records.RecordBatchUnloader
-import org.locationtech.geomesa.arrow.io.{DictionaryBuildingWriter, SimpleFeatureArrowFileWriter, SimpleFeatureArrowIO}
+import org.locationtech.geomesa.arrow.io.{DeltaWriter, DictionaryBuildingWriter, SimpleFeatureArrowFileWriter, SimpleFeatureArrowIO}
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
 import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, SimpleFeatureVector}
 import org.locationtech.geomesa.arrow.{ArrowEncodedSft, ArrowProperties}
@@ -21,7 +21,6 @@ import org.locationtech.geomesa.index.api.{GeoMesaFeatureIndex, QueryPlan}
 import org.locationtech.geomesa.index.iterators.ArrowScan._
 import org.locationtech.geomesa.index.stats.GeoMesaStats
 import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
-import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.conf.GeoMesaSystemProperties.SystemProperty
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, SimpleFeatureOrdering}
 import org.locationtech.geomesa.utils.io.WithClose
@@ -58,7 +57,10 @@ trait ArrowScan extends AggregatingScan[ArrowAggregate] {
 
     def create(): ArrowAggregate = {
       val encoding = SimpleFeatureEncoding.min(includeFids.toBoolean)
-      if (typ == Types.SinglePassType) {
+      if (typ == Types.DeltaType) {
+        val dictionaries = dictionary.split(",").filter(_.length > 0)
+        new DeltaAggregate(arrowSft, dictionaries, encoding, sort, batchSize)
+      } else if (typ == Types.SinglePassType) {
         val dictionaries = dictionary.split(",").filter(_.length > 0)
         new SinglePassAggregate(arrowSft, dictionaries, encoding, sort)
       } else if (typ == Types.BatchType) {
@@ -78,7 +80,7 @@ trait ArrowScan extends AggregatingScan[ArrowAggregate] {
       }
     }
 
-    aggregateCache.getOrElseUpdate(cacheKey, create()).withBatchSize(batchSize)
+    aggregateCache.getOrElseUpdate(cacheKey, create()).init(batchSize)
   }
 
   override protected def notFull(result: ArrowAggregate): Boolean = result.size < batchSize
@@ -94,6 +96,7 @@ object ArrowScan {
   import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
   object Configuration {
+
     val IncludeFidsKey = "fids"
     val DictionaryKey  = "dict"
     val TypeKey        = "type"
@@ -103,6 +106,7 @@ object ArrowScan {
 
     object Types {
       val BatchType      = "batch"
+      val DeltaType      = "delta"
       val FileType       = "file"
       val SinglePassType = "single"
     }
@@ -177,6 +181,13 @@ object ArrowScan {
         TypeKey       -> Configuration.Types.FileType
       )
       val reduce = mergeFiles(arrowSft, dictionaryFields, encoding, sort)
+      ArrowScanConfig(config, reduce)
+    } else if (hints.isArrowDelta) {
+      val config = baseConfig ++ Map(
+        DictionaryKey -> dictionaryFields.mkString(","),
+        TypeKey       -> Configuration.Types.DeltaType
+      )
+      val reduce = mergeDeltas(arrowSft, dictionaryFields, encoding, batchSize, sort)
       ArrowScanConfig(config, reduce)
     } else {
       val config = baseConfig ++ Map(
@@ -262,6 +273,34 @@ object ArrowScan {
     (iter) => {
       val files = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
       val result = SimpleFeatureArrowIO.mergeFiles(sft, dictionaryFields, encoding, sort, batchSize)(files)
+      val sf = resultFeature()
+      result.map { bytes => sf.setAttribute(0, bytes); sf }
+    }
+  }
+
+  /**
+    * TODO
+    * Reduce function for batches with disparate dictionaries.
+    *
+    * First feature contains metadata for arrow file and dictionary batch, subsequent features
+    * contain record batches, final feature contains EOF indicator
+    *
+    * @param sft simple feature type
+    * @param dictionaryFields dictionaries
+    * @param encoding encoding
+    * @param batchSize batch size
+    * @param sort sort
+    * @return
+    */
+  def mergeDeltas(sft: SimpleFeatureType,
+                  dictionaryFields: Seq[String],
+                  encoding: SimpleFeatureEncoding,
+                  batchSize: Int,
+                  sort: Option[(String, Boolean)]): QueryPlan.Reducer = {
+    // merge the files coming back into a single file with batches
+    (iter) => {
+      val files = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
+      val result = SimpleFeatureArrowIO.mergeDeltas(sft, dictionaryFields, encoding, sort, batchSize)(files)
       val sf = resultFeature()
       result.map { bytes => sf.setAttribute(0, bytes); sf }
     }
@@ -358,7 +397,7 @@ object ArrowScan {
     def add(sf: SimpleFeature): Unit
     def encode(): Array[Byte]
     def clear(): Unit
-    def withBatchSize(size: Int): ArrowAggregate
+    def init(size: Int): ArrowAggregate
 
     def isEmpty: Boolean = size == 0
   }
@@ -388,7 +427,7 @@ object ArrowScan {
       os.toByteArray
     }
 
-    override def withBatchSize(size: Int): ArrowAggregate = this
+    override def init(size: Int): ArrowAggregate = this
   }
 
   class MultiFileSortingAggregate(sft: SimpleFeatureType,
@@ -436,7 +475,7 @@ object ArrowScan {
       os.toByteArray
     }
 
-    override def withBatchSize(size: Int): ArrowAggregate = {
+    override def init(size: Int): ArrowAggregate = {
       if (features == null || features.length < size) {
         features = Array.ofDim[SimpleFeature](size)
       }
@@ -474,7 +513,7 @@ object ArrowScan {
 
     override def encode(): Array[Byte] = batchWriter.unload(index)
 
-    override def withBatchSize(size: Int): ArrowAggregate = this
+    override def init(size: Int): ArrowAggregate = this
   }
 
   /**
@@ -528,7 +567,7 @@ object ArrowScan {
       batchWriter.unload(index)
     }
 
-    override def withBatchSize(size: Int): ArrowAggregate = {
+    override def init(size: Int): ArrowAggregate = {
       if (features == null || features.length < size) {
         features = Array.ofDim[SimpleFeature](size)
       }
@@ -609,10 +648,50 @@ object ArrowScan {
       os.toByteArray
     }
 
-    override def withBatchSize(size: Int): ArrowAggregate = {
+    override def init(size: Int): ArrowAggregate = {
       if (features == null || features.length < size) {
         features = Array.ofDim(size)
         dictionaryFields.foreach { field => dictionaryValues(field) = Array.ofDim(size) }
+      }
+      this
+    }
+  }
+
+  /**
+    * Arrow aggregate
+    *
+    * @param sft simple feature type
+    * @param dictionaryFields dictionary fields
+    * @param encoding arrow encoding
+    * @param sort sort field, sort reverse
+    */
+  class DeltaAggregate(sft: SimpleFeatureType,
+                       dictionaryFields: Seq[String],
+                       encoding: SimpleFeatureEncoding,
+                       sort: Option[(String, Boolean)],
+                       initialSize: Int) extends ArrowAggregate {
+
+    private val writer = new DeltaWriter(sft, dictionaryFields, encoding, sort, initialSize)
+    private var index = 0
+    private var features: Array[SimpleFeature] = _
+
+    override def add(sf: SimpleFeature): Unit = {
+      // we have to copy since the feature might be re-used
+      // TODO we could probably optimize this...
+      features(index) = ScalaSimpleFeature.copy(sf)
+      index += 1
+    }
+
+    override def size: Int = index
+
+    override def clear(): Unit = index = 0
+
+    override def encode(): Array[Byte] = writer.writeBatch(features, index)
+
+    override def init(size: Int): ArrowAggregate = {
+      writer.reset()
+      if (features == null || features.length < size) {
+        features = Array.ofDim(size)
       }
       this
     }

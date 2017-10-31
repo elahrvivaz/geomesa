@@ -61,7 +61,7 @@ trait ArrowDictionaryReader extends ArrowAttributeReader {
     * @param i index of the feature to read
     * @return
     */
-  def getEncoded(i: Int): Int
+  def getEncoded(i: Int): Integer
 }
 
 object ArrowAttributeReader {
@@ -166,7 +166,10 @@ object ArrowAttributeReader {
       }
     }
 
-    override def getEncoded(i: Int): Int = accessor.get(i)
+    override def getEncoded(i: Int): Integer = {
+      accessor.get(i, holder)
+      if (holder.isSet == 0) { null } else { Int.box(holder.value) }
+    }
   }
 
   /**
@@ -184,7 +187,10 @@ object ArrowAttributeReader {
       }
     }
 
-    override def getEncoded(i: Int): Int = accessor.get(i)
+    override def getEncoded(i: Int): Integer = {
+      accessor.get(i, holder)
+      if (holder.isSet == 0) { null } else { Int.box(holder.value) }
+    }
   }
 
   /**
@@ -202,7 +208,10 @@ object ArrowAttributeReader {
       }
     }
 
-    override def getEncoded(i: Int): Int = accessor.get(i)
+    override def getEncoded(i: Int): Integer = {
+      accessor.get(i, holder)
+      if (holder.isSet == 0) { null } else { Int.box(holder.value) }
+    }
   }
 
   object ArrowGeometryReader {

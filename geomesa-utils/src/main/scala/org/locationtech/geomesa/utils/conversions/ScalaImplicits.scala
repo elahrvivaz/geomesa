@@ -10,6 +10,7 @@ package org.locationtech.geomesa.utils.conversions
 
 import scala.collection.{Iterator, TraversableLike}
 import scala.collection.generic.CanBuildFrom
+import scala.reflect.ClassTag
 
 object ScalaImplicits {
 
@@ -56,7 +57,7 @@ object ScalaImplicits {
       }
     }
 
-    def mapWithIndex[B](f: (T, Int) => B): Array[B] = {
+    def mapWithIndex[B](f: (T, Int) => B)(implicit ct: ClassTag[B]): Array[B] = {
       var i = -1
       array.map { v => i += 1; f(v, i) }
     }

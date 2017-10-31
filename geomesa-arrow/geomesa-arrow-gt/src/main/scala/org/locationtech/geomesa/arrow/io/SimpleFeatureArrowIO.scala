@@ -9,23 +9,20 @@
 package org.locationtech.geomesa.arrow.io
 
 import java.io.{ByteArrayInputStream, ByteArrayOutputStream}
-import java.nio.channels.Channels
 import java.util.Collections
 
 import com.google.common.collect.HashBiMap
 import com.google.common.primitives.{Ints, Longs}
+import org.apache.arrow.vector._
 import org.apache.arrow.vector.complex.NullableMapVector
-import org.apache.arrow.vector.file.WriteChannel
-import org.apache.arrow.vector.stream.MessageSerializer
 import org.apache.arrow.vector.types.pojo.{ArrowType, Field, Schema}
 import org.apache.arrow.vector.util.TransferPair
-import org.apache.arrow.vector._
 import org.locationtech.geomesa.arrow.io.records.{RecordBatchLoader, RecordBatchUnloader}
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
 import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, ArrowDictionaryReader, SimpleFeatureVector}
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureOrdering
-import org.locationtech.geomesa.utils.io.{CloseWithLogging, WithClose}
+import org.locationtech.geomesa.utils.io.CloseWithLogging
 import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.math.Ordering
@@ -219,6 +216,7 @@ object SimpleFeatureArrowIO {
 
     val result = SimpleFeatureVector.create(sft, dictionaries, encoding)
 
+    // TODO array builder instead of map + .toArray
     val inputs = readers.mapWithIndex { case (reader, readerIndex) =>
       val vector = reader.vectors.head // should only be a single reader vector per batch
       val mappings = dictionaryMappings(readerIndex)
@@ -308,7 +306,7 @@ object SimpleFeatureArrowIO {
       }
     }
 
-    val batches = new Iterator[Array[Byte]] {
+    val batches = new CloseableIterator[Array[Byte]] {
       private var batch: Array[Byte] = _
 
       override def hasNext: Boolean = {
@@ -323,15 +321,15 @@ object SimpleFeatureArrowIO {
         batch = null
         res
       }
+
+      override def close(): Unit = {
+        CloseWithLogging(result)
+        readers.foreach(r => CloseWithLogging(r))
+        inputs.foreach(i => CloseWithLogging(i._1))
+      }
     }
 
-    def closeAll(): Unit = {
-      CloseWithLogging(result)
-      readers.foreach(r => CloseWithLogging(r))
-      inputs.foreach(i => CloseWithLogging(i._1))
-    }
-
-    CloseableIterator(createFile(sft, dictionaries, encoding, None)(batches), closeAll())
+    createFile(sft, dictionaries, encoding, None)(batches)
   }
 
   private def mergeDictionaries(dictionaryFields: Seq[String],
@@ -420,43 +418,212 @@ object SimpleFeatureArrowIO {
 
     val threaded = try { deltas.toArray.groupBy(Longs.fromByteArray).values.toArray } finally { deltas.close() }
 
-    val MergedDictionaryDeltas(dictionaries, mappings) = mergeDictionaryDeltas(dictionaryFields, threaded)
+    val dictionaries = mergeDictionaryDeltas(dictionaryFields, threaded)
 
-    // TODO don't create this just for the field
+    sort match {
+      case None => mergeUnsortedDeltas(sft, dictionaryFields, encoding, dictionaries, batchSize, threaded)
+      case Some((field, reverse)) =>
+        mergeSortedDeltas(sft, dictionaryFields, encoding, dictionaries, field, reverse, batchSize, threaded)
+    }
+  }
+
+  private def mergeUnsortedDeltas(sft: SimpleFeatureType,
+                                  dictionaryFields: Seq[String],
+                                  encoding: SimpleFeatureEncoding,
+                                  mergedDictionaries: MergedDictionaryDeltas,
+                                  batchSize: Int,
+                                  threadedBatches: Array[Array[Array[Byte]]]): CloseableIterator[Array[Byte]] = {
+    import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichIterator
+    import scala.collection.JavaConversions._
+
+    val MergedDictionaryDeltas(dictionaries, dictionaryMappings) = mergedDictionaries
+
     val result = SimpleFeatureVector.create(sft, dictionaries, encoding)
     val unloader = new RecordBatchUnloader(result)
 
-    val toMerge = Array.tabulate(threaded.length) { i =>
-      threaded.flatMap { batches =>
-        batches.map { bytes =>
-          // note: for some reason we have to allow the batch loader to create the vectors or this doesn't work
-          val loader = RecordBatchLoader(result.underlying.getField)
+    var batchIndex = -1
+    val iter = threadedBatches.iterator.flatMap { batches =>
+      batchIndex += 1
+      val batchMappings = dictionaryMappings.map { case (f, m) => (f, m(batchIndex)) }
+      batches.iterator.mapWithIndex { case (batch, j) =>
+        val mappings = batchMappings.map { case (f, m) => (f, m(j)) }
+        // note: for some reason we have to allow the batch loader to create the vectors or this doesn't work
+        val loader = RecordBatchLoader(result.underlying.getField)
+        try {
           // skip the dictionary batches
           var offset = 8
           dictionaryFields.foreach { _ =>
-            offset += Ints.fromBytes(bytes(offset), bytes(offset + 1), bytes(offset + 2), bytes(offset + 3))
+            offset += Ints.fromBytes(batch(offset), batch(offset + 1), batch(offset + 2), batch(offset + 3))
           }
           // load the record batch
-          loader.load(bytes, offset, bytes.length - offset)
-          val transfer = loader.vector.makeTransferPair(result.underlying)
-          (loader.vector, transfer, mappings)
-          null
-        }
+          loader.load(batch, offset, batch.length - offset)
+          val count = loader.vector.getAccessor.getValueCount
+          loader.vector.getChildrenFromFields.foreach { child =>
+            val to = result.underlying.getChild(child.getField.getName)
+            val transfer = if (child.getField.getDictionary == null) {
+              val transfer = child.makeTransferPair(to)
+              (fromIndex: Int, toIndex: Int) => transfer.copyValueSafe(fromIndex, toIndex)
+            } else {
+              val mapping = mappings(child.getField.getName)
+              val accessor = child.getAccessor
+              val m = to.getMutator.asInstanceOf[NullableIntVector#Mutator]
+              (fromIndex: Int, toIndex: Int) => {
+                val n = accessor.getObject(fromIndex).asInstanceOf[Integer]
+                if (n == null) {
+                  m.setNull(toIndex)
+                } else {
+                  m.setSafe(toIndex, mapping.get(n))
+                }
+              }
+            }
+            var i = 0
+            while (i < count) {
+              transfer(i, i)
+              i += 1
+            }
+          }
 
-        batches
-        mappings
+          unloader.unload(count)
+        } finally {
+          loader.vector.close()
+        }
       }
     }
 
-    //    * 8 bytes long - threading key
-    //        * (foreach dictionaryField) -> {
-    //          *   4 byte int - length of dictionary batch
-    //              *   anyref vector batch with dictionary delta values
-    //          * }
-    //    * 4 byte int - length of record batch
-    //    * record batch (may be dictionary encodings)
-    loader.load(bytes)
-    unloader.unload(count)
+    createFile(result, None)(CloseableIterator(iter, result.close()))
+  }
+
+  private def mergeSortedDeltas(sft: SimpleFeatureType,
+                                dictionaryFields: Seq[String],
+                                encoding: SimpleFeatureEncoding,
+                                mergedDictionaries: MergedDictionaryDeltas,
+                                sortBy: String,
+                                reverse: Boolean,
+                                batchSize: Int,
+                                threadedBatches: Array[Array[Array[Byte]]]): CloseableIterator[Array[Byte]] = {
+
+    import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichArray
+
+    import scala.collection.JavaConversions._
+
+    val MergedDictionaryDeltas(dictionaries, dictionaryMappings) = mergedDictionaries
+
+    // gets the attribute we're sorting by from the i-th feature in the vector
+    val getSortAttribute: (NullableMapVector, java.util.Map[Integer, Integer], Int) => AnyRef = {
+      // TODO look up child by index?
+      if (dictionaries.contains(sortBy)) {
+        // since we've sorted the dictionaries, we can just compare the encoded index values
+        (vector, mappings, i) => {
+          mappings.get(vector.getChild(sortBy).asInstanceOf[NullableIntVector].getAccessor.getObject(i))
+        }
+      } else {
+        (vector, _, i) => vector.getChild(sortBy).getAccessor.getObject(i)
+      }
+    }
+
+    val result = SimpleFeatureVector.create(sft, dictionaries, encoding)
+    val unloader = new RecordBatchUnloader(result)
+
+    val mergeBuilder = Array.newBuilder[(NullableMapVector, Seq[(Int, Int) => Unit], java.util.Map[Integer, Integer])]
+    mergeBuilder.sizeHint(threadedBatches.foldLeft(0)((sum, a) => sum + a.length))
+
+    threadedBatches.foreachIndex { case (batches, batchIndex) =>
+      val batchMappings = dictionaryMappings.map { case (f, m) => (f, m(batchIndex)) }
+      var j = 0
+      while (j < batches.length) {
+        val batch = batches(j)
+        val mappings = batchMappings.map { case (f, m) => (f, m(j)) }
+        // note: for some reason we have to allow the batch loader to create the vectors or this doesn't work
+        val loader = RecordBatchLoader(result.underlying.getField)
+        // skip the dictionary batches
+        var offset = 8
+        dictionaryFields.foreach { _ =>
+          offset += Ints.fromBytes(batch(offset), batch(offset + 1), batch(offset + 2), batch(offset + 3))
+        }
+        // load the record batch
+        loader.load(batch, offset, batch.length - offset)
+        val transfers: Seq[(Int, Int) => Unit] = loader.vector.getChildrenFromFields.map { child =>
+          val to = result.underlying.getChild(child.getField.getName)
+          if (child.getField.getDictionary == null) {
+            val transfer = child.makeTransferPair(to)
+            (fromIndex: Int, toIndex: Int) => transfer.copyValueSafe(fromIndex, toIndex)
+          } else {
+            val mapping = mappings(child.getField.getName)
+            val accessor = child.getAccessor
+            val m = to.getMutator.asInstanceOf[NullableIntVector#Mutator]
+            (fromIndex: Int, toIndex: Int) => {
+              val n = accessor.getObject(fromIndex).asInstanceOf[Integer]
+              if (n == null) {
+                m.setNull(toIndex)
+              } else {
+                m.setSafe(toIndex, mapping.get(n))
+              }
+            }
+          }
+        }
+        mergeBuilder.+=((loader.vector.asInstanceOf[NullableMapVector], transfers, mappings.get(sortBy).orNull))
+        j += 1
+      }
+    }
+
+    val toMerge = mergeBuilder.result()
+
+    // we do a merge sort of each batch
+    // sorted queue of [(current batch value, current index in that batch, number of the batch)]
+    // note: need to flip ordering here as highest sorted values come off the queue first
+    val queue = scala.collection.mutable.PriorityQueue.empty[(AnyRef, Int, Int)](if (reverse) { ordering } else { ordering.reverse })
+
+    toMerge.foreachIndex { case ((vector, _, mappings), i) =>
+      if (vector.getAccessor.getValueCount > 0) {
+        queue.+=((getSortAttribute(vector, mappings, 0), 0, i))
+      }
+    }
+
+    // gets the next record batch to write - returns null if no further records
+    def nextBatch(): Array[Byte] = {
+      if (queue.isEmpty) { null } else {
+        result.clear()
+        var resultIndex = 0
+        // copy the next sorted value and then queue and sort the next element out of the batch we copied from
+        do {
+          val (_, i, batch) = queue.dequeue()
+          val (vector, transfers, mappings) = toMerge(batch)
+          transfers.foreach(_.apply(i, resultIndex))
+          result.underlying.getMutator.setIndexDefined(resultIndex)
+          resultIndex += 1
+          val nextBatchIndex = i + 1
+          if (vector.getAccessor.getValueCount > nextBatchIndex) {
+            val value = getSortAttribute(vector, mappings, nextBatchIndex)
+            queue.+=((value, nextBatchIndex, batch))
+          }
+        } while (queue.nonEmpty && resultIndex < batchSize)
+        unloader.unload(resultIndex)
+      }
+    }
+
+    val merged = new CloseableIterator[Array[Byte]] {
+      private var batch: Array[Byte] = _
+
+      override def hasNext: Boolean = {
+        if (batch == null) {
+          batch = nextBatch()
+        }
+        batch != null
+      }
+
+      override def next(): Array[Byte] = {
+        val res = batch
+        batch = null
+        res
+      }
+
+      override def close(): Unit = {
+        CloseWithLogging(result)
+        toMerge.foreach { case (vector, _, _) => CloseWithLogging(vector) }
+      }
+    }
+
+    createFile(result, Some(sortBy, reverse))(merged)
   }
 
   /**
@@ -719,23 +886,27 @@ object SimpleFeatureArrowIO {
     }
   }
 
+  def createFile(vector: SimpleFeatureVector,
+                 sort: Option[(String, Boolean)])
+                (body: CloseableIterator[Array[Byte]]): CloseableIterator[Array[Byte]] = {
+    // header with schema and dictionaries
+    val headerBytes = new ByteArrayOutputStream
+    // make sure to copy bytes before closing so we get just the header metadata
+    val writer = SimpleFeatureArrowFileWriter(vector, headerBytes, sort)
+    writer.start()
+
+    val header = Iterator.single(headerBytes.toByteArray)
+    // per arrow streaming format footer is the encoded int '0'
+    val footer = Iterator.single(Array[Byte](0, 0, 0, 0))
+    CloseableIterator(header ++ body ++ footer, { CloseWithLogging(body); CloseWithLogging(writer) })
+  }
+
   def createFile(sft: SimpleFeatureType,
                  dictionaries: Map[String, ArrowDictionary],
                  encoding: SimpleFeatureEncoding,
                  sort: Option[(String, Boolean)])
                 (body: CloseableIterator[Array[Byte]]): CloseableIterator[Array[Byte]] = {
-    // header with schema and dictionaries
-    val headerBytes = {
-      val out = new ByteArrayOutputStream
-      WithClose(new SimpleFeatureArrowFileWriter(sft, out, dictionaries, encoding, sort)) { writer =>
-        writer.start()
-        out.toByteArray // copy bytes before closing so we get just the header metadata
-      }
-    }
-    val header = Iterator.single(headerBytes)
-    // per arrow streaming format footer is the encoded int '0'
-    val footer = Iterator.single(Array[Byte](0, 0, 0, 0))
-    CloseableIterator(header ++ body ++ footer, body.close())
+    createFile(SimpleFeatureVector.create(sft, dictionaries, encoding, 0), sort)(body)
   }
 
   /**
@@ -767,13 +938,13 @@ object SimpleFeatureArrowIO {
     Map(Metadata.SortField -> field, Metadata.SortOrder -> (if (reverse) { "descending" } else { "ascending" }))
   }
 
-  def createRoot(vector: FieldVector): VectorSchemaRoot = {
-    val schema = new Schema(Collections.singletonList(vector.getField))
+  def createRoot(vector: FieldVector, metadata: java.util.Map[String, String] = null): VectorSchemaRoot = {
+    val schema = new Schema(Collections.singletonList(vector.getField), metadata)
     new VectorSchemaRoot(schema, Collections.singletonList(vector), vector.getAccessor.getValueCount)
   }
 
   private def createEmptyDictionaries(fields: Seq[String]): Map[String, ArrowDictionary] = {
     import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableLike
-    fields.mapWithIndex { case (name, i) => name -> ArrowDictionary.create(i, Array.empty) }.toMap
+    fields.mapWithIndex { case (name, i) => name -> ArrowDictionary.create(i, Array.empty[AnyRef]) }.toMap
   }
 }

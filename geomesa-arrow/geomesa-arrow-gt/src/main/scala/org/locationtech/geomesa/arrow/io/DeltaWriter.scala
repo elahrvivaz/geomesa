@@ -46,7 +46,7 @@ object DeltaWriter {
                                       values: scala.collection.mutable.Map[AnyRef, Integer])
 
   private class BatchWriter(vector: FieldVector) extends Closeable {
-    private val root = SimpleFeatureArrowIO.root(vector)
+    private val root = SimpleFeatureArrowIO.createRoot(vector)
     private val os = new ByteArrayOutputStream()
     private val writer = new ArrowStreamWriter(root, provider, Channels.newChannel(os))
     writer.start() // start the writer - we'll discard the metadata later, as we only care about the record batches
@@ -70,7 +70,7 @@ class DeltaWriter(val sft: SimpleFeatureType,
                   dictionaryFields: Seq[String],
                   encoding: SimpleFeatureEncoding,
                   sort: Option[(String, Boolean)],
-                  batchSize: Int) extends Closeable {
+                  initialCapacity: Int) extends Closeable {
 
   import DeltaWriter._
   import org.locationtech.geomesa.arrow.allocator
@@ -114,7 +114,7 @@ class DeltaWriter(val sft: SimpleFeatureType,
 
   // set capacity after all child vectors have been created by the writers, then allocate
   Seq(vector, dictionaryVector).foreach { v =>
-    v.setInitialCapacity(batchSize)
+    v.setInitialCapacity(initialCapacity)
     v.allocateNew()
   }
 

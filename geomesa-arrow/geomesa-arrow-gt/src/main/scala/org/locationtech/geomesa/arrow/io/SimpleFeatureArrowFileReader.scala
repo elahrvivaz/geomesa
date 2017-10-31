@@ -12,17 +12,13 @@ import java.io.{Closeable, InputStream}
 
 import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.vector.dictionary.DictionaryProvider
-import org.apache.arrow.vector.types.FloatingPointPrecision
-import org.apache.arrow.vector.types.pojo.{ArrowType, Field}
+import org.apache.arrow.vector.types.pojo.Field
 import org.locationtech.geomesa.arrow.features.ArrowSimpleFeature
 import org.locationtech.geomesa.arrow.filter.ArrowFilterOptimizer
 import org.locationtech.geomesa.arrow.io.reader.{CachingSimpleFeatureArrowFileReader, StreamingSimpleFeatureArrowFileReader}
-import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.{EncodingPrecision, SimpleFeatureEncoding}
-import org.locationtech.geomesa.arrow.vector.{ArrowAttributeReader, ArrowDictionary, GeometryFields, SimpleFeatureVector}
-import org.locationtech.geomesa.features.serialization.ObjectType
+import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, SimpleFeatureVector}
 import org.locationtech.geomesa.filter.Bounds.Bound
 import org.locationtech.geomesa.filter.{Bounds, FilterHelper}
-import org.locationtech.geomesa.utils.geotools.SimpleFeatureSpecParser
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
@@ -96,29 +92,10 @@ object SimpleFeatureArrowFileReader {
     * @return
     */
   private [io] def loadDictionaries(fields: Seq[Field], provider: DictionaryProvider): Map[String, ArrowDictionary] = {
-    import scala.collection.JavaConversions._
-
     fields.flatMap { field =>
       Option(field.getDictionary).toSeq.map { dictionaryEncoding =>
         val vector = provider.lookup(dictionaryEncoding.getId).getVector
-        val spec = SimpleFeatureSpecParser.parseAttribute(field.getMetadata.get(SimpleFeatureVector.DescriptorKey))
-        val (objectType, bindings) = ObjectType.selectType(spec.clazz, spec.options)
-        val isDouble = GeometryFields.precisionFromField(field) == FloatingPointPrecision.DOUBLE
-        val geomPrecision = if (isDouble) { EncodingPrecision.Max } else { EncodingPrecision.Min }
-        val datePrecision = field.getFieldType.getType match {
-          case a: ArrowType.Int if a.getBitWidth == 64 => EncodingPrecision.Max
-          case _ => EncodingPrecision.Min
-        }
-        val encoding = SimpleFeatureEncoding(fids = false, geomPrecision, datePrecision)
-        val attributeReader = ArrowAttributeReader(bindings.+:(objectType), spec.clazz, vector, None, encoding)
-
-        val values = Array.ofDim[AnyRef](vector.getAccessor.getValueCount)
-        var i = 0
-        while (i < vector.getAccessor.getValueCount) {
-          values(i) = attributeReader.apply(i)
-          i += 1
-        }
-        field.getName -> new ArrowDictionary(dictionaryEncoding, values, values.length)
+        field.getName -> ArrowDictionary.create(dictionaryEncoding.getId, vector)
       }
     }.toMap
   }
