@@ -172,13 +172,13 @@ class DeltaWriter(val sft: SimpleFeatureType,
     }
 
     writers.foreach { writer =>
-      var i = 0
-      val getAttribute: () => AnyRef = writer.dictionary match {
-        case None =>             () => features(i).getAttribute(writer.index)
-        case Some(dictionary) => () => dictionary.values(features(i).getAttribute(writer.index))
+      val getAttribute: (Int) => AnyRef = writer.dictionary match {
+        case None =>             (i) => features(i).getAttribute(writer.index)
+        case Some(dictionary) => (i) => dictionary.values(features(i).getAttribute(writer.index))
       }
+      var i = 0
       while (i < count) {
-        writer.attribute.apply(i, getAttribute)
+        writer.attribute.apply(i, getAttribute(i))
         i += 1
       }
       writer.attribute.setValueCount(count)

@@ -37,6 +37,7 @@ import org.locationtech.geomesa.arrow.vector.impl.{AbstractLineStringVector, Abs
 import org.locationtech.geomesa.features.serialization.ObjectType
 import org.locationtech.geomesa.features.serialization.ObjectType.ObjectType
 import org.locationtech.geomesa.utils.text.WKTUtils
+import org.opengis.feature.`type`.AttributeDescriptor
 import org.opengis.feature.simple.SimpleFeatureType
 
 /**
@@ -99,11 +100,18 @@ object ArrowAttributeReader {
     import scala.collection.JavaConversions._
     sft.getAttributeDescriptors.map { descriptor =>
       val name = descriptor.getLocalName
-      val classBinding = descriptor.getType.getBinding
-      val (objectType, bindings) = ObjectType.selectType(classBinding, descriptor.getUserData)
       val dictionary = dictionaries.get(name).orElse(dictionaries.get(descriptor.getLocalName))
-      apply(bindings.+:(objectType), classBinding, vector.getChild(name), dictionary, encoding)
+      apply(descriptor, vector.getChild(name), dictionary, encoding)
     }
+  }
+
+  def apply(descriptor: AttributeDescriptor,
+            vector: FieldVector,
+            dictionary: Option[ArrowDictionary],
+            encoding: SimpleFeatureEncoding): ArrowAttributeReader = {
+    val classBinding = descriptor.getType.getBinding
+    val (objectType, bindings) = ObjectType.selectType(classBinding, descriptor.getUserData)
+    apply(bindings.+:(objectType), classBinding, vector, dictionary, encoding)
   }
 
   /**

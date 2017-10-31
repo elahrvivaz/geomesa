@@ -136,6 +136,18 @@ object SimpleFeatureTypes {
   }
 
   /**
+    * Create a single attribute descriptor
+    *
+    * @param spec attribute spec, e.g. 'foo:String'
+    * @return
+    */
+  def createDescriptor(spec: String): AttributeDescriptor = {
+    try { SimpleFeatureSpecParser.parseAttribute(spec).toDescriptor } catch {
+      case e: ParsingException => throw new IllegalArgumentException(e.getMessage, e)
+    }
+  }
+
+  /**
     * Encode a SimpleFeatureType as a comma-separated String
     *
     * @param sft - SimpleFeatureType to encode

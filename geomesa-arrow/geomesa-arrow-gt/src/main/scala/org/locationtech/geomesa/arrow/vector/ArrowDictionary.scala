@@ -8,14 +8,18 @@
 
 package org.locationtech.geomesa.arrow.vector
 
+import java.util.Date
 import java.util.concurrent.atomic.AtomicLong
 
-import org.apache.arrow.vector.FieldVector
+import com.vividsolutions.jts.geom.Geometry
+import org.apache.arrow.vector.{FieldVector, NullableBigIntVector}
 import org.apache.arrow.vector.complex.NullableMapVector
 import org.apache.arrow.vector.dictionary.Dictionary
+import org.apache.arrow.vector.types.FloatingPointPrecision
 import org.apache.arrow.vector.types.pojo.{ArrowType, DictionaryEncoding}
-import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
+import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.{EncodingPrecision, SimpleFeatureEncoding}
 import org.locationtech.geomesa.features.serialization.ObjectType
+import org.opengis.feature.`type`.AttributeDescriptor
 
 import scala.reflect.ClassTag
 
@@ -29,7 +33,7 @@ trait ArrowDictionary {
   def length: Int
 
   /**
-    * Decode a dictionary int to a value
+    * Decode a dictionary int to a value. Note: may not be thread safe
     *
     * @param i dictionary encoded int
     * @return value
@@ -91,8 +95,8 @@ object ArrowDictionary {
   def create[T <: AnyRef](id: Long, values: Array[T], length: Int)(implicit ct: ClassTag[T]): ArrowDictionary =
     new ArrowDictionaryArray[T](createEncoding(id, length), values, length)
 
-  def create(id: Long, values: FieldVector): ArrowDictionary =
-    new ArrowDictionaryVector(createEncoding(id, values), values)
+  def create(encoding: DictionaryEncoding, values: FieldVector, descriptor: AttributeDescriptor): ArrowDictionary =
+    new ArrowDictionaryVector(encoding, values, descriptor)
 
   /**
     * Holder for dictionary values
@@ -105,7 +109,7 @@ object ArrowDictionary {
                                           override val length: Int)
                                           (implicit ct: ClassTag[T]) extends ArrowDictionary {
 
-    override def lookup(i: Int): AnyRef = if (i < length) { values(i) } else { null }
+    override def lookup(i: Int): AnyRef = if (i < length) { values(i) } else { "[other]" }
 
     override def toDictionary(precision: SimpleFeatureEncoding): Dictionary = {
       import org.locationtech.geomesa.arrow.allocator
@@ -115,7 +119,7 @@ object ArrowDictionary {
 
       val name = s"dictionary-$id"
 
-      val (objectType, bindings) = ObjectType.selectType(ct.runtimeClass, null)
+      val (objectType, bindings) = ObjectType.selectType(ct.runtimeClass)
       val writer = ArrowAttributeWriter(name, bindings.+:(objectType), ct.runtimeClass, container, None, Map.empty, precision)
 
       container.setInitialCapacity(length)
@@ -133,14 +137,27 @@ object ArrowDictionary {
     }
   }
 
-  class ArrowDictionaryVector(override val encoding: DictionaryEncoding, vector: FieldVector)
-      extends ArrowDictionary {
+  class ArrowDictionaryVector(override val encoding: DictionaryEncoding,
+                              vector: FieldVector,
+                              descriptor: AttributeDescriptor) extends ArrowDictionary {
 
+    private val featureEncoding =
+      if (classOf[Date].isAssignableFrom(descriptor.getType.getBinding) &&
+          vector.isInstanceOf[NullableBigIntVector]) {
+        SimpleFeatureEncoding(fids = false, EncodingPrecision.Max, EncodingPrecision.Min)
+      } else if (classOf[Geometry].isAssignableFrom(descriptor.getType.getBinding) &&
+          GeometryFields.precisionFromField(vector.getField) == FloatingPointPrecision.DOUBLE) {
+        SimpleFeatureEncoding(fids = false, EncodingPrecision.Max, EncodingPrecision.Min)
+      } else {
+        SimpleFeatureEncoding.min(fids = false)
+      }
+
+    private val reader = ArrowAttributeReader(descriptor, vector, None, featureEncoding)
     private val accessor = vector.getAccessor
 
     override val length: Int = accessor.getValueCount
 
-    override def lookup(i: Int): AnyRef = if (i < length) { accessor.getObject(i) } else { null }
+    override def lookup(i: Int): AnyRef = if (i < length) { reader.apply(i) } else { "[other]" }
 
     // TODO verify precision matches vector
     override def toDictionary(precision: SimpleFeatureEncoding): Dictionary = new Dictionary(vector, encoding)
@@ -157,7 +174,4 @@ object ArrowDictionary {
       new DictionaryEncoding(id, false, new ArrowType.Int(32, true))
     }
   }
-
-  private def createEncoding(id: Long, vector: FieldVector): DictionaryEncoding =
-    new DictionaryEncoding(id, false, vector.getField.getType.asInstanceOf[ArrowType.Int])
 }

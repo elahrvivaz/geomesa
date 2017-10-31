@@ -16,9 +16,11 @@ import org.apache.arrow.vector.types.pojo.Field
 import org.locationtech.geomesa.arrow.features.ArrowSimpleFeature
 import org.locationtech.geomesa.arrow.filter.ArrowFilterOptimizer
 import org.locationtech.geomesa.arrow.io.reader.{CachingSimpleFeatureArrowFileReader, StreamingSimpleFeatureArrowFileReader}
+import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.DescriptorKey
 import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, SimpleFeatureVector}
 import org.locationtech.geomesa.filter.Bounds.Bound
 import org.locationtech.geomesa.filter.{Bounds, FilterHelper}
+import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
@@ -94,8 +96,9 @@ object SimpleFeatureArrowFileReader {
   private [io] def loadDictionaries(fields: Seq[Field], provider: DictionaryProvider): Map[String, ArrowDictionary] = {
     fields.flatMap { field =>
       Option(field.getDictionary).toSeq.map { dictionaryEncoding =>
+        val descriptor = SimpleFeatureTypes.createDescriptor(field.getMetadata.get(DescriptorKey))
         val vector = provider.lookup(dictionaryEncoding.getId).getVector
-        field.getName -> ArrowDictionary.create(dictionaryEncoding.getId, vector)
+        field.getName -> ArrowDictionary.create(dictionaryEncoding, vector, descriptor)
       }
     }.toMap
   }

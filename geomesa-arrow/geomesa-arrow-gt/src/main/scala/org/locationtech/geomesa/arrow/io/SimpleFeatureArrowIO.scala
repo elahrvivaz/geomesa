@@ -752,7 +752,7 @@ object SimpleFeatureArrowIO {
     mappingsBuilder.sizeHint(dictionaryFields.length)
 
     dictionaryFields.foreachIndex { case (f, i) =>
-      dictionaryBuilder.+=((f, ArrowDictionary.create(i, results(i))))
+//      dictionaryBuilder.+=((f, ArrowDictionary.create(i, results(i))))
       mappingsBuilder.+=((f, allMerges.map(_._3.apply(i).asInstanceOf[Array[java.util.Map[Integer, Integer]]])))
     }
 
