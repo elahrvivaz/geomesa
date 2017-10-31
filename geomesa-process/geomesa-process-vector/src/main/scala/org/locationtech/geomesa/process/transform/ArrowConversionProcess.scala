@@ -28,6 +28,7 @@ import org.opengis.feature.Feature
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.collection.mutable.{ArrayBuffer, ListBuffer}
+import scala.reflect.ClassTag
 
 @DescribeProcess(
   title = "Arrow Conversion",
@@ -167,7 +168,7 @@ object ArrowConversionProcess {
     private val bytes = ListBuffer.empty[Array[Byte]]
     private var count = 0L
 
-    private val writer = new SimpleFeatureArrowFileWriter(sft, out, Map.empty, encoding)
+    private val writer = SimpleFeatureArrowFileWriter(sft, out, Map.empty, encoding)
 
     override def visit(feature: SimpleFeature): Unit = {
       writer.add(feature.asInstanceOf[SimpleFeature])
@@ -218,7 +219,10 @@ object ArrowConversionProcess {
         features.foreach { f =>
           indicesAndValues.foreach { case (_, i, v) => v.add(f.getAttribute(i)) }
         }
-        indicesAndValues.map { case (n, i, v) => n -> ArrowDictionary.create(i, v.toArray) }.toMap
+        indicesAndValues.map { case (n, i, v) =>
+          val ct = ClassTag[AnyRef](sft.getDescriptor(i).getType.getBinding)
+          n -> ArrowDictionary.create(i, v.toArray)(ct)
+        }.toMap
       }
 
       val ordering = sort.map { case (field, reverse) =>
@@ -231,7 +235,7 @@ object ArrowConversionProcess {
       }
 
       val out = new ByteArrayOutputStream()
-      val writer = new SimpleFeatureArrowFileWriter(sft, out, dictionaries, encoding, sort)
+      val writer = SimpleFeatureArrowFileWriter(sft, out, dictionaries, encoding, sort)
 
       new Iterator[Array[Byte]] {
         override def hasNext: Boolean = sorted.hasNext

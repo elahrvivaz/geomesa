@@ -24,7 +24,7 @@ import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEn
 import org.locationtech.geomesa.arrow.vector.{ArrowAttributeWriter, SimpleFeatureVector}
 import org.locationtech.geomesa.features.serialization.ObjectType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
-import org.locationtech.geomesa.utils.io.WithClose
+import org.locationtech.geomesa.utils.io.{CloseWithLogging, WithClose}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 /**
@@ -89,33 +89,29 @@ class DictionaryBuildingWriter private (val sft: SimpleFeatureType,
     attributeWriters.foreach(_.setValueCount(index))
     root.setRowCount(index)
 
-    WithClose(NullableMapVector.empty("", allocator)) { container =>
-      container.allocateNew()
+    val dictionaries = attributeWriters.collect { case w: ArrowAttributeDictionaryBuildingWriter[_] =>
+      val name = s"dict-${w.encoding.getId}"
+      val TypeBindings(bindings, classBinding, precision) = w.dictionaryType
+      val writer = ArrowAttributeWriter(name, bindings, classBinding, None, None, Map.empty, precision)
 
-      val dictionaries = attributeWriters.collect { case w: ArrowAttributeDictionaryBuildingWriter[_] =>
-        val name = s"dict-${w.encoding.getId}"
-        val TypeBindings(bindings, classBinding, precision) = w.dictionaryType
-        val writer = ArrowAttributeWriter(name, bindings, classBinding, container, None, Map.empty, precision)
-        val vector = container.getChild(name)
-
-        var i = 0
-        w.dictionary.foreach { value =>
-          if (value != null) {
-            writer.apply(i, value)
-          }
-          i += 1
+      var i = 0
+      w.dictionary.foreach { value =>
+        if (value != null) {
+          writer.apply(i, value)
         }
-        writer.setValueCount(w.size)
-        container.getMutator.setValueCount(w.size)
-
-        new Dictionary(vector, w.encoding)
+        i += 1
       }
+      writer.setValueCount(w.size)
 
-      WithClose(new ArrowStreamWriter(root, new MapDictionaryProvider(dictionaries: _*), os)) { writer =>
-        writer.start()
-        writer.writeBatch()
-      }
+      new Dictionary(writer.vector, w.encoding)
     }
+
+    WithClose(new ArrowStreamWriter(root, new MapDictionaryProvider(dictionaries: _*), os)) { writer =>
+      writer.start()
+      writer.writeBatch()
+    }
+
+    dictionaries.foreach(d => CloseWithLogging(d.getVector))
   }
 
   override def close(): Unit = {
@@ -168,23 +164,23 @@ object DictionaryBuildingWriter {
         if (maxSize <= Byte.MaxValue) {
           val dictionaryEncoding = new DictionaryEncoding(dictionaryId, false, new ArrowType.Int(8, true))
           val fieldType = new FieldType(true, MinorType.TINYINT.getType, dictionaryEncoding, metadata)
-          val mutator = vector.addOrGet(name, fieldType, classOf[NullableTinyIntVector]).getMutator
-          new ArrowAttributeByteDictionaryBuildingWriter(mutator, dictionaryEncoding, dictionaryType)
+          val child = vector.addOrGet(name, fieldType, classOf[NullableTinyIntVector])
+          new ArrowAttributeByteDictionaryBuildingWriter(child, dictionaryEncoding, dictionaryType)
         } else if (maxSize <= Short.MaxValue) {
           val dictionaryEncoding = new DictionaryEncoding(dictionaryId, false, new ArrowType.Int(16, true))
           val fieldType = new FieldType(true, MinorType.SMALLINT.getType, dictionaryEncoding, metadata)
-          val mutator = vector.addOrGet(name, fieldType, classOf[NullableSmallIntVector]).getMutator
-          new ArrowAttributeShortDictionaryBuildingWriter(mutator, dictionaryEncoding, dictionaryType)
+          val child = vector.addOrGet(name, fieldType, classOf[NullableSmallIntVector])
+          new ArrowAttributeShortDictionaryBuildingWriter(child, dictionaryEncoding, dictionaryType)
         } else if (maxSize <= Int.MaxValue) {
           val dictionaryEncoding = new DictionaryEncoding(dictionaryId, false, new ArrowType.Int(32, true))
           val fieldType = new FieldType(true, MinorType.INT.getType, dictionaryEncoding, metadata)
-          val mutator = vector.addOrGet(name, fieldType, classOf[NullableIntVector]).getMutator
-          new ArrowAttributeIntDictionaryBuildingWriter(mutator, dictionaryEncoding, dictionaryType)
+          val child = vector.addOrGet(name, fieldType, classOf[NullableIntVector])
+          new ArrowAttributeIntDictionaryBuildingWriter(child, dictionaryEncoding, dictionaryType)
         } else {
           throw new IllegalArgumentException(s"MaxSize must be less than or equal to Int.MaxValue (${Int.MaxValue})")
         }
       } else {
-        ArrowAttributeWriter(name, bindings.+:(objectType), classBinding, vector, None, metadata, encoding)
+        ArrowAttributeWriter(name, bindings.+:(objectType), classBinding, Some(vector), None, metadata, encoding)
       }
     }
   }
@@ -215,30 +211,39 @@ object DictionaryBuildingWriter {
     }
   }
 
-  class ArrowAttributeByteDictionaryBuildingWriter(mutator: NullableTinyIntVector#Mutator,
+  class ArrowAttributeByteDictionaryBuildingWriter(override val vector: NullableTinyIntVector,
                                                    encoding: DictionaryEncoding,
                                                    dictionaryType: TypeBindings)
       extends ArrowAttributeDictionaryBuildingWriter[Byte](encoding, dictionaryType) {
+
+    private val mutator = vector.getMutator
+
     override def apply(i: Int, value: AnyRef): Unit = {
       val index = values.getOrElseUpdate(value, { val i = counter.toByte; counter = counter + 1; i })
       mutator.setSafe(i, index)
     }
   }
 
-  class ArrowAttributeShortDictionaryBuildingWriter(mutator: NullableSmallIntVector#Mutator,
+  class ArrowAttributeShortDictionaryBuildingWriter(override val vector: NullableSmallIntVector,
                                                     encoding: DictionaryEncoding,
                                                     dictionaryType: TypeBindings)
       extends ArrowAttributeDictionaryBuildingWriter[Short](encoding, dictionaryType) {
+
+    private val mutator = vector.getMutator
+
     override def apply(i: Int, value: AnyRef): Unit = {
       val index = values.getOrElseUpdate(value, { val i = counter.toShort; counter = counter + 1; i })
       mutator.setSafe(i, index)
     }
   }
 
-  class ArrowAttributeIntDictionaryBuildingWriter(mutator: NullableIntVector#Mutator,
+  class ArrowAttributeIntDictionaryBuildingWriter(override val vector: NullableIntVector,
                                                   encoding: DictionaryEncoding,
                                                   dictionaryType: TypeBindings)
       extends ArrowAttributeDictionaryBuildingWriter[Int](encoding, dictionaryType) {
+
+    private val mutator = vector.getMutator
+
     override def apply(i: Int, value: AnyRef): Unit = {
       val index = values.getOrElseUpdate(value, { val i = counter; counter = counter + 1; i })
       mutator.setSafe(i, index)

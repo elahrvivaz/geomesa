@@ -35,6 +35,8 @@ object DeltaWriter {
   // empty provider
   private val provider = new MapDictionaryProvider()
 
+  private val random = new Random()
+
   private case class FieldWriter(name: String,
                                  index: Int,
                                  attribute: ArrowAttributeWriter,
@@ -53,10 +55,16 @@ object DeltaWriter {
 
     def writeBatch(count: Int, to: OutputStream): Unit = {
       os.reset()
-      root.setRowCount(count)
-      writer.writeBatch()
-      to.write(Ints.toByteArray(os.size()))
-      os.writeTo(to)
+      if (count < 1) {
+        println(s"writing 0 bytes")
+        to.write(Ints.toByteArray(0))
+      } else {
+        root.setRowCount(count)
+        writer.writeBatch()
+        println(s"writing ${os.size} bytes")
+        to.write(Ints.toByteArray(os.size()))
+        os.writeTo(to)
+      }
     }
 
     override def close(): Unit = {
@@ -77,31 +85,32 @@ class DeltaWriter(val sft: SimpleFeatureType,
 
   import scala.collection.JavaConversions._
 
-  private val threadingKey = Random.nextLong()
+  private val threadingKey = random.nextLong
+println(s"new instance $threadingKey")
   private val result = new ByteArrayOutputStream
 
   private val vector = NullableMapVector.empty(sft.getTypeName, allocator)
   private val dictionaryVector = NullableMapVector.empty(sft.getTypeName, allocator)
-
 
   private val ordering = sort.map { case (field, reverse) =>
     val o = SimpleFeatureOrdering(sft.indexOf(field))
     if (reverse) { o.reverse } else { o }
   }
 
+  // TODO these maybe don't match?
   private val writers = sft.getAttributeDescriptors.map { descriptor =>
     val name = descriptor.getLocalName
     val isDictionary = dictionaryFields.contains(name)
     val classBinding = if (isDictionary) { classOf[Integer] } else { descriptor.getType.getBinding }
     val (objectType, bindings) = ObjectType.selectType(classBinding, descriptor.getUserData)
-    val attribute = ArrowAttributeWriter(name, bindings.+:(objectType), classBinding, vector, None, Map.empty, encoding)
+    val attribute = ArrowAttributeWriter(name, bindings.+:(objectType), classBinding, Some(vector), None, Map.empty, encoding)
     val dictionary = if (!isDictionary) { None } else {
       var i = 0
       // TODO ensure unique name? not sure it matters
       var dictionaryName: String = s"$name-dict-$i"
       val classBinding = descriptor.getType.getBinding
       val (objectType, bindings) = ObjectType.selectType(classBinding, descriptor.getUserData)
-      val attribute = ArrowAttributeWriter(dictionaryName, bindings.+:(objectType), classBinding, dictionaryVector, None, Map.empty, encoding)
+      val attribute = ArrowAttributeWriter(dictionaryName, bindings.+:(objectType), classBinding, Some(dictionaryVector), None, Map.empty, encoding)
       val writer = new BatchWriter(dictionaryVector.getChild(dictionaryName))
       Some(DictionaryWriter(sft.indexOf(name), attribute, writer, scala.collection.mutable.Map.empty))
     }
@@ -168,6 +177,7 @@ class DeltaWriter(val sft: SimpleFeatureType,
       }
       // write out the dictionary batch
       dictionary.attribute.setValueCount(i)
+println(s"$threadingKey writing dictionary ${dictionary.index}: $i $delta")
       dictionary.writer.writeBatch(i, result)
     }
 
@@ -184,6 +194,7 @@ class DeltaWriter(val sft: SimpleFeatureType,
       writer.attribute.setValueCount(count)
     }
 
+println(s"$threadingKey writing batch $count")
     writer.writeBatch(count, result)
 
     result.toByteArray

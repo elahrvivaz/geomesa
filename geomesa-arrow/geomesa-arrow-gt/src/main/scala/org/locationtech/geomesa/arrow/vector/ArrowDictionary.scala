@@ -12,11 +12,10 @@ import java.util.Date
 import java.util.concurrent.atomic.AtomicLong
 
 import com.vividsolutions.jts.geom.Geometry
-import org.apache.arrow.vector.{FieldVector, NullableBigIntVector}
-import org.apache.arrow.vector.complex.NullableMapVector
 import org.apache.arrow.vector.dictionary.Dictionary
 import org.apache.arrow.vector.types.FloatingPointPrecision
 import org.apache.arrow.vector.types.pojo.{ArrowType, DictionaryEncoding}
+import org.apache.arrow.vector.{FieldVector, NullableBigIntVector}
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.{EncodingPrecision, SimpleFeatureEncoding}
 import org.locationtech.geomesa.features.serialization.ObjectType
 import org.opengis.feature.`type`.AttributeDescriptor
@@ -114,26 +113,18 @@ object ArrowDictionary {
     override def toDictionary(precision: SimpleFeatureEncoding): Dictionary = {
       import org.locationtech.geomesa.arrow.allocator
 
-      // container for holding our vector
-      val container = NullableMapVector.empty("", allocator)
-
       val name = s"dictionary-$id"
-
       val (objectType, bindings) = ObjectType.selectType(ct.runtimeClass)
-      val writer = ArrowAttributeWriter(name, bindings.+:(objectType), ct.runtimeClass, container, None, Map.empty, precision)
+      val writer = ArrowAttributeWriter(name, bindings.+:(objectType), ct.runtimeClass, None, None, Map.empty, precision)
 
-      container.setInitialCapacity(length)
-      container.allocateNew()
-
-      val vector = container.getChild(name)
       var i = 0
       while (i < length) {
         writer.apply(i, values(i))
         i += 1
       }
       writer.setValueCount(length)
-      vector.getMutator.setValueCount(length)
-      new Dictionary(vector, encoding)
+
+      new Dictionary(writer.vector, encoding)
     }
   }
 
@@ -152,6 +143,7 @@ object ArrowDictionary {
         SimpleFeatureEncoding.min(fids = false)
       }
 
+    // we use an attribute reader to get the right type conversion
     private val reader = ArrowAttributeReader(descriptor, vector, None, featureEncoding)
     private val accessor = vector.getAccessor
 

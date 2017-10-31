@@ -35,6 +35,8 @@ import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 import org.opengis.filter.sort.SortBy
 
+import scala.reflect.ClassTag
+
 abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[AuthorizationsProvider])
     extends QueryRunner {
 
@@ -262,10 +264,11 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
             }
             // note: we sort the dictionary values to make them easier to merge later
             java.util.Arrays.sort(values, 0, count, ArrowScan.DictionaryOrdering)
-            name -> ArrowDictionary.create(dictionaryId, values, count)
+            val ct = ClassTag[AnyRef](arrowSft.getDescriptor(attribute).getType.getBinding)
+            name -> ArrowDictionary.create(dictionaryId, values, count)(ct)
           }.toMap
 
-          WithClose(new SimpleFeatureArrowFileWriter(arrowSft, os, dictionaries, encoding, sort)) { writer =>
+          WithClose(SimpleFeatureArrowFileWriter(arrowSft, os, dictionaries, encoding, sort)) { writer =>
             var i = 0
             while (i < index) {
               writer.add(cache(i))

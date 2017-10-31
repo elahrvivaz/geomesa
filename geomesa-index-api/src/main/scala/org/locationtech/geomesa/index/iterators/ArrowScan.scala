@@ -29,6 +29,8 @@ import org.locationtech.geomesa.utils.text.StringSerialization
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
+import scala.reflect.ClassTag
+
 trait ArrowScan extends AggregatingScan[ArrowAggregate] {
 
   private var batchSize: Int = _
@@ -330,7 +332,12 @@ object ArrowScan {
     if (attributes.isEmpty) { Map.empty } else {
       var id = -1L
       // note: sort values to return same dictionary cache
-      val providedDictionaries = provided.map { case (k, v) => id += 1; sort(v); k -> ArrowDictionary.create(id, v) }
+      val providedDictionaries = provided.map { case (k, v) =>
+        id += 1
+        sort(v)
+        val ct = ClassTag[AnyRef](sft.getDescriptor(k).getType.getBinding)
+        k -> ArrowDictionary.create(id, v)(ct)
+      }
       val toLookup = attributes.filterNot(provided.contains)
       if (toLookup.isEmpty) { providedDictionaries } else {
         // use topk if available, otherwise run a live stats query to get the dictionary values
@@ -339,7 +346,8 @@ object ArrowScan {
             id += 1
             val values = k.topK(DictionaryTopK.get.toInt).map(_._1).toArray
             sort(values)
-            name -> ArrowDictionary.create(id, values)
+            val ct = ClassTag[AnyRef](sft.getDescriptor(name).getType.getBinding)
+            name -> ArrowDictionary.create(id, values)(ct)
           }
         } else {
           // if we have to run a query, might as well generate all values
@@ -351,9 +359,11 @@ object ArrowScan {
           val nameIter = toLookup.iterator
           enumerations.map { e =>
             id += 1
+            val name = nameIter.next
             val values = e.values.toArray[AnyRef]
             sort(values)
-            nameIter.next -> ArrowDictionary.create(id, values)
+            val ct = ClassTag[AnyRef](sft.getDescriptor(name).getType.getBinding)
+            name -> ArrowDictionary.create(id, values)(ct)
           }.toMap
         }
         queried ++ providedDictionaries
@@ -634,10 +644,11 @@ object ArrowScan {
         }
         // note: we sort the dictionary values to make them easier to merge later
         java.util.Arrays.sort(values, 0, count, DictionaryOrdering)
-        name -> ArrowDictionary.create(dictionaryId, values, count)
+        val ct = ClassTag[AnyRef](sft.getDescriptor(attribute).getType.getBinding)
+        name -> ArrowDictionary.create(dictionaryId, values, count)(ct)
       }.toMap
 
-      WithClose(new SimpleFeatureArrowFileWriter(sft, os, dictionaries, encoding, sort)) { writer =>
+      WithClose(SimpleFeatureArrowFileWriter(sft, os, dictionaries, encoding, sort)) { writer =>
         var i = 0
         while (i < index) {
           writer.add(features(i))
