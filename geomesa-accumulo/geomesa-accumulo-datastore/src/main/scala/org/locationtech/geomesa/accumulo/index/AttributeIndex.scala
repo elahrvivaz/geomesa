@@ -181,8 +181,6 @@ trait AccumuloAttributeIndex extends AccumuloFeatureIndex with AccumuloIndexAdap
     import org.locationtech.geomesa.index.conf.QueryHints.RichHints
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
-//    val table = getTableName(sft.getTypeName, ds)
-//    val numThreads = queryThreads(ds)
     val dedupe = hasDuplicates(sft, filter.primary)
     val cf = AccumuloFeatureIndex.IndexColumnFamily
 

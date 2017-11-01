@@ -10,6 +10,7 @@ package org.locationtech.geomesa.arrow.io
 
 import java.io.{ByteArrayOutputStream, Closeable, OutputStream}
 import java.nio.channels.Channels
+import java.util.concurrent.ThreadLocalRandom
 
 import com.google.common.primitives.{Ints, Longs}
 import com.typesafe.scalalogging.StrictLogging
@@ -24,8 +25,6 @@ import org.locationtech.geomesa.utils.geotools.SimpleFeatureOrdering
 import org.locationtech.geomesa.utils.io.CloseWithLogging
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
-import scala.util.Random
-
 object DeltaWriter extends StrictLogging {
 
   val DictionaryOrdering: Ordering[AnyRef] = new Ordering[AnyRef] {
@@ -35,8 +34,6 @@ object DeltaWriter extends StrictLogging {
 
   // empty provider
   private val provider = new MapDictionaryProvider()
-
-  private val random = new Random()
 
   private case class FieldWriter(name: String,
                                  index: Int,
@@ -90,9 +87,7 @@ class DeltaWriter(val sft: SimpleFeatureType,
 
   import scala.collection.JavaConversions._
 
-  private val threadingKey = math.abs(random.nextLong)
-
-  logger.trace(s"$threadingKey created new instance")
+  private var threadingKey: Long = _
 
   private val result = new ByteArrayOutputStream
 
@@ -138,7 +133,8 @@ class DeltaWriter(val sft: SimpleFeatureType,
     * Clear any existing dictionary values
     */
   def reset(): Unit = {
-    logger.trace(s"$threadingKey resetting deltas")
+    threadingKey = math.abs(ThreadLocalRandom.current().nextLong)
+    logger.trace(s"$threadingKey resetting")
     writers.foreach(writer => writer.dictionary.foreach(_.values.clear()))
   }
 

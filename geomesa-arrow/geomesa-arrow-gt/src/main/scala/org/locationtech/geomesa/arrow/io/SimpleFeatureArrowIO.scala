@@ -482,7 +482,7 @@ object SimpleFeatureArrowIO extends LazyLogging {
                 if (n == null) {
                   m.setNull(toIndex)
                 } else {
-                  m.setSafe(toIndex, mapping.get(n))
+                  m.setSafe(toIndex, mapping(n))
                 }
               }
             }
@@ -520,7 +520,7 @@ object SimpleFeatureArrowIO extends LazyLogging {
     val MergedDictionaryDeltas(dictionaries, dictionaryMappings) = mergedDictionaries
 
     // gets the attribute we're sorting by from the i-th feature in the vector
-    val getSortAttribute: (NullableMapVector, java.util.Map[Integer, Integer], Int) => AnyRef = {
+    val getSortAttribute: (NullableMapVector, scala.collection.Map[Integer, Integer], Int) => AnyRef = {
       // TODO look up child by index?
       if (dictionaries.contains(sortBy)) {
         // since we've sorted the dictionaries, we can just compare the encoded index values
@@ -537,7 +537,7 @@ object SimpleFeatureArrowIO extends LazyLogging {
 
     logger.trace(s"merging sorted deltas - read schema: ${result.underlying.getField}")
 
-    val mergeBuilder = Array.newBuilder[(NullableMapVector, Seq[(Int, Int) => Unit], java.util.Map[Integer, Integer])]
+    val mergeBuilder = Array.newBuilder[(NullableMapVector, Seq[(Int, Int) => Unit], scala.collection.Map[Integer, Integer])]
     mergeBuilder.sizeHint(threadedBatches.foldLeft(0)((sum, a) => sum + a.length))
 
     threadedBatches.foreachIndex { case (batches, batchIndex) =>
@@ -571,7 +571,7 @@ object SimpleFeatureArrowIO extends LazyLogging {
               if (n == null) {
                 m.setNull(toIndex)
               } else {
-                m.setSafe(toIndex, mapping.get(n))
+                m.setSafe(toIndex, mapping(n))
               }
             }
           }
@@ -748,6 +748,7 @@ object SimpleFeatureArrowIO extends LazyLogging {
     }
 
     // now merge the separate threads together
+    val mappings = Array.fill(results.length)(Array.fill(allMerges.length)(scala.collection.mutable.Map.empty[Integer, Integer]))
 
     results.foreachIndex { case (result, i) =>
       // sorted queue of dictionary values - note: need to flip ordering here as high items come off the queue first
@@ -763,18 +764,20 @@ object SimpleFeatureArrowIO extends LazyLogging {
       var dest = 0
       while (queue.nonEmpty) {
         val (tmp, batch, j) = queue.dequeue()
-        val (vectors, transfers, mappings) = allMerges.apply(batch)
+        val (vectors, transfers, mapping) = allMerges.apply(batch)
         if (dest > 0 && result.apply(dest - 1) == vectors(i).apply(j)) {
           // duplicate
-          val remap = mappings(i).inverse().remove(j)
+          logger.trace(s"remap $tmp $batch ${mapping(i)} $j -> ${dest - 1}")
+          val remap = mapping(i).inverse().get(j)
           if (remap != null) {
-            mappings(i).put(remap, dest - 1)
+            mappings(i)(batch).put(remap, dest - 1)
           }
         } else {
           transfers(i).copyValueSafe(j, dest)
-          val remap = mappings(i).inverse().remove(j)
+          logger.trace(s"remap $tmp $batch ${mapping(i)} $j -> $dest")
+          val remap = mapping(i).inverse().remove(j)
           if (remap != null) {
-            mappings(i).put(remap, dest)
+            mappings(i)(batch).put(remap, dest)
           }
           dest += 1
         }
@@ -789,25 +792,25 @@ object SimpleFeatureArrowIO extends LazyLogging {
 
     val dictionaryBuilder = Map.newBuilder[String, ArrowDictionary]
     dictionaryBuilder.sizeHint(dictionaryFields.length)
-    val mappingsBuilder = Map.newBuilder[String, Array[java.util.Map[Integer, Integer]]]
+    val mappingsBuilder = Map.newBuilder[String, Array[scala.collection.Map[Integer, Integer]]]
     mappingsBuilder.sizeHint(dictionaryFields.length)
 
     dictionaryFields.foreachIndex { case (f, i) =>
       logger.trace("merged dictionary: " + (0 until results(i).getValueCount).map(results(i).apply).mkString(","))
       val encoding = new DictionaryEncoding(i, true, new ArrowType.Int(32, true))
       dictionaryBuilder.+=((f, ArrowDictionary.create(encoding, results(i).vector, sft.getDescriptor(f))))
-      mappingsBuilder.+=((f, allMerges.map(_._3.apply(i).asInstanceOf[java.util.Map[Integer, Integer]])))
+      mappingsBuilder.+=((f, mappings(i).asInstanceOf[Array[scala.collection.Map[Integer, Integer]]]))
     }
 
-    val dictionaries = dictionaryBuilder.result()
-    val mappings = mappingsBuilder.result()
+    val dictionaryMap = dictionaryBuilder.result()
+    val mappingsMap = mappingsBuilder.result()
 
-    logger.trace(s"batch dictionary mappings: ${mappings.mapValues(_.mkString(",")).mkString(";")}")
-    MergedDictionaryDeltas(dictionaries, mappings)
+    logger.trace(s"batch dictionary mappings: ${mappingsMap.mapValues(_.mkString(",")).mkString(";")}")
+    MergedDictionaryDeltas(dictionaryMap, mappingsMap)
   }
 
   private case class MergedDictionaryDeltas(dictionaries: Map[String, ArrowDictionary],
-                                            mappings: Map[String, Array[java.util.Map[Integer, Integer]]])
+                                            mappings: Map[String, Array[scala.collection.Map[Integer, Integer]]])
 
   private case class MergedDictionaries(dictionaries: Map[String, ArrowDictionary],
                                         mappings: Seq[Map[String, scala.collection.Map[Int, Int]]])
