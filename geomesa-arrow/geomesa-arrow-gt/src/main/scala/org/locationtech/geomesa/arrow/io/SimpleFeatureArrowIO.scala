@@ -731,8 +731,6 @@ object SimpleFeatureArrowIO extends LazyLogging {
           val (_, j, batch) = queue.dequeue()
           val (vectors, transfers) = toMerge(batch)
           transfers(i).copyValueSafe(j, dest)
-//          println(s"offsets ${offsets.toList.map(_.toList)}")
-//          println(s"$batch $i $j $dest")
           mappings(i).put(offsets(batch)(i) + j, dest)
           if (j < vectors(i).getValueCount - 1) {
             queue.+=((vectors(i).apply(j + 1), j + 1, batch))
@@ -756,7 +754,7 @@ object SimpleFeatureArrowIO extends LazyLogging {
       val queue = scala.collection.mutable.PriorityQueue.empty[(AnyRef, Int, Int)](ordering.reverse)
       allMerges.foreachIndex { case ((vectors, _, _), batch) =>
         if (vectors(i).getValueCount > 0) {
-          queue.+=((vectors(i).apply(0), 0, batch))
+          queue.+=((vectors(i).apply(0), batch, 0))
         } else {
           CloseWithLogging(vectors(i).vector)
         }
@@ -764,27 +762,27 @@ object SimpleFeatureArrowIO extends LazyLogging {
 
       var dest = 0
       while (queue.nonEmpty) {
-        val (_, j, batch) = queue.dequeue()
+        val (tmp, batch, j) = queue.dequeue()
         val (vectors, transfers, mappings) = allMerges.apply(batch)
         if (dest > 0 && result.apply(dest - 1) == vectors(i).apply(j)) {
           // duplicate
-          val remap = mappings(i).inverse().get(j)
+          val remap = mappings(i).inverse().remove(j)
           if (remap != null) {
             mappings(i).put(remap, dest - 1)
           }
         } else {
           transfers(i).copyValueSafe(j, dest)
-          val remap = mappings(i).inverse().get(j)
+          val remap = mappings(i).inverse().remove(j)
           if (remap != null) {
             mappings(i).put(remap, dest)
           }
+          dest += 1
         }
         if (j < vectors(i).getValueCount - 1) {
-          queue.+=((vectors(i).apply(j + 1), j + 1, batch))
+          queue.+=((vectors(i).apply(j + 1), batch, j + 1))
         } else {
           CloseWithLogging(vectors(i).vector)
         }
-        dest += 1
       }
       result.vector.getMutator.setValueCount(dest)
     }
