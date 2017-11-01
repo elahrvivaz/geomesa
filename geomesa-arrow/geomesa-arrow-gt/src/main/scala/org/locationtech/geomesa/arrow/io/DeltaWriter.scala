@@ -12,6 +12,7 @@ import java.io.{ByteArrayOutputStream, Closeable, OutputStream}
 import java.nio.channels.Channels
 
 import com.google.common.primitives.{Ints, Longs}
+import com.typesafe.scalalogging.StrictLogging
 import org.apache.arrow.vector.FieldVector
 import org.apache.arrow.vector.complex.NullableMapVector
 import org.apache.arrow.vector.dictionary.DictionaryProvider.MapDictionaryProvider
@@ -25,7 +26,7 @@ import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.util.Random
 
-object DeltaWriter {
+object DeltaWriter extends StrictLogging {
 
   val DictionaryOrdering: Ordering[AnyRef] = new Ordering[AnyRef] {
     override def compare(x: AnyRef, y: AnyRef): Int =
@@ -48,21 +49,25 @@ object DeltaWriter {
                                       values: scala.collection.mutable.Map[AnyRef, Integer])
 
   private class BatchWriter(vector: FieldVector) extends Closeable {
+
     private val root = SimpleFeatureArrowIO.createRoot(vector)
     private val os = new ByteArrayOutputStream()
     private val writer = new ArrowStreamWriter(root, provider, Channels.newChannel(os))
     writer.start() // start the writer - we'll discard the metadata later, as we only care about the record batches
 
+    logger.trace(s"write schema: ${vector.getField}")
+
     def writeBatch(count: Int, to: OutputStream): Unit = {
       os.reset()
       if (count < 1) {
-        println(s"writing 0 bytes")
+        logger.trace("writing 0 bytes")
         to.write(Ints.toByteArray(0))
       } else {
+        vector.getMutator.setValueCount(count)
         root.setRowCount(count)
         writer.writeBatch()
-        println(s"writing ${os.size} bytes")
-        to.write(Ints.toByteArray(os.size()))
+        logger.trace(s"writing ${os.size} bytes")
+        to.write(Ints.toByteArray(os.size())) // TODO we only need this for dictionary deltas not record batch...
         os.writeTo(to)
       }
     }
@@ -78,15 +83,17 @@ class DeltaWriter(val sft: SimpleFeatureType,
                   dictionaryFields: Seq[String],
                   encoding: SimpleFeatureEncoding,
                   sort: Option[(String, Boolean)],
-                  initialCapacity: Int) extends Closeable {
+                  initialCapacity: Int) extends Closeable with StrictLogging {
 
   import DeltaWriter._
   import org.locationtech.geomesa.arrow.allocator
 
   import scala.collection.JavaConversions._
 
-  private val threadingKey = random.nextLong
-println(s"new instance $threadingKey")
+  private val threadingKey = math.abs(random.nextLong)
+
+  logger.trace(s"$threadingKey created new instance")
+
   private val result = new ByteArrayOutputStream
 
   private val vector = NullableMapVector.empty(sft.getTypeName, allocator)
@@ -97,7 +104,7 @@ println(s"new instance $threadingKey")
     if (reverse) { o.reverse } else { o }
   }
 
-  // TODO these maybe don't match?
+  private val idWriter = ArrowAttributeWriter.id(Some(vector), encoding)
   private val writers = sft.getAttributeDescriptors.map { descriptor =>
     val name = descriptor.getLocalName
     val isDictionary = dictionaryFields.contains(name)
@@ -130,7 +137,10 @@ println(s"new instance $threadingKey")
   /**
     * Clear any existing dictionary values
     */
-  def reset(): Unit = writers.foreach(writer => writer.dictionary.foreach(_.values.clear()))
+  def reset(): Unit = {
+    logger.trace(s"$threadingKey resetting deltas")
+    writers.foreach(writer => writer.dictionary.foreach(_.values.clear()))
+  }
 
   /**
     * Writes out a record batch. Format is:
@@ -177,8 +187,17 @@ println(s"new instance $threadingKey")
       }
       // write out the dictionary batch
       dictionary.attribute.setValueCount(i)
-println(s"$threadingKey writing dictionary ${dictionary.index}: $i $delta")
+      logger.trace(s"$threadingKey writing dictionary delta with $i values")
       dictionary.writer.writeBatch(i, result)
+    }
+
+    if (encoding.fids) {
+      var i = 0
+      while (i < count) {
+        idWriter.apply(i, features(i).getID)
+        i += 1
+      }
+      idWriter.setValueCount(count)
     }
 
     writers.foreach { writer =>
@@ -194,7 +213,8 @@ println(s"$threadingKey writing dictionary ${dictionary.index}: $i $delta")
       writer.attribute.setValueCount(count)
     }
 
-println(s"$threadingKey writing batch $count")
+    logger.trace(s"$threadingKey writing batch with $count values")
+
     writer.writeBatch(count, result)
 
     result.toByteArray

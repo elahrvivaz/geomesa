@@ -54,7 +54,7 @@ class SimpleFeatureVector private (val sft: SimpleFeatureType,
 
   class Writer(vector: SimpleFeatureVector) {
     private [SimpleFeatureVector] val arrowWriter = vector.underlying.getWriter
-    private val idWriter = ArrowAttributeWriter.id(vector.underlying, vector.encoding.fids)
+    private val idWriter = ArrowAttributeWriter.id(Some(vector.underlying), vector.encoding)
     private [arrow] val attributeWriters = ArrowAttributeWriter(sft, Some(vector.underlying), dictionaries, encoding).toArray
 
     def set(index: Int, feature: SimpleFeature): Unit = {

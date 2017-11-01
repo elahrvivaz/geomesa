@@ -45,7 +45,7 @@ class DictionaryBuildingWriter private (val sft: SimpleFeatureType,
 
   private val arrowWriter = underlying.getWriter
 
-  private val idWriter = ArrowAttributeWriter.id(underlying, encoding.fids)
+  private val idWriter = ArrowAttributeWriter.id(Some(underlying), encoding)
   private val attributeWriters =
     DictionaryBuildingWriter.attribute(sft, underlying, dictionaries, encoding, maxSize).toArray
 

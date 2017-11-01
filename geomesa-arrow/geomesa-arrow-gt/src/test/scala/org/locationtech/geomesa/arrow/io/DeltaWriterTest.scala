@@ -33,7 +33,28 @@ class DeltaWriterTest extends Specification {
   implicit val allocator: BufferAllocator = new DirtyRootAllocator(Long.MaxValue, 6.toByte)
 
   "DeltaWriter" should {
-    "dynamically encode dictionary values" >> {
+    "dynamically encode dictionary values without sorting" >> {
+      val dictionaries = Seq("name")
+      val encoding = SimpleFeatureEncoding.min(true)
+      val sort = None
+      val result = ArrayBuffer.empty[Array[Byte]]
+
+      WithClose(new DeltaWriter(sft, dictionaries, encoding, sort, 10)) { writer =>
+        result.append(writer.writeBatch(features.drop(0).toArray, 3))
+        result.append(writer.writeBatch(features.drop(3).toArray, 5))
+        result.append(writer.writeBatch(features.drop(8).toArray, 2))
+      }
+      val bytes = SimpleFeatureArrowIO.mergeDeltas(sft, dictionaries, encoding, sort, 5)(result.iterator).foldLeft(Array.empty[Byte])(_ ++ _)
+
+      WithClose(SimpleFeatureArrowFileReader.streaming(() => new ByteArrayInputStream(bytes))) { reader =>
+        reader.dictionaries must haveSize(1)
+        reader.dictionaries.get("name") must beSome
+        reader.dictionaries("name").iterator.toSeq must containTheSameElementsAs(Seq("name00", "name01"))
+
+        WithClose(reader.features())(f => f.map(ScalaSimpleFeature.copy).toSeq must containTheSameElementsAs(features))
+      }
+    }
+    "dynamically encode dictionary values with sorting" >> {
       val dictionaries = Seq("name")
       val encoding = SimpleFeatureEncoding.min(true)
       val sort = Some(("dtg", false))

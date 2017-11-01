@@ -65,14 +65,16 @@ object ArrowAttributeWriter {
     * Writer for feature ID
     *
     * @param vector simple feature vector
-    * @param includeFids actually write the feature ids, or omit them, in which case the writer is a no-op
+    * @param encoding actually write the feature ids, or omit them, in which case the writer is a no-op
     * @param allocator buffer allocator
     * @return feature ID writer
     */
-  def id(vector: NullableMapVector, includeFids: Boolean)(implicit allocator: BufferAllocator): ArrowAttributeWriter = {
-    if (includeFids) {
+  def id(vector: Option[NullableMapVector],
+         encoding: SimpleFeatureEncoding)
+        (implicit allocator: BufferAllocator): ArrowAttributeWriter = {
+    if (encoding.fids) {
       val name = SimpleFeatureVector.FeatureIdField
-      ArrowAttributeWriter(name, Seq(ObjectType.STRING), classOf[String], Option(vector), None, Map.empty, null)
+      ArrowAttributeWriter(name, Seq(ObjectType.STRING), classOf[String], vector, None, Map.empty, null)
     } else {
       ArrowAttributeWriter.ArrowNoopWriter
     }
