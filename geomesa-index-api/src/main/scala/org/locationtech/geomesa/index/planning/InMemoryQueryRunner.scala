@@ -16,7 +16,7 @@ import com.vividsolutions.jts.geom.Envelope
 import org.geotools.data.Query
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.arrow.io.records.RecordBatchUnloader
-import org.locationtech.geomesa.arrow.io.{DictionaryBuildingWriter, SimpleFeatureArrowFileWriter}
+import org.locationtech.geomesa.arrow.io.{DeltaWriter, DictionaryBuildingWriter, SimpleFeatureArrowFileWriter}
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
 import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, SimpleFeatureVector}
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, TransformSimpleFeature}
@@ -229,6 +229,27 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
       }
       if (hints.isSkipReduce) { arrows } else {
         ArrowScan.mergeFiles(arrowSft, dictionaryFields, encoding, sort)(arrows)
+      }
+    } else if (hints.isArrowDelta) {
+      val writer = new DeltaWriter(arrowSft, dictionaryFields, encoding, None, batchSize)
+      val array = Array.ofDim[SimpleFeature](batchSize)
+
+      val sf = ArrowScan.resultFeature()
+
+      val arrows = new Iterator[SimpleFeature] {
+        override def hasNext: Boolean = features.hasNext
+        override def next(): SimpleFeature = {
+          var index = 0
+          while (index < batchSize && features.hasNext) {
+            array(index) = features.next
+            index += 1
+          }
+          sf.setAttribute(0, writer.writeBatch(array, index))
+          sf
+        }
+      }
+      if (hints.isSkipReduce) { arrows } else {
+        ArrowScan.mergeDeltas(arrowSft, dictionaryFields, encoding, batchSize, sort)(arrows)
       }
     } else {
       val os = new ByteArrayOutputStream()

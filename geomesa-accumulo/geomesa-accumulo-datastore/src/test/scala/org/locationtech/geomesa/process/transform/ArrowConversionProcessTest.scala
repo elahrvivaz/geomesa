@@ -75,7 +75,7 @@ class ArrowConversionProcessTest extends TestWithDataStore {
         SelfClosingIterator(reader.features()).map(ScalaSimpleFeature.copy).toSeq must
             containTheSameElementsAs(features.filter(filter.evaluate))
         // verify all cached values were used for the dictionary
-        reader.dictionaries.mapValues(_.iterator.toSeq) mustEqual Map("name" -> Seq("name0", "name1"))
+        reader.dictionaries.map { case (k, v) => (k, v.iterator.toSeq) } mustEqual Map("name" -> Seq("name0", "name1"))
       }
     }
 
@@ -87,7 +87,7 @@ class ArrowConversionProcessTest extends TestWithDataStore {
         SelfClosingIterator(reader.features()).map(ScalaSimpleFeature.copy).toSeq must
             containTheSameElementsAs(features.filter(filter.evaluate))
         // verify only exact values were used for the dictionary
-        reader.dictionaries.mapValues(_.iterator.toSeq) mustEqual Map("name" -> Seq("name0"))
+        reader.dictionaries.map { case (k, v) => (k, v.iterator.toSeq) } mustEqual Map("name" -> Seq("name0"))
       }
     }
 

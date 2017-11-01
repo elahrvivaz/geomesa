@@ -87,7 +87,8 @@ class DeltaWriter(val sft: SimpleFeatureType,
 
   import scala.collection.JavaConversions._
 
-  private var threadingKey: Long = _
+  private var threadingKey: Long = math.abs(ThreadLocalRandom.current().nextLong)
+  logger.trace(s"$threadingKey created")
 
   private val result = new ByteArrayOutputStream
 
@@ -133,8 +134,9 @@ class DeltaWriter(val sft: SimpleFeatureType,
     * Clear any existing dictionary values
     */
   def reset(): Unit = {
+    val old = threadingKey
     threadingKey = math.abs(ThreadLocalRandom.current().nextLong)
-    logger.trace(s"$threadingKey resetting")
+    logger.trace(s"$old resetting to $threadingKey")
     writers.foreach(writer => writer.dictionary.foreach(_.values.clear()))
   }
 

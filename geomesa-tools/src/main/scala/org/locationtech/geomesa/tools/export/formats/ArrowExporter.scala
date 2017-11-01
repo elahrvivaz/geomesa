@@ -53,7 +53,7 @@ class ArrowExporter(hints: Hints, os: OutputStream, queryDictionaries: => Map[St
         val dictionaries = (queryDictionaries ++ providedDictionaries).map {
           case (k, v) => id += 1; k -> ArrowDictionary.create(id, v)
         }
-        writer = new SimpleFeatureArrowFileWriter(sft, os, dictionaries, encoding, sort)
+        writer = SimpleFeatureArrowFileWriter(sft, os, dictionaries, encoding, sort)
         writer.start()
         doExport = exportBatches(encoding, sort, batchSize, dictionaries)
       } else {
