@@ -13,6 +13,7 @@ import java.util.Date
 import java.util.concurrent.atomic.AtomicLong
 
 import com.vividsolutions.jts.geom.Geometry
+import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.vector.dictionary.Dictionary
 import org.apache.arrow.vector.types.FloatingPointPrecision
 import org.apache.arrow.vector.types.pojo.{ArrowType, DictionaryEncoding}
@@ -40,7 +41,7 @@ trait ArrowDictionary extends Closeable {
     */
   def lookup(i: Int): AnyRef
 
-  def toDictionary(precision: SimpleFeatureEncoding): Dictionary
+  def toDictionary(precision: SimpleFeatureEncoding)(implicit allocator: BufferAllocator): Dictionary
 
   lazy private val map = {
     val builder = scala.collection.mutable.Map.newBuilder[AnyRef, Int]
@@ -95,8 +96,11 @@ object ArrowDictionary {
   def create[T <: AnyRef](id: Long, values: Array[T], length: Int)(implicit ct: ClassTag[T]): ArrowDictionary =
     new ArrowDictionaryArray[T](createEncoding(id, length), values, length)
 
-  def create(encoding: DictionaryEncoding, values: FieldVector, descriptor: AttributeDescriptor): ArrowDictionary =
-    new ArrowDictionaryVector(encoding, values, descriptor)
+  def create(encoding: DictionaryEncoding,
+             values: FieldVector,
+             descriptor: AttributeDescriptor,
+             precision: SimpleFeatureEncoding): ArrowDictionary =
+    new ArrowDictionaryVector(encoding, values, descriptor, precision)
 
   /**
     * Holder for dictionary values
@@ -111,9 +115,7 @@ object ArrowDictionary {
 
     override def lookup(i: Int): AnyRef = if (i < length) { values(i) } else { "[other]" }
 
-    override def toDictionary(precision: SimpleFeatureEncoding): Dictionary = {
-      import org.locationtech.geomesa.arrow.allocator
-
+    override def toDictionary(precision: SimpleFeatureEncoding)(implicit allocator: BufferAllocator): Dictionary = {
       val name = s"dictionary-$id"
       val (objectType, bindings) = ObjectType.selectType(ct.runtimeClass)
       val writer = ArrowAttributeWriter(name, bindings.+:(objectType), ct.runtimeClass, None, None, Map.empty, precision)
@@ -133,29 +135,21 @@ object ArrowDictionary {
 
   class ArrowDictionaryVector(override val encoding: DictionaryEncoding,
                               vector: FieldVector,
-                              descriptor: AttributeDescriptor) extends ArrowDictionary {
-
-    private val featureEncoding =
-      if (classOf[Date].isAssignableFrom(descriptor.getType.getBinding) &&
-          vector.isInstanceOf[NullableBigIntVector]) {
-        SimpleFeatureEncoding(fids = false, EncodingPrecision.Max, EncodingPrecision.Min)
-      } else if (classOf[Geometry].isAssignableFrom(descriptor.getType.getBinding) &&
-          GeometryFields.precisionFromField(vector.getField) == FloatingPointPrecision.DOUBLE) {
-        SimpleFeatureEncoding(fids = false, EncodingPrecision.Max, EncodingPrecision.Min)
-      } else {
-        SimpleFeatureEncoding.min(fids = false)
-      }
+                              descriptor: AttributeDescriptor,
+                              precision: SimpleFeatureEncoding) extends ArrowDictionary {
 
     // we use an attribute reader to get the right type conversion
-    private val reader = ArrowAttributeReader(descriptor, vector, None, featureEncoding)
+    private val reader = ArrowAttributeReader(descriptor, vector, None, precision)
     private val accessor = vector.getAccessor
 
     override val length: Int = accessor.getValueCount
 
     override def lookup(i: Int): AnyRef = if (i < length) { reader.apply(i) } else { "[other]" }
 
-    // TODO verify precision matches vector
-    override def toDictionary(precision: SimpleFeatureEncoding): Dictionary = new Dictionary(vector, encoding)
+    override def toDictionary(precision: SimpleFeatureEncoding)(implicit allocator: BufferAllocator): Dictionary = {
+      require(precision == this.precision, "Wrapped vector dictionaries can't be re-encoded with a different precision")
+      new Dictionary(vector, encoding)
+    }
 
     override def close(): Unit = vector.close()
   }

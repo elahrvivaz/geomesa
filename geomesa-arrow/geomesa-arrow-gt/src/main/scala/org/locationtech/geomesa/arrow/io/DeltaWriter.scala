@@ -531,6 +531,10 @@ object DeltaWriter extends StrictLogging {
                                (implicit allocator: BufferAllocator): MergedDictionaries = {
     import org.locationtech.geomesa.utils.conversions.ScalaImplicits.{RichArray, RichTraversableOnce}
 
+    if (dictionaryFields.isEmpty) {
+      return MergedDictionaries(Map.empty, Map.empty)
+    }
+
     // create a vector for each dictionary field
     def createNewVectors: Array[ArrowAttributeReader] = {
       val builder = Array.newBuilder[ArrowAttributeReader]
@@ -674,8 +678,8 @@ object DeltaWriter extends StrictLogging {
 
     dictionaryFields.foreachIndex { case (f, i) =>
       logger.trace("merged dictionary: " + (0 until results(i).getValueCount).map(results(i).apply).mkString(","))
-      val encoding = new DictionaryEncoding(i, true, new ArrowType.Int(32, true))
-      dictionaryBuilder.+=((f, ArrowDictionary.create(encoding, results(i).vector, sft.getDescriptor(f))))
+      val enc = new DictionaryEncoding(i, true, new ArrowType.Int(32, true))
+      dictionaryBuilder.+=((f, ArrowDictionary.create(enc, results(i).vector, sft.getDescriptor(f), encoding)))
       mappingsBuilder.+=((f, mappings(i).asInstanceOf[Array[scala.collection.Map[Integer, Integer]]]))
     }
 

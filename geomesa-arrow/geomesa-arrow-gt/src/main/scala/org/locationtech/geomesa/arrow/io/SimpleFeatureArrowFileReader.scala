@@ -16,7 +16,7 @@ import org.apache.arrow.vector.types.pojo.Field
 import org.locationtech.geomesa.arrow.features.ArrowSimpleFeature
 import org.locationtech.geomesa.arrow.filter.ArrowFilterOptimizer
 import org.locationtech.geomesa.arrow.io.reader.{CachingSimpleFeatureArrowFileReader, StreamingSimpleFeatureArrowFileReader}
-import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.DescriptorKey
+import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.{DescriptorKey, SimpleFeatureEncoding}
 import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, SimpleFeatureVector}
 import org.locationtech.geomesa.filter.Bounds.Bound
 import org.locationtech.geomesa.filter.{Bounds, FilterHelper}
@@ -93,12 +93,14 @@ object SimpleFeatureArrowFileReader {
     * @param provider dictionary provider
     * @return
     */
-  private [io] def loadDictionaries(fields: Seq[Field], provider: DictionaryProvider): Map[String, ArrowDictionary] = {
+  private [io] def loadDictionaries(fields: Seq[Field],
+                                    provider: DictionaryProvider,
+                                    precision: SimpleFeatureEncoding): Map[String, ArrowDictionary] = {
     fields.flatMap { field =>
-      Option(field.getDictionary).toSeq.map { dictionaryEncoding =>
+      Option(field.getDictionary).toSeq.map { encoding =>
         val descriptor = SimpleFeatureTypes.createDescriptor(field.getMetadata.get(DescriptorKey))
-        val vector = provider.lookup(dictionaryEncoding.getId).getVector
-        field.getName -> ArrowDictionary.create(dictionaryEncoding, vector, descriptor)
+        val vector = provider.lookup(encoding.getId).getVector
+        field.getName -> ArrowDictionary.create(encoding, vector, descriptor, precision)
       }
     }.toMap
   }

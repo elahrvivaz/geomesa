@@ -48,47 +48,51 @@ class DeltaWriterTest extends Specification {
         result.append(writer.encode(features.drop(15).toArray, 5))
         result.append(writer.encode(features.drop(10).toArray, 5))
       }
-      val bytes = DeltaWriter.reduce(sft, dictionaries, encoding, None, 5)(result.iterator).foldLeft(Array.empty[Byte])(_ ++ _)
 
-//      WithClose(SimpleFeatureArrowFileReader.streaming(() => new ByteArrayInputStream(bytes))) { reader =>
-//        reader.dictionaries must haveSize(2)
-//        reader.dictionaries.get("name") must beSome
-//        reader.dictionaries("name").iterator.toSeq must containTheSameElementsAs(Seq("name00", "name01"))
-//        reader.dictionaries.get("age") must beSome
-//        reader.dictionaries("age").iterator.toSeq must containTheSameElementsAs(0 until 5)
-//
-//        WithClose(reader.features())(f => f.length mustEqual 20)
-//        WithClose(reader.features())(f => f.map(ScalaSimpleFeature.copy).toSeq must containTheSameElementsAs(features))
-//      }
-      ok
+      val bytes = WithClose(DeltaWriter.reduce(sft, dictionaries, encoding, None, 5)(result.iterator)) { iter =>
+        iter.foldLeft(Array.empty[Byte])(_ ++ _)
+      }
+
+      WithClose(SimpleFeatureArrowFileReader.streaming(() => new ByteArrayInputStream(bytes))) { reader =>
+        reader.dictionaries must haveSize(2)
+        reader.dictionaries.get("name") must beSome
+        reader.dictionaries("name").iterator.toSeq must containTheSameElementsAs(Seq("name00", "name01"))
+        reader.dictionaries.get("age") must beSome
+        reader.dictionaries("age").iterator.toSeq must containTheSameElementsAs(0 until 5)
+
+        WithClose(reader.features())(f => f.map(ScalaSimpleFeature.copy).toSeq must containTheSameElementsAs(features))
+      }
     }
-//    "dynamically encode dictionary values with sorting" >> {
-//      val dictionaries = Seq("name", "age")
-//      val encoding = SimpleFeatureEncoding.min(true)
-//      val sort = Some(("dtg", false))
-//      val result = ArrayBuffer.empty[Array[Byte]]
-//
-//      WithClose(new DeltaWriter(sft, dictionaries, encoding, sort, 10)) { writer =>
-//        result.append(writer.encode(features.drop(0).toArray, 3))
-//        result.append(writer.encode(features.drop(3).toArray, 5))
-//        result.append(writer.encode(features.drop(8).toArray, 2))
-//      }
-//      WithClose(new DeltaWriter(sft, dictionaries, encoding, sort, 10)) { writer =>
-//        result.append(writer.encode(features.drop(15).toArray, 5))
-//        result.append(writer.encode(features.drop(10).toArray, 5))
-//      }
-//      val bytes = DeltaWriter.reduce(sft, dictionaries, encoding, sort, 5)(result.iterator).foldLeft(Array.empty[Byte])(_ ++ _)
-//
-//      WithClose(SimpleFeatureArrowFileReader.streaming(() => new ByteArrayInputStream(bytes))) { reader =>
-//        reader.dictionaries must haveSize(2)
-//        reader.dictionaries.get("name") must beSome
-//        reader.dictionaries("name").iterator.toSeq must containTheSameElementsAs(Seq("name00", "name01"))
-//        reader.dictionaries.get("age") must beSome
-//        reader.dictionaries("age").iterator.toSeq must containTheSameElementsAs(0 until 5)
-//
-//        WithClose(reader.features())(f => f.map(ScalaSimpleFeature.copy).toVector mustEqual features)
-//      }
-//    }
+    "dynamically encode dictionary values with sorting" >> {
+      val dictionaries = Seq("name", "age")
+      val encoding = SimpleFeatureEncoding.min(true)
+      val sort = Some(("dtg", false))
+      val result = ArrayBuffer.empty[Array[Byte]]
+
+      WithClose(new DeltaWriter(sft, dictionaries, encoding, sort, 10)) { writer =>
+        result.append(writer.encode(features.drop(0).toArray, 3))
+        result.append(writer.encode(features.drop(3).toArray, 5))
+        result.append(writer.encode(features.drop(8).toArray, 2))
+      }
+      WithClose(new DeltaWriter(sft, dictionaries, encoding, sort, 10)) { writer =>
+        result.append(writer.encode(features.drop(15).toArray, 5))
+        result.append(writer.encode(features.drop(10).toArray, 5))
+      }
+
+      val bytes = WithClose(DeltaWriter.reduce(sft, dictionaries, encoding, sort, 5)(result.iterator)) { iter =>
+        iter.foldLeft(Array.empty[Byte])(_ ++ _)
+      }
+
+      WithClose(SimpleFeatureArrowFileReader.streaming(() => new ByteArrayInputStream(bytes))) { reader =>
+        reader.dictionaries must haveSize(2)
+        reader.dictionaries.get("name") must beSome
+        reader.dictionaries("name").iterator.toSeq must containTheSameElementsAs(Seq("name00", "name01"))
+        reader.dictionaries.get("age") must beSome
+        reader.dictionaries("age").iterator.toSeq must containTheSameElementsAs(0 until 5)
+
+        WithClose(reader.features())(f => f.map(ScalaSimpleFeature.copy).toVector mustEqual features)
+      }
+    }
   }
 
   step {
