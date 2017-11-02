@@ -185,6 +185,7 @@ object ArrowExporter {
       count += index
       index = 0
     }
+
     features.foreach { feature =>
       batch(index) = feature
       index += 1
@@ -192,6 +193,7 @@ object ArrowExporter {
         sortAndUnloadBatch()
       }
     }
+
     if (index > 0) {
       sortAndUnloadBatch()
     }

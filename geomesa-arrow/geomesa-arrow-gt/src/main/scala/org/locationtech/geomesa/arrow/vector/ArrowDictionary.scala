@@ -8,6 +8,7 @@
 
 package org.locationtech.geomesa.arrow.vector
 
+import java.io.Closeable
 import java.util.Date
 import java.util.concurrent.atomic.AtomicLong
 
@@ -25,7 +26,7 @@ import scala.reflect.ClassTag
 /**
   * Holder for dictionary values
   */
-trait ArrowDictionary {
+trait ArrowDictionary extends Closeable {
 
   def encoding: DictionaryEncoding
   def id: Long = encoding.getId
@@ -126,6 +127,8 @@ object ArrowDictionary {
 
       new Dictionary(writer.vector, encoding)
     }
+
+    override def close(): Unit = {}
   }
 
   class ArrowDictionaryVector(override val encoding: DictionaryEncoding,
@@ -153,6 +156,8 @@ object ArrowDictionary {
 
     // TODO verify precision matches vector
     override def toDictionary(precision: SimpleFeatureEncoding): Dictionary = new Dictionary(vector, encoding)
+
+    override def close(): Unit = vector.close()
   }
 
   // use the smallest int type possible to minimize bytes used

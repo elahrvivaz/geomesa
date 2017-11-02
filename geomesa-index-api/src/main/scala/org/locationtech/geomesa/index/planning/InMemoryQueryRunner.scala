@@ -16,9 +16,9 @@ import com.vividsolutions.jts.geom.Envelope
 import org.geotools.data.Query
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.arrow.io.records.RecordBatchUnloader
-import org.locationtech.geomesa.arrow.io.{DeltaWriter, DictionaryBuildingWriter, SimpleFeatureArrowFileWriter}
+import org.locationtech.geomesa.arrow.io.{DeltaWriter, DictionaryBuildingWriter}
+import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
-import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, SimpleFeatureVector}
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, TransformSimpleFeature}
 import org.locationtech.geomesa.filter.factory.FastFilterFactory
 import org.locationtech.geomesa.index.iterators.{ArrowScan, DensityScan}
@@ -29,13 +29,10 @@ import org.locationtech.geomesa.utils.bin.BinaryOutputEncoder
 import org.locationtech.geomesa.utils.bin.BinaryOutputEncoder.EncodingOptions
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, GridSnap, SimpleFeatureOrdering}
-import org.locationtech.geomesa.utils.io.WithClose
 import org.locationtech.geomesa.utils.stats.{Stat, TopK}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 import org.opengis.filter.sort.SortBy
-
-import scala.reflect.ClassTag
 
 abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[AuthorizationsProvider])
     extends QueryRunner {
@@ -230,7 +227,7 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
       if (hints.isSkipReduce) { arrows } else {
         ArrowScan.mergeFiles(arrowSft, dictionaryFields, encoding, sort)(arrows)
       }
-    } else if (hints.isArrowDelta) {
+    } else {
       val writer = new DeltaWriter(arrowSft, dictionaryFields, encoding, None, batchSize)
       val array = Array.ofDim[SimpleFeature](batchSize)
 
@@ -244,66 +241,12 @@ abstract class InMemoryQueryRunner(stats: GeoMesaStats, authProvider: Option[Aut
             array(index) = features.next
             index += 1
           }
-          sf.setAttribute(0, writer.writeBatch(array, index))
+          sf.setAttribute(0, writer.encode(array, index))
           sf
         }
       }
       if (hints.isSkipReduce) { arrows } else {
         ArrowScan.mergeDeltas(arrowSft, dictionaryFields, encoding, batchSize, sort)(arrows)
-      }
-    } else {
-      val os = new ByteArrayOutputStream()
-
-      val sf = ArrowScan.resultFeature()
-
-      val arrows = new Iterator[SimpleFeature] {
-        import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableLike
-
-        private val cache = Array.ofDim[SimpleFeature](batchSize) // TODO re-use?
-
-        override def hasNext: Boolean = features.hasNext
-        override def next(): SimpleFeature = {
-          os.reset()
-          var index = 0
-          while (index < batchSize && features.hasNext) {
-            cache(index) = ScalaSimpleFeature.copy(features.next) // TODO do we need to copy?
-            index += 1
-          }
-          val dictionaries = dictionaryFields.mapWithIndex { case (name, dictionaryId) =>
-            val values = Array.ofDim[AnyRef](index) // TODO re-use?
-            val attribute = arrowSft.indexOf(name)
-            val seen = scala.collection.mutable.HashSet.empty[AnyRef]
-            var count = 0
-            var i = 0
-            while (i < index) {
-              val value = cache(i).getAttribute(attribute)
-              if (seen.add(value)) {
-                values(count) = value
-                count += 1
-              }
-              i += 1
-            }
-            // note: we sort the dictionary values to make them easier to merge later
-            java.util.Arrays.sort(values, 0, count, ArrowScan.DictionaryOrdering)
-            val ct = ClassTag[AnyRef](arrowSft.getDescriptor(attribute).getType.getBinding)
-            name -> ArrowDictionary.create(dictionaryId, values, count)(ct)
-          }.toMap
-
-          WithClose(SimpleFeatureArrowFileWriter(arrowSft, os, dictionaries, encoding, sort)) { writer =>
-            var i = 0
-            while (i < index) {
-              writer.add(cache(i))
-              i += 1
-            }
-          }
-
-          sf.setAttribute(0, os.toByteArray)
-          sf
-        }
-      }
-
-      if (hints.isSkipReduce) { arrows } else {
-        ArrowScan.mergeBatchesAndDictionaries(arrowSft, dictionaryFields, encoding, batchSize, sort)(arrows)
       }
     }
   }

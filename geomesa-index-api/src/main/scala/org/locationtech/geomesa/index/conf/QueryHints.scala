@@ -56,7 +56,6 @@ object QueryHints {
 
   val ARROW_MULTI_FILE         = new ClassKey(classOf[java.lang.Boolean])
   val ARROW_DOUBLE_PASS        = new ClassKey(classOf[java.lang.Boolean])
-  val ARROW_DELTA              = new ClassKey(classOf[java.lang.Boolean]) // TODO key for enabling single pass instead
 
   val LAMBDA_QUERY_PERSISTENT  = new ClassKey(classOf[java.lang.Boolean])
   val LAMBDA_QUERY_TRANSIENT   = new ClassKey(classOf[java.lang.Boolean])
@@ -100,7 +99,6 @@ object QueryHints {
     def isArrowQuery: Boolean = Option(hints.get(ARROW_ENCODE).asInstanceOf[java.lang.Boolean]).exists(Boolean.unbox)
     def isArrowMultiFile: Boolean = Option(hints.get(ARROW_MULTI_FILE).asInstanceOf[java.lang.Boolean]).exists(Boolean.unbox)
     def isArrowDoublePass: Boolean = Option(hints.get(ARROW_DOUBLE_PASS).asInstanceOf[java.lang.Boolean]).exists(Boolean.unbox)
-    def isArrowDelta: Boolean = Option(hints.get(ARROW_DELTA).asInstanceOf[java.lang.Boolean]).forall(Boolean.unbox)
     def isArrowIncludeFid: Boolean = Option(hints.get(ARROW_INCLUDE_FID).asInstanceOf[java.lang.Boolean]).forall(Boolean.unbox)
     def getArrowDictionaryFields: Seq[String] =
       Option(hints.get(ARROW_DICTIONARY_FIELDS).asInstanceOf[String]).toSeq.flatMap(_.split(",")).map(_.trim).filter(_.nonEmpty)

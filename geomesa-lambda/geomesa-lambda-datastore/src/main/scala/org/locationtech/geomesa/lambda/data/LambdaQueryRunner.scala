@@ -101,13 +101,9 @@ class LambdaQueryRunner(persistence: DataStore, transients: LoadingCache[String,
       } else if (hints.isArrowMultiFile) {
         hints.put(QueryHints.Internal.SKIP_REDUCE, java.lang.Boolean.TRUE)
         ArrowScan.mergeFiles(arrowSft, dictionaryFields, encoding, sort)(standardQuery(sft, query, explain))
-      } else if (hints.isArrowDelta) {
-        hints.put(QueryHints.Internal.SKIP_REDUCE, java.lang.Boolean.TRUE)
-        val reduce = ArrowScan.mergeDeltas(arrowSft, dictionaryFields, encoding, batchSize, sort)
-        reduce(standardQuery(sft, query, explain))
       } else {
         hints.put(QueryHints.Internal.SKIP_REDUCE, java.lang.Boolean.TRUE)
-        val reduce = ArrowScan.mergeBatchesAndDictionaries(arrowSft, dictionaryFields, encoding, batchSize, sort)
+        val reduce = ArrowScan.mergeDeltas(arrowSft, dictionaryFields, encoding, batchSize, sort)
         reduce(standardQuery(sft, query, explain))
       }
     } else {

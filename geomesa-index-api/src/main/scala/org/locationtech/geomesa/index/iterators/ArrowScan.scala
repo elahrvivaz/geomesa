@@ -12,7 +12,7 @@ import java.io.ByteArrayOutputStream
 
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.arrow.io.records.RecordBatchUnloader
-import org.locationtech.geomesa.arrow.io.{DeltaWriter, DictionaryBuildingWriter, SimpleFeatureArrowFileWriter, SimpleFeatureArrowIO}
+import org.locationtech.geomesa.arrow.io.{DeltaWriter, DictionaryBuildingWriter, SimpleFeatureArrowIO}
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
 import org.locationtech.geomesa.arrow.vector.{ArrowDictionary, SimpleFeatureVector}
 import org.locationtech.geomesa.arrow.{ArrowEncodedSft, ArrowProperties}
@@ -23,7 +23,6 @@ import org.locationtech.geomesa.index.stats.GeoMesaStats
 import org.locationtech.geomesa.utils.cache.SoftThreadLocalCache
 import org.locationtech.geomesa.utils.conf.GeoMesaSystemProperties.SystemProperty
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, SimpleFeatureOrdering}
-import org.locationtech.geomesa.utils.io.WithClose
 import org.locationtech.geomesa.utils.stats.{EnumerationStat, Stat, TopK}
 import org.locationtech.geomesa.utils.text.StringSerialization
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
@@ -62,9 +61,6 @@ trait ArrowScan extends AggregatingScan[ArrowAggregate] {
       if (typ == Types.DeltaType) {
         val dictionaries = dictionary.split(",").filter(_.length > 0)
         new DeltaAggregate(arrowSft, dictionaries, encoding, sort, batchSize)
-      } else if (typ == Types.SinglePassType) {
-        val dictionaries = dictionary.split(",").filter(_.length > 0)
-        new SinglePassAggregate(arrowSft, dictionaries, encoding, sort)
       } else if (typ == Types.BatchType) {
         val dictionaries = ArrowScan.decodeDictionaries(arrowSft, dictionary)
         sort match {
@@ -107,10 +103,9 @@ object ArrowScan {
     val SortReverseKey = "sort-rev"
 
     object Types {
-      val BatchType      = "batch"
-      val DeltaType      = "delta"
-      val FileType       = "file"
-      val SinglePassType = "single"
+      val BatchType = "batch"
+      val DeltaType = "delta"
+      val FileType  = "file"
     }
   }
 
@@ -184,19 +179,12 @@ object ArrowScan {
       )
       val reduce = mergeFiles(arrowSft, dictionaryFields, encoding, sort)
       ArrowScanConfig(config, reduce)
-    } else if (hints.isArrowDelta) {
+    } else {
       val config = baseConfig ++ Map(
         DictionaryKey -> dictionaryFields.mkString(","),
         TypeKey       -> Configuration.Types.DeltaType
       )
       val reduce = mergeDeltas(arrowSft, dictionaryFields, encoding, batchSize, sort)
-      ArrowScanConfig(config, reduce)
-    } else {
-      val config = baseConfig ++ Map(
-        DictionaryKey -> dictionaryFields.mkString(","),
-        TypeKey       -> Configuration.Types.SinglePassType
-      )
-      val reduce = mergeBatchesAndDictionaries(arrowSft, dictionaryFields, encoding, batchSize, sort)
       ArrowScanConfig(config, reduce)
     }
   }
@@ -220,7 +208,7 @@ object ArrowScan {
     // we don't need to manipulate anything, just return the file batches from the distributed scan
     (iter) => {
       val bytes = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
-      val result = SimpleFeatureArrowIO.concatFiles(sft, dictionaryFields, encoding, sort)(bytes)
+      val result = SimpleFeatureArrowIO.reduceFiles(sft, dictionaryFields, encoding, sort)(bytes)
       val sf = resultFeature()
       result.map { bytes => sf.setAttribute(0, bytes); sf }
     }
@@ -247,42 +235,14 @@ object ArrowScan {
     // merge the files coming back into a single file with batches
     (iter) => {
       val batches = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
-      val result = SimpleFeatureArrowIO.mergeBatches(sft, dictionaries, encoding, sort, batchSize)(batches)
+      val result = SimpleFeatureArrowIO.reduceBatches(sft, dictionaries, encoding, sort, batchSize)(batches)
       val sf = resultFeature()
       result.map { bytes => sf.setAttribute(0, bytes); sf }
     }
   }
 
   /**
-    * Reduce function for batches with disparate dictionaries.
-    *
-    * First feature contains metadata for arrow file and dictionary batch, subsequent features
-    * contain record batches, final feature contains EOF indicator
-    *
-    * @param sft simple feature type
-    * @param dictionaryFields dictionaries
-    * @param encoding encoding
-    * @param batchSize batch size
-    * @param sort sort
-    * @return
-    */
-  def mergeBatchesAndDictionaries(sft: SimpleFeatureType,
-                                  dictionaryFields: Seq[String],
-                                  encoding: SimpleFeatureEncoding,
-                                  batchSize: Int,
-                                  sort: Option[(String, Boolean)]): QueryPlan.Reducer = {
-    // merge the files coming back into a single file with batches
-    (iter) => {
-      val files = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
-      val result = SimpleFeatureArrowIO.mergeFiles(sft, dictionaryFields, encoding, sort, batchSize)(files)
-      val sf = resultFeature()
-      result.map { bytes => sf.setAttribute(0, bytes); sf }
-    }
-  }
-
-  /**
-    * TODO
-    * Reduce function for batches with disparate dictionaries.
+    * Reduce function for delta batches.
     *
     * First feature contains metadata for arrow file and dictionary batch, subsequent features
     * contain record batches, final feature contains EOF indicator
@@ -302,7 +262,7 @@ object ArrowScan {
     // merge the files coming back into a single file with batches
     (iter) => {
       val files = iter.map(_.getAttribute(0).asInstanceOf[Array[Byte]])
-      val result = SimpleFeatureArrowIO.mergeDeltas(sft, dictionaryFields, encoding, sort, batchSize)(files)
+      val result = DeltaWriter.reduce(sft, dictionaryFields, encoding, sort, batchSize)(files)
       val sf = resultFeature()
       result.map { bytes => sf.setAttribute(0, bytes); sf }
     }
@@ -593,89 +553,6 @@ object ArrowScan {
     * @param encoding arrow encoding
     * @param sort sort field, sort reverse
     */
-  class SinglePassAggregate(sft: SimpleFeatureType,
-                            dictionaryFields: Seq[String],
-                            encoding: SimpleFeatureEncoding,
-                            sort: Option[(String, Boolean)]) extends ArrowAggregate {
-
-    private var index = 0
-    private var features: Array[SimpleFeature] = _
-    private var dictionaryValues = scala.collection.mutable.Map.empty[String, Array[AnyRef]]
-
-    private val os = new ByteArrayOutputStream()
-
-    private val ordering = sort.map { case (name, reverse) =>
-      val o = SimpleFeatureOrdering(sft.indexOf(name))
-      if (reverse) { o.reverse } else { o }
-    }
-
-    override def add(sf: SimpleFeature): Unit = {
-      // we have to copy since the feature might be re-used
-      // TODO we could probably optimize this...
-      features(index) = ScalaSimpleFeature.copy(sf)
-      index += 1
-    }
-
-    override def size: Int = index
-
-    override def clear(): Unit = {
-      index = 0
-      os.reset()
-    }
-
-    override def encode(): Array[Byte] = {
-      import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableLike
-
-      ordering.foreach(o => java.util.Arrays.sort(features, 0, index, o))
-
-      val dictionaries = dictionaryFields.mapWithIndex { case (name, dictionaryId) =>
-        val values = dictionaryValues(name)
-        val attribute = sft.indexOf(name)
-        val seen = scala.collection.mutable.HashSet.empty[AnyRef]
-        var count = 0
-        var i = 0
-        while (i < index) {
-          val value = features(i).getAttribute(attribute)
-          if (seen.add(value)) {
-            values(count) = value
-            count += 1
-          }
-          i += 1
-        }
-        // note: we sort the dictionary values to make them easier to merge later
-        java.util.Arrays.sort(values, 0, count, DictionaryOrdering)
-        val ct = ClassTag[AnyRef](sft.getDescriptor(attribute).getType.getBinding)
-        name -> ArrowDictionary.create(dictionaryId, values, count)(ct)
-      }.toMap
-
-      WithClose(SimpleFeatureArrowFileWriter(sft, os, dictionaries, encoding, sort)) { writer =>
-        var i = 0
-        while (i < index) {
-          writer.add(features(i))
-          i += 1
-        }
-      }
-
-      os.toByteArray
-    }
-
-    override def init(size: Int): ArrowAggregate = {
-      if (features == null || features.length < size) {
-        features = Array.ofDim(size)
-        dictionaryFields.foreach { field => dictionaryValues(field) = Array.ofDim(size) }
-      }
-      this
-    }
-  }
-
-  /**
-    * Arrow aggregate
-    *
-    * @param sft simple feature type
-    * @param dictionaryFields dictionary fields
-    * @param encoding arrow encoding
-    * @param sort sort field, sort reverse
-    */
   class DeltaAggregate(sft: SimpleFeatureType,
                        dictionaryFields: Seq[String],
                        encoding: SimpleFeatureEncoding,
@@ -697,7 +574,7 @@ object ArrowScan {
 
     override def clear(): Unit = index = 0
 
-    override def encode(): Array[Byte] = writer.writeBatch(features, index)
+    override def encode(): Array[Byte] = writer.encode(features, index)
 
     override def init(size: Int): ArrowAggregate = {
       writer.reset()
