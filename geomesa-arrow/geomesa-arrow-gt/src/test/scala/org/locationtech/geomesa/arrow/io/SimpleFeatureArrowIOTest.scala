@@ -57,16 +57,15 @@ class SimpleFeatureArrowIOTest extends Specification {
         (vector.underlying.getField, batches)
       }
 
-      val sorted =
-        SimpleFeatureArrowIO.sortBatches(sft, dictionaries, encoding, "dtg", reverse = false, 10, batches.iterator)
-
-      val loader = RecordBatchLoader(field)
-      val features = WithClose(SimpleFeatureVector.wrap(loader.vector.asInstanceOf[NullableMapVector], dictionaries)) { vector =>
-        sorted.flatMap { batch =>
-          vector.clear()
-          loader.load(batch)
-          (0 until vector.reader.getValueCount).map(i => ScalaSimpleFeature.copy(vector.reader.get(i)))
-        }.toList
+      val features = WithClose(SimpleFeatureArrowIO.sortBatches(sft, dictionaries, encoding, "dtg", reverse = false, 10, batches.iterator)) { sorted =>
+        val loader = RecordBatchLoader(field)
+        WithClose(SimpleFeatureVector.wrap(loader.vector.asInstanceOf[NullableMapVector], dictionaries)) { vector =>
+          sorted.flatMap { batch =>
+            vector.clear()
+            loader.load(batch)
+            (0 until vector.reader.getValueCount).map(i => ScalaSimpleFeature.copy(vector.reader.get(i)))
+          }.toList
+        }
       }
 
       features must haveLength(30)
