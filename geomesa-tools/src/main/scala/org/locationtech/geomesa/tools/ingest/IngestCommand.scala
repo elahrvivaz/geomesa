@@ -8,27 +8,22 @@
 
 package org.locationtech.geomesa.tools.ingest
 
-import java.io.File
-
 import com.beust.jcommander.{Parameter, ParameterException}
 import com.typesafe.config.Config
 import org.geotools.data.DataStore
 import org.locationtech.geomesa.tools._
-import org.locationtech.geomesa.tools.utils.{CLArgResolver, DataFormats}
+import org.locationtech.geomesa.tools.utils.{CLArgResolver, DataFormats, LibJarsLoader}
 import org.locationtech.geomesa.utils.io.PathUtils
 import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.util.Try
 
-trait IngestCommand[DS <: DataStore] extends DataStoreCommand[DS] {
+trait IngestCommand[DS <: DataStore] extends DataStoreCommand[DS] with LibJarsLoader {
 
   import scala.collection.JavaConversions._
 
   override val name = "ingest"
   override def params: IngestParams
-
-  def libjarsFile: String
-  def libjarsPaths: Iterator[() => Seq[File]]
 
   override def execute(): Unit = {
     import DataFormats.{Avro, Csv, Shp, Tsv}

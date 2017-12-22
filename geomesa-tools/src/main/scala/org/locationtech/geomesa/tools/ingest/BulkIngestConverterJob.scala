@@ -29,7 +29,7 @@ import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import scala.reflect.ClassTag
 import scala.util.control.NonFatal
 
-abstract class ConverterBulkIngestJob[T, V](sft: SimpleFeatureType, converterConfig: Config)
+abstract class BulkIngestConverterJob[T, V](sft: SimpleFeatureType, converterConfig: Config)
                                            (implicit tt: ClassTag[T], vt: ClassTag[V]) {
 
   import ConverterInputFormat.{Counters => ConvertCounters}
@@ -38,7 +38,7 @@ abstract class ConverterBulkIngestJob[T, V](sft: SimpleFeatureType, converterCon
   private val failCounters =
     Seq((ConvertCounters.Group, ConvertCounters.Failed), (OutCounters.Group, OutCounters.Failed))
 
-  def mapper: Class[Mapper[LongWritable, SimpleFeature, T, V]]
+  def mapper: Class[_ <: Mapper[LongWritable, SimpleFeature, T, V]]
 
   /**
     * Set output format, configuration options, output format
@@ -62,8 +62,8 @@ abstract class ConverterBulkIngestJob[T, V](sft: SimpleFeatureType, converterCon
           typeName: String,
           paths: Seq[String],
           reducers: Int,
-          tempPath: Option[String],
           output: String,
+          tempPath: Option[String],
           libjarsFile: String,
           libjarsPaths: Iterator[() => Seq[File]],
           statusCallback: StatusCallback): (Long, Long) = {

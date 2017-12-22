@@ -34,6 +34,15 @@
             <groupId>org.apache.hbase</groupId>
             <artifactId>hbase-client</artifactId>
         </dependency>
+        <dependency>
+            <groupId>org.apache.hbase</groupId>
+            <artifactId>hbase-server</artifactId>
+        </dependency>
+        <!-- in hbase 2.0, mapreduce code moves from hbase-server to hbase-mapreduce -->
+        <!--<dependency>
+            <groupId>org.apache.hbase</groupId>
+            <artifactId>hbase-mapreduce</artifactId>
+        </dependency>-->
 
         <!-- test deps -->
         <dependency>

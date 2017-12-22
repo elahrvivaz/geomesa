@@ -8,8 +8,6 @@
 
 package org.locationtech.geomesa.tools.ingest
 
-import java.io.File
-
 import com.beust.jcommander.{Parameter, ParameterException}
 import com.typesafe.config.Config
 import org.geotools.data.DataStore
@@ -17,21 +15,18 @@ import org.locationtech.geomesa.tools.DistributedRunParam.RunModes
 import org.locationtech.geomesa.tools._
 import org.locationtech.geomesa.tools.ingest.AbstractIngest.StatusCallback
 import org.locationtech.geomesa.tools.ingest.BulkIngestCommand.BulkIngestParams
-import org.locationtech.geomesa.tools.utils.CLArgResolver
+import org.locationtech.geomesa.tools.utils.{CLArgResolver, LibJarsLoader}
 import org.locationtech.geomesa.utils.io.PathUtils
 import org.opengis.feature.simple.SimpleFeatureType
 
 import scala.util.Try
 
-trait BulkIngestCommand[DS <: DataStore] extends DataStoreCommand[DS] {
+trait BulkIngestCommand[DS <: DataStore] extends DataStoreCommand[DS] with LibJarsLoader {
 
   import scala.collection.JavaConversions._
 
   override val name = "ingest-bulk"
   override def params: BulkIngestParams
-
-  def libjarsFile: String
-  def libjarsPaths: Iterator[() => Seq[File]]
 
   override def execute(): Unit = {
     ensureSameFs(PathUtils.RemotePrefixes)
@@ -57,14 +52,14 @@ trait BulkIngestCommand[DS <: DataStore] extends DataStoreCommand[DS] {
 
       override def runDistributedJob(statusCallback: StatusCallback): (Long, Long) = {
         val job = createIngestJob(sft, converterConfig)
-        job.run(dsParams, sft.getTypeName, params.files, params.reducers, Option(params.tempPath),
+        job.run(dsParams, sft.getTypeName, params.files, params.reducers, params.outputPath, Option(params.tempPath),
           libjarsFile, libjarsPaths, statusCallback)
       }
     }
     ingest.run()
   }
 
-  protected def createIngestJob(sft: SimpleFeatureType, converterConfig: Config): ConverterBulkIngestJob[_, _]
+  protected def createIngestJob(sft: SimpleFeatureType, converterConfig: Config): BulkIngestConverterJob[_, _]
 
   def ensureSameFs(prefixes: Seq[String]): Unit = {
     prefixes.foreach { pre =>
@@ -87,5 +82,9 @@ object BulkIngestCommand {
     @Parameter(names = Array("--temp-path"), description = "Path to temp directory for bulk output. " +
         "May be useful when writing to s3 since it is slow as a sink", required = false)
     var tempPath: String = _
+
+    @Parameter(names = Array("-o", "--output-path"), description = "Path to write bulk output", required = true)
+    var outputPath: String = _
+
   }
 }
