@@ -10,8 +10,9 @@ package org.locationtech.geomesa.arrow.vector
 
 import java.io.Closeable
 
+import com.vividsolutions.jts.geom.Geometry
 import org.apache.arrow.memory.BufferAllocator
-import org.apache.arrow.vector.NullableBigIntVector
+import org.apache.arrow.vector.{BigIntVector, FieldVector}
 import org.apache.arrow.vector.complex.NullableMapVector
 import org.apache.arrow.vector.types.FloatingPointPrecision
 import org.locationtech.geomesa.arrow.features.ArrowSimpleFeature
@@ -45,7 +46,7 @@ class SimpleFeatureVector private [arrow] (val sft: SimpleFeatureType,
   /**
     * Clear any simple features currently stored in the vector
     */
-  def clear(): Unit = underlying.getMutator.setValueCount(0)
+  def clear(): Unit = underlying.setValueCount(0)
 
   override def close(): Unit = {
     underlying.close()
@@ -89,15 +90,15 @@ class SimpleFeatureVector private [arrow] (val sft: SimpleFeatureType,
 
     def load(index: Int): Unit = feature.index = index
 
-    def getValueCount: Int = vector.underlying.getAccessor.getValueCount
+    def getValueCount: Int = vector.underlying.getValueCount
   }
 }
 
 object SimpleFeatureVector {
 
   val DefaultCapacity = 8096
-  val FeatureIdField = "id"
-  val DescriptorKey  = "descriptor"
+  val FeatureIdField  = "id"
+  val DescriptorKey   = "descriptor"
 
   object EncodingPrecision extends Enumeration {
     type EncodingPrecision = Value
@@ -194,11 +195,17 @@ object SimpleFeatureVector {
     val datePrecision = {
       import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
       val dateVector = sft.getDtgField.flatMap(d => Option(vector.getChild(d)))
-      val isLong = dateVector.exists(_.isInstanceOf[NullableBigIntVector])
+      val isLong = dateVector.exists(_.isInstanceOf[BigIntVector])
       if (isLong) { EncodingPrecision.Max } else { EncodingPrecision.Min }
     }
     val encoding = SimpleFeatureEncoding(includeFids, geomPrecision, datePrecision)
 
     (sft, encoding)
+  }
+
+  def isGeometryVector(vector: FieldVector): Boolean = {
+    Option(vector.getField.getMetadata.get(DescriptorKey))
+        .map(SimpleFeatureTypes.createDescriptor)
+        .exists(d => classOf[Geometry].isAssignableFrom(d.getType.getBinding))
   }
 }

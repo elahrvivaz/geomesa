@@ -10,7 +10,7 @@ package org.locationtech.geomesa.arrow.vector
 
 import java.util.Date
 
-import org.apache.arrow.memory.{BufferAllocator, RootAllocator}
+import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.vector.DirtyRootAllocator
 import org.geotools.util.Converters
 import org.junit.runner.RunWith
@@ -194,6 +194,23 @@ class SimpleFeatureVectorTest extends Specification {
         vector.writer.setValueCount(features.length)
         vector.reader.getValueCount mustEqual features.length
         forall(0 until 10)(i => vector.reader.get(i) mustEqual nulls(i))
+      }
+    }
+    "set and get line strings" >> {
+      val sft = SimpleFeatureTypes.createType("test", "name:String,*geom:LineString:srid=4326")
+      val features = (0 until 10).map { i =>
+        ScalaSimpleFeature.create(sft, s"0$i", s"name0${i % 2}", s"LINESTRING (30 10, 1$i 30, 40 40)")
+      }
+      WithClose(SimpleFeatureVector.create(sft, Map.empty, SimpleFeatureEncoding.min(true))) { vector =>
+        features.zipWithIndex.foreach { case (f, i) => vector.writer.set(i, f) }
+        vector.writer.setValueCount(features.length)
+        vector.reader.getValueCount mustEqual features.length
+        forall(0 until 10)(i => vector.reader.get(i) mustEqual features(i))
+        // check wrapping
+        WithClose(SimpleFeatureVector.wrap(vector.underlying, Map.empty)) { wrapped =>
+          wrapped.reader.getValueCount mustEqual features.length
+          forall(0 until 10)(i => wrapped.reader.get(i) mustEqual features(i))
+        }
       }
     }
     "clear" >> {

@@ -12,7 +12,7 @@ import java.io.{Closeable, InputStream}
 
 import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.vector.complex.NullableMapVector
-import org.apache.arrow.vector.stream.ArrowStreamReader
+import org.apache.arrow.vector.ipc.ArrowStreamReader
 import org.locationtech.geomesa.arrow.features.ArrowSimpleFeature
 import org.locationtech.geomesa.arrow.io.SimpleFeatureArrowFileReader.{SkipIndicator, VectorToIterator, loadDictionaries}
 import org.locationtech.geomesa.arrow.io.{SimpleFeatureArrowFileReader, SimpleFeatureArrowIO}

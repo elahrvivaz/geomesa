@@ -13,9 +13,8 @@ import java.nio.channels.{Channels, ReadableByteChannel}
 
 import org.apache.arrow.memory.BufferAllocator
 import org.apache.arrow.vector.complex.NullableMapVector
-import org.apache.arrow.vector.file.ReadChannel
-import org.apache.arrow.vector.schema.ArrowRecordBatch
-import org.apache.arrow.vector.stream.{ArrowStreamReader, MessageSerializer}
+import org.apache.arrow.vector.ipc.message.{ArrowRecordBatch, MessageSerializer}
+import org.apache.arrow.vector.ipc.{ArrowStreamReader, ReadChannel}
 import org.apache.arrow.vector.{VectorLoader, VectorSchemaRoot}
 import org.locationtech.geomesa.arrow.features.ArrowSimpleFeature
 import org.locationtech.geomesa.arrow.io.SimpleFeatureArrowFileReader.{SkipIndicator, VectorToIterator}

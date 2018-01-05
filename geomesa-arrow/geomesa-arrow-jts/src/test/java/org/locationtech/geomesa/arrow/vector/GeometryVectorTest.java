@@ -16,10 +16,27 @@ import com.vividsolutions.jts.geom.Point;
 import com.vividsolutions.jts.geom.Polygon;
 import com.vividsolutions.jts.io.WKTReader;
 import com.vividsolutions.jts.io.WKTWriter;
+import org.apache.arrow.memory.BufferAllocator;
 import org.apache.arrow.memory.RootAllocator;
+import org.apache.arrow.vector.FieldVector;
+import org.apache.arrow.vector.VectorSchemaRoot;
+import org.apache.arrow.vector.complex.ListVector;
+import org.apache.arrow.vector.dictionary.DictionaryProvider;
+import org.apache.arrow.vector.dictionary.DictionaryProvider.MapDictionaryProvider;
+import org.apache.arrow.vector.ipc.ArrowStreamReader;
+import org.apache.arrow.vector.ipc.ArrowStreamWriter;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.junit.Assert;
 import org.junit.Test;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.nio.channels.Channels;
+import java.nio.file.Files;
+import java.util.Arrays;
+import java.util.Collections;
 
 public class GeometryVectorTest {
 
@@ -39,29 +56,29 @@ public class GeometryVectorTest {
       Field floatField = floats.getVector().getField();
       Field doubleField = doubles.getVector().getField();
 
-      floats.getWriter().set(0, (Point) wktReader.read(point1));
-      floats.getWriter().set(1, (Point) wktReader.read(point2));
-      floats.getWriter().set(3, (Point) wktReader.read(point3));
-      floats.getWriter().setValueCount(4);
+      floats.set(0, (Point) wktReader.read(point1));
+      floats.set(1, (Point) wktReader.read(point2));
+      floats.set(3, (Point) wktReader.read(point3));
+      floats.setValueCount(4);
 
-      doubles.getWriter().set(0, (Point) wktReader.read(point1));
-      doubles.getWriter().set(1, (Point) wktReader.read(point2));
-      doubles.getWriter().set(3, (Point) wktReader.read(point3));
-      doubles.getWriter().setValueCount(4);
+      doubles.set(0, (Point) wktReader.read(point1));
+      doubles.set(1, (Point) wktReader.read(point2));
+      doubles.set(3, (Point) wktReader.read(point3));
+      doubles.setValueCount(4);
 
-      Assert.assertEquals(4, floats.getReader().getValueCount());
-      Assert.assertEquals(1, floats.getReader().getNullCount());
-      Assert.assertEquals(point1, wktWriter.write(floats.getReader().get(0)));
-      Assert.assertEquals(point2, wktWriter.write(floats.getReader().get(1)));
-      Assert.assertEquals(point3, wktWriter.write(floats.getReader().get(3)));
-      Assert.assertNull(floats.getReader().get(2));
+      Assert.assertEquals(4, floats.getValueCount());
+      Assert.assertEquals(1, floats.getNullCount());
+      Assert.assertEquals(point1, wktWriter.write(floats.get(0)));
+      Assert.assertEquals(point2, wktWriter.write(floats.get(1)));
+      Assert.assertEquals(point3, wktWriter.write(floats.get(3)));
+      Assert.assertNull(floats.get(2));
 
-      Assert.assertEquals(4, doubles.getReader().getValueCount());
-      Assert.assertEquals(1, doubles.getReader().getNullCount());
-      Assert.assertEquals(point1, wktWriter.write(doubles.getReader().get(0)));
-      Assert.assertEquals(point2, wktWriter.write(doubles.getReader().get(1)));
-      Assert.assertEquals(point3, wktWriter.write(doubles.getReader().get(3)));
-      Assert.assertNull(doubles.getReader().get(2));
+      Assert.assertEquals(4, doubles.getValueCount());
+      Assert.assertEquals(1, doubles.getNullCount());
+      Assert.assertEquals(point1, wktWriter.write(doubles.get(0)));
+      Assert.assertEquals(point2, wktWriter.write(doubles.get(1)));
+      Assert.assertEquals(point3, wktWriter.write(doubles.get(3)));
+      Assert.assertNull(doubles.get(2));
 
       // ensure field was created correctly up front
 
@@ -70,6 +87,73 @@ public class GeometryVectorTest {
 
       Assert.assertEquals(doubleField, doubles.getVector().getField());
       Assert.assertEquals(doubleField.getChildren(), PointVector.fields);
+
+      // overwriting
+
+      floats.set(0, (Point) wktReader.read(point3));
+      floats.set(1, (Point) wktReader.read(point2));
+      floats.set(2, (Point) wktReader.read(point1));
+      floats.setValueCount(3);
+
+      Assert.assertEquals(3, floats.getValueCount());
+      Assert.assertEquals(0, floats.getNullCount());
+      Assert.assertEquals(point3, wktWriter.write(floats.get(0)));
+      Assert.assertEquals(point2, wktWriter.write(floats.get(1)));
+      Assert.assertEquals(point1, wktWriter.write(floats.get(2)));
+    }
+  }
+
+  @Test
+  public void testPointTransfer() throws Exception {
+    WKTReader wktReader = new WKTReader();
+    WKTWriter wktWriter = new WKTWriter();
+
+    String point1 = "POINT (0 20)";
+    String point2 = "POINT (10 20)";
+    String point3 = "POINT (30 20)";
+
+    try (RootAllocator allocator = new RootAllocator(Long.MAX_VALUE);
+         PointFloatVector from = new PointFloatVector("points", allocator, null);
+         PointFloatVector to = new PointFloatVector("points", allocator, null)) {
+
+      from.set(0, (Point) wktReader.read(point1));
+      from.set(1, (Point) wktReader.read(point2));
+      from.set(3, (Point) wktReader.read(point3));
+      from.setValueCount(4);
+
+      for (int i = 0; i < 4; i++) {
+        from.transfer(i, i, to);
+      }
+      to.setValueCount(4);
+
+      for (PointFloatVector vector: Arrays.asList(from, to)) {
+        Assert.assertEquals(4, vector.getValueCount());
+        Assert.assertEquals(1, vector.getNullCount());
+        Assert.assertEquals(point1, wktWriter.write(vector.get(0)));
+        Assert.assertEquals(point2, wktWriter.write(vector.get(1)));
+        Assert.assertEquals(point3, wktWriter.write(vector.get(3)));
+        Assert.assertNull(vector.get(2));
+      }
+
+      from.getVector().clear();
+      from.set(1, (Point) wktReader.read(point1));
+      from.set(2, (Point) wktReader.read(point2));
+      from.set(3, (Point) wktReader.read(point3));
+      from.setValueCount(4);
+
+      for (int i = 0; i < 4; i++) {
+        from.transfer(i, i, to);
+      }
+      to.setValueCount(4);
+
+      for (PointFloatVector vector: Arrays.asList(from, to)) {
+        Assert.assertEquals(4, vector.getValueCount());
+        Assert.assertEquals(1, vector.getNullCount());
+        Assert.assertEquals(point1, wktWriter.write(vector.get(1)));
+        Assert.assertEquals(point2, wktWriter.write(vector.get(2)));
+        Assert.assertEquals(point3, wktWriter.write(vector.get(3)));
+        Assert.assertNull(vector.get(0));
+      }
     }
   }
 
@@ -89,29 +173,30 @@ public class GeometryVectorTest {
       Field floatField = floats.getVector().getField();
       Field doubleField = doubles.getVector().getField();
 
-      floats.getWriter().set(0, (LineString) wktReader.read(line1));
-      floats.getWriter().set(1, (LineString) wktReader.read(line2));
-      floats.getWriter().set(3, (LineString) wktReader.read(line3));
-      floats.getWriter().setValueCount(4);
+      floats.set(0, (LineString) wktReader.read(line1));
+      floats.set(1, (LineString) wktReader.read(line2));
+      floats.set(2, null);
+      floats.set(3, (LineString) wktReader.read(line3));
+      floats.setValueCount(4);
 
-      doubles.getWriter().set(0, (LineString) wktReader.read(line1));
-      doubles.getWriter().set(1, (LineString) wktReader.read(line2));
-      doubles.getWriter().set(3, (LineString) wktReader.read(line3));
-      doubles.getWriter().setValueCount(4);
+      doubles.set(0, (LineString) wktReader.read(line1));
+      doubles.set(1, (LineString) wktReader.read(line2));
+      doubles.set(3, (LineString) wktReader.read(line3));
+      doubles.setValueCount(4);
 
-      Assert.assertEquals(4, floats.getReader().getValueCount());
-      Assert.assertEquals(1, floats.getReader().getNullCount());
-      Assert.assertEquals(line1, wktWriter.write(floats.getReader().get(0)));
-      Assert.assertEquals(line2, wktWriter.write(floats.getReader().get(1)));
-      Assert.assertEquals(line3, wktWriter.write(floats.getReader().get(3)));
-      Assert.assertNull(floats.getReader().get(2));
+      Assert.assertEquals(4, floats.getValueCount());
+      Assert.assertEquals(1, floats.getNullCount());
+      Assert.assertEquals(line1, wktWriter.write(floats.get(0)));
+      Assert.assertEquals(line2, wktWriter.write(floats.get(1)));
+      Assert.assertEquals(line3, wktWriter.write(floats.get(3)));
+      Assert.assertNull(floats.get(2));
 
-      Assert.assertEquals(4, doubles.getReader().getValueCount());
-      Assert.assertEquals(1, doubles.getReader().getNullCount());
-      Assert.assertEquals(line1, wktWriter.write(doubles.getReader().get(0)));
-      Assert.assertEquals(line2, wktWriter.write(doubles.getReader().get(1)));
-      Assert.assertEquals(line3, wktWriter.write(doubles.getReader().get(3)));
-      Assert.assertNull(doubles.getReader().get(2));
+      Assert.assertEquals(4, doubles.getValueCount());
+      Assert.assertEquals(1, doubles.getNullCount());
+      Assert.assertEquals(line1, wktWriter.write(doubles.get(0)));
+      Assert.assertEquals(line2, wktWriter.write(doubles.get(1)));
+      Assert.assertEquals(line3, wktWriter.write(doubles.get(3)));
+      Assert.assertNull(doubles.get(2));
 
       // ensure field was created correctly up front
 
@@ -120,6 +205,83 @@ public class GeometryVectorTest {
 
       Assert.assertEquals(doubleField, doubles.getVector().getField());
       Assert.assertEquals(doubleField.getChildren(), LineStringVector.fields);
+
+      // loading/unloading
+      try (LineStringFloatVector recovered = new LineStringFloatVector((ListVector) writeToFile(floats, allocator))) {
+        Assert.assertEquals(4, recovered.getValueCount());
+        Assert.assertEquals(1, recovered.getNullCount());
+        Assert.assertEquals(line1, wktWriter.write(recovered.get(0)));
+        Assert.assertEquals(line2, wktWriter.write(recovered.get(1)));
+        Assert.assertEquals(line3, wktWriter.write(recovered.get(3)));
+        Assert.assertNull(recovered.get(2));
+      }
+
+      // overwriting
+
+      floats.set(0, (LineString) wktReader.read(line3));
+      floats.set(1, (LineString) wktReader.read(line2));
+      floats.set(3, (LineString) wktReader.read(line1));
+      floats.setValueCount(3);
+
+      Assert.assertEquals(3, floats.getValueCount());
+      Assert.assertEquals(0, floats.getNullCount());
+      Assert.assertEquals(line3, wktWriter.write(floats.get(0)));
+      Assert.assertEquals(line2, wktWriter.write(floats.get(1)));
+      Assert.assertEquals(line1, wktWriter.write(floats.get(3)));
+    }
+  }
+
+  @Test
+  public void testLineStringTransfer() throws Exception {
+    WKTReader wktReader = new WKTReader();
+    WKTWriter wktWriter = new WKTWriter();
+
+    String line1 = "LINESTRING (30 10, 10 30, 40 40)";
+    String line2 = "LINESTRING (40 10, 10 30)";
+    String line3 = "LINESTRING (30 15, 10 30, 40 45, 55 60, 56 60)";
+
+    try (RootAllocator allocator = new RootAllocator(Long.MAX_VALUE);
+         LineStringFloatVector from = new LineStringFloatVector("lines", allocator, null);
+         LineStringFloatVector to = new LineStringFloatVector("lines", allocator, null)) {
+
+      from.set(0, (LineString) wktReader.read(line1));
+      from.set(1, (LineString) wktReader.read(line2));
+      from.set(3, (LineString) wktReader.read(line3));
+      from.setValueCount(4);
+
+      for (int i = 0; i < 4; i++) {
+        from.transfer(i, i, to);
+      }
+      to.setValueCount(4);
+
+      for (LineStringFloatVector vector: Arrays.asList(from, to)) {
+        Assert.assertEquals(4, vector.getValueCount());
+        Assert.assertEquals(1, vector.getNullCount());
+        Assert.assertEquals(line1, wktWriter.write(vector.get(0)));
+        Assert.assertEquals(line2, wktWriter.write(vector.get(1)));
+        Assert.assertEquals(line3, wktWriter.write(vector.get(3)));
+        Assert.assertNull(vector.get(2));
+      }
+
+      from.getVector().clear();
+      from.set(1, (LineString) wktReader.read(line1));
+      from.set(2, (LineString) wktReader.read(line2));
+      from.set(3, (LineString) wktReader.read(line3));
+      from.setValueCount(4);
+
+      for (int i = 0; i < 4; i++) {
+        from.transfer(i, i, to);
+      }
+      to.setValueCount(4);
+
+      for (LineStringFloatVector vector: Arrays.asList(from, to)) {
+        Assert.assertEquals(4, vector.getValueCount());
+        Assert.assertEquals(1, vector.getNullCount());
+        Assert.assertEquals(line1, wktWriter.write(vector.get(1)));
+        Assert.assertEquals(line2, wktWriter.write(vector.get(2)));
+        Assert.assertEquals(line3, wktWriter.write(vector.get(3)));
+        Assert.assertNull(vector.get(0));
+      }
     }
   }
 
@@ -138,29 +300,30 @@ public class GeometryVectorTest {
       Field floatField = floats.getVector().getField();
       Field doubleField = doubles.getVector().getField();
 
-      floats.getWriter().set(0, (Polygon) wktReader.read(p0));
-      floats.getWriter().set(1, (Polygon) wktReader.read(p1));
-      floats.getWriter().set(3, (Polygon) wktReader.read(p2));
-      floats.getWriter().setValueCount(4);
+      floats.set(0, (Polygon) wktReader.read(p0));
+      floats.set(1, (Polygon) wktReader.read(p1));
+      floats.set(2, null);
+      floats.set(3, (Polygon) wktReader.read(p2));
+      floats.setValueCount(4);
 
-      doubles.getWriter().set(0, (Polygon) wktReader.read(p0));
-      doubles.getWriter().set(1, (Polygon) wktReader.read(p1));
-      doubles.getWriter().set(3, (Polygon) wktReader.read(p2));
-      doubles.getWriter().setValueCount(4);
+      doubles.set(0, (Polygon) wktReader.read(p0));
+      doubles.set(1, (Polygon) wktReader.read(p1));
+      doubles.set(3, (Polygon) wktReader.read(p2));
+      doubles.setValueCount(4);
 
-      Assert.assertEquals(4, floats.getReader().getValueCount());
-      Assert.assertEquals(1, floats.getReader().getNullCount());
-      Assert.assertEquals(p0, wktWriter.write(floats.getReader().get(0)));
-      Assert.assertEquals(p1, wktWriter.write(floats.getReader().get(1)));
-      Assert.assertEquals(p2, wktWriter.write(floats.getReader().get(3)));
-      Assert.assertNull(floats.getReader().get(2));
+      Assert.assertEquals(4, floats.getValueCount());
+      Assert.assertEquals(1, floats.getNullCount());
+      Assert.assertEquals(p0, wktWriter.write(floats.get(0)));
+      Assert.assertEquals(p1, wktWriter.write(floats.get(1)));
+      Assert.assertEquals(p2, wktWriter.write(floats.get(3)));
+      Assert.assertNull(floats.get(2));
 
-      Assert.assertEquals(4, doubles.getReader().getValueCount());
-      Assert.assertEquals(1, doubles.getReader().getNullCount());
-      Assert.assertEquals(p0, wktWriter.write(doubles.getReader().get(0)));
-      Assert.assertEquals(p1, wktWriter.write(doubles.getReader().get(1)));
-      Assert.assertEquals(p2, wktWriter.write(doubles.getReader().get(3)));
-      Assert.assertNull(doubles.getReader().get(2));
+      Assert.assertEquals(4, doubles.getValueCount());
+      Assert.assertEquals(1, doubles.getNullCount());
+      Assert.assertEquals(p0, wktWriter.write(doubles.get(0)));
+      Assert.assertEquals(p1, wktWriter.write(doubles.get(1)));
+      Assert.assertEquals(p2, wktWriter.write(doubles.get(3)));
+      Assert.assertNull(doubles.get(2));
 
       // ensure field was created correctly up front
 
@@ -169,6 +332,19 @@ public class GeometryVectorTest {
 
       Assert.assertEquals(doubleField, doubles.getVector().getField());
       Assert.assertEquals(doubleField.getChildren(), PolygonVector.fields);
+
+      // overwriting
+
+      floats.set(0, (Polygon) wktReader.read(p2));
+      floats.set(1, (Polygon) wktReader.read(p1));
+      floats.set(2, (Polygon) wktReader.read(p0));
+      floats.setValueCount(3);
+
+      Assert.assertEquals(3, floats.getValueCount());
+      Assert.assertEquals(0, floats.getNullCount());
+      Assert.assertEquals(p2, wktWriter.write(floats.get(0)));
+      Assert.assertEquals(p1, wktWriter.write(floats.get(1)));
+      Assert.assertEquals(p0, wktWriter.write(floats.get(2)));
     }
   }
 
@@ -187,29 +363,30 @@ public class GeometryVectorTest {
       Field floatField = floats.getVector().getField();
       Field doubleField = doubles.getVector().getField();
 
-      floats.getWriter().set(0, (MultiLineString) wktReader.read(mls0));
-      floats.getWriter().set(1, (MultiLineString) wktReader.read(mls1));
-      floats.getWriter().set(3, (MultiLineString) wktReader.read(mls2));
-      floats.getWriter().setValueCount(4);
+      floats.set(0, (MultiLineString) wktReader.read(mls0));
+      floats.set(1, (MultiLineString) wktReader.read(mls1));
+      floats.set(2, null);
+      floats.set(3, (MultiLineString) wktReader.read(mls2));
+      floats.setValueCount(4);
 
-      doubles.getWriter().set(0, (MultiLineString) wktReader.read(mls0));
-      doubles.getWriter().set(1, (MultiLineString) wktReader.read(mls1));
-      doubles.getWriter().set(3, (MultiLineString) wktReader.read(mls2));
-      doubles.getWriter().setValueCount(4);
+      doubles.set(0, (MultiLineString) wktReader.read(mls0));
+      doubles.set(1, (MultiLineString) wktReader.read(mls1));
+      doubles.set(3, (MultiLineString) wktReader.read(mls2));
+      doubles.setValueCount(4);
 
-      Assert.assertEquals(4, floats.getReader().getValueCount());
-      Assert.assertEquals(1, floats.getReader().getNullCount());
-      Assert.assertEquals(mls0, wktWriter.write(floats.getReader().get(0)));
-      Assert.assertEquals(mls1, wktWriter.write(floats.getReader().get(1)));
-      Assert.assertEquals(mls2, wktWriter.write(floats.getReader().get(3)));
-      Assert.assertNull(floats.getReader().get(2));
+      Assert.assertEquals(4, floats.getValueCount());
+      Assert.assertEquals(1, floats.getNullCount());
+      Assert.assertEquals(mls0, wktWriter.write(floats.get(0)));
+      Assert.assertEquals(mls1, wktWriter.write(floats.get(1)));
+      Assert.assertEquals(mls2, wktWriter.write(floats.get(3)));
+      Assert.assertNull(floats.get(2));
 
-      Assert.assertEquals(4, doubles.getReader().getValueCount());
-      Assert.assertEquals(1, doubles.getReader().getNullCount());
-      Assert.assertEquals(mls0, wktWriter.write(doubles.getReader().get(0)));
-      Assert.assertEquals(mls1, wktWriter.write(doubles.getReader().get(1)));
-      Assert.assertEquals(mls2, wktWriter.write(doubles.getReader().get(3)));
-      Assert.assertNull(doubles.getReader().get(2));
+      Assert.assertEquals(4, doubles.getValueCount());
+      Assert.assertEquals(1, doubles.getNullCount());
+      Assert.assertEquals(mls0, wktWriter.write(doubles.get(0)));
+      Assert.assertEquals(mls1, wktWriter.write(doubles.get(1)));
+      Assert.assertEquals(mls2, wktWriter.write(doubles.get(3)));
+      Assert.assertNull(doubles.get(2));
 
       // ensure field was created correctly up front
 
@@ -218,6 +395,19 @@ public class GeometryVectorTest {
 
       Assert.assertEquals(floatField, floats.getVector().getField());
       Assert.assertEquals(floatField.getChildren(), MultiLineStringFloatVector.fields);
+
+      // overwriting
+
+      floats.set(0, (MultiLineString) wktReader.read(mls2));
+      floats.set(1, (MultiLineString) wktReader.read(mls1));
+      floats.set(2, (MultiLineString) wktReader.read(mls0));
+      floats.setValueCount(3);
+
+      Assert.assertEquals(3, floats.getValueCount());
+      Assert.assertEquals(0, floats.getNullCount());
+      Assert.assertEquals(mls2, wktWriter.write(floats.get(0)));
+      Assert.assertEquals(mls1, wktWriter.write(floats.get(1)));
+      Assert.assertEquals(mls0, wktWriter.write(floats.get(2)));
     }
   }
 
@@ -236,29 +426,30 @@ public class GeometryVectorTest {
       Field floatField = floats.getVector().getField();
       Field doubleField = doubles.getVector().getField();
 
-      floats.getWriter().set(0, (MultiPoint) wktReader.read(p0));
-      floats.getWriter().set(1, (MultiPoint) wktReader.read(p1));
-      floats.getWriter().set(3, (MultiPoint) wktReader.read(p2));
-      floats.getWriter().setValueCount(4);
+      floats.set(0, (MultiPoint) wktReader.read(p0));
+      floats.set(1, (MultiPoint) wktReader.read(p1));
+      floats.set(2, null);
+      floats.set(3, (MultiPoint) wktReader.read(p2));
+      floats.setValueCount(4);
 
-      doubles.getWriter().set(0, (MultiPoint) wktReader.read(p0));
-      doubles.getWriter().set(1, (MultiPoint) wktReader.read(p1));
-      doubles.getWriter().set(3, (MultiPoint) wktReader.read(p2));
-      doubles.getWriter().setValueCount(4);
+      doubles.set(0, (MultiPoint) wktReader.read(p0));
+      doubles.set(1, (MultiPoint) wktReader.read(p1));
+      doubles.set(3, (MultiPoint) wktReader.read(p2));
+      doubles.setValueCount(4);
 
-      Assert.assertEquals(4, floats.getReader().getValueCount());
-      Assert.assertEquals(1, floats.getReader().getNullCount());
-      Assert.assertEquals(p0, wktWriter.write(floats.getReader().get(0)));
-      Assert.assertEquals(p1, wktWriter.write(floats.getReader().get(1)));
-      Assert.assertEquals(p2, wktWriter.write(floats.getReader().get(3)));
-      Assert.assertNull(floats.getReader().get(2));
+      Assert.assertEquals(4, floats.getValueCount());
+      Assert.assertEquals(1, floats.getNullCount());
+      Assert.assertEquals(p0, wktWriter.write(floats.get(0)));
+      Assert.assertEquals(p1, wktWriter.write(floats.get(1)));
+      Assert.assertEquals(p2, wktWriter.write(floats.get(3)));
+      Assert.assertNull(floats.get(2));
 
-      Assert.assertEquals(4, doubles.getReader().getValueCount());
-      Assert.assertEquals(1, doubles.getReader().getNullCount());
-      Assert.assertEquals(p0, wktWriter.write(doubles.getReader().get(0)));
-      Assert.assertEquals(p1, wktWriter.write(doubles.getReader().get(1)));
-      Assert.assertEquals(p2, wktWriter.write(doubles.getReader().get(3)));
-      Assert.assertNull(doubles.getReader().get(2));
+      Assert.assertEquals(4, doubles.getValueCount());
+      Assert.assertEquals(1, doubles.getNullCount());
+      Assert.assertEquals(p0, wktWriter.write(doubles.get(0)));
+      Assert.assertEquals(p1, wktWriter.write(doubles.get(1)));
+      Assert.assertEquals(p2, wktWriter.write(doubles.get(3)));
+      Assert.assertNull(doubles.get(2));
 
       // ensure field was created correctly up front
 
@@ -267,6 +458,19 @@ public class GeometryVectorTest {
 
       Assert.assertEquals(doubleField, doubles.getVector().getField());
       Assert.assertEquals(doubleField.getChildren(), MultiPointVector.fields);
+
+      // overwriting
+
+      floats.set(0, (MultiPoint) wktReader.read(p2));
+      floats.set(1, (MultiPoint) wktReader.read(p1));
+      floats.set(2, (MultiPoint) wktReader.read(p0));
+      floats.setValueCount(3);
+
+      Assert.assertEquals(3, floats.getValueCount());
+      Assert.assertEquals(0, floats.getNullCount());
+      Assert.assertEquals(p2, wktWriter.write(floats.get(0)));
+      Assert.assertEquals(p1, wktWriter.write(floats.get(1)));
+      Assert.assertEquals(p0, wktWriter.write(floats.get(2)));
     }
   }
 
@@ -286,29 +490,30 @@ public class GeometryVectorTest {
       Field floatField = floats.getVector().getField();
       Field doubleField = doubles.getVector().getField();
 
-      floats.getWriter().set(0, (MultiPolygon) wktReader.read(p0));
-      floats.getWriter().set(1, (MultiPolygon) wktReader.read(p1));
-      floats.getWriter().set(3, (MultiPolygon) wktReader.read(p2));
-      floats.getWriter().setValueCount(4);
+      floats.set(0, (MultiPolygon) wktReader.read(p0));
+      floats.set(1, (MultiPolygon) wktReader.read(p1));
+      floats.set(2, null);
+      floats.set(3, (MultiPolygon) wktReader.read(p2));
+      floats.setValueCount(4);
 
-      doubles.getWriter().set(0, (MultiPolygon) wktReader.read(p0));
-      doubles.getWriter().set(1, (MultiPolygon) wktReader.read(p1));
-      doubles.getWriter().set(3, (MultiPolygon) wktReader.read(p2));
-      doubles.getWriter().setValueCount(4);
+      doubles.set(0, (MultiPolygon) wktReader.read(p0));
+      doubles.set(1, (MultiPolygon) wktReader.read(p1));
+      doubles.set(3, (MultiPolygon) wktReader.read(p2));
+      doubles.setValueCount(4);
 
-      Assert.assertEquals(4, floats.getReader().getValueCount());
-      Assert.assertEquals(1, floats.getReader().getNullCount());
-      Assert.assertEquals(p0, wktWriter.write(floats.getReader().get(0)));
-      Assert.assertEquals(p1, wktWriter.write(floats.getReader().get(1)));
-      Assert.assertEquals(p2, wktWriter.write(floats.getReader().get(3)));
-      Assert.assertNull(floats.getReader().get(2));
+      Assert.assertEquals(4, floats.getValueCount());
+      Assert.assertEquals(1, floats.getNullCount());
+      Assert.assertEquals(p0, wktWriter.write(floats.get(0)));
+      Assert.assertEquals(p1, wktWriter.write(floats.get(1)));
+      Assert.assertEquals(p2, wktWriter.write(floats.get(3)));
+      Assert.assertNull(floats.get(2));
 
-      Assert.assertEquals(4, doubles.getReader().getValueCount());
-      Assert.assertEquals(1, doubles.getReader().getNullCount());
-      Assert.assertEquals(p0, wktWriter.write(doubles.getReader().get(0)));
-      Assert.assertEquals(p1, wktWriter.write(doubles.getReader().get(1)));
-      Assert.assertEquals(p2, wktWriter.write(doubles.getReader().get(3)));
-      Assert.assertNull(doubles.getReader().get(2));
+      Assert.assertEquals(4, doubles.getValueCount());
+      Assert.assertEquals(1, doubles.getNullCount());
+      Assert.assertEquals(p0, wktWriter.write(doubles.get(0)));
+      Assert.assertEquals(p1, wktWriter.write(doubles.get(1)));
+      Assert.assertEquals(p2, wktWriter.write(doubles.get(3)));
+      Assert.assertNull(doubles.get(2));
 
       // ensure field was created correctly up front
 
@@ -317,6 +522,47 @@ public class GeometryVectorTest {
 
       Assert.assertEquals(doubleField, doubles.getVector().getField());
       Assert.assertEquals(doubleField.getChildren(), MultiPolygonVector.fields);
+
+      // overwriting
+
+      floats.set(0, (MultiPolygon) wktReader.read(p2));
+      floats.set(1, (MultiPolygon) wktReader.read(p1));
+      floats.set(3, (MultiPolygon) wktReader.read(p0));
+      floats.setValueCount(3);
+
+      Assert.assertEquals(3, floats.getValueCount());
+      Assert.assertEquals(0, floats.getNullCount());
+      Assert.assertEquals(p2, wktWriter.write(floats.get(0)));
+      Assert.assertEquals(p1, wktWriter.write(floats.get(1)));
+      Assert.assertEquals(p0, wktWriter.write(floats.get(3)));
+    }
+  }
+
+  private FieldVector writeToFile(GeometryVector vector, BufferAllocator allocator) {
+    File file;
+    try {
+      file = Files.createTempFile("geometry-vector-test", ".arrow").toFile();
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+    try(FileOutputStream out = new FileOutputStream(file)) {
+      VectorSchemaRoot root = new VectorSchemaRoot(Collections.singletonList(vector.getVector().getField()),
+                                                   Collections.singletonList(vector.getVector()),
+                                                   vector.getValueCount());
+      DictionaryProvider dict = new MapDictionaryProvider();
+      ArrowStreamWriter writer = new ArrowStreamWriter(root, dict, Channels.newChannel(out));
+      writer.start();
+      writer.writeBatch();
+      writer.end();
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+    try(FileInputStream in = new FileInputStream(file)) {
+      ArrowStreamReader reader = new ArrowStreamReader(Channels.newChannel(in), allocator);
+      reader.loadNextBatch();
+      return reader.getVectorSchemaRoot().getFieldVectors().get(0);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
     }
   }
 }

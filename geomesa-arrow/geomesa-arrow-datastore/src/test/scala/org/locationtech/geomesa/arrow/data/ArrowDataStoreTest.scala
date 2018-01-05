@@ -100,89 +100,89 @@ class ArrowDataStoreTest extends Specification {
       }
     }
 
-    "read and filter different files" >> {
-      val sftName = "test"
-      val queries = Seq(
-        "INCLUDE",
-        "foo = 'foo1'",
-        "bbox(geom, 35, 45, 45, 55)",
-        "bbox(geom, 35, 45, 45, 55) and dtg DURING 2017-03-15T00:00:00.000Z/2017-03-15T00:03:00.000Z"
-      ).map(ecql => new Query(sftName, ECQL.toFilter(ecql)))
-
-      "only schema" >> {
-        val file = getClass.getClassLoader.getResource("data/empty.arrow").toString
-        foreach(Seq(true, false)) { caching =>
-          var ds = DataStoreFinder.getDataStore(Map(UrlParam.key -> file, CachingParam.key -> caching))
-          ds.getSchema("test") mustEqual sft
-          WithClose(ds.getFeatureSource(sftName).getFeatures().features())(_.hasNext must beFalse)
-          ds.dispose() must not(throwAn[Exception])
-        }
-      }
-
-      "simple 2 batches" >> {
-        val file = getClass.getClassLoader.getResource("data/simple.arrow").toString
-        foreach(Seq(true, false)) { caching =>
-          var ds = DataStoreFinder.getDataStore(Map(UrlParam.key -> file, CachingParam.key -> caching))
-          ds.getSchema(sftName) mustEqual sft
-          foreach(queries) { query =>
-            WithClose(CloseableIterator(ds.getFeatureSource(sftName).getFeatures(query).features())) { results =>
-              results.map(ScalaSimpleFeature.copy).toSeq mustEqual features.filter(query.getFilter.evaluate)
-            }
-          }
-          ds.dispose() must not(throwAn[Exception])
-        }
-      }
-
-      "multiple logical files" >> {
-        val file = getClass.getClassLoader.getResource("data/multi-files.arrow").toString
-        foreach(Seq(true, false)) { caching =>
-          var ds = DataStoreFinder.getDataStore(Map(UrlParam.key -> file, CachingParam.key -> caching))
-          ds.getSchema(sftName) mustEqual sft
-          foreach(queries) { query =>
-            WithClose(CloseableIterator(ds.getFeatureSource(sftName).getFeatures(query).features())) { results =>
-              results.map(ScalaSimpleFeature.copy).toSeq mustEqual features.filter(query.getFilter.evaluate)
-            }
-          }
-          ds.dispose() must not(throwAn[Exception])
-        }
-      }
-
-      "dictionary encoded files" >> {
-        val file = getClass.getClassLoader.getResource("data/dictionary.arrow").toString
-        foreach(Seq(true, false)) { caching =>
-          var ds = DataStoreFinder.getDataStore(Map(UrlParam.key -> file, CachingParam.key -> caching))
-          ds.getSchema(sftName) mustEqual sft
-          foreach(queries) { query =>
-            WithClose(CloseableIterator(ds.getFeatureSource(sftName).getFeatures(query).features())) { results =>
-              results.map(ScalaSimpleFeature.copy).toSeq mustEqual features.filter(query.getFilter.evaluate)
-            }
-          }
-          ds.dispose() must not(throwAn[Exception])
-        }
-      }
-
-      "dictionary encoded files with default values" >> {
-        val file = getClass.getClassLoader.getResource("data/dictionary-defaults.arrow").toString
-        // the file has only 'foo0' and 'foo1' encoded
-        val dictionaryFeatures = features.map {
-          case f if f.getAttribute("foo") != "foo2" => f
-          case f =>
-            val updated = ScalaSimpleFeature.copy(f)
-            updated.setAttribute("foo", "[other]")
-            updated
-        }
-        foreach(Seq(true, false)) { caching =>
-          var ds = DataStoreFinder.getDataStore(Map(UrlParam.key -> file, CachingParam.key -> caching))
-          ds.getSchema(sftName) mustEqual sft
-          foreach(queries) { query =>
-            WithClose(CloseableIterator(ds.getFeatureSource(sftName).getFeatures(query).features())) { results =>
-              results.hasNext must beTrue // just check our filter was valid
-              results.map(ScalaSimpleFeature.copy).toSeq mustEqual dictionaryFeatures.filter(query.getFilter.evaluate)
-            }
-          }
-          ds.dispose() must not(throwAn[Exception])
-        }
-      }
-    }
+//    "read and filter different files" >> {
+//      val sftName = "test"
+//      val queries = Seq(
+//        "INCLUDE",
+//        "foo = 'foo1'",
+//        "bbox(geom, 35, 45, 45, 55)",
+//        "bbox(geom, 35, 45, 45, 55) and dtg DURING 2017-03-15T00:00:00.000Z/2017-03-15T00:03:00.000Z"
+//      ).map(ecql => new Query(sftName, ECQL.toFilter(ecql)))
+//
+//      "only schema" >> {
+//        val file = getClass.getClassLoader.getResource("data/empty.arrow").toString
+//        foreach(Seq(true, false)) { caching =>
+//          var ds = DataStoreFinder.getDataStore(Map(UrlParam.key -> file, CachingParam.key -> caching))
+//          ds.getSchema("test") mustEqual sft
+//          WithClose(ds.getFeatureSource(sftName).getFeatures().features())(_.hasNext must beFalse)
+//          ds.dispose() must not(throwAn[Exception])
+//        }
+//      }
+//
+//      "simple 2 batches" >> {
+//        val file = getClass.getClassLoader.getResource("data/simple.arrow").toString
+//        foreach(Seq(true, false)) { caching =>
+//          var ds = DataStoreFinder.getDataStore(Map(UrlParam.key -> file, CachingParam.key -> caching))
+//          ds.getSchema(sftName) mustEqual sft
+//          foreach(queries) { query =>
+//            WithClose(CloseableIterator(ds.getFeatureSource(sftName).getFeatures(query).features())) { results =>
+//              results.map(ScalaSimpleFeature.copy).toSeq mustEqual features.filter(query.getFilter.evaluate)
+//            }
+//          }
+//          ds.dispose() must not(throwAn[Exception])
+//        }
+//      }
+//
+//      "multiple logical files" >> {
+//        val file = getClass.getClassLoader.getResource("data/multi-files.arrow").toString
+//        foreach(Seq(true, false)) { caching =>
+//          var ds = DataStoreFinder.getDataStore(Map(UrlParam.key -> file, CachingParam.key -> caching))
+//          ds.getSchema(sftName) mustEqual sft
+//          foreach(queries) { query =>
+//            WithClose(CloseableIterator(ds.getFeatureSource(sftName).getFeatures(query).features())) { results =>
+//              results.map(ScalaSimpleFeature.copy).toSeq mustEqual features.filter(query.getFilter.evaluate)
+//            }
+//          }
+//          ds.dispose() must not(throwAn[Exception])
+//        }
+//      }
+//
+//      "dictionary encoded files" >> {
+//        val file = getClass.getClassLoader.getResource("data/dictionary.arrow").toString
+//        foreach(Seq(true, false)) { caching =>
+//          var ds = DataStoreFinder.getDataStore(Map(UrlParam.key -> file, CachingParam.key -> caching))
+//          ds.getSchema(sftName) mustEqual sft
+//          foreach(queries) { query =>
+//            WithClose(CloseableIterator(ds.getFeatureSource(sftName).getFeatures(query).features())) { results =>
+//              results.map(ScalaSimpleFeature.copy).toSeq mustEqual features.filter(query.getFilter.evaluate)
+//            }
+//          }
+//          ds.dispose() must not(throwAn[Exception])
+//        }
+//      }
+//
+//      "dictionary encoded files with default values" >> {
+//        val file = getClass.getClassLoader.getResource("data/dictionary-defaults.arrow").toString
+//        // the file has only 'foo0' and 'foo1' encoded
+//        val dictionaryFeatures = features.map {
+//          case f if f.getAttribute("foo") != "foo2" => f
+//          case f =>
+//            val updated = ScalaSimpleFeature.copy(f)
+//            updated.setAttribute("foo", "[other]")
+//            updated
+//        }
+//        foreach(Seq(true, false)) { caching =>
+//          var ds = DataStoreFinder.getDataStore(Map(UrlParam.key -> file, CachingParam.key -> caching))
+//          ds.getSchema(sftName) mustEqual sft
+//          foreach(queries) { query =>
+//            WithClose(CloseableIterator(ds.getFeatureSource(sftName).getFeatures(query).features())) { results =>
+//              results.hasNext must beTrue // just check our filter was valid
+//              results.map(ScalaSimpleFeature.copy).toSeq mustEqual dictionaryFeatures.filter(query.getFilter.evaluate)
+//            }
+//          }
+//          ds.dispose() must not(throwAn[Exception])
+//        }
+//      }
+//    }
   }
 }
