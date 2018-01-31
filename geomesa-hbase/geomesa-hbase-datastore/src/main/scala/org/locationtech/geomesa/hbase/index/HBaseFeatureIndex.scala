@@ -80,10 +80,7 @@ trait HBaseFeatureIndex extends HBaseFeatureIndexType with ClientSideFiltering[R
       if (!desc.getCoprocessors.contains(name)) {
         // TODO: Warn if the path given is different from paths registered in other coprocessors
         // if so, other tables would need updating
-        coprocessorUrl match {
-          case Some(path) => desc.addCoprocessor(name, path, Coprocessor.PRIORITY_USER, null)
-          case None       => desc.addCoprocessor(name)
-        }
+        HBaseVersions.addCoprocessor(desc, name, coprocessorUrl)
       }
     }
 
