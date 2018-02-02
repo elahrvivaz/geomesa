@@ -9,7 +9,7 @@
 package org.locationtech.geomesa.fs.storage.converter
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.fs.{FileContext, Path}
 import org.locationtech.geomesa.convert.{ConfArgs, ConverterConfigResolver, SimpleFeatureConverters}
 import org.locationtech.geomesa.fs.storage.common.{FileSystemStorageFactory, PartitionScheme}
 import org.locationtech.geomesa.utils.geotools.{GeoMesaParam, SftArgResolver, SftArgs}
@@ -46,7 +46,7 @@ class ConverterStorageFactory extends FileSystemStorageFactory[ConverterStorage]
 
     val partitionScheme = PartitionScheme(sft, params)
 
-    new ConverterStorage(path, path.getFileSystem(conf), partitionScheme, sft, converter)
+    new ConverterStorage(path, FileContext.getFileContext(path.toUri, conf), partitionScheme, sft, converter)
   }
 }
 

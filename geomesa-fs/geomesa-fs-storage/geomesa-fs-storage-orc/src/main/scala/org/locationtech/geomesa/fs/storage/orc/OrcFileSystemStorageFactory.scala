@@ -9,7 +9,7 @@
 package org.locationtech.geomesa.fs.storage.orc
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileContext, Path}
 import org.apache.orc.OrcConf
 import org.locationtech.geomesa.fs.storage.common.FileSystemStorageFactory
 
@@ -24,6 +24,6 @@ class OrcFileSystemStorageFactory extends FileSystemStorageFactory[OrcFileSystem
           conf.get(OrcConf.USE_ZEROCOPY.getHiveConfName) == null) {
       OrcConf.USE_ZEROCOPY.setBoolean(conf, true)
     }
-    new OrcFileSystemStorage(path.getFileSystem(conf), path, conf)
+    new OrcFileSystemStorage(FileContext.getFileContext(path.toUri, conf), path, conf)
   }
 }

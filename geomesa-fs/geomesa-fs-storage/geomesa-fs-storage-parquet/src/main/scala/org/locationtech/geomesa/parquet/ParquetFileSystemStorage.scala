@@ -12,7 +12,7 @@ package org.locationtech.geomesa.parquet
 import java.{io, util}
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.fs.{FileContext, Path}
 import org.apache.parquet.filter2.compat.FilterCompat
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder
 import org.locationtech.geomesa.filter.FilterHelper
@@ -27,13 +27,13 @@ import org.opengis.filter.Filter
 /**
   *
   * @param root the root of this file system for a specifid SimpleFeatureType
-  * @param fs filesystem
+  * @param fc filesystem
   */
 class ParquetFileSystemStorage(root: Path,
-                               fs: FileSystem,
+                               fc: FileContext,
                                conf: Configuration,
                                dsParams: util.Map[String, io.Serializable])
-    extends MetadataFileSystemStorage(fs, root, conf) {
+    extends MetadataFileSystemStorage(fc, root, conf) {
 
   override protected val encoding: String = ParquetEncoding
 

@@ -9,7 +9,6 @@
 
 package org.locationtech.geomesa.fs.storage.common
 
-import java.io.IOException
 import java.net.URI
 import java.util.Collections
 import java.util.concurrent.Callable
@@ -17,9 +16,10 @@ import java.util.concurrent.Callable
 import com.google.common.cache.{Cache, CacheBuilder}
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.fs.{FileContext, Path}
 import org.geotools.data.Query
 import org.locationtech.geomesa.fs.storage.api._
+import org.locationtech.geomesa.fs.storage.common.StorageUtils.{FileType, RemoteIterator}
 import org.locationtech.geomesa.index.planning.QueryRunner
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.io.WithClose
@@ -32,11 +32,11 @@ import scala.collection.mutable.ListBuffer
 /**
   * Base class for handling file system metadata
   *
-  * @param fs filesystem
+  * @param fc filesystem
   * @param root the root of this file system for a specified SimpleFeatureType
   * @param conf configuration
   */
-abstract class MetadataFileSystemStorage(fs: FileSystem, root: Path, conf: Configuration)
+abstract class MetadataFileSystemStorage(fc: FileContext, root: Path, conf: Configuration)
     extends FileSystemStorage with MethodProfiling with LazyLogging {
 
   import MetadataFileSystemStorage.{MetadataCache, MetadataFileName}
@@ -45,8 +45,8 @@ abstract class MetadataFileSystemStorage(fs: FileSystem, root: Path, conf: Confi
     implicit def complete(result: ListBuffer[String], time: Long): Unit = logger.debug(s"Type loading took ${time}ms")
     profile {
       val names = ListBuffer.empty[String]
-      if (fs.exists(root)) {
-        fs.listStatus(root).collect { case d if d.isDirectory => d.getPath.getName }.foreach(names += _)
+      if (fc.util.exists(root)) {
+        RemoteIterator(fc.listStatus(root)).foreach(f => if (f.isDirectory) { names += f.getPath.getName })
       }
       names
     }
@@ -80,7 +80,9 @@ abstract class MetadataFileSystemStorage(fs: FileSystem, root: Path, conf: Confi
     val typeName = sft.getTypeName
 
     if (!typeNames.contains(typeName)) {
-      val metadata = createFileMetadata(sft, scheme)
+      val typePath = new Path(root, typeName)
+      val metaPath = new Path(typePath, MetadataFileName)
+      val metadata = FileMetadata.create(fc, metaPath, sft, encoding, scheme)
       typeNames += typeName
       MetadataCache.put((root, typeName), metadata)
     } else {
@@ -130,7 +132,7 @@ abstract class MetadataFileSystemStorage(fs: FileSystem, root: Path, conf: Confi
     } else {
       StorageUtils.partitionPath(root, typeName, partition)
     }
-    metadata.getFiles(partition).map(new Path(baseDir, _)).collect { case f if fs.exists(f) => f.toUri }
+    metadata.getFiles(partition).map(new Path(baseDir, _)).collect { case f if fc.util.exists(f) => f.toUri }
   }
 
   override def getMetadata(typeName: String): Metadata = {
@@ -140,9 +142,9 @@ abstract class MetadataFileSystemStorage(fs: FileSystem, root: Path, conf: Confi
           logger.debug(s"Loaded metadata in ${time}ms for type $typeName")
 
         profile {
-          val typePath = new Path(root, typeName)
-          val metaFile = new Path(typePath, MetadataFileSystemStorage.MetadataFileName)
-          FileMetadata.read(fs, metaFile, conf)
+          val dir = new Path(root, typeName)
+          val path = new Path(dir, MetadataFileSystemStorage.MetadataFileName)
+          FileMetadata.load(fc, path)
         }
       }
     })
@@ -155,26 +157,14 @@ abstract class MetadataFileSystemStorage(fs: FileSystem, root: Path, conf: Confi
     profile {
       val metadata = getMetadata(typeName)
       val scheme = metadata.getPartitionScheme
-      val sft = metadata.getSimpleFeatureType
-      val parts = StorageUtils.partitionsAndFiles(root, fs, typeName, scheme, extension)
-
-      // Save existing metadata
-      backupMetadata(typeName)
-      cleanBackups(typeName)
-
-      // Recreate a new metadata file
-      val newMetadata = createFileMetadata(sft, metadata.getPartitionScheme)
-      MetadataCache.invalidate((root, typeName))
-      MetadataCache.put((root, typeName), newMetadata)
-
-      newMetadata.addPartitions(parts)
+      metadata.setFiles(StorageUtils.partitionsAndFiles(root, fc, typeName, scheme, extension))
     }
   }
 
   override def getWriter(typeName: String, partition: String): FileSystemWriter = {
     val metadata = getMetadata(typeName)
     val leaf = metadata.getPartitionScheme.isLeafStorage
-    val dataPath = StorageUtils.nextFile(fs, root, typeName, partition, leaf, extension, FileType.Written)
+    val dataPath = StorageUtils.nextFile(fc, root, typeName, partition, leaf, extension, FileType.Written)
 
     metadata.addFile(partition, dataPath.getName)
 
@@ -219,7 +209,7 @@ abstract class MetadataFileSystemStorage(fs: FileSystem, root: Path, conf: Confi
 
     val metadata = getMetadata(typeName)
     val leaf = metadata.getPartitionScheme.isLeafStorage
-    val dataPath = StorageUtils.nextFile(fs, root, typeName, partition, leaf, extension, FileType.Compacted)
+    val dataPath = StorageUtils.nextFile(fc, root, typeName, partition, leaf, extension, FileType.Compacted)
 
     val sft = metadata.getSimpleFeatureType
 
@@ -242,69 +232,16 @@ abstract class MetadataFileSystemStorage(fs: FileSystem, root: Path, conf: Confi
     logger.debug(s"Deleting old files [${toCompact.mkString(", ")}]")
 
     val failures = ListBuffer.empty[Path]
-    toCompact.foreach(f => if (!fs.delete(f, false)) { failures.append(f) })
+    toCompact.foreach(f => if (!fc.delete(f, false)) { failures.append(f) })
 
     if (failures.nonEmpty) {
       logger.warn(s"Failed to delete some files: [${failures.mkString(", ")}]")
     }
 
     logger.debug(s"Updating metadata for type $typeName")
-    updateMetadata(typeName)
+    metadata.replaceFiles(partition, toCompact.map(_.toString), dataPath.toString)
 
     logger.debug(s"Compacted $written records into file $dataPath")
-  }
-
-  private def createFileMetadata(sft: SimpleFeatureType, scheme: PartitionScheme) = {
-    val typeName = sft.getTypeName
-    val typePath = new Path(root, typeName)
-    val metaPath = new Path(typePath, MetadataFileName)
-    FileMetadata.create(fs, metaPath, sft, encoding, scheme, conf)
-  }
-
-  private def backupMetadata(typeName: String): Unit = {
-    val typePath = new Path(root, typeName)
-    val metaPath = new Path(typePath, MetadataFileName)
-    val backupFile = new Path(typePath, s".$MetadataFileName.old.${System.currentTimeMillis()}.${System.nanoTime()}")
-    fs.rename(metaPath, backupFile)
-
-    // Because of eventual consistency lets make sure they are there
-    var tryNum = 0
-    var backupComplete = false
-
-    def waitOnBackup(): Unit = {
-      if (fs.exists(backupFile) && !fs.exists(metaPath)) {
-        backupComplete = true
-      } else {
-        tryNum += 1
-        Thread.sleep((2 ^ tryNum) * 1000)
-      }
-    }
-
-    while (!backupComplete && tryNum < 3) {
-      waitOnBackup()
-    }
-
-    if (!backupComplete) {
-      throw new IOException(s"Unable to properly backup metadata after $tryNum tries")
-    }
-  }
-
-  private def cleanBackups(typeName: String): Unit = {
-    val typePath = new Path(root, typeName)
-    val fileItr = fs.listFiles(typePath, false)
-    val backupFiles = ListBuffer.empty[Path]
-    while (fileItr.hasNext) {
-      val nextPath = fileItr.next().getPath
-      if (nextPath.getName.matches(s"\\.$MetadataFileName\\.old\\.\\d+.*")) {
-        backupFiles += nextPath
-      }
-    }
-
-    // Keep the 5 most recent metadata files and delete the old ones
-    backupFiles.sortBy(_.getName).dropRight(5).foreach { p =>
-      logger.debug(s"Removing old metadata backup $p")
-      fs.delete(p, false)
-    }
   }
 }
 

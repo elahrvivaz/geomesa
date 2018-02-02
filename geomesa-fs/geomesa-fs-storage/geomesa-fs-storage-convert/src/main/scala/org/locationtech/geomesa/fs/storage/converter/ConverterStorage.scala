@@ -11,15 +11,16 @@ package org.locationtech.geomesa.fs.storage.converter
 import java.net.URI
 import java.util.Collections
 
-import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.fs.{FileContext, Path}
 import org.geotools.data.Query
 import org.locationtech.geomesa.convert.SimpleFeatureConverter
 import org.locationtech.geomesa.fs.storage.api._
+import org.locationtech.geomesa.fs.storage.common.StorageUtils.RemoteIterator
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
 
 class ConverterStorage(root: Path,
-                       fs: FileSystem,
+                       fc: FileContext,
                        partitionScheme: PartitionScheme,
                        sft: SimpleFeatureType,
                        converter: SimpleFeatureConverter[_]) extends FileSystemStorage {
@@ -72,8 +73,7 @@ class ConverterStorage(root: Path,
     if (curDepth > partitionScheme.maxDepth()) {
       return List.empty[String]
     }
-    val status = fs.listStatus(path)
-    status.flatMap { f =>
+    RemoteIterator(fc.listStatus(path)).flatMap { f =>
       if (f.isDirectory) {
         buildPartitionList(f.getPath, s"$prefix${f.getPath.getName}/", curDepth + 1)
       } else if (f.getPath.getName.equals("schema.sft")) {

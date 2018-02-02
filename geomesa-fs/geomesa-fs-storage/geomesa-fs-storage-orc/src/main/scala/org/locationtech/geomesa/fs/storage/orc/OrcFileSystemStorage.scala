@@ -12,7 +12,7 @@ package org.locationtech.geomesa.fs.storage.orc
 import com.typesafe.scalalogging.LazyLogging
 import com.vividsolutions.jts.geom.Geometry
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileSystem, Path}
+import org.apache.hadoop.fs.{FileContext, Path}
 import org.apache.orc.TypeDescription
 import org.locationtech.geomesa.features.serialization.ObjectType
 import org.locationtech.geomesa.features.serialization.ObjectType.ObjectType
@@ -25,12 +25,12 @@ import org.opengis.filter.Filter
 /**
   * Orc implementation of FileSystemStorage
   *
-  * @param fs filesystem
+  * @param fc filesystem
   * @param root the root of this file system for a specified SimpleFeatureType
   * @param conf environment configuration
   */
-class OrcFileSystemStorage(fs: FileSystem, root: Path, conf: Configuration)
-    extends MetadataFileSystemStorage(fs, root, conf) with LazyLogging {
+class OrcFileSystemStorage(fc: FileContext, root: Path, conf: Configuration)
+    extends MetadataFileSystemStorage(fc, root, conf) with LazyLogging {
 
   override protected def encoding: String = OrcFileSystemStorage.OrcEncoding
 

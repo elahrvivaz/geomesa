@@ -11,16 +11,26 @@ package org.locationtech.geomesa.fs.storage.api;
 import org.opengis.feature.simple.SimpleFeatureType;
 
 public interface Metadata {
-    void addFile(String partition, String filename);
-    void addPartition(String partition, java.util.List<String> files);
-    void addPartitions(java.util.Map<String, java.util.List<String>> partitions);
-    java.util.List<String> getPartitions();
-    java.util.List<String> getFiles(String partition);
-    int getNumStorageFiles();
-    int getNumPartitions();
-
     String getEncoding();
     PartitionScheme getPartitionScheme();
     SimpleFeatureType getSimpleFeatureType();
 
+    int getPartitionCount();
+    int getFileCount();
+
+    void addFile(String partition, String file);
+    void addFiles(String partition, java.util.List<String> files);
+    void addFiles(java.util.Map<String, java.util.List<String>> partitionsToFiles);
+
+    void removeFile(String partition, String file);
+    void removeFiles(String partition, java.util.List<String> files);
+    void removeFiles(java.util.Map<String, java.util.List<String>> partitionsToFiles);
+
+    void replaceFiles(String partition, java.util.List<String> files, String replacement);
+
+    void setFiles(java.util.Map<String, java.util.List<String>> partitionsToFiles);
+
+    java.util.List<String> getPartitions();
+    java.util.List<String> getFiles(String partition);
+    java.util.Map<String, java.util.List<String>> getPartitionFiles();
 }

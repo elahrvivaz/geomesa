@@ -18,8 +18,9 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
 import org.geotools.data.DataStoreFinder
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.fs.FileSystemDataStore
+import org.locationtech.geomesa.fs.storage.common.StorageUtils.FileType
 import org.locationtech.geomesa.fs.storage.common.jobs.{PartitionInputFormat, StorageConfiguration}
-import org.locationtech.geomesa.fs.storage.common.{FileSystemStorageFactory, FileType, PartitionScheme}
+import org.locationtech.geomesa.fs.storage.common.{FileSystemStorageFactory, PartitionScheme}
 import org.locationtech.geomesa.fs.storage.orc.jobs.OrcStorageConfiguration
 import org.locationtech.geomesa.fs.tools.compact.FileSystemCompactionJob.CompactionMapper
 import org.locationtech.geomesa.fs.tools.ingest.StorageJobUtils

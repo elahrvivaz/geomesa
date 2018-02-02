@@ -10,11 +10,9 @@ package org.locationtech.geomesa.fs.storage.common
 
 import java.util.UUID
 
-import org.apache.hadoop.fs.{FileStatus, FileSystem, Path}
+import org.apache.hadoop.fs.{FileContext, FileStatus, Path, RemoteIterator}
 import org.locationtech.geomesa.fs.storage.api.PartitionScheme
-import org.locationtech.geomesa.fs.storage.common.FileType.FileType
-
-import scala.collection.mutable
+import org.locationtech.geomesa.fs.storage.common.StorageUtils.FileType.FileType
 
 object StorageUtils {
 
@@ -42,38 +40,40 @@ object StorageUtils {
   }
 
   def partitionsAndFiles(root: Path,
-                         fs: FileSystem,
+                         fs: FileContext,
                          typeName: String,
                          partitionScheme: PartitionScheme,
                          fileExtension: String): java.util.Map[String, java.util.List[String]] = {
+
     val typePath = new Path(root, typeName)
-    val files = fs.listFiles(typePath, true)
-    val dataFiles = mutable.ListBuffer.empty[Path]
-    while (files.hasNext) {
-      val cur = files.next().getPath
-      if (cur.getName.endsWith(fileExtension)) {
-        dataFiles += cur
-      }
-    }
     val isLeaf = partitionScheme.isLeafStorage
 
-    import scala.collection.JavaConversions._
-    dataFiles.map(f => (getPartition(typePath, f, isLeaf, fileExtension), f.getName))
-      .groupBy(_._1).map { case (k, iter) =>
-      import scala.collection.JavaConverters._
-      k -> iter.map(_._2).toList.asJava
+    val result = new java.util.HashMap[String, java.util.List[String]]
+
+    val newList = new java.util.function.Function[String, java.util.List[String]] {
+      override def apply(t: String): java.util.List[String] = new java.util.ArrayList[String]()
     }
+
+    RemoteIterator(fs.util.listFiles(typePath, true)).foreach { f =>
+      val p = f.getPath
+      if (p.getName.endsWith(fileExtension)) {
+        val partition = getPartition(typePath, p, isLeaf, fileExtension)
+        result.computeIfAbsent(partition, newList).add(p.getName)
+      }
+    }
+
+    result
   }
 
-  def listFiles(fs: FileSystem, dir: Path, ext: String): Seq[Path] = {
-    if (fs.exists(dir)) {
-      fs.listStatus(dir).map { f => f.getPath }.filter(_.getName.endsWith(ext)).toSeq
+  def listFiles(fc: FileContext, dir: Path, ext: String): Seq[Path] = {
+    if (fc.util.exists(dir)) {
+      RemoteIterator(fc.listStatus(dir)).map(_.getPath).filter(_.getName.endsWith(ext)).toSeq
     } else {
       Seq.empty[Path]
     }
   }
 
-  def listFiles(fs: FileSystem,
+  def listFiles(fc: FileContext,
                 root: Path,
                 typeName: String,
                 partition: String,
@@ -81,19 +81,19 @@ object StorageUtils {
                 ext: String): Seq[Path] = {
     val pp = partitionPath(root, typeName, partition)
     val dir = if (isLeafStorage) pp.getParent else pp
-    val files = listFiles(fs, dir, ext)
+    val files = listFiles(fc, dir, ext)
     if (isLeafStorage) files.filter(_.getName.startsWith(partition.split('/').last)) else files
   }
 
-  def listFileStatuses(fs: FileSystem, dir: Path, ext: String): Seq[FileStatus] = {
-    if (fs.exists(dir)) {
-      fs.listStatus(dir).filter(_.getPath.getName.endsWith(ext)).toSeq
+  def listFileStatuses(fc: FileContext, dir: Path, ext: String): Seq[FileStatus] = {
+    if (fc.util.exists(dir)) {
+      RemoteIterator(fc.listStatus(dir)).filter(_.getPath.getName.endsWith(ext)).toSeq
     } else {
       Seq.empty[FileStatus]
     }
   }
 
-  def listFileStatus(fs: FileSystem,
+  def listFileStatus(fs: FileContext,
                      root: Path,
                      typeName: String,
                      partition: String,
@@ -112,7 +112,7 @@ object StorageUtils {
   def createLeafName(prefix: String, ext: String, fileType: FileType): String = f"${prefix}_$fileType$randomName.$ext"
   def createBucketName(ext: String, fileType: FileType): String = f"$fileType$randomName.$ext"
 
-  def nextFile(fs: FileSystem,
+  def nextFile(fs: FileContext,
                root: Path,
                typeName: String,
                partitionName: String,
@@ -134,11 +134,17 @@ object StorageUtils {
     }
   }
 
-}
+  object RemoteIterator {
+    def apply[T](iter: RemoteIterator[T]): Iterator[T] = new Iterator[T] {
+      override def hasNext: Boolean = iter.hasNext
+      override def next(): T = iter.next
+    }
+  }
 
-object FileType extends Enumeration {
-  type FileType = Value
-  val Written   = Value("W")
-  val Compacted = Value("C")
-  val Imported  = Value("I")
+  object FileType extends Enumeration {
+    type FileType = Value
+    val Written  : Value = Value("W")
+    val Compacted: Value = Value("C")
+    val Imported : Value = Value("I")
+  }
 }

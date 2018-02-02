@@ -11,8 +11,9 @@ package org.locationtech.geomesa.fs.storage.common.jobs
 import com.typesafe.config.ConfigFactory
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.mapreduce.Job
-import org.locationtech.geomesa.fs.storage.common.FileType.FileType
-import org.locationtech.geomesa.fs.storage.common.{FileSystemStorageFactory, FileType}
+import org.locationtech.geomesa.fs.storage.common.FileSystemStorageFactory
+import org.locationtech.geomesa.fs.storage.common.StorageUtils.FileType
+import org.locationtech.geomesa.fs.storage.common.StorageUtils.FileType.FileType
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.SimpleFeatureType
 

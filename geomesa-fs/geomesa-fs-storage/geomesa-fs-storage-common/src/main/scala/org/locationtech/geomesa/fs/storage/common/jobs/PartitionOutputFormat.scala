@@ -9,7 +9,7 @@
 package org.locationtech.geomesa.fs.storage.common.jobs
 
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileContext, Path}
 import org.apache.hadoop.mapred.InvalidJobConfException
 import org.apache.hadoop.mapreduce._
 import org.apache.hadoop.mapreduce.lib.output.{FileOutputCommitter, FileOutputFormat}
@@ -73,9 +73,9 @@ abstract class PartitionOutputFormat(delegate: SingleFileOutputFormat) extends O
 
     private def createWriter(partition: String): RecordWriter[Void, SimpleFeature] = {
       val root = getRootPath(context)
-      val fs = root.getFileSystem(context.getConfiguration)
+      val fc = FileContext.getFileContext(root.toUri, context.getConfiguration)
       // TODO combine this with the same code in ParquetFileSystemStorage
-      val file = StorageUtils.nextFile(fs, root, sft.getTypeName, partition, scheme.isLeafStorage, encoding, fileType)
+      val file = StorageUtils.nextFile(fc, root, sft.getTypeName, partition, scheme.isLeafStorage, encoding, fileType)
       logger.info(s"Creating ${scheme.name()} scheme record writer at path $file")
       // noinspection LanguageFeature
       delegate.getRecordWriter(context, file)

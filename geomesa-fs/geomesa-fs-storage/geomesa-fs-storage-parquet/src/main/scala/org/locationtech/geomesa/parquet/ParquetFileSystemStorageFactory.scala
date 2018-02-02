@@ -11,7 +11,7 @@ package org.locationtech.geomesa.parquet
 import java.io
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileContext, Path}
 import org.locationtech.geomesa.fs.storage.common.FileSystemStorageFactory
 import org.locationtech.geomesa.parquet.ParquetFileSystemStorage.{ParquetCompressionOpt, ParquetEncoding}
 
@@ -29,6 +29,6 @@ class ParquetFileSystemStorageFactory extends FileSystemStorageFactory[ParquetFi
     }
     conf.set("parquet.filter.dictionary.enabled", "true")
 
-    new ParquetFileSystemStorage(path, path.getFileSystem(conf), conf, params)
+    new ParquetFileSystemStorage(path, FileContext.getFileContext(path.toUri, conf), conf, params)
   }
 }

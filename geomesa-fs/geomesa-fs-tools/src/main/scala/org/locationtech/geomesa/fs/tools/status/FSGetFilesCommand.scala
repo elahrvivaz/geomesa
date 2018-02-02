@@ -9,8 +9,9 @@
 package org.locationtech.geomesa.fs.tools.status
 
 import com.beust.jcommander.{ParameterException, Parameters}
+import org.locationtech.geomesa.fs.tools.FsDataStoreCommand
+import org.locationtech.geomesa.fs.tools.FsDataStoreCommand.{FsParams, PartitionParam}
 import org.locationtech.geomesa.fs.tools.status.FSGetFilesCommand.FSGetFilesParams
-import org.locationtech.geomesa.fs.tools.{FsDataStoreCommand, FsParams, PartitionParam}
 import org.locationtech.geomesa.tools.{Command, RequiredTypeNameParam}
 
 import scala.collection.JavaConversions._

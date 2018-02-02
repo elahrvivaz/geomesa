@@ -10,7 +10,7 @@ package org.locationtech.geomesa.fs.storage.common.jobs
 
 import java.io.{DataInput, DataOutput}
 
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{FileContext, Path}
 import org.apache.hadoop.io.Writable
 import org.apache.hadoop.mapreduce._
 import org.geotools.data.Query
@@ -31,11 +31,11 @@ class PartitionInputFormat extends InputFormat[Void, SimpleFeature] {
     val partitions = StorageConfiguration.getPartitions(context.getConfiguration)
 
     val rootPath = new Path(StorageConfiguration.getPath(context.getConfiguration))
-    val fs = rootPath.getFileSystem(context.getConfiguration)
+    val fc = FileContext.getFileContext(rootPath.toUri, context.getConfiguration)
 
     val splits = partitions.map { p =>
       val pp = StorageUtils.partitionPath(rootPath, typeName, p)
-      val size = StorageUtils.listFileStatuses(fs, pp, encoding).map(_.getLen).sum
+      val size = StorageUtils.listFileStatuses(fc, pp, encoding).map(_.getLen).sum
       new PartitionInputSplit(p, size)
     }
 
