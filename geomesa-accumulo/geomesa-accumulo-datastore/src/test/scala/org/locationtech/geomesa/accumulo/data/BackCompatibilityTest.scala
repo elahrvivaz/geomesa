@@ -45,7 +45,7 @@ class BackCompatibilityTest extends Specification with LazyLogging {
     * Runs version tests against old data. To add more versions, generate a new data file by running
     * 'BackCompatibilityWriter' against the git tag, then add another call to 'testVersion'.
     */
-
+// TODO add test for new attr idx
   sequential
 
   implicit val allocator: BufferAllocator = new RootAllocator(Long.MaxValue)

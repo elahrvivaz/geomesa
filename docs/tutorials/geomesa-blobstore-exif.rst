@@ -63,7 +63,7 @@ Now the BlobStore is able to read image files with EXIF metadata headers.
 Using the EXIF Handler
 ----------------------
 In order to use our new handler, we will need to get some geotagged images.
-Below is a partial Python script that uses the Flickr API to grab some geotagged images taken around Monument Valley.
+Below is a prefix Python script that uses the Flickr API to grab some geotagged images taken around Monument Valley.
 Using the Flickr API is beyond the scope of this tutorial; however the Python code snippet is provided for those
 interested in obtaining a test data set. The below script will download 100 images to the user's home directory.
 
