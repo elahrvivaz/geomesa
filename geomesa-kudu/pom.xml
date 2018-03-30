@@ -12,13 +12,28 @@
 
     <packaging>pom</packaging>
 
+    <properties>
+        <kudu.version>1.7.0</kudu.version>
+    </properties>
+
     <modules>
         <module>geomesa-kudu-datastore</module>
-        <!--<module>geomesa-kudu-tools</module>
         <module>geomesa-kudu-gs-plugin</module>
+        <module>geomesa-kudu-tools</module>
+        <!--
         <module>geomesa-kudu-spark</module>
         <module>geomesa-kudu-spark-runtime</module>
         <module>geomesa-kudu-dist</module>-->
     </modules>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>org.apache.kudu</groupId>
+                <artifactId>kudu-client</artifactId>
+                <version>${kudu.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
 </project>
