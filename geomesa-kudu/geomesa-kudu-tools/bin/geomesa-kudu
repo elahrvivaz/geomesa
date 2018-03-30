@@ -27,13 +27,19 @@ if [[ -n "${GEOMESA_EXTRA_CLASSPATHS}" ]]; then
   GEOMESA_CP="$(combineClasspaths ${GEOMESA_EXTRA_CLASSPATHS} ${GEOMESA_CP})"
 fi
 
+setHadoopClasspath
+
 # Geomesa tools setup completed, below we parse user arguments
 #
 # configure - runs the geomesa configuration, sets both the ${geomesa.dist.foobar} and PATH vars
 # classpath - prints the Java classpath
 # else is running actual commands in the tools
 
+FILTERED_CLASSPATHS=$(excludeLogJarsFromClasspath ${GEOMESA_HADOOP_CLASSPATH})
 CLASSPATH="${GEOMESA_CP}"
+if [[ -n "${FILTERED_CLASSPATHS}" ]]; then
+  CLASSPATH="${CLASSPATH}:${FILTERED_CLASSPATHS}"
+fi
 
 if  [[ $1 = configure ]]; then
   geomesaConfigure
