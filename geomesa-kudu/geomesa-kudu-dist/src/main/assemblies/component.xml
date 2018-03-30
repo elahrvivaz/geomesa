@@ -102,8 +102,8 @@
                 <exclude>*/**</exclude>
             </excludes>
         </fileSet>
-
     </fileSets>
+
     <files>
         <file>
             <source>../../README.md</source>
