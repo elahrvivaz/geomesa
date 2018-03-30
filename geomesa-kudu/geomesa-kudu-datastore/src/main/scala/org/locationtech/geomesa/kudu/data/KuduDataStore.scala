@@ -33,7 +33,10 @@ class KuduDataStore(val client: KuduClient, config: KuduDataStoreConfig)
   override def createFeatureWriterAppend(sft: SimpleFeatureType,
                                          indices: Option[Seq[KuduFeatureIndexType]]): KuduFeatureWriterType = {
     val session = client.newSession()
+    // increase the number of mutations that we can buffer
+    session.setMutationBufferSpace(10000)
     session.setFlushMode(FlushMode.AUTO_FLUSH_BACKGROUND)
+
     new KuduAppendFeatureWriter(sft, this, indices, session)
   }
 
