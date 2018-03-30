@@ -11,7 +11,7 @@ package org.locationtech.geomesa.kudu.tools.stats
 import com.beust.jcommander.Parameters
 import org.locationtech.geomesa.kudu.data.KuduDataStore
 import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand
-import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.{KuduParams, ToggleRemoteFilterParam}
+import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.KuduParams
 import org.locationtech.geomesa.kudu.tools.stats.KuduStatsHistogramCommand.KuduStatsHistogramParams
 import org.locationtech.geomesa.tools.stats.{StatsHistogramCommand, StatsHistogramParams}
 
@@ -21,5 +21,5 @@ class KuduStatsHistogramCommand extends StatsHistogramCommand[KuduDataStore] wit
 
 object KuduStatsHistogramCommand {
   @Parameters(commandDescription = "View or calculate counts of attribute in a GeoMesa feature type, grouped by sorted values")
-  class KuduStatsHistogramParams extends StatsHistogramParams with KuduParams with ToggleRemoteFilterParam
+  class KuduStatsHistogramParams extends StatsHistogramParams with KuduParams
 }

@@ -11,7 +11,7 @@ package org.locationtech.geomesa.kudu.tools.stats
 import com.beust.jcommander.Parameters
 import org.locationtech.geomesa.kudu.data.KuduDataStore
 import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand
-import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.{KuduParams, ToggleRemoteFilterParam}
+import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.KuduParams
 import org.locationtech.geomesa.kudu.tools.stats.KuduStatsTopKCommand.KuduStatsTopKParams
 import org.locationtech.geomesa.tools.stats.{StatsTopKCommand, StatsTopKParams}
 
@@ -21,5 +21,5 @@ class KuduStatsTopKCommand extends StatsTopKCommand[KuduDataStore] with KuduData
 
 object KuduStatsTopKCommand {
   @Parameters(commandDescription = "Enumerate the most frequent values in a GeoMesa feature type")
-  class KuduStatsTopKParams extends StatsTopKParams with KuduParams with ToggleRemoteFilterParam
+  class KuduStatsTopKParams extends StatsTopKParams with KuduParams
 }

@@ -11,7 +11,7 @@ package org.locationtech.geomesa.kudu.tools.status
 import com.beust.jcommander.Parameters
 import org.locationtech.geomesa.kudu.data.KuduDataStore
 import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand
-import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.{KuduParams, ToggleRemoteFilterParam}
+import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.KuduParams
 import org.locationtech.geomesa.kudu.tools.status.KuduGetSftConfigCommand.KuduGetSftConfigParameters
 import org.locationtech.geomesa.tools.status.{GetSftConfigCommand, GetSftConfigParams}
 
@@ -21,5 +21,5 @@ class KuduGetSftConfigCommand extends GetSftConfigCommand[KuduDataStore] with Ku
 
 object KuduGetSftConfigCommand {
   @Parameters(commandDescription = "Get the SimpleFeatureType of a feature")
-  class KuduGetSftConfigParameters extends GetSftConfigParams with KuduParams with ToggleRemoteFilterParam
+  class KuduGetSftConfigParameters extends GetSftConfigParams with KuduParams
 }

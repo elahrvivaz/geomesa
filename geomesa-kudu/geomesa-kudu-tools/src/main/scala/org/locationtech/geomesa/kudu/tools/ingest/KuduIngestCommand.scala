@@ -11,10 +11,10 @@ package org.locationtech.geomesa.kudu.tools.ingest
 import java.io.File
 
 import com.beust.jcommander.Parameters
-import org.apache.hadoop.kudu.client.Connection
+import org.apache.kudu.client.KuduClient
 import org.locationtech.geomesa.kudu.data.KuduDataStore
 import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand
-import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.{KuduParams, ToggleRemoteFilterParam}
+import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.KuduParams
 import org.locationtech.geomesa.kudu.tools.ingest.KuduIngestCommand.KuduIngestParams
 import org.locationtech.geomesa.tools.ingest.{IngestCommand, IngestParams}
 import org.locationtech.geomesa.utils.classpath.ClassPathUtils
@@ -27,14 +27,13 @@ class KuduIngestCommand extends IngestCommand[KuduDataStore] with KuduDataStoreC
   override val libjarsFile: String = "org/locationtech/geomesa/kudu/tools/ingest-libjars.list"
 
   override def libjarsPaths: Iterator[() => Seq[File]] = Iterator(
-    () => ClassPathUtils.getJarsFromEnvironment("GEOMESA_HBASE_HOME"),
-    () => ClassPathUtils.getJarsFromEnvironment("HBASE_HOME"),
+    () => ClassPathUtils.getJarsFromEnvironment("GEOMESA_KUDU_HOME"),
     () => ClassPathUtils.getJarsFromClasspath(classOf[KuduDataStore]),
-    () => ClassPathUtils.getJarsFromClasspath(classOf[Connection])
+    () => ClassPathUtils.getJarsFromClasspath(classOf[KuduClient])
   )
 }
 
 object KuduIngestCommand {
   @Parameters(commandDescription = "Ingest/convert various file formats into GeoMesa")
-  class KuduIngestParams extends IngestParams with KuduParams with ToggleRemoteFilterParam
+  class KuduIngestParams extends IngestParams with KuduParams
 }

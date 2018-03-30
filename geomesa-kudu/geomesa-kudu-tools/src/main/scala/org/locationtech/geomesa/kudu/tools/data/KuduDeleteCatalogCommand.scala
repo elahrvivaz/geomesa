@@ -11,7 +11,7 @@ package org.locationtech.geomesa.kudu.tools.data
 import com.beust.jcommander.Parameters
 import org.locationtech.geomesa.kudu.data.KuduDataStore
 import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand
-import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.{KuduParams, RemoteFilterNotUsedParam}
+import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.KuduParams
 import org.locationtech.geomesa.kudu.tools.data.KuduDeleteCatalogCommand.KuduDeleteCatalogParams
 import org.locationtech.geomesa.tools.data.{DeleteCatalogCommand, DeleteCatalogParams}
 
@@ -21,5 +21,5 @@ class KuduDeleteCatalogCommand extends DeleteCatalogCommand[KuduDataStore] with 
 
 object KuduDeleteCatalogCommand {
   @Parameters(commandDescription = "Delete a GeoMesa catalog completely (and all features in it)")
-  class KuduDeleteCatalogParams extends DeleteCatalogParams with KuduParams with RemoteFilterNotUsedParam
+  class KuduDeleteCatalogParams extends DeleteCatalogParams with KuduParams
 }

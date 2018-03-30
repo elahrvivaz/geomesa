@@ -11,7 +11,7 @@ package org.locationtech.geomesa.kudu.tools.status
 import com.beust.jcommander.Parameters
 import org.locationtech.geomesa.kudu.data.KuduDataStore
 import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand
-import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.{KuduParams, ToggleRemoteFilterParam}
+import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.KuduParams
 import org.locationtech.geomesa.kudu.tools.status.KuduGetTypeNamesCommand.GetTypeNamesParams
 import org.locationtech.geomesa.tools.status.GetTypeNamesCommand
 
@@ -21,5 +21,5 @@ class KuduGetTypeNamesCommand extends GetTypeNamesCommand[KuduDataStore] with Ku
 
 object KuduGetTypeNamesCommand {
   @Parameters(commandDescription = "List GeoMesa feature types for a given catalog")
-  class GetTypeNamesParams extends KuduParams with ToggleRemoteFilterParam
+  class GetTypeNamesParams extends KuduParams
 }

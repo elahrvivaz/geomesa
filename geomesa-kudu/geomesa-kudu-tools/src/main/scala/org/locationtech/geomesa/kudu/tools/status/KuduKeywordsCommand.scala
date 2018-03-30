@@ -11,7 +11,7 @@ package org.locationtech.geomesa.kudu.tools.status
 import com.beust.jcommander._
 import org.locationtech.geomesa.kudu.data.KuduDataStore
 import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand
-import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.{KuduParams, RemoteFilterNotUsedParam}
+import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.KuduParams
 import org.locationtech.geomesa.kudu.tools.status.KuduKeywordsCommand.KuduKeywordsParams
 import org.locationtech.geomesa.tools.status.{KeywordsCommand, KeywordsParams}
 
@@ -21,5 +21,5 @@ class KuduKeywordsCommand extends KeywordsCommand[KuduDataStore] with KuduDataSt
 
 object KuduKeywordsCommand {
   @Parameters(commandDescription = "Add/Remove/List keywords on an existing schema")
-  class KuduKeywordsParams extends KeywordsParams with KuduParams with RemoteFilterNotUsedParam
+  class KuduKeywordsParams extends KeywordsParams with KuduParams
 }

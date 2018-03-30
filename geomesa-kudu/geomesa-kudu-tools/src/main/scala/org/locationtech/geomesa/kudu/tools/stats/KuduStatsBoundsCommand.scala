@@ -11,9 +11,8 @@ package org.locationtech.geomesa.kudu.tools.stats
 import com.beust.jcommander.Parameters
 import org.locationtech.geomesa.kudu.data.KuduDataStore
 import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand
-import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.{KuduParams, ToggleRemoteFilterParam}
+import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.KuduParams
 import org.locationtech.geomesa.kudu.tools.stats.KuduStatsBoundsCommand.KuduStatsBoundsParams
-import org.locationtech.geomesa.tools.RequiredTypeNameParam
 import org.locationtech.geomesa.tools.stats.{StatsBoundsCommand, StatsBoundsParams}
 
 class KuduStatsBoundsCommand extends StatsBoundsCommand[KuduDataStore] with KuduDataStoreCommand {
@@ -23,5 +22,4 @@ class KuduStatsBoundsCommand extends StatsBoundsCommand[KuduDataStore] with Kudu
 object KuduStatsBoundsCommand {
   @Parameters(commandDescription = "View or calculate bounds on attributes in a GeoMesa feature type")
   class KuduStatsBoundsParams extends StatsBoundsParams with KuduParams
-      with RequiredTypeNameParam with ToggleRemoteFilterParam
 }

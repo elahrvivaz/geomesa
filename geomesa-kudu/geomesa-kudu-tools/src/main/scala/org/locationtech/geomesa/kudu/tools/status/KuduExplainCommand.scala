@@ -11,7 +11,7 @@ package org.locationtech.geomesa.kudu.tools.status
 import com.beust.jcommander.Parameters
 import org.locationtech.geomesa.kudu.data.KuduDataStore
 import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand
-import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.{KuduParams, ToggleRemoteFilterParam}
+import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.KuduParams
 import org.locationtech.geomesa.kudu.tools.status.KuduExplainCommand.KuduExplainParams
 import org.locationtech.geomesa.tools.status.{ExplainCommand, ExplainParams}
 
@@ -21,5 +21,5 @@ class KuduExplainCommand extends ExplainCommand[KuduDataStore] with KuduDataStor
 
 object KuduExplainCommand {
   @Parameters(commandDescription = "Explain how a GeoMesa query will be executed")
-  class KuduExplainParams extends ExplainParams with KuduParams with ToggleRemoteFilterParam
+  class KuduExplainParams extends ExplainParams with KuduParams
 }

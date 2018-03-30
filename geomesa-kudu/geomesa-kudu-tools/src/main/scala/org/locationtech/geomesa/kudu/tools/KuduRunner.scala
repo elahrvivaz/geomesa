@@ -11,7 +11,7 @@ package org.locationtech.geomesa.kudu.tools
 import com.beust.jcommander.JCommander
 import org.locationtech.geomesa.kudu.tools.data._
 import org.locationtech.geomesa.kudu.tools.export.KuduExportCommand
-import org.locationtech.geomesa.kudu.tools.ingest.{KuduBulkIngestCommand, KuduBulkLoadCommand, KuduIngestCommand}
+import org.locationtech.geomesa.kudu.tools.ingest.KuduIngestCommand
 import org.locationtech.geomesa.kudu.tools.stats._
 import org.locationtech.geomesa.kudu.tools.status._
 import org.locationtech.geomesa.tools.export.GenerateAvroSchemaCommand
@@ -23,8 +23,6 @@ object KuduRunner extends Runner {
   override val name: String = "geomesa-kudu"
 
   override def createCommands(jc: JCommander): Seq[Command] = Seq(
-    new KuduBulkIngestCommand,
-    new KuduBulkLoadCommand,
     new KuduCreateSchemaCommand,
     new KuduDeleteCatalogCommand,
     new KuduDeleteFeaturesCommand,
@@ -37,11 +35,9 @@ object KuduRunner extends Runner {
     new KuduKeywordsCommand,
     new KuduGetTypeNamesCommand,
     new KuduRemoveSchemaCommand,
-    new KuduVersionRemoteCommand,
     new VersionCommand,
     new KuduGetSftConfigCommand,
     new GenerateAvroSchemaCommand,
-    new KuduStatsAnalyzeCommand,
     new KuduStatsBoundsCommand,
     new KuduStatsCountCommand,
     new KuduStatsTopKCommand,
@@ -51,13 +47,4 @@ object KuduRunner extends Runner {
     new ClasspathCommand,
     new ScalaConsoleCommand
   )
-
-  override def environmentErrorInfo(): Option[String] = {
-    if (sys.env.get("HBASE_HOME").isEmpty || sys.env.get("HADOOP_HOME").isEmpty) {
-      Option("Warning: you have not set HBASE_HOME and/or HADOOP_HOME as environment variables." +
-        "\nGeoMesa tools will not run without the appropriate Kudu and Hadoop jars in the tools classpath." +
-        "\nPlease ensure that those jars are present in the classpath by running 'geomesa-kudu classpath'." +
-        "\nTo take corrective action, please place the necessary jar files in the lib directory of geomesa-tools.")
-    } else { None }
-  }
 }

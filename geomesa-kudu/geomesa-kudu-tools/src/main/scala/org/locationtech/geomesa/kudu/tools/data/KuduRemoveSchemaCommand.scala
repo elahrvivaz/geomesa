@@ -11,7 +11,7 @@ package org.locationtech.geomesa.kudu.tools.data
 import com.beust.jcommander.Parameters
 import org.locationtech.geomesa.kudu.data.KuduDataStore
 import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand
-import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.{KuduParams, RemoteFilterNotUsedParam}
+import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.KuduParams
 import org.locationtech.geomesa.kudu.tools.data.KuduRemoveSchemaCommand.KuduRemoveSchemaParams
 import org.locationtech.geomesa.tools.data.{RemoveSchemaCommand, RemoveSchemaParams}
 
@@ -21,5 +21,5 @@ class KuduRemoveSchemaCommand extends RemoveSchemaCommand[KuduDataStore] with Ku
 
 object KuduRemoveSchemaCommand {
   @Parameters(commandDescription = "Remove a schema and associated features from a GeoMesa catalog")
-  class KuduRemoveSchemaParams extends RemoveSchemaParams with KuduParams with RemoteFilterNotUsedParam
+  class KuduRemoveSchemaParams extends RemoveSchemaParams with KuduParams
 }

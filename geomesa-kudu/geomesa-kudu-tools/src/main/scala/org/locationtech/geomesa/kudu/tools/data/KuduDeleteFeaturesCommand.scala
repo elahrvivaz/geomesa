@@ -11,7 +11,7 @@ package org.locationtech.geomesa.kudu.tools.data
 import com.beust.jcommander.Parameters
 import org.locationtech.geomesa.kudu.data.KuduDataStore
 import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand
-import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.{KuduParams, RemoteFilterNotUsedParam}
+import org.locationtech.geomesa.kudu.tools.KuduDataStoreCommand.KuduParams
 import org.locationtech.geomesa.kudu.tools.data.KuduDeleteFeaturesCommand.KuduDeleteFeaturesParams
 import org.locationtech.geomesa.tools.data.{DeleteFeaturesCommand, DeleteFeaturesParams}
 
@@ -21,5 +21,5 @@ class KuduDeleteFeaturesCommand extends DeleteFeaturesCommand[KuduDataStore] wit
 
 object KuduDeleteFeaturesCommand {
   @Parameters(commandDescription = "Delete features from a table in GeoMesa. Does not delete any tables or schema information.")
-  class KuduDeleteFeaturesParams extends DeleteFeaturesParams with KuduParams with RemoteFilterNotUsedParam
+  class KuduDeleteFeaturesParams extends DeleteFeaturesParams with KuduParams
 }
