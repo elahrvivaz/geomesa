@@ -31,14 +31,14 @@ class KuduDataStoreTest extends Specification {
 
   import scala.collection.JavaConverters._
 
-  skipped("integration")
+//  skipped("integration")
 
   sequential
 
   var ds: KuduDataStore = _
 
   lazy val params = Map(
-    "kudu.master" -> "localhost",
+    "kudu.master" -> "cluster-master.ccri.com",
     "kudu.catalog" -> "geomesa",
     "geomesa.security.auths" -> "admin"
   )
@@ -48,8 +48,8 @@ class KuduDataStoreTest extends Specification {
   }
 
   val query = {
-    true
-//    false
+//    true
+    false
   }
   val write = {
 //    true
