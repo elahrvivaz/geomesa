@@ -35,6 +35,11 @@
                 <artifactId>kudu-client</artifactId>
                 <version>${kudu.version}</version>
             </dependency>
+            <dependency>
+                <groupId>org.apache.kudu</groupId>
+                <artifactId>kudu-mapreduce</artifactId>
+                <version>${kudu.version}</version>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 

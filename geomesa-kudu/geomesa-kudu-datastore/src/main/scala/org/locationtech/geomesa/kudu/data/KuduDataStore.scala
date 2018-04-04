@@ -10,9 +10,11 @@ package org.locationtech.geomesa.kudu.data
 
 import org.apache.kudu.client.KuduClient
 import org.apache.kudu.client.SessionConfiguration.FlushMode
+import org.geotools.data.Query
+import org.locationtech.geomesa.index.api.{GeoMesaFeatureIndex, QueryPlan}
 import org.locationtech.geomesa.index.metadata.{GeoMesaMetadata, MetadataStringSerializer}
 import org.locationtech.geomesa.index.stats.{GeoMesaStats, UnoptimizedRunnableStats}
-import org.locationtech.geomesa.index.utils.LocalLocking
+import org.locationtech.geomesa.index.utils.{ExplainLogging, Explainer, LocalLocking}
 import org.locationtech.geomesa.kudu._
 import org.locationtech.geomesa.kudu.data.KuduDataStoreFactory.KuduDataStoreConfig
 import org.locationtech.geomesa.kudu.data.KuduFeatureWriter.{KuduAppendFeatureWriter, KuduModifyFeatureWriter}
@@ -65,6 +67,12 @@ class KuduDataStore(val client: KuduClient, override val config: KuduDataStoreCo
     (tables.distinct :+ config.catalog).par.foreach { table =>
       client.deleteTable(table)
     }
+  }
+
+  override def getQueryPlan(query: Query,
+                            index: Option[KuduFeatureIndexType],
+                            explainer: Explainer): Seq[KuduQueryPlan] = {
+    super.getQueryPlan(query, index, explainer).asInstanceOf[Seq[KuduQueryPlan]]
   }
 
   override def dispose(): Unit = {
