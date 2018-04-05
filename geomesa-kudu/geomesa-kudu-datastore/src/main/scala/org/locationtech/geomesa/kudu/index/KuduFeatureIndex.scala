@@ -27,7 +27,6 @@ import org.locationtech.geomesa.kudu.data._
 import org.locationtech.geomesa.kudu.index.z2.{KuduXZ2Index, KuduZ2Index}
 import org.locationtech.geomesa.kudu.index.z3.{KuduXZ3Index, KuduZ3Index}
 import org.locationtech.geomesa.kudu.schema.KuduIndexColumnAdapter.VisibilityAdapter
-import org.locationtech.geomesa.kudu.schema.KuduResultAdapter.ResultAdapter
 import org.locationtech.geomesa.kudu.schema.KuduSimpleFeatureSchema.KuduFilter
 import org.locationtech.geomesa.kudu.schema.{KuduColumnAdapter, KuduResultAdapter, KuduSimpleFeatureSchema}
 import org.locationtech.geomesa.kudu.utils.RichKuduClient.SessionHolder
@@ -40,8 +39,6 @@ import org.opengis.filter.Filter
 
 object KuduFeatureIndex extends KuduIndexManagerType {
 
-  private val schemas = new ConcurrentHashMap[String, KuduSimpleFeatureSchema]()
-
   val KuduSplitterOptions = "geomesa.kudu.splitters"
 
   // note: keep in priority order for running full table scans
@@ -50,16 +47,6 @@ object KuduFeatureIndex extends KuduIndexManagerType {
 
   override val CurrentIndices: Seq[KuduFeatureIndex[_, _]] =
     Seq(KuduZ3Index, KuduXZ3Index, KuduZ2Index, KuduXZ2Index, KuduIdIndex, KuduAttributeIndex)
-
-  def schema(sft: SimpleFeatureType): KuduSimpleFeatureSchema = {
-    val key = CacheKeyGenerator.cacheKey(sft)
-    var schema = schemas.get(key)
-    if (schema == null) {
-      schema = new KuduSimpleFeatureSchema(sft)
-      schemas.put(key, schema)
-    }
-    schema
-  }
 
   def splitters(sft: SimpleFeatureType): Map[String, String] =
     Option(sft.getUserData.get(KuduSplitterOptions).asInstanceOf[String]).map(KVPairParser.parse).getOrElse(Map.empty)
@@ -167,7 +154,7 @@ trait KuduFeatureIndex[T, U] extends KuduFeatureIndexType with LazyLogging {
     val table = ds.client.openTable(getTableName(sft.getTypeName, ds))
     val splitters = KuduFeatureIndex.splitters(sft)
     val toIndexKey = keySpace.toIndexKey(sft)
-    val schema = KuduFeatureIndex.schema(sft)
+    val schema = KuduSimpleFeatureSchema(sft)
     createInsert(sft, table, schema, splitters, toIndexKey)
   }
 
@@ -236,7 +223,7 @@ trait KuduFeatureIndex[T, U] extends KuduFeatureIndexType with LazyLogging {
       import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
       val table = getTableName(sft.getTypeName, ds)
-      val schema = KuduFeatureIndex.schema(sft)
+      val schema = KuduSimpleFeatureSchema(sft)
 
       val fullFilter =
         if (keySpace.useFullFilter(indexValues, Some(ds.config), hints)) { filter.filter } else { filter.secondary }
@@ -246,10 +233,9 @@ trait KuduFeatureIndex[T, U] extends KuduFeatureIndexType with LazyLogging {
       // create push-down predicates and remove from the ecql where possible
       val KuduFilter(predicates, ecql) = fullFilter.map(schema.predicate).getOrElse(KuduFilter(Seq.empty, None))
 
-      val ResultAdapter(cols, toFeatures) =
-        KuduResultAdapter.resultsToFeatures(sft, schema, ecql, hints.getTransform, auths)
+      val adapter = KuduResultAdapter(sft, ecql, hints.getTransform, auths)
 
-      ScanPlan(filter, table, cols, ranges.toSeq, predicates, ecql, ds.config.queryThreads, toFeatures)
+      ScanPlan(filter, table, ranges.toSeq, predicates, ecql, adapter, ds.config.queryThreads)
     }
   }
 
@@ -267,7 +253,7 @@ trait KuduFeatureIndex[T, U] extends KuduFeatureIndexType with LazyLogging {
       val cols = new java.util.ArrayList[ColumnSchema]()
       keyColumns.flatMap(_.columns).foreach(cols.add)
       cols.add(VisibilityAdapter.column)
-      KuduFeatureIndex.schema(sft).schema.foreach(cols.add)
+      KuduSimpleFeatureSchema(sft).schema.foreach(cols.add)
       schema = new Schema(cols)
       tableSchemas.put(key, schema)
     }

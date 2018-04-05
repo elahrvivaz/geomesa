@@ -8,18 +8,32 @@
 
 package org.locationtech.geomesa.kudu.schema
 
+import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
+
 import org.apache.kudu.client.RowResult
 import org.geotools.data.DataUtilities
+import org.geotools.filter.text.ecql.ECQL
 import org.geotools.process.vector.TransformProcess
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, TransformSimpleFeature}
 import org.locationtech.geomesa.filter.FilterHelper
+import org.locationtech.geomesa.filter.factory.FastFilterFactory
 import org.locationtech.geomesa.kudu.schema.KuduIndexColumnAdapter.{FeatureIdAdapter, VisibilityAdapter}
-import org.locationtech.geomesa.kudu.schema.KuduSimpleFeatureSchema.KuduDeserializer
 import org.locationtech.geomesa.security.{SecurityUtils, VisibilityEvaluator}
 import org.locationtech.geomesa.utils.collection.CloseableIterator
+import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 import org.opengis.filter.expression.{Expression, PropertyName}
+
+sealed trait KuduResultAdapter {
+
+  def columns: Seq[String]
+  def adapt(results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature]
+
+  protected def sft: SimpleFeatureType
+  protected def auths: Seq[Array[Byte]]
+}
 
 object KuduResultAdapter {
 
@@ -29,178 +43,76 @@ object KuduResultAdapter {
     * @param sft simple feature type
     * @param ecql filter to apply
     * @param transform transform definitions and return simple feature type
-    * @return
+    * @return (columns required, adapter for rows)
     */
-  def resultsToFeatures(sft: SimpleFeatureType,
-                        schema: KuduSimpleFeatureSchema,
-                        ecql: Option[Filter],
-                        transform: Option[(String, SimpleFeatureType)],
-                        auths: Seq[Array[Byte]]): ResultAdapter = {
+  def apply(sft: SimpleFeatureType,
+            ecql: Option[Filter],
+            transform: Option[(String, SimpleFeatureType)],
+            auths: Seq[Array[Byte]]): KuduResultAdapter = {
     (transform, ecql) match {
-      case (None, None) => toFeatures(sft, schema, auths)
-      case (None, Some(f)) => toFeaturesWithFilter(sft, schema, f, auths)
-      case (Some((tdefs, tsft)), None) => toFeaturesWithTransform(sft, schema, tsft, tdefs, auths)
-      case (Some((tdefs, tsft)), Some(f)) => toFeaturesWithFilterTransform(sft, schema, tsft, tdefs, f, auths)
+      case (None, None)                   => DirectAdapter(sft, auths)
+      case (None, Some(f))                => FilterAdapter(sft, f, auths)
+      case (Some((tdefs, tsft)), None)    => TransformAdapter(sft, tsft, tdefs, auths)
+      case (Some((tdefs, tsft)), Some(f)) => FilterTransformAdapter(sft, f, tsft, tdefs, auths)
     }
   }
 
-  private def toFeatures(sft: SimpleFeatureType,
-                         schema: KuduSimpleFeatureSchema,
-                         auths: Seq[Array[Byte]]): ResultAdapter = {
-    val cols = Seq(FeatureIdAdapter.name, VisibilityAdapter.name) ++ schema.schema.map(_.getName)
-    val adapter = toFeatures(schema.deserializer, new ScalaSimpleFeature(sft, ""), auths) _
-    ResultAdapter(cols, adapter)
+  def serialize(adapter: KuduResultAdapter): Array[Byte] = {
+    import org.locationtech.geomesa.utils.io.ByteBuffers.RichByteBuffer
+
+    var bb = ByteBuffer.allocate(1024)
+
+    def putString(s: String): Unit = putArray(s.getBytes(StandardCharsets.UTF_8))
+
+    def putArray(bytes: Array[Byte]): Unit = {
+      bb = bb.ensureRemaining(bytes.length + 4)
+      bb.putBytes(bytes)
+    }
+
+    def putInt(int: Int): Unit = {
+      bb = bb.ensureRemaining(4)
+      bb.putInt(int)
+    }
+
+    putString(adapter.sft.getTypeName)
+    putString(SimpleFeatureTypes.encodeType(adapter.sft, includeUserData = true))
+    putInt(adapter.auths.length)
+    adapter.auths.foreach(putArray)
+
+    val (ecql, transform) = adapter match {
+      case EmptyAdapter              => (None, None)
+      case _: DirectAdapter          => (None, None)
+      case a: FilterAdapter          => (Some(a.ecql), None)
+      case a: TransformAdapter       => (None, Some((a.tsft, a.tdefs)))
+      case a: FilterTransformAdapter => (Some(a.ecql), Some((a.tsft, a.tdefs)))
+    }
+
+    putString(ecql.map(ECQL.toCQL).getOrElse(""))
+    putString(transform.map(t => SimpleFeatureTypes.encodeType(t._1)).getOrElse(""))
+    putString(transform.map(_._2).getOrElse(""))
+
+    bb.toArray
   }
 
-  private def toFeaturesWithFilter(sft: SimpleFeatureType,
-                                   schema: KuduSimpleFeatureSchema,
-                                   filter: Filter,
-                                   auths: Seq[Array[Byte]]): ResultAdapter = {
-    val cols = Seq(FeatureIdAdapter.name, VisibilityAdapter.name) ++ schema.schema.map(_.getName)
-    val adapter = toFeaturesWithFilter(schema.deserializer, filter, new ScalaSimpleFeature(sft, ""), auths) _
-    ResultAdapter(cols, adapter)
-  }
+  def deserialize(bytes: Array[Byte]): KuduResultAdapter = {
+    import org.locationtech.geomesa.utils.io.ByteBuffers.RichByteBuffer
 
-  private def toFeaturesWithTransform(sft: SimpleFeatureType,
-                                      schema: KuduSimpleFeatureSchema,
-                                      tsft: SimpleFeatureType,
-                                      tdefs: String,
-                                      auths: Seq[Array[Byte]]): ResultAdapter = {
-    import scala.collection.JavaConverters._
+    val bb = ByteBuffer.wrap(bytes)
 
-    // determine all the attributes that we need to be able to evaluate the transform
-    val attributes = TransformProcess.toDefinition(tdefs).asScala.map(_.expression).flatMap {
-      case p: PropertyName => Seq(p.getPropertyName)
-      case e: Expression   => DataUtilities.attributeNames(e, sft)
-    }.distinct
+    val sft = SimpleFeatureTypes.createType(bb.getString, bb.getString)
 
-    val subType = DataUtilities.createSubType(sft, attributes.toArray)
-    subType.getUserData.putAll(sft.getUserData)
-
-    val feature = new ScalaSimpleFeature(subType, "")
-    val transformFeature = TransformSimpleFeature(subType, tsft, tdefs)
-    transformFeature.setFeature(feature)
-
-    val cols = Seq(FeatureIdAdapter.name, VisibilityAdapter.name) ++ schema.schema(attributes).map(_.getName)
-    val deserializer = schema.deserializer(subType)
-
-    val adapter = toFeaturesWithTransform(deserializer, feature, transformFeature, auths) _
-    ResultAdapter(cols, adapter)
-  }
-
-  private def toFeaturesWithFilterTransform(sft: SimpleFeatureType,
-                                            schema: KuduSimpleFeatureSchema,
-                                            tsft: SimpleFeatureType,
-                                            tdefs: String,
-                                            filter: Filter,
-                                            auths: Seq[Array[Byte]]): ResultAdapter = {
-    import scala.collection.JavaConverters._
-
-    // determine all the attributes that we need to be able to evaluate the transform and filter
-    val attributes = {
-      val fromTransform = TransformProcess.toDefinition(tdefs).asScala.map(_.expression).flatMap {
-        case p: PropertyName => Seq(p.getPropertyName)
-        case e: Expression   => DataUtilities.attributeNames(e, sft)
+    if (sft.getTypeName.length == 0) { EmptyAdapter } else {
+      val auths = (0 until bb.getInt).map(_ => bb.getBytes)
+      val ecql = Some(bb.getString).filter(_.length > 0).map(FastFilterFactory.toFilter(sft, _))
+      val transform = Some(bb.getString).filter(_.length > 0).map { spec =>
+        (SimpleFeatureTypes.createType(sft.getTypeName, spec), bb.getString)
       }
-      val fromFilter = FilterHelper.propertyNames(filter, sft)
-      (fromTransform ++ fromFilter).distinct
-    }
 
-    val subType = DataUtilities.createSubType(sft, attributes.toArray)
-    subType.getUserData.putAll(sft.getUserData)
-
-    val feature = new ScalaSimpleFeature(subType, "")
-    val transformFeature = TransformSimpleFeature(subType, tsft, tdefs)
-    transformFeature.setFeature(feature)
-
-    val cols = Seq(FeatureIdAdapter.name, VisibilityAdapter.name) ++ schema.schema(attributes).map(_.getName)
-    val deserializer = schema.deserializer(subType)
-
-    val adapter = toFeaturesWithFilterTransform(deserializer, filter, feature, transformFeature, auths) _
-    ResultAdapter(cols, adapter)
-  }
-
-  /**
-    * Converts results to features directly
-    *
-    * @param deserializer deserializer
-    * @param feature reusable feature
-    * @param results result iterator
-    * @return
-    */
-  private def toFeatures(deserializer: KuduDeserializer,
-                         feature: ScalaSimpleFeature,
-                         auths: Seq[Array[Byte]])
-                        (results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature] = {
-    results.flatMap { row =>
-      feature.setId(FeatureIdAdapter.readFromRow(row))
-      deserializer.deserialize(row, feature)
-      SecurityUtils.setFeatureVisibility(feature, VisibilityAdapter.readFromRow(row))
-      if (isVisible(auths, feature)) {
-        Iterator.single(feature)
-      } else {
-        CloseableIterator.empty
-      }
-    }
-  }
-
-  /**
-    * Converts results into features and filters by ecql
-    *
-    * @param deserializer deserializer
-    * @param ecql filter
-    * @param feature reusable feature
-    * @param results result iterator
-    * @return
-    */
-  private def toFeaturesWithFilter(deserializer: KuduDeserializer,
-                                   ecql: Filter,
-                                   feature: ScalaSimpleFeature,
-                                   auths: Seq[Array[Byte]])
-                                  (results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature] = {
-    results.flatMap { row =>
-      feature.setId(FeatureIdAdapter.readFromRow(row))
-      deserializer.deserialize(row, feature)
-      SecurityUtils.setFeatureVisibility(feature, VisibilityAdapter.readFromRow(row))
-      if (isVisible(auths, feature) && ecql.evaluate(feature)) {
-        Iterator.single(feature)
-      } else {
-        CloseableIterator.empty
-      }
-    }
-  }
-
-  private def toFeaturesWithTransform(deserializer: KuduDeserializer,
-                                      feature: ScalaSimpleFeature,
-                                      transformFeature: TransformSimpleFeature,
-                                      auths: Seq[Array[Byte]])
-                                     (results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature] = {
-    results.flatMap { row =>
-      feature.setId(FeatureIdAdapter.readFromRow(row))
-      deserializer.deserialize(row, feature)
-      SecurityUtils.setFeatureVisibility(feature, VisibilityAdapter.readFromRow(row))
-      if (isVisible(auths, feature)) {
-        Iterator.single(transformFeature)
-      } else {
-        CloseableIterator.empty
-      }
-    }
-  }
-
-  private def toFeaturesWithFilterTransform(deserializer: KuduDeserializer,
-                                            ecql: Filter,
-                                            feature: ScalaSimpleFeature,
-                                            transformFeature: TransformSimpleFeature,
-                                            auths: Seq[Array[Byte]])
-                                           (results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature] = {
-    results.flatMap { row =>
-      feature.setId(FeatureIdAdapter.readFromRow(row))
-      deserializer.deserialize(row, feature)
-      SecurityUtils.setFeatureVisibility(feature, VisibilityAdapter.readFromRow(row))
-      if (isVisible(auths, feature) && ecql.evaluate(feature)) {
-        Iterator.single(transformFeature)
-      } else {
-        CloseableIterator.empty
+      (ecql, transform) match {
+        case (None, None)                   => DirectAdapter(sft, auths)
+        case (Some(e), None)                => FilterAdapter(sft, e, auths)
+        case (None, Some((tsft, tdefs)))    => TransformAdapter(sft, tsft, tdefs, auths)
+        case (Some(e), Some((tsft, tdefs))) => FilterTransformAdapter(sft, e, tsft, tdefs, auths)
       }
     }
   }
@@ -210,6 +122,139 @@ object KuduResultAdapter {
     vis == null || VisibilityEvaluator.parse(vis).evaluate(auths)
   }
 
-  case class ResultAdapter(columns: Seq[String],
-                           adapter: CloseableIterator[RowResult] => CloseableIterator[SimpleFeature])
+
+  object EmptyAdapter extends KuduResultAdapter {
+    override protected val sft: SimpleFeatureType = SimpleFeatureTypes.createType("", "")
+    override protected val auths: Seq[Array[Byte]] = Seq.empty
+
+    override val columns: Seq[String] = Seq.empty
+    override def adapt(results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature] = CloseableIterator.empty
+  }
+
+  case class DirectAdapter(sft: SimpleFeatureType, auths: Seq[Array[Byte]]) extends KuduResultAdapter {
+
+    private val schema = KuduSimpleFeatureSchema(sft)
+    private val deserializer = schema.deserializer
+    private val feature = new ScalaSimpleFeature(sft, "")
+
+    override val columns: Seq[String] =
+      Seq(FeatureIdAdapter.name, VisibilityAdapter.name) ++ schema.schema.map(_.getName)
+
+    override def adapt(results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature] = {
+      results.flatMap { row =>
+        feature.setId(FeatureIdAdapter.readFromRow(row))
+        deserializer.deserialize(row, feature)
+        SecurityUtils.setFeatureVisibility(feature, VisibilityAdapter.readFromRow(row))
+        if (isVisible(auths, feature)) {
+          Iterator.single(feature)
+        } else {
+          CloseableIterator.empty
+        }
+      }
+    }
+  }
+
+  case class FilterAdapter(sft: SimpleFeatureType, ecql: Filter, auths: Seq[Array[Byte]]) extends KuduResultAdapter {
+
+    private val schema = KuduSimpleFeatureSchema(sft)
+    private val deserializer = schema.deserializer
+    private val feature = new ScalaSimpleFeature(sft, "")
+
+    override val columns: Seq[String] =
+      Seq(FeatureIdAdapter.name, VisibilityAdapter.name) ++ schema.schema.map(_.getName)
+
+    override def adapt(results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature] = {
+      results.flatMap { row =>
+        feature.setId(FeatureIdAdapter.readFromRow(row))
+        deserializer.deserialize(row, feature)
+        SecurityUtils.setFeatureVisibility(feature, VisibilityAdapter.readFromRow(row))
+        if (isVisible(auths, feature) && ecql.evaluate(feature)) {
+          Iterator.single(feature)
+        } else {
+          CloseableIterator.empty
+        }
+      }
+    }
+  }
+
+  case class TransformAdapter(sft: SimpleFeatureType, tsft: SimpleFeatureType, tdefs: String, auths: Seq[Array[Byte]])
+      extends KuduResultAdapter {
+
+    import scala.collection.JavaConverters._
+
+    // determine all the attributes that we need to be able to evaluate the transform
+    private val attributes = TransformProcess.toDefinition(tdefs).asScala.map(_.expression).flatMap {
+      case p: PropertyName => Seq(p.getPropertyName)
+      case e: Expression   => DataUtilities.attributeNames(e, sft)
+    }.distinct
+
+    private val subType = DataUtilities.createSubType(sft, attributes.toArray)
+    subType.getUserData.putAll(sft.getUserData)
+
+    private val schema = KuduSimpleFeatureSchema(sft)
+    private val deserializer = schema.deserializer(subType)
+    private val feature = new ScalaSimpleFeature(subType, "")
+    private val transformFeature = TransformSimpleFeature(subType, tsft, tdefs)
+    transformFeature.setFeature(feature)
+
+    override val columns: Seq[String] =
+      Seq(FeatureIdAdapter.name, VisibilityAdapter.name) ++ schema.schema(attributes).map(_.getName)
+
+    override def adapt(results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature] = {
+      results.flatMap { row =>
+        feature.setId(FeatureIdAdapter.readFromRow(row))
+        deserializer.deserialize(row, feature)
+        SecurityUtils.setFeatureVisibility(feature, VisibilityAdapter.readFromRow(row))
+        if (isVisible(auths, feature)) {
+          Iterator.single(transformFeature)
+        } else {
+          CloseableIterator.empty
+        }
+      }
+    }
+  }
+
+  case class FilterTransformAdapter(sft: SimpleFeatureType,
+                                 ecql: Filter,
+                                 tsft: SimpleFeatureType,
+                                 tdefs: String,
+                                 auths: Seq[Array[Byte]]) extends KuduResultAdapter {
+
+    import scala.collection.JavaConverters._
+
+    // determine all the attributes that we need to be able to evaluate the transform and filter
+    private val attributes = {
+      val fromTransform = TransformProcess.toDefinition(tdefs).asScala.map(_.expression).flatMap {
+        case p: PropertyName => Seq(p.getPropertyName)
+        case e: Expression   => DataUtilities.attributeNames(e, sft)
+      }
+      val fromFilter = FilterHelper.propertyNames(ecql, sft)
+      (fromTransform ++ fromFilter).distinct
+    }
+
+    private val subType = DataUtilities.createSubType(sft, attributes.toArray)
+    subType.getUserData.putAll(sft.getUserData)
+
+    private val schema = KuduSimpleFeatureSchema(sft)
+    private val deserializer = schema.deserializer(subType)
+    private val feature = new ScalaSimpleFeature(subType, "")
+    private val transformFeature = TransformSimpleFeature(subType, tsft, tdefs)
+    transformFeature.setFeature(feature)
+
+    override val columns: Seq[String] =
+      Seq(FeatureIdAdapter.name, VisibilityAdapter.name) ++ schema.schema(attributes).map(_.getName)
+
+    override def adapt(results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature] = {
+      results.flatMap { row =>
+        feature.setId(FeatureIdAdapter.readFromRow(row))
+        deserializer.deserialize(row, feature)
+        SecurityUtils.setFeatureVisibility(feature, VisibilityAdapter.readFromRow(row))
+        if (isVisible(auths, feature) && ecql.evaluate(feature)) {
+          Iterator.single(transformFeature)
+        } else {
+          CloseableIterator.empty
+        }
+      }
+    }
+  }
 }

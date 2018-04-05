@@ -19,7 +19,6 @@ import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.kudu.data.KuduQueryPlan.{EmptyPlan, ScanPlan}
 import org.locationtech.geomesa.kudu.data.{KuduDataStore, KuduFeature}
 import org.locationtech.geomesa.kudu.schema.KuduIndexColumnAdapter.VisibilityAdapter
-import org.locationtech.geomesa.kudu.schema.KuduResultAdapter.ResultAdapter
 import org.locationtech.geomesa.kudu.schema.KuduSimpleFeatureSchema.KuduFilter
 import org.locationtech.geomesa.kudu.schema.{KuduResultAdapter, KuduSimpleFeatureSchema}
 import org.locationtech.geomesa.kudu.{KuduFilterStrategyType, KuduQueryPlanType, KuduValue, WriteOperation}
@@ -51,7 +50,7 @@ trait KuduTieredFeatureIndex[T, U] extends KuduFeatureIndex[T, U] {
 
   override def writer(sft: SimpleFeatureType, ds: KuduDataStore): (KuduFeature) => Seq[WriteOperation] = {
     val table = ds.client.openTable(getTableName(sft.getTypeName, ds))
-    val schema = KuduFeatureIndex.schema(sft)
+    val schema = KuduSimpleFeatureSchema(sft)
     val splitters = KuduFeatureIndex.splitters(sft)
     val toIndexKey = keySpace.toIndexKey(sft)
     val toTieredKey = createTieredKey(tieredKeySpace(sft).map(_.toIndexKeyBytes(sft))) _
@@ -93,7 +92,7 @@ trait KuduTieredFeatureIndex[T, U] extends KuduFeatureIndex[T, U] {
       if (ranges.isEmpty) { EmptyPlan(filter) } else {
         import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
-        val schema = KuduFeatureIndex.schema(sft)
+        val schema = KuduSimpleFeatureSchema(sft)
 
         val fullFilter =
           if (keySpace.useFullFilter(Some(values), Some(ds.config), hints)) { filter.filter } else { filter.secondary }
@@ -102,12 +101,11 @@ trait KuduTieredFeatureIndex[T, U] extends KuduFeatureIndex[T, U] {
 
         val KuduFilter(predicates, ecql) = fullFilter.map(schema.predicate).getOrElse(KuduFilter(Seq.empty, None))
 
-        val ResultAdapter(cols, toFeatures) =
-          KuduResultAdapter.resultsToFeatures(sft, schema, ecql, hints.getTransform, auths)
+        val adapter = KuduResultAdapter(sft, ecql, hints.getTransform, auths)
 
         val table = getTableName(sft.getTypeName, ds)
 
-        ScanPlan(filter, table, cols, ranges.toSeq, predicates, ecql, ds.config.queryThreads, toFeatures)
+        ScanPlan(filter, table, ranges.toSeq, predicates, ecql, adapter, ds.config.queryThreads)
       }
     }
   }

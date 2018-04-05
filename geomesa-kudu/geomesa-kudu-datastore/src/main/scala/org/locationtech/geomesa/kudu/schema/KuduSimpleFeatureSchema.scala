@@ -8,11 +8,14 @@
 
 package org.locationtech.geomesa.kudu.schema
 
+import java.util.concurrent.ConcurrentHashMap
+
 import org.apache.kudu.ColumnSchema
 import org.apache.kudu.client.{KuduPredicate, RowResult}
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.kudu.KuduValue
 import org.locationtech.geomesa.kudu.schema.KuduSimpleFeatureSchema.{KuduDeserializer, KuduFilter}
+import org.locationtech.geomesa.utils.cache.CacheKeyGenerator
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
@@ -24,7 +27,7 @@ import org.opengis.filter.Filter
   *
   * @param sft simple feature type
   */
-class KuduSimpleFeatureSchema(sft: SimpleFeatureType) {
+class KuduSimpleFeatureSchema private (sft: SimpleFeatureType) {
 
   import scala.collection.JavaConverters._
 
@@ -100,6 +103,18 @@ class KuduSimpleFeatureSchema(sft: SimpleFeatureType) {
 }
 
 object KuduSimpleFeatureSchema {
+
+  private val schemas = new ConcurrentHashMap[String, KuduSimpleFeatureSchema]()
+
+  def apply(sft: SimpleFeatureType): KuduSimpleFeatureSchema = {
+    val key = CacheKeyGenerator.cacheKey(sft)
+    var schema = schemas.get(key)
+    if (schema == null) {
+      schema = new KuduSimpleFeatureSchema(sft)
+      schemas.put(key, schema)
+    }
+    schema
+  }
 
   class KuduDeserializer(sft: SimpleFeatureType, adapters: Seq[KuduColumnAdapter[_ <: AnyRef]]) {
 

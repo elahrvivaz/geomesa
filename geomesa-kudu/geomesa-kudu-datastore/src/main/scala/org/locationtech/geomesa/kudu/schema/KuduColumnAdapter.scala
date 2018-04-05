@@ -25,7 +25,6 @@ import org.locationtech.geomesa.filter.{Bounds, FilterHelper, checkOrder, isSpat
 import org.locationtech.geomesa.kudu.schema.KuduSimpleFeatureSchema.KuduFilter
 import org.locationtech.geomesa.kudu.utils.ColumnConfiguration
 import org.locationtech.geomesa.utils.geotools.GeometryUtils
-import org.locationtech.geomesa.utils.io.ByteBufferInputStream
 import org.opengis.feature.`type`.AttributeDescriptor
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter.Filter
@@ -310,9 +309,10 @@ object KuduColumnAdapter {
     override val columns: Seq[ColumnSchema] = Seq(bytes, xmin, ymin, xmax, ymax)
 
     override def readFromRow(row: RowResult): Geometry = {
+      import org.locationtech.geomesa.utils.io.ByteBuffers.RichByteBuffer
       if (row.isNull(bytes.getName)) { null } else {
         val buffer = row.getBinary(bytes.getName)
-        val in = KryoFeatureDeserialization.getInput(new ByteBufferInputStream(buffer))
+        val in = KryoFeatureDeserialization.getInput(buffer.toInputStream)
         KryoGeometrySerialization.deserialize(in)
       }
     }
@@ -373,8 +373,8 @@ object KuduColumnAdapter {
     override val columns: Seq[ColumnSchema] = Seq(config(new ColumnSchemaBuilder(column, Type.BINARY)).build())
 
     override def readFromRow(row: RowResult): AnyRef = {
-      val is = new ByteBufferInputStream(row.getBinary(column))
-      reader.apply(KryoFeatureDeserialization.getInput(is))
+      import org.locationtech.geomesa.utils.io.ByteBuffers.RichByteBuffer
+      reader.apply(KryoFeatureDeserialization.getInput(row.getBinary(column).toInputStream))
     }
 
     override def writeToRow(row: PartialRow, value: AnyRef): Unit = {

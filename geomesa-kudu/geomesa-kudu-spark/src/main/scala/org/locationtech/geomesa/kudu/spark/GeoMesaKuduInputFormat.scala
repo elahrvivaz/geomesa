@@ -1,225 +1,270 @@
-/*
+/***********************************************************************
  * Copyright (c) 2013-2018 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Apache License, Version 2.0 which
- * accompanies this distribution and is available at
+ * are made available under the terms of the Apache License, Version 2.0
+ * which accompanies this distribution and is available at
  * http://www.opensource.org/licenses/apache2.0.php.
- */
+ ***********************************************************************/
 
 package org.locationtech.geomesa.kudu.spark
 
+import java.io.{DataInput, DataOutput, IOException}
+import java.net.InetSocketAddress
+import java.nio.charset.StandardCharsets
+import java.util.concurrent.ConcurrentHashMap
+
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.hbase.HBaseConfiguration
-import org.apache.hadoop.hbase.client.Result
-import org.apache.hadoop.hbase.io.ImmutableBytesWritable
-import org.apache.hadoop.hbase.mapreduce.TableInputFormat
-import org.apache.hadoop.io.{NullWritable, Text}
+import javax.naming.NamingException
+import org.apache.hadoop.conf.{Configurable, Configuration}
+import org.apache.hadoop.io.{NullWritable, Writable}
 import org.apache.hadoop.mapreduce._
-import org.apache.kudu.mapreduce.{KuduTableInputFormat, KuduTableMapReduceUtil}
+import org.apache.hadoop.net.DNS
+import org.apache.kudu.client._
 import org.geotools.data.{DataStoreFinder, Query}
-import org.geotools.filter.identity.FeatureIdImpl
 import org.geotools.filter.text.ecql.ECQL
-import org.geotools.process.vector.TransformProcess
-import org.locationtech.geomesa.accumulo.index.AccumuloFeatureIndex
-import org.locationtech.geomesa.filter.filterToString
-import org.locationtech.geomesa.hbase.data.HBaseConnectionPool
-import org.locationtech.geomesa.hbase.index.HBaseFeatureIndex
-import org.locationtech.geomesa.hbase.jobs.HBaseGeoMesaRecordReader
+import org.locationtech.geomesa.filter.factory.FastFilterFactory
 import org.locationtech.geomesa.jobs.GeoMesaConfigurator
-import org.locationtech.geomesa.kudu.data.{KuduDataStore, KuduQueryPlan}
-import org.locationtech.geomesa.kudu.index.KuduFeatureIndex
+import org.locationtech.geomesa.kudu.data.{KuduDataStore, KuduDataStoreFactory}
 import org.locationtech.geomesa.kudu.schema.KuduResultAdapter
-import org.locationtech.geomesa.kudu.schema.KuduResultAdapter.ResultAdapter
-import org.locationtech.geomesa.utils.index.IndexMode
-import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
+import org.locationtech.geomesa.kudu.spark.GeoMesaKuduInputFormat.{GeoMesaKuduInputSplit, GeoMesaKuduRecordReader}
+import org.locationtech.geomesa.utils.collection.CloseableIterator
+import org.locationtech.geomesa.utils.index.ByteArrays
+import org.locationtech.geomesa.utils.io.CloseWithLogging
+import org.opengis.feature.simple.SimpleFeature
 import org.opengis.filter.Filter
 
-import scala.util.control.NonFatal
+class GeoMesaKuduInputFormat extends InputFormat[NullWritable, SimpleFeature] with Configurable with LazyLogging {
 
-class GeoMesaKuduInputFormat extends InputFormat[NullWritable, SimpleFeature] with LazyLogging {
+  import scala.collection.JavaConverters._
 
-  private val delegate = new KuduTableInputFormat()
+  private var conf: Configuration = _
 
-  var sft: SimpleFeatureType = _
-//  var table: HBaseFeatureIndex = _
+  private var params: Map[String, String] = _
 
-  private def init(conf: Configuration): Unit = if (sft == null) {
-//    sft = GeoMesaConfigurator.getSchema(conf)
-//    table = HBaseFeatureIndex.index(GeoMesaConfigurator.getIndexIn(conf))
-//    delegate.setConf(conf)
-//    // see TableMapReduceUtil.java
-//    HBaseConfiguration.merge(conf, HBaseConfiguration.create(conf))
-//    HBaseConnectionPool.configureSecurity(conf)
-//    conf.set(TableInputFormat.INPUT_TABLE, GeoMesaConfigurator.getTable(conf))
+  private var typeName: String = _
+
+  private var filter: Option[String] = _
+
+  private var properties: Array[String] = Query.ALL_NAMES
+
+  override def getSplits(context: JobContext): java.util.List[InputSplit] = {
+    import org.locationtech.geomesa.utils.conversions.ScalaImplicits._
+
+    val ds = DataStoreFinder.getDataStore(params.asJava).asInstanceOf[KuduDataStore]
+    if (ds == null) {
+      throw new IOException("Could not load data store from configuration")
+    }
+    try {
+      val sft = ds.getSchema(typeName)
+      val query = new Query(typeName)
+      filter.map(FastFilterFactory.toFilter(sft, _)).foreach(query.setFilter)
+      query.setPropertyNames(properties)
+
+      val plans = ds.getQueryPlan(query).filter(_.ranges.nonEmpty)
+
+      val splits = new java.util.ArrayList[InputSplit](plans.map(_.ranges.length).sumOption.getOrElse(0))
+
+      val tables = scala.collection.mutable.Map.empty[String, KuduTable]
+
+      plans.foreach { plan =>
+        val table = tables.getOrElseUpdate(plan.table, ds.client.openTable(plan.table))
+        plan.ranges.foreach { case (lower, upper) =>
+          val builder = ds.client.newScanTokenBuilder(table)
+          builder.setProjectedColumnNames(plan.adapter.columns.asJava)
+          plan.predicates.foreach(builder.addPredicate)
+          lower.foreach(builder.lowerBound)
+          upper.foreach(builder.exclusiveUpperBound)
+          // TODO .cacheBlocks(cacheBlocks).setTimeout(operationTimeoutMs).setFaultTolerant(isFaultTolerant)
+          builder.build().asScala.foreach { token =>
+            val replicas = token.getTablet.getReplicas
+            val locations = Array.tabulate(replicas.size) { i =>
+              val replica = replicas.get(i)
+              GeoMesaKuduInputFormat.reverseDNS(replica.getRpcHost, replica.getRpcPort)
+            }
+            splits.add(new GeoMesaKuduInputSplit(token, locations, plan.adapter))
+          }
+        }
+      }
+
+      splits
+    } finally {
+      ds.dispose()
+    }
   }
-
-  override def getSplits(context: JobContext): java.util.List[InputSplit] = delegate.getSplits(context)
 
   override def createRecordReader(split: InputSplit,
                                   context: TaskAttemptContext): RecordReader[NullWritable, SimpleFeature] = {
-//    init(context.getConfiguration)
-//    val rr = delegate.createRecordReader(split, context)
-//    val transformSchema = GeoMesaConfigurator.getTransformSchema(context.getConfiguration)
-//    val schema = transformSchema.getOrElse(sft)
-//    val q = GeoMesaConfigurator.getFilter(context.getConfiguration).map { f => ECQL.toFilter(f) }
-//    // transforms are pushed down in HBase
-//    new HBaseGeoMesaRecordReader(schema, table, rr, q, None)
-//val ResultAdapter(cols, toFeatures) =
-//KuduResultAdapter.resultsToFeatures(sft, schema, ecql, hints.getTransform, auths)
+    new GeoMesaKuduRecordReader(params)
   }
+
+  override def setConf(conf: Configuration): Unit = {
+    this.conf = new Configuration(conf)
+    this.params = GeoMesaConfigurator.getDataStoreInParams(conf)
+    this.typeName = GeoMesaConfigurator.getFeatureType(conf)
+    this.filter = GeoMesaConfigurator.getFilter(conf)
+    this.properties = GeoMesaConfigurator.getPropertyNames(conf).getOrElse(Query.ALL_NAMES)
+  }
+
+  override def getConf: Configuration = conf
 }
 
 object GeoMesaKuduInputFormat extends LazyLogging {
 
   import scala.collection.JavaConverters._
-//
-//  object Config {
-//    val ColumnsKey = "geomesa.columns"
-//  }
+
+  private val dnsCache = new ConcurrentHashMap[String, String]()
 
   def configure(conf: Configuration, params: Map[String, String], query: Query): Unit = {
-    val ds = DataStoreFinder.getDataStore(params.asJava).asInstanceOf[KuduDataStore]
-    require(ds != null, s"Could not create data store with provided parameters: ${params.mkString(", ")}")
-    try { configure(conf, ds, query) } finally {
-      ds.dispose()
-    }
-  }
+    GeoMesaConfigurator.setDataStoreInParams(conf, params)
+    GeoMesaConfigurator.setFeatureType(conf, query.getTypeName)
+    Option(query.getFilter).filter(_ != Filter.INCLUDE).foreach(f => GeoMesaConfigurator.setFilter(conf, ECQL.toCQL(f)))
+    GeoMesaConfigurator.setPropertyNames(conf, query.getPropertyNames)
 
-  def configure(conf: Configuration, ds: KuduDataStore, query: Query): Unit = {
-    val plans = ds.getQueryPlan(query)
-    val plan = if (plans.isEmpty) {
-      throw new IllegalArgumentException("Query resulted in nothing scanned")
-    } else if (plans.lengthCompare(1) > 0) {
-      // this query requires multiple scans, which we can't execute in a single scan
-      // instead, fall back to a full table scan
-      // TODO support multiple query plans?
-      logger.warn("Desired query plan requires multiple scans - falling back to full table scan")
-      val fallbackIndex = {
-        val schema = ds.getSchema(query.getTypeName)
-        KuduFeatureIndex.indices(schema, mode = IndexMode.Read).headOption.getOrElse {
-          throw new IllegalStateException(s"Schema '${schema.getTypeName}' does not have any readable indices")
-        }
-      }
-
-      val qps = ds.getQueryPlan(query, Some(fallbackIndex))
-      if (qps.lengthCompare(1) > 0) {
-        logger.error("The query being executed requires multiple scans, which is not currently " +
-            "supported by GeoMesa. Your result set will be partially incomplete. " +
-            s"Query: ${filterToString(query.getFilter)}")
-      }
-      qps.head
-    } else {
-      plans.head
-    }
-
-    configure(conf, ds.getSchema(query.getTypeName), plan)
-  }
-
-  def configure(conf: Configuration, master: String, sft: SimpleFeatureType, plan: KuduQueryPlan): Unit = {
-    GeoMesaConfigurator.setSchema(conf, sft)
-    plan.ecql.foreach(f => GeoMesaConfigurator.setFilter(conf, ECQL.toCQL(f)))
-
-    conf.set("kudu.mapreduce.master.address", master)
-    conf.set("kudu.mapreduce.input.table", plan.table)
-    conf.set("kudu.mapreduce.column.projection", plan.columns.mkString(","))
-
-    plan.predicates ++ plan.ranges
-    conf.set(KuduTableInputFormat.ENCODED_PREDICATES_KEY, base64EncodePredicates(predicates))
-
-//    conf.setLong(KuduTableInputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs)
-//    conf.setBoolean(KuduTableInputFormat.SCAN_CACHE_BLOCKS, cacheBlocks)
-//    conf.setBoolean(KuduTableInputFormat.FAULT_TOLERANT_SCAN, isFaultTolerant)
+    // TODO
+    //    conf.setLong(KuduTableInputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs)
+    //    conf.setBoolean(KuduTableInputFormat.SCAN_CACHE_BLOCKS, cacheBlocks)
+    //    conf.setBoolean(KuduTableInputFormat.FAULT_TOLERANT_SCAN, isFaultTolerant)
 
     // TODO this operates on the job
     // KuduTableMapReduceUtil.addCredentialsToJob(masterAddresses, operationTimeoutMs)
-
-
   }
 
-  class HBaseGeoMesaRecordReader(sft: SimpleFeatureType,
-//                                 table: HBaseFeatureIndex,
-//                                 reader: RecordReader[ImmutableBytesWritable, Result],
-                                 filterOpt: Option[Filter],
-                                 transformSchema: Option[SimpleFeatureType])
-      extends RecordReader[Text, SimpleFeature] with LazyLogging {
+  /**
+    * Copyright 2016 The Apache Software Foundation
+    *
+    * This method might seem alien, but we do this in order to resolve the hostnames the same way
+    * Hadoop does. This ensures we get locality if Kudu is running along MR/YARN.
+    *
+    * @param host hostname we got from the master
+    * @param port port we got from the master
+    * @return reverse DNS'd address
+    */
+  private def reverseDNS(host: String, port: Integer): String = {
+    var location = dnsCache.get(host)
+    if (location == null) {
+      // The below InetSocketAddress creation does a name resolution.
+      val isa = new InetSocketAddress(host, port)
+      if (isa.isUnresolved) {
+        logger.warn("Failed address resolve for: " + isa)
+      }
+      val tabletInetAddress = isa.getAddress
+      try {
+        // Given a PTR string generated via reverse DNS lookup, return everything
+        // except the trailing period. Example for host.example.com., return
+        // host.example.com
+        location = Option(DNS.reverseDns(tabletInetAddress, null)).collect {
+          case d if d.endsWith(".") => d.substring(0, d.length)
+          case d => d
+        }.orNull
+        dnsCache.put(host, location)
+      } catch {
+        case e: NamingException =>
+          logger.warn(s"Cannot resolve the host name for $tabletInetAddress", e)
+          location = host
+      }
+    }
+    location
+  }
 
+  class GeoMesaKuduInputSplit extends InputSplit with Writable with Comparable[GeoMesaKuduInputSplit] with LazyLogging {
+
+    private var token: Array[Byte] = _
+    private var partition: Array[Byte] = _
+    private var locations: Array[String] = _
+    private var adapt: KuduResultAdapter = _
+
+    def this(token: KuduScanToken, locations: Array[String], adapter: KuduResultAdapter) = {
+      this()
+      this.token = token.serialize()
+      this.partition = token.getTablet.getPartition.getPartitionKeyStart
+      this.locations = locations
+      this.adapt = adapter
+    }
+
+    def scanner(client: KuduClient): KuduScanner = {
+      logger.debug(s"Creating scan for token ${KuduScanToken.stringifySerializedToken(token, client)}")
+      KuduScanToken.deserializeIntoScanner(token, client)
+    }
+
+    def adapter: KuduResultAdapter = adapt
+
+    override def getLength = 0L // TODO
+
+    override def getLocations: Array[String] = locations
+
+    override def write(out: DataOutput): Unit = {
+      out.writeInt(token.length)
+      out.write(token)
+      out.writeInt(partition.length)
+      out.write(partition)
+      out.writeInt(locations.length)
+      locations.foreach { location =>
+        val bytes = location.getBytes(StandardCharsets.UTF_8)
+        out.writeInt(bytes.length)
+        out.write(bytes)
+      }
+      val adapter = KuduResultAdapter.serialize(adapt)
+      out.writeInt(adapter.length)
+      out.write(adapter)
+    }
+
+    override def readFields(in: DataInput): Unit = {
+      token = Array.ofDim[Byte](in.readInt)
+      in.readFully(token)
+      partition = Array.ofDim[Byte](in.readInt)
+      in.readFully(partition)
+      locations = Array.ofDim[String](in.readInt)
+      var i = 0
+      while (i < locations.length) {
+        val bytes = Array.ofDim[Byte](in.readInt)
+        in.readFully(bytes)
+        locations(i) = new String(bytes, StandardCharsets.UTF_8)
+      }
+      val adapter = Array.ofDim[Byte](in.readInt)
+      in.readFully(adapter)
+      adapt = KuduResultAdapter.deserialize(adapter)
+    }
+
+    override def compareTo(o: GeoMesaKuduInputSplit): Int = ByteArrays.ByteOrdering.compare(partition, o.partition)
+  }
+
+  class GeoMesaKuduRecordReader(params: Map[String, String])
+      extends RecordReader[NullWritable, SimpleFeature] with LazyLogging {
+
+    private val key = NullWritable.get()
+
+    private var client: KuduClient = _
+    private var scanner: CloseableIterator[SimpleFeature] = _
     private var staged: SimpleFeature = _
 
-    private val nextFeature =
-      (filterOpt, transformSchema) match {
-        case (Some(filter), Some(ts)) =>
-          val indices = ts.getAttributeDescriptors.map { ad => sft.indexOf(ad.getLocalName) }
-          val fn = table.toFeaturesWithFilterTransform(sft, filter, Array.empty[TransformProcess.Definition], indices.toArray, ts)
-          nextFeatureFromOptional(fn)
-
-        case (Some(filter), None) =>
-          val fn = table.toFeaturesWithFilter(sft, filter)
-          nextFeatureFromOptional(fn)
-
-        case (None, Some(ts))         =>
-          val indices = ts.getAttributeDescriptors.map { ad => sft.indexOf(ad.getLocalName) }
-          val fn = table.toFeaturesWithTransform(sft, Array.empty[TransformProcess.Definition], indices.toArray, ts)
-          nextFeatureFromDirect(fn)
-
-        case (None, None)         =>
-          val fn = table.toFeaturesDirect(sft)
-          nextFeatureFromDirect(fn)
+    override def initialize(split: InputSplit, context: TaskAttemptContext): Unit = {
+      import org.locationtech.geomesa.kudu.utils.RichKuduClient.RichScanner
+      val params = GeoMesaConfigurator.getDataStoreInParams(context.getConfiguration)
+      client = KuduDataStoreFactory.buildClient(params.asJava.asInstanceOf[java.util.Map[String, java.io.Serializable]])
+      scanner = split match {
+        case s: GeoMesaKuduInputSplit => s.adapter.adapt(s.scanner(client).iterator)
+        case _ => throw new IllegalStateException(s"Expected ${classOf[GeoMesaKuduInputSplit].getName}, got $split")
       }
+    }
 
-    private val getId = table.getIdFromRow(sft)
+    override def getProgress: Float = 0f // TODO
 
-    override def initialize(split: InputSplit, context: TaskAttemptContext): Unit = reader.initialize(split, context)
-
-    override def getProgress: Float = reader.getProgress
-
-    override def nextKeyValue(): Boolean = nextKeyValueInternal()
-
-    override def getCurrentValue: SimpleFeature = staged
-
-    override def getCurrentKey = new Text(staged.getID)
-
-    override def close(): Unit = reader.close()
-
-    /**
-      * Get the next key value from the underlying reader, incrementing the reader when required
-      */
-    private def nextKeyValueInternal(): Boolean = {
-      nextFeature()
-      if (staged != null) {
-        val row = reader.getCurrentKey
-        val offset = row.getOffset
-        val length = row.getLength
-        staged.getIdentifier.asInstanceOf[FeatureIdImpl].setID(getId(row.get(), offset, length, staged))
+    override def nextKeyValue(): Boolean = {
+      if (scanner.hasNext) {
+        staged = scanner.next()
         true
       } else {
         false
       }
     }
 
-    private def nextFeatureFromOptional(toFeature: Result => Option[SimpleFeature]) = () => {
-      staged = null
-      while (staged == null && reader.nextKeyValue()) {
-        try {
-          toFeature(reader.getCurrentValue) match {
-            case Some(feature) => staged = feature
-            case None => staged = null
-          }
-        } catch {
-          case NonFatal(e) => logger.error(s"Error reading row: ${reader.getCurrentValue}", e)
-        }
-      }
-    }
+    override def getCurrentValue: SimpleFeature = staged
 
-    private def nextFeatureFromDirect(toFeature: Result => SimpleFeature) = () => {
-      staged = null
-      while (staged == null && reader.nextKeyValue()) {
-        try {
-          staged = toFeature(reader.getCurrentValue)
-        } catch {
-          case NonFatal(e) => logger.error(s"Error reading row: ${reader.getCurrentValue}", e)
-        }
-      }
+    override def getCurrentKey : NullWritable = key
+
+    override def close(): Unit = {
+      CloseWithLogging(scanner)
+      CloseWithLogging(client)
     }
   }
 }
