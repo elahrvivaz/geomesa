@@ -27,15 +27,15 @@ import org.opengis.filter.Filter
 import org.opengis.filter.expression.{Expression, PropertyName}
 
 sealed trait KuduResultAdapter {
-
+  def sft: SimpleFeatureType
   def columns: Seq[String]
+  def auths: Seq[Array[Byte]]
   def adapt(results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature]
-
-  protected def sft: SimpleFeatureType
-  protected def auths: Seq[Array[Byte]]
 }
 
 object KuduResultAdapter {
+
+  import org.locationtech.geomesa.filter.filterToString
 
   /**
     * Turns scan results into simple features
@@ -50,10 +50,10 @@ object KuduResultAdapter {
             transform: Option[(String, SimpleFeatureType)],
             auths: Seq[Array[Byte]]): KuduResultAdapter = {
     (transform, ecql) match {
-      case (None, None)                   => DirectAdapter(sft, auths)
-      case (None, Some(f))                => FilterAdapter(sft, f, auths)
-      case (Some((tdefs, tsft)), None)    => TransformAdapter(sft, tsft, tdefs, auths)
-      case (Some((tdefs, tsft)), Some(f)) => FilterTransformAdapter(sft, f, tsft, tdefs, auths)
+      case (None, None)                   => new DirectAdapter(sft, auths)
+      case (None, Some(f))                => new FilterAdapter(sft, auths, f)
+      case (Some((tdefs, tsft)), None)    => new TransformAdapter(sft, auths, tsft, tdefs)
+      case (Some((tdefs, tsft)), Some(f)) => new FilterTransformAdapter(sft, auths, f, tsft, tdefs)
     }
   }
 
@@ -109,10 +109,10 @@ object KuduResultAdapter {
       }
 
       (ecql, transform) match {
-        case (None, None)                   => DirectAdapter(sft, auths)
-        case (Some(e), None)                => FilterAdapter(sft, e, auths)
-        case (None, Some((tsft, tdefs)))    => TransformAdapter(sft, tsft, tdefs, auths)
-        case (Some(e), Some((tsft, tdefs))) => FilterTransformAdapter(sft, e, tsft, tdefs, auths)
+        case (None, None)                   => new DirectAdapter(sft, auths)
+        case (Some(e), None)                => new FilterAdapter(sft, auths, e)
+        case (None, Some((tsft, tdefs)))    => new TransformAdapter(sft, auths, tsft, tdefs)
+        case (Some(e), Some((tsft, tdefs))) => new FilterTransformAdapter(sft, auths, e, tsft, tdefs)
       }
     }
   }
@@ -122,16 +122,18 @@ object KuduResultAdapter {
     vis == null || VisibilityEvaluator.parse(vis).evaluate(auths)
   }
 
+  private def equals(one: Seq[Array[Byte]], two: Seq[Array[Byte]]): Boolean =
+    one.lengthCompare(two.length) == 0 && one.zip(two).forall { case (o, t) => java.util.Arrays.equals(o, t) }
 
   object EmptyAdapter extends KuduResultAdapter {
-    override protected val sft: SimpleFeatureType = SimpleFeatureTypes.createType("", "")
-    override protected val auths: Seq[Array[Byte]] = Seq.empty
-
+    override val sft: SimpleFeatureType = SimpleFeatureTypes.createType("", "")
     override val columns: Seq[String] = Seq.empty
+    override val auths: Seq[Array[Byte]] = Seq.empty
     override def adapt(results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature] = CloseableIterator.empty
   }
 
-  case class DirectAdapter(sft: SimpleFeatureType, auths: Seq[Array[Byte]]) extends KuduResultAdapter {
+  class DirectAdapter(override val sft: SimpleFeatureType,
+                      override val auths: Seq[Array[Byte]]) extends KuduResultAdapter {
 
     private val schema = KuduSimpleFeatureSchema(sft)
     private val deserializer = schema.deserializer
@@ -152,9 +154,22 @@ object KuduResultAdapter {
         }
       }
     }
+
+    override def equals(other: Any): Boolean = other match {
+      case that: DirectAdapter => sft == that.sft && KuduResultAdapter.equals(auths, that.auths)
+      case _ => false
+    }
+
+    override def hashCode(): Int = Seq(sft, auths).map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
+
+    override def toString: String =
+      s"DirectAdapter(sft=${sft.getTypeName}{${SimpleFeatureTypes.encodeType(sft)}}, " +
+        s"auths=${auths.map(new String(_, StandardCharsets.UTF_8)).mkString(",")})"
   }
 
-  case class FilterAdapter(sft: SimpleFeatureType, ecql: Filter, auths: Seq[Array[Byte]]) extends KuduResultAdapter {
+  class FilterAdapter(override val sft: SimpleFeatureType,
+                      override val auths: Seq[Array[Byte]],
+                      val ecql: Filter) extends KuduResultAdapter {
 
     private val schema = KuduSimpleFeatureSchema(sft)
     private val deserializer = schema.deserializer
@@ -175,10 +190,25 @@ object KuduResultAdapter {
         }
       }
     }
+
+    override def equals(other: Any): Boolean = other match {
+      case that: FilterAdapter =>
+        sft == that.sft && KuduResultAdapter.equals(auths, that.auths) &&
+            filterToString(ecql) == filterToString(that.ecql)
+      case _ => false
+    }
+
+    override def hashCode(): Int = Seq(sft, auths, ecql).map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
+
+    override def toString: String =
+      s"FilterAdapter(sft=${sft.getTypeName}{${SimpleFeatureTypes.encodeType(sft)}}, " +
+        s"filter=${filterToString(ecql)}, auths=${auths.map(new String(_, StandardCharsets.UTF_8)).mkString(",")})"
   }
 
-  case class TransformAdapter(sft: SimpleFeatureType, tsft: SimpleFeatureType, tdefs: String, auths: Seq[Array[Byte]])
-      extends KuduResultAdapter {
+  class TransformAdapter(override val sft: SimpleFeatureType,
+                         override val auths: Seq[Array[Byte]],
+                         val tsft: SimpleFeatureType,
+                         val tdefs: String) extends KuduResultAdapter {
 
     import scala.collection.JavaConverters._
 
@@ -212,13 +242,25 @@ object KuduResultAdapter {
         }
       }
     }
+
+    override def equals(other: Any): Boolean = other match {
+      case that: TransformAdapter =>
+        sft == that.sft && KuduResultAdapter.equals(auths, that.auths) && tdefs == that.tdefs
+      case _ => false
+    }
+
+    override def hashCode(): Int = Seq(sft, auths, tdefs).map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
+
+    override def toString: String =
+      s"TransformAdapter(sft=${sft.getTypeName}{${SimpleFeatureTypes.encodeType(sft)}}, " +
+        s"transform=$tdefs, auths=${auths.map(new String(_, StandardCharsets.UTF_8)).mkString(",")})"
   }
 
-  case class FilterTransformAdapter(sft: SimpleFeatureType,
-                                 ecql: Filter,
-                                 tsft: SimpleFeatureType,
-                                 tdefs: String,
-                                 auths: Seq[Array[Byte]]) extends KuduResultAdapter {
+  class FilterTransformAdapter(override val sft: SimpleFeatureType,
+                               override val auths: Seq[Array[Byte]],
+                               val ecql: Filter,
+                               val tsft: SimpleFeatureType,
+                               val tdefs: String) extends KuduResultAdapter {
 
     import scala.collection.JavaConverters._
 
@@ -256,5 +298,19 @@ object KuduResultAdapter {
         }
       }
     }
+
+    override def equals(other: Any): Boolean = other match {
+      case that: FilterTransformAdapter =>
+        sft == that.sft && KuduResultAdapter.equals(auths, that.auths) &&
+            filterToString(ecql) == filterToString(that.ecql) && tdefs == that.tdefs
+      case _ => false
+    }
+
+    override def hashCode(): Int = Seq(sft, auths, ecql, tdefs).map(_.hashCode()).foldLeft(0)((a, b) => 31 * a + b)
+
+    override def toString: String =
+      s"FilterTransformAdapter(sft=${sft.getTypeName}{${SimpleFeatureTypes.encodeType(sft)}}, " +
+          s"filter=${filterToString(ecql)}, transform=$tdefs, " +
+          s"auths=${auths.map(new String(_, StandardCharsets.UTF_8)).mkString(",")})"
   }
 }

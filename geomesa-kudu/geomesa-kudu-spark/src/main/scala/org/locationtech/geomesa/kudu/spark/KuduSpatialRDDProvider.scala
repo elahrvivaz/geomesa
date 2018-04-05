@@ -10,6 +10,7 @@ package org.locationtech.geomesa.kudu.spark
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.io.NullWritable
+import org.apache.hadoop.mapred.JobConf
 import org.apache.spark.SparkContext
 import org.apache.spark.rdd.RDD
 import org.geotools.data.{Query, Transaction}
@@ -44,8 +45,10 @@ class KuduSpatialRDDProvider extends SpatialRDDProvider {
     if (ds == null || sft == null) {
       SpatialRDD(sc.emptyRDD[SimpleFeature], transform.getOrElse(sft))
     } else {
-      GeoMesaKuduInputFormat.configure(conf, params, query)
-      val rdd = sc.newAPIHadoopRDD(conf, classOf[GeoMesaKuduInputFormat],
+      val jobConf = new JobConf(conf)
+      GeoMesaKuduInputFormat.configure(jobConf, params, query)
+      GeoMesaKuduInputFormat.
+      val rdd = sc.newAPIHadoopRDD(jobConf, classOf[GeoMesaKuduInputFormat],
         classOf[NullWritable], classOf[SimpleFeature]).map(_._2)
       SpatialRDD(rdd, transform.getOrElse(sft))
     }

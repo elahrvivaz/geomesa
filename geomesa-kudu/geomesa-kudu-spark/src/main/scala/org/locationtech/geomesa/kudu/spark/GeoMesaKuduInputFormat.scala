@@ -6,6 +6,10 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  ***********************************************************************/
 
+/**
+  * Portions copyright 2016 The Apache Software Foundation
+  */
+
 package org.locationtech.geomesa.kudu.spark
 
 import java.io.{DataInput, DataOutput, IOException}
@@ -16,9 +20,11 @@ import java.util.concurrent.ConcurrentHashMap
 import com.typesafe.scalalogging.LazyLogging
 import javax.naming.NamingException
 import org.apache.hadoop.conf.{Configurable, Configuration}
-import org.apache.hadoop.io.{NullWritable, Writable}
+import org.apache.hadoop.io.{NullWritable, Text, Writable}
+import org.apache.hadoop.mapred.JobConf
 import org.apache.hadoop.mapreduce._
 import org.apache.hadoop.net.DNS
+import org.apache.hadoop.security.token.{Token, TokenIdentifier}
 import org.apache.kudu.client._
 import org.geotools.data.{DataStoreFinder, Query}
 import org.geotools.filter.text.ecql.ECQL
@@ -33,6 +39,12 @@ import org.locationtech.geomesa.utils.io.CloseWithLogging
 import org.opengis.feature.simple.SimpleFeature
 import org.opengis.filter.Filter
 
+/**
+  * Input format for reading GeoMesa data from Kudu
+  *
+  * The KuduTableInputFormat doesn't suport ORs or row endpoints, so it doesn't work with our range planning.
+  * Instead, we've implemented our own input format and record reader that operates in a similar manner.
+  */
 class GeoMesaKuduInputFormat extends InputFormat[NullWritable, SimpleFeature] with Configurable with LazyLogging {
 
   import scala.collection.JavaConverters._
@@ -124,13 +136,29 @@ object GeoMesaKuduInputFormat extends LazyLogging {
     //    conf.setLong(KuduTableInputFormat.OPERATION_TIMEOUT_MS_KEY, operationTimeoutMs)
     //    conf.setBoolean(KuduTableInputFormat.SCAN_CACHE_BLOCKS, cacheBlocks)
     //    conf.setBoolean(KuduTableInputFormat.FAULT_TOLERANT_SCAN, isFaultTolerant)
-
-    // TODO this operates on the job
-    // KuduTableMapReduceUtil.addCredentialsToJob(masterAddresses, operationTimeoutMs)
   }
 
   /**
     * Copyright 2016 The Apache Software Foundation
+    *
+    * Taken from KuduTableMapReduceUtil, but updated to operate on a JobConf instead of a Job
+    *
+    * Sets the authentication in the job - can't be set in a regular configuration object
+    *
+    * @param conf job conf
+    * @param client kudu client
+    */
+  def addCredentials(conf: JobConf, client: KuduClient): Unit = {
+    val credentials = client.exportAuthenticationCredentials
+    val service = new Text(client.getMasterAddressesAsString)
+    val token = new Token[TokenIdentifier](null, credentials, new Text("kudu-authn-data"), service)
+    conf.getCredentials.addToken(new Text("kudu.authn.credentials"), token)
+  }
+
+  /**
+    * Copyright 2016 The Apache Software Foundation
+    *
+    * Taken from KuduTableInputFormat
     *
     * This method might seem alien, but we do this in order to resolve the hostnames the same way
     * Hadoop does. This ensures we get locality if Kudu is running along MR/YARN.
@@ -155,13 +183,13 @@ object GeoMesaKuduInputFormat extends LazyLogging {
         location = Option(DNS.reverseDns(tabletInetAddress, null)).collect {
           case d if d.endsWith(".") => d.substring(0, d.length)
           case d => d
-        }.orNull
-        dnsCache.put(host, location)
+        }.getOrElse(host)
       } catch {
         case e: NamingException =>
-          logger.warn(s"Cannot resolve the host name for $tabletInetAddress", e)
+          logger.warn(s"Cannot resolve the host name for $tabletInetAddress: $e")
           location = host
       }
+      dnsCache.put(host, location)
     }
     location
   }
@@ -219,6 +247,7 @@ object GeoMesaKuduInputFormat extends LazyLogging {
         val bytes = Array.ofDim[Byte](in.readInt)
         in.readFully(bytes)
         locations(i) = new String(bytes, StandardCharsets.UTF_8)
+        i += 1
       }
       val adapter = Array.ofDim[Byte](in.readInt)
       in.readFully(adapter)

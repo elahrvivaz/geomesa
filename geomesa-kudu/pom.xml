@@ -22,10 +22,8 @@
         <module>geomesa-kudu-dist</module>
         <module>geomesa-kudu-gs-plugin</module>
         <module>geomesa-kudu-spark</module>
-        <module>geomesa-kudu-tools</module>
-        <!--
         <module>geomesa-kudu-spark-runtime</module>
-        -->
+        <module>geomesa-kudu-tools</module>
     </modules>
 
     <dependencyManagement>
