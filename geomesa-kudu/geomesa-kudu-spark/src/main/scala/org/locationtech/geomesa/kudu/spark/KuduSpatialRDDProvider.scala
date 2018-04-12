@@ -47,7 +47,7 @@ class KuduSpatialRDDProvider extends SpatialRDDProvider {
     } else {
       val jobConf = new JobConf(conf)
       GeoMesaKuduInputFormat.configure(jobConf, params, query)
-      GeoMesaKuduInputFormat.
+      GeoMesaKuduInputFormat.addCredentials(jobConf, ds.client)
       val rdd = sc.newAPIHadoopRDD(jobConf, classOf[GeoMesaKuduInputFormat],
         classOf[NullWritable], classOf[SimpleFeature]).map(_._2)
       SpatialRDD(rdd, transform.getOrElse(sft))
