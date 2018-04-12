@@ -71,6 +71,13 @@ class KuduDataStoreTest extends Specification {
 
   "KuduDataStore" should {
 
+    "gdelt" in {
+      val iter = SelfClosingIterator(ds.getFeatureReader(new Query("gdelt"), Transaction.AUTO_COMMIT))
+      iter.take(10).foreach(println)
+      iter.close()
+      ok
+    }
+
     "support table splitting" in {
       if (split) {
         val typeName = "testsplits"
@@ -134,17 +141,14 @@ class KuduDataStoreTest extends Specification {
       }
 
       if (query) {
-        forall(Seq(true, false)) { loose =>
-          val ds = DataStoreFinder.getDataStore((params + (LooseBBoxParam.getName -> loose)).asJava).asInstanceOf[KuduDataStore]
-          forall(Seq(null, Array.empty[String], Array("geom", "dtg"), Array("geom", "name"))) { transforms =>
-            testQuery(ds, typeName, "INCLUDE", transforms, toAdd)
-            testQuery(ds, typeName, "IN('0', '2')", transforms, Seq(toAdd(0), toAdd(2)))
-            testQuery(ds, typeName, "bbox(geom,38,48,52,62) and dtg DURING 2014-01-01T00:00:00.000Z/2014-01-08T12:00:00.000Z", transforms, toAdd.dropRight(2))
-            testQuery(ds, typeName, "bbox(geom,42,48,52,62)", transforms, toAdd.drop(2))
-            testQuery(ds, typeName, "name < 'name5' AND abs(age) < 3", transforms, toAdd.take(3))
-            testQuery(ds, typeName, "name = 'name5' OR name = 'name7'", transforms, Seq(toAdd(5), toAdd(7)))
-            testQuery(ds, typeName, "(name = 'name5' OR name = 'name6') and bbox(geom,38,48,52,62) and dtg DURING 2014-01-01T00:00:00.000Z/2014-01-08T12:00:00.000Z", transforms, Seq(toAdd(5), toAdd(6)))
-          }
+        forall(Seq(null, Array.empty[String], Array("geom", "dtg"), Array("geom", "name"))) { transforms =>
+          testQuery(ds, typeName, "INCLUDE", transforms, toAdd)
+          testQuery(ds, typeName, "IN('0', '2')", transforms, Seq(toAdd(0), toAdd(2)))
+          testQuery(ds, typeName, "bbox(geom,38,48,52,62) and dtg DURING 2014-01-01T00:00:00.000Z/2014-01-08T12:00:00.000Z", transforms, toAdd.dropRight(2))
+          testQuery(ds, typeName, "bbox(geom,42,48,52,62)", transforms, toAdd.drop(2))
+          testQuery(ds, typeName, "name < 'name5' AND abs(age) < 3", transforms, toAdd.take(3))
+          testQuery(ds, typeName, "name = 'name5' OR name = 'name7'", transforms, Seq(toAdd(5), toAdd(7)))
+          testQuery(ds, typeName, "(name = 'name5' OR name = 'name6') and bbox(geom,38,48,52,62) and dtg DURING 2014-01-01T00:00:00.000Z/2014-01-08T12:00:00.000Z", transforms, Seq(toAdd(5), toAdd(6)))
         }
 
         def testTransforms(ds: KuduDataStore) = {

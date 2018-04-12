@@ -23,7 +23,6 @@ class KuduIngestCommand extends IngestCommand[KuduDataStore] with KuduDataStoreC
 
   override val params = new KuduIngestParams()
 
-  // TODO need to pass kudu-site.xml around?
   override val libjarsFile: String = "org/locationtech/geomesa/kudu/tools/ingest-libjars.list"
 
   override def libjarsPaths: Iterator[() => Seq[File]] = Iterator(

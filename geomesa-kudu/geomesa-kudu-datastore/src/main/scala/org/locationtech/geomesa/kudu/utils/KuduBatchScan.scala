@@ -16,8 +16,20 @@ import org.apache.kudu.util.Slice
 import org.locationtech.geomesa.index.utils.AbstractBatchScan
 import scala.collection.JavaConverters._
 
-// note: RowResults are re-used inside the RowResultIterator, so we have to do multi-threading at the
-// RowResultIterator level
+/**
+  * Batch scanner for Kudu
+  *
+  * Note: RowResults are re-used inside the RowResultIterator, so we have to do
+  * multi-threading at the RowResultIterator level
+  *
+  * @param client kudu client
+  * @param table table to read
+  * @param columns columns to read
+  * @param ranges ranges to scan
+  * @param predicates predicates
+  * @param threads number of threads
+  * @param buffer size of output buffer
+  */
 class KuduBatchScan(client: KuduClient, table: String, columns: Seq[String],
                     ranges: Seq[(Option[PartialRow], Option[PartialRow])], predicates: Seq[KuduPredicate],
                     threads: Int, buffer: Int) extends {
@@ -28,7 +40,6 @@ class KuduBatchScan(client: KuduClient, table: String, columns: Seq[String],
 
   override protected def singletonSentinel: RowResultIterator = KuduBatchScan.Sentinel
 
-  // TODO maybe use KuduScanToken?
   override protected def scan(range: (Option[PartialRow], Option[PartialRow]),
                               out: BlockingQueue[RowResultIterator]): Unit = {
     val builder = client.newScannerBuilder(kuduTable).setProjectedColumnIndexes(cols)
