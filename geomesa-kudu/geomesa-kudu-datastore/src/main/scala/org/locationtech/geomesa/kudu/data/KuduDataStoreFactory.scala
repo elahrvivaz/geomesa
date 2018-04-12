@@ -73,13 +73,13 @@ class KuduDataStoreFactory extends DataStoreFactorySpi {
       CatalogParam,
       WorkerThreadsParam,
       BossThreadsParam,
-      GenerateStatsParam,
-      AuditQueriesParam,
-      AuthsParam,
-      LooseBBoxParam,
-      CachingParam,
       QueryThreadsParam,
       QueryTimeoutParam,
+      AuthsParam,
+      LooseBBoxParam,
+      AuditQueriesParam,
+      GenerateStatsParam,
+      CachingParam,
       NamespaceParam
     )
 

@@ -220,7 +220,6 @@ trait KuduFeatureIndex[T, U] extends KuduFeatureIndexType with LazyLogging {
     }
 
     if (ranges.isEmpty) { EmptyPlan(filter) } else {
-      import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
       val table = getTableName(sft.getTypeName, ds)
       val schema = KuduSimpleFeatureSchema(sft)
@@ -233,7 +232,7 @@ trait KuduFeatureIndex[T, U] extends KuduFeatureIndexType with LazyLogging {
       // create push-down predicates and remove from the ecql where possible
       val KuduFilter(predicates, ecql) = fullFilter.map(schema.predicate).getOrElse(KuduFilter(Seq.empty, None))
 
-      val adapter = KuduResultAdapter(sft, ecql, hints.getTransform, auths)
+      val adapter = KuduResultAdapter(sft, ecql, hints, auths)
 
       ScanPlan(filter, table, ranges.toSeq, predicates, ecql, adapter, ds.config.queryThreads)
     }
