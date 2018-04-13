@@ -36,7 +36,7 @@ trait KuduZ3Schema[K] extends KuduFeatureIndex[K, Z3IndexKey] with KuduSpatioTem
 
     import scala.collection.JavaConverters._
 
-    // add hash splits based on our shards, which we don't need to actually store
+    // add hash splits based on our shards, which we don't need to actually store as a separate column
     val shards = sft.getZShards
     if (shards > 1) {
       options.addHashPartitions(Collections.singletonList(FeatureIdAdapter.name), shards)

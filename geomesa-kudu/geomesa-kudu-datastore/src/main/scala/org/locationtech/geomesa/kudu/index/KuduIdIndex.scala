@@ -46,9 +46,13 @@ trait KuduIdIndex extends KuduFeatureIndex[Set[Array[Byte]], Array[Byte]] with K
                                              config: Map[String, String],
                                              options: CreateTableOptions): Unit = {
 
-    // add a hash partition just to ensure some distribution
-    // TODO make this configurable
-    options.addHashPartitions(Collections.singletonList(featureIdAdapter.name), 4)
+    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
+
+    // add hash splits based on our shards
+    val shards = sft.getIdShards
+    if (shards > 1) {
+      options.addHashPartitions(Collections.singletonList(featureIdAdapter.name), shards)
+    }
 
     options.setRangePartitionColumns(Collections.singletonList(featureIdAdapter.name))
 

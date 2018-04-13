@@ -50,10 +50,10 @@ trait KuduAttributeIndex extends KuduTieredFeatureIndex[AttributeIndexValues[Any
                                              options: CreateTableOptions): Unit = {
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
-    // add hash splits based on our shards, which we don't need to actually store
+    // add hash splits based on our shards, which we don't need to actually store as a separate column
     val shards = sft.getAttributeShards
     if (shards > 1) {
-      options.addHashPartitions(Collections.singletonList(FeatureIdAdapter.name), shards)
+      options.addHashPartitions(Collections.singletonList(ValueColumnAdapter.name), shards)
     }
 
     options.setRangePartitionColumns(Seq(IdxColumnAdapter.name, ValueColumnAdapter.name).asJava)
