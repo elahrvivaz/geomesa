@@ -31,7 +31,7 @@ import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.filter.factory.FastFilterFactory
 import org.locationtech.geomesa.jobs.GeoMesaConfigurator
 import org.locationtech.geomesa.kudu.data.{KuduDataStore, KuduDataStoreFactory}
-import org.locationtech.geomesa.kudu.schema.KuduResultAdapter
+import org.locationtech.geomesa.kudu.result.KuduResultAdapter
 import org.locationtech.geomesa.kudu.spark.GeoMesaKuduInputFormat.{GeoMesaKuduInputSplit, GeoMesaKuduRecordReader}
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.index.ByteArrays

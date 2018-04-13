@@ -18,9 +18,10 @@ import org.locationtech.geomesa.index.index.IndexKeySpace._
 import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.kudu.data.KuduQueryPlan.{EmptyPlan, ScanPlan}
 import org.locationtech.geomesa.kudu.data.{KuduDataStore, KuduFeature}
+import org.locationtech.geomesa.kudu.result.KuduResultAdapter
 import org.locationtech.geomesa.kudu.schema.KuduIndexColumnAdapter.VisibilityAdapter
+import org.locationtech.geomesa.kudu.schema.KuduSimpleFeatureSchema
 import org.locationtech.geomesa.kudu.schema.KuduSimpleFeatureSchema.KuduFilter
-import org.locationtech.geomesa.kudu.schema.{KuduResultAdapter, KuduSimpleFeatureSchema}
 import org.locationtech.geomesa.kudu.{KuduFilterStrategyType, KuduQueryPlanType, KuduValue, WriteOperation}
 import org.locationtech.geomesa.security.SecurityUtils
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
@@ -90,8 +91,6 @@ trait KuduTieredFeatureIndex[T, U] extends KuduFeatureIndex[T, U] {
       val ranges = keyRanges.flatMap(toTieredRowRanges(sft, kuduSchema, _, tiers, minTier, maxTier))
 
       if (ranges.isEmpty) { EmptyPlan(filter) } else {
-        import org.locationtech.geomesa.index.conf.QueryHints.RichHints
-
         val schema = KuduSimpleFeatureSchema(sft)
 
         val fullFilter =
@@ -101,7 +100,7 @@ trait KuduTieredFeatureIndex[T, U] extends KuduFeatureIndex[T, U] {
 
         val KuduFilter(predicates, ecql) = fullFilter.map(schema.predicate).getOrElse(KuduFilter(Seq.empty, None))
 
-        val adapter = KuduResultAdapter(sft, ecql, hints.getTransform, auths)
+        val adapter = KuduResultAdapter(sft, auths, ecql, hints)
 
         val table = getTableName(sft.getTypeName, ds)
 

@@ -10,8 +10,8 @@ package org.locationtech.geomesa.kudu.data
 
 import org.apache.kudu.client.{KuduPredicate, PartialRow}
 import org.locationtech.geomesa.index.utils.Explainer
-import org.locationtech.geomesa.kudu.schema.KuduResultAdapter
-import org.locationtech.geomesa.kudu.schema.KuduResultAdapter.EmptyAdapter
+import org.locationtech.geomesa.kudu.result.KuduResultAdapter
+import org.locationtech.geomesa.kudu.result.KuduResultAdapter.EmptyAdapter
 import org.locationtech.geomesa.kudu.utils.KuduBatchScan
 import org.locationtech.geomesa.kudu.{KuduFilterStrategyType, KuduQueryPlanType}
 import org.locationtech.geomesa.utils.collection.CloseableIterator
@@ -67,6 +67,7 @@ object KuduQueryPlan {
 
     override val hasDuplicates: Boolean = false
 
+    // TODO profile code - seems slower through our api vs direct kudu scan
     override def scan(ds: KuduDataStore): CloseableIterator[SimpleFeature] = {
       import scala.collection.JavaConverters._
       val scan = new KuduBatchScan(ds.client, table, adapter.columns, ranges, predicates, numThreads, 1000)

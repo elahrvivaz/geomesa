@@ -26,9 +26,10 @@ import org.locationtech.geomesa.kudu.data.KuduQueryPlan.{EmptyPlan, ScanPlan}
 import org.locationtech.geomesa.kudu.data._
 import org.locationtech.geomesa.kudu.index.z2.{KuduXZ2Index, KuduZ2Index}
 import org.locationtech.geomesa.kudu.index.z3.{KuduXZ3Index, KuduZ3Index}
+import org.locationtech.geomesa.kudu.result.KuduResultAdapter
 import org.locationtech.geomesa.kudu.schema.KuduIndexColumnAdapter.VisibilityAdapter
 import org.locationtech.geomesa.kudu.schema.KuduSimpleFeatureSchema.KuduFilter
-import org.locationtech.geomesa.kudu.schema.{KuduColumnAdapter, KuduResultAdapter, KuduSimpleFeatureSchema}
+import org.locationtech.geomesa.kudu.schema.{KuduColumnAdapter, KuduSimpleFeatureSchema}
 import org.locationtech.geomesa.kudu.utils.RichKuduClient.SessionHolder
 import org.locationtech.geomesa.security.SecurityUtils
 import org.locationtech.geomesa.utils.cache.CacheKeyGenerator
@@ -220,7 +221,6 @@ trait KuduFeatureIndex[T, U] extends KuduFeatureIndexType with LazyLogging {
     }
 
     if (ranges.isEmpty) { EmptyPlan(filter) } else {
-
       val table = getTableName(sft.getTypeName, ds)
       val schema = KuduSimpleFeatureSchema(sft)
 
@@ -232,7 +232,7 @@ trait KuduFeatureIndex[T, U] extends KuduFeatureIndexType with LazyLogging {
       // create push-down predicates and remove from the ecql where possible
       val KuduFilter(predicates, ecql) = fullFilter.map(schema.predicate).getOrElse(KuduFilter(Seq.empty, None))
 
-      val adapter = KuduResultAdapter(sft, ecql, hints, auths)
+      val adapter = KuduResultAdapter(sft, auths, ecql, hints)
 
       ScanPlan(filter, table, ranges.toSeq, predicates, ecql, adapter, ds.config.queryThreads)
     }

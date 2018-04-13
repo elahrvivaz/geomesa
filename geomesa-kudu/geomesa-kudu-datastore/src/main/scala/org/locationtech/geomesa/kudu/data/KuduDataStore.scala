@@ -13,7 +13,7 @@ import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.geotools.data.Query
 import org.locationtech.geomesa.index.geotools.{GeoMesaFeatureCollection, GeoMesaFeatureSource}
 import org.locationtech.geomesa.index.metadata.{GeoMesaMetadata, MetadataStringSerializer}
-import org.locationtech.geomesa.index.stats.{GeoMesaStats, UnoptimizedRunnableStats}
+import org.locationtech.geomesa.index.stats.{DistributedRunnableStats, GeoMesaStats}
 import org.locationtech.geomesa.index.utils.{Explainer, LocalLocking}
 import org.locationtech.geomesa.kudu._
 import org.locationtech.geomesa.kudu.data.KuduDataStoreFactory.KuduDataStoreConfig
@@ -28,9 +28,9 @@ class KuduDataStore(val client: KuduClient, override val config: KuduDataStoreCo
   override val metadata: GeoMesaMetadata[String] =
     new KuduBackedMetadata(client, config.catalog, MetadataStringSerializer)
 
-  override def manager: KuduIndexManagerType = KuduFeatureIndex
+  override val manager: KuduIndexManagerType = KuduFeatureIndex
 
-  override def stats: GeoMesaStats = new UnoptimizedRunnableStats(this)
+  override val stats: GeoMesaStats = new DistributedRunnableStats(this)
 
   override protected def createQueryPlanner(): KuduQueryPlanner = new KuduQueryPlanner(this)
 

@@ -6,12 +6,14 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  ***********************************************************************/
 
-package org.locationtech.geomesa.kudu.schema
+package org.locationtech.geomesa.kudu.result
 
-import org.geotools.data.DataUtilities
+import org.geotools.data.Query
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.index.planning.QueryPlanner
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
+import org.opengis.filter.Filter
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
@@ -22,11 +24,13 @@ class KuduResultAdapterTest extends Specification {
 
   "KuduResultAdapter" should {
     "serialize adapters" in {
-      foreach(Seq(None, Some(("dtg=dtg;geom=geom", DataUtilities.createSubType(sft, Array("dtg", "geom")))))) { transform =>
+      foreach(Seq(null, Array("dtg", "geom"))) { transform =>
         foreach(Seq(None, Some(ECQL.toFilter("name = 'foo'")))) { ecql =>
           foreach(Seq(Seq.empty, Seq("user".getBytes, "admin".getBytes))) { auths =>
-            val adapter = KuduResultAdapter(sft, ecql, transform, auths)
-            KuduResultAdapter.deserialize(KuduResultAdapter.serialize(adapter)) mustEqual adapter
+            val query = new Query("test", ecql.getOrElse(Filter.INCLUDE), transform)
+            QueryPlanner.setQueryTransforms(query, sft)
+            val adapter = KuduResultAdapter(sft, auths, ecql, query.getHints)
+            KuduResultAdapter.deserialize(KuduResultAdapter.serialize(adapter)).toString mustEqual adapter.toString
           }
         }
       }
