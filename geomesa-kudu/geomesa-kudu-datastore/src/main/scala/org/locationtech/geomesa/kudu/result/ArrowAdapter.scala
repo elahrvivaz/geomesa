@@ -9,6 +9,7 @@
 package org.locationtech.geomesa.kudu.result
 
 import java.nio.ByteBuffer
+import java.nio.charset.StandardCharsets
 
 import org.apache.kudu.client.RowResult
 import org.geotools.data.DataUtilities
@@ -16,7 +17,7 @@ import org.geotools.filter.text.ecql.ECQL
 import org.geotools.process.vector.TransformProcess
 import org.locationtech.geomesa.arrow.vector.SimpleFeatureVector.SimpleFeatureEncoding
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, TransformSimpleFeature}
-import org.locationtech.geomesa.filter.FilterHelper
+import org.locationtech.geomesa.filter.{FilterHelper, filterToString}
 import org.locationtech.geomesa.filter.factory.FastFilterFactory
 import org.locationtech.geomesa.index.iterators.ArrowScan
 import org.locationtech.geomesa.index.iterators.ArrowScan._
@@ -142,6 +143,12 @@ case class ArrowAdapter(sft: SimpleFeatureType,
     val result = CloseableIterator(arrows, features.close())
     if (config.skipReduce) { result } else { reduce(result) }
   }
+
+  override def toString: String =
+    s"ArrowAdapter(sft=${sft.getTypeName}{${SimpleFeatureTypes.encodeType(sft)}}, " +
+        s"filter=${ecql.map(filterToString).getOrElse("INCLUDE")}, " +
+        s"transform=${transform.map(_._1).getOrElse("")}, config=$config" +
+        s"auths=${auths.map(new String(_, StandardCharsets.UTF_8)).mkString(",")})"
 }
 
 object ArrowAdapter extends KuduResultAdapterSerialization[ArrowAdapter] {

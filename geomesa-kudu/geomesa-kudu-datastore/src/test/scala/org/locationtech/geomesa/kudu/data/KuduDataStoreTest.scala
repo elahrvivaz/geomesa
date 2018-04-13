@@ -60,6 +60,11 @@ class KuduDataStoreTest extends Specification {
     false
   }
 
+  val gdelt = {
+    //    true
+    false
+  }
+
   val queryPolys = false
   val writePolys = false
   val deletePolys = false
@@ -72,9 +77,11 @@ class KuduDataStoreTest extends Specification {
   "KuduDataStore" should {
 
     "gdelt" in {
-      val iter = SelfClosingIterator(ds.getFeatureReader(new Query("gdelt"), Transaction.AUTO_COMMIT))
-      iter.take(10).foreach(println)
-      iter.close()
+      if (gdelt) {
+        val iter = SelfClosingIterator(ds.getFeatureReader(new Query("gdelt"), Transaction.AUTO_COMMIT))
+        iter.take(10).foreach(println)
+        iter.close()
+      }
       ok
     }
 

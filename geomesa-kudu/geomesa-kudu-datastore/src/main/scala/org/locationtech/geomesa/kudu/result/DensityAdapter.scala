@@ -20,7 +20,7 @@ import org.locationtech.geomesa.filter.factory.FastFilterFactory
 import org.locationtech.geomesa.filter.{FilterHelper, filterToString}
 import org.locationtech.geomesa.index.iterators.DensityScan
 import org.locationtech.geomesa.kudu.result.KuduResultAdapter.KuduResultAdapterSerialization
-import org.locationtech.geomesa.kudu.schema.KuduIndexColumnAdapter.VisibilityAdapter
+import org.locationtech.geomesa.kudu.schema.KuduIndexColumnAdapter.{FeatureIdAdapter, VisibilityAdapter}
 import org.locationtech.geomesa.kudu.schema.KuduSimpleFeatureSchema
 import org.locationtech.geomesa.security.VisibilityEvaluator
 import org.locationtech.geomesa.utils.collection.CloseableIterator
@@ -37,11 +37,12 @@ case class DensityAdapter(sft: SimpleFeatureType,
                           height: Int,
                           weight: Option[String]) extends KuduResultAdapter {
 
+  private val requiresFid = ecql.exists(FilterHelper.hasIdFilter)
+
   // determine all the attributes that we need to be able to evaluate the transform and filter
   private val attributes = {
     val fromGeom = Seq(sft.getGeometryDescriptor.getLocalName)
     val fromWeight = weight.map(w => FilterHelper.propertyNames(ECQL.toExpression(w), sft)).getOrElse(Seq.empty)
-    // TODO determine if feature id is needed for filter eval
     val fromFilter = ecql.map(FilterHelper.propertyNames(_, sft)).getOrElse(Seq.empty)
     (fromGeom ++ fromWeight ++ fromFilter).distinct
   }
@@ -53,19 +54,28 @@ case class DensityAdapter(sft: SimpleFeatureType,
   private val deserializer = schema.deserializer(subType)
   private val feature = new ScalaSimpleFeature(subType, "")
 
-  override val columns: Seq[String] = Seq(VisibilityAdapter.name) ++ schema.schema(attributes).map(_.getName)
+  override val columns: Seq[String] =
+    if (requiresFid) { Seq(FeatureIdAdapter.name, VisibilityAdapter.name) } else { Seq(VisibilityAdapter.name) } ++
+        schema.schema(attributes).map(_.getName)
 
   override def adapt(results: CloseableIterator[RowResult]): CloseableIterator[SimpleFeature] = {
     val grid = new GridSnap(envelope, width, height)
-    val result = scala.collection.mutable.Map.empty[(Int, Int), Double]
+    val result = scala.collection.mutable.Map.empty[(Int, Int), Double].withDefaultValue(0d)
     val getWeight = DensityScan.getWeight(subType, weight)
     val writeGeom = DensityScan.writeGeometry(subType, grid)
-    results.foreach { row =>
-      deserializer.deserialize(row, feature)
-      val vis = VisibilityAdapter.readFromRow(row)
-      if ((vis == null || VisibilityEvaluator.parse(vis).evaluate(auths)) && ecql.forall(_.evaluate(feature))) {
-        writeGeom(feature, getWeight(feature), result)
+    try {
+      results.foreach { row =>
+        if (requiresFid) {
+          feature.setId(FeatureIdAdapter.readFromRow(row))
+        }
+        deserializer.deserialize(row, feature)
+        val vis = VisibilityAdapter.readFromRow(row)
+        if ((vis == null || VisibilityEvaluator.parse(vis).evaluate(auths)) && ecql.forall(_.evaluate(feature))) {
+          writeGeom(feature, getWeight(feature), result)
+        }
       }
+    } finally {
+      results.close()
     }
 
     val sf = new ScalaSimpleFeature(DensityScan.DensitySft, "", Array(GeometryUtils.zeroPoint))
@@ -77,7 +87,7 @@ case class DensityAdapter(sft: SimpleFeatureType,
   override def toString: String =
     s"DensityAdapter(sft=${sft.getTypeName}{${SimpleFeatureTypes.encodeType(sft)}}, " +
         s"filter=${ecql.map(filterToString).getOrElse("INCLUDE")}, " +
-        s"envelope=[${envelope.getMinX}],${envelope.getMinY},${envelope.getMaxX},${envelope.getMaxY}]" +
+        s"envelope=[${envelope.getMinX},${envelope.getMinY},${envelope.getMaxX},${envelope.getMaxY}]" +
         s"width=$width, height=$height, weight=${weight.getOrElse("1.0")}, " +
         s"auths=${auths.map(new String(_, StandardCharsets.UTF_8)).mkString(",")})"
 }

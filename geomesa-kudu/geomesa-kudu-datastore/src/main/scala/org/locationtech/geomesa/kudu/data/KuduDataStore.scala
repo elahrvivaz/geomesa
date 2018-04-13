@@ -11,7 +11,7 @@ package org.locationtech.geomesa.kudu.data
 import org.apache.kudu.client.KuduClient
 import org.apache.kudu.client.SessionConfiguration.FlushMode
 import org.geotools.data.Query
-import org.locationtech.geomesa.index.geotools.{GeoMesaFeatureCollection, GeoMesaFeatureSource}
+import org.locationtech.geomesa.index.geotools.GeoMesaFeatureSource
 import org.locationtech.geomesa.index.metadata.{GeoMesaMetadata, MetadataStringSerializer}
 import org.locationtech.geomesa.index.stats.{DistributedRunnableStats, GeoMesaStats}
 import org.locationtech.geomesa.index.utils.{Explainer, LocalLocking}
@@ -33,6 +33,9 @@ class KuduDataStore(val client: KuduClient, override val config: KuduDataStoreCo
   override val stats: GeoMesaStats = new DistributedRunnableStats(this)
 
   override protected def createQueryPlanner(): KuduQueryPlanner = new KuduQueryPlanner(this)
+
+  override protected def createFeatureCollection(query: Query, source: GeoMesaFeatureSource): KuduFeatureCollection =
+    new KuduFeatureCollection(source, query)
 
   override protected def createFeatureWriterAppend(sft: SimpleFeatureType,
                                                    indices: Option[Seq[KuduFeatureIndexType]]): KuduFeatureWriterType = {
@@ -62,8 +65,6 @@ class KuduDataStore(val client: KuduClient, override val config: KuduDataStoreCo
     super.validateNewSchema(sft)
   }
 
-  override protected def createFeatureCollection(query: Query, source: GeoMesaFeatureSource): GeoMesaFeatureCollection =
-    new GeoMesaFeatureCollection(source, query)
   override def delete(): Unit = {
     val tables = getTypeNames.map(getSchema).flatMap { sft =>
       manager.indices(sft).map(_.getTableName(sft.getTypeName, this))
