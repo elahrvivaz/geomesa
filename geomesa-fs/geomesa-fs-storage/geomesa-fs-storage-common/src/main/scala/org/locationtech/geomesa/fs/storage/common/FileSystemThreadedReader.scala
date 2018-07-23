@@ -91,22 +91,29 @@ object FileSystemThreadedReader {
     }
     es.shutdown()
 
-    private def queueNext(): Unit = {
+    override def hasNext: Boolean = {
+      if (current != null) {
+        return true
+      }
       current = localQueue.pollFirst
-      while (current == null && (queue.size() > 0 || !es.isTerminated)) {
-        val tmp = queue.poll(100, TimeUnit.MILLISECONDS)
-        if (tmp != null) {
-          current = tmp
+      if (current != null) {
+        return true
+      }
+      while (!es.isTerminated) {
+        current = queue.poll(100, TimeUnit.MILLISECONDS)
+        if (current != null) {
           queue.drainTo(localQueue, 10000)
+          return true
         }
       }
-    }
-
-    override def hasNext: Boolean = {
-      if (current == null) {
-        queueNext()
+      // last check - if es.isTerminated, the queue should have whatever values are left
+      current = queue.poll()
+      if (current != null) {
+        queue.drainTo(localQueue, 10000)
+        true
+      } else {
+        false
       }
-      current != null
     }
 
     override def next(): SimpleFeature = {

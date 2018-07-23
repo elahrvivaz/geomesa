@@ -15,15 +15,14 @@ import java.time.temporal.ChronoUnit
 import com.typesafe.config.ConfigFactory
 import org.apache.commons.io.FileUtils
 import org.geotools.data.{DataStoreFinder, Query, Transaction}
-import org.geotools.filter.identity.FeatureIdImpl
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.fs.storage.common.PartitionScheme
 import org.locationtech.geomesa.fs.storage.common.partitions.DateTimeScheme
 import org.locationtech.geomesa.utils.collection.SelfClosingIterator
-import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
-import org.opengis.filter.Filter
+import org.locationtech.geomesa.utils.geotools.{FeatureUtils, SimpleFeatureTypes}
+import org.locationtech.geomesa.utils.io.WithClose
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
@@ -36,7 +35,9 @@ class FileSystemDataStoreTest extends Specification {
 
   val sft = SimpleFeatureTypes.createType("test", "name:String,age:Int,dtg:Date,*geom:Point:srid=4326")
   val partitionScheme = new DateTimeScheme(DateTimeScheme.Formats.Daily.format, ChronoUnit.DAYS, 1, "dtg", false)
-  val sf = ScalaSimpleFeature.create(sft, "1", "test", 100, "2017-06-05T04:03:02.0001Z", "POINT(10 10)")
+  val features = Seq.tabulate(10) { i =>
+    ScalaSimpleFeature.create(sft, s"$i", s"test$i", 100 + i, s"2017-06-0${5 + (i % 3)}T04:03:02.0001Z", s"POINT(10 10.$i)")
+  }
 
   var dir: File = _
 
@@ -53,53 +54,62 @@ class FileSystemDataStoreTest extends Specification {
       PartitionScheme.addToSft(sft, partitionScheme)
       ds.createSchema(sft)
 
-      val fw = ds.getFeatureWriterAppend("test", Transaction.AUTO_COMMIT)
-      val s = fw.next()
-      s.getIdentifier.asInstanceOf[FeatureIdImpl].setID(sf.getID)
-      s.setAttributes(sf.getAttributes)
-      fw.write()
-      fw.close()
+      WithClose(ds.getFeatureWriterAppend("test", Transaction.AUTO_COMMIT)) { writer =>
+        features.foreach { feature =>
+          FeatureUtils.copyToWriter(writer, feature, useProvidedFid = true)
+          writer.write()
+        }
+      }
 
       // metadata
       new File(dir, "test/metadata.json").exists() must beTrue
 
       val conf = ConfigFactory.parseFile(new File(dir, "test/metadata.json"))
       conf.hasPath("partitions") must beTrue
-      val p1 = conf.getConfig("partitions").getStringList("2017/06/05")
-      p1.size() mustEqual 1
-      p1.get(0).matches("W[0-9a-f]{32}\\.parquet") must beTrue
+      foreach(Seq("05", "06", "07")) { day =>
+        val name = s"2017/06/$day"
+        val partition = conf.getConfig("partitions").getStringList(name)
+        partition.size() mustEqual 1
+        partition.get(0).matches("W[0-9a-f]{32}\\.parquet") must beTrue
 
-      // Metadata, schema, and partition file checks
-      new File(dir, "test/2017/06/05").exists() must beTrue
-      new File(dir, "test/2017/06/05").isDirectory must beTrue
-      new File(dir, s"test/2017/06/05/${p1.get(0)}").exists() must beTrue
-      new File(dir, s"test/2017/06/05/${p1.get(0)}").isFile must beTrue
+        // Metadata, schema, and partition file checks
+        new File(dir, s"test/$name").exists() must beTrue
+        new File(dir, s"test/$name").isDirectory must beTrue
+        new File(dir, s"test/$name/${partition.get(0)}").exists() must beTrue
+        new File(dir, s"test/$name/${partition.get(0)}").isFile must beTrue
+      }
 
       ds.getTypeNames must have size 1
       val fs = ds.getFeatureSource("test")
       fs must not(beNull)
 
-      val features = SelfClosingIterator(fs.getFeatures(new Query("test")).features()).toList
-      features must haveSize(1)
-      features.head mustEqual sf
+      val results = SelfClosingIterator(fs.getFeatures(new Query("test")).features()).toList
+      results must containTheSameElementsAs(features)
     }
 
     "create a second ds with the same path" >> {
       // Load a new datastore to read metadata and stuff
-      val ds2 = DataStoreFinder.getDataStore(Map(
+      val ds = DataStoreFinder.getDataStore(Map(
         "fs.path" -> dir.getPath,
         "fs.encoding" -> "parquet",
         "fs.config" -> "parquet.compression=gzip")).asInstanceOf[FileSystemDataStore]
-      ds2.getTypeNames.toList must containTheSameElementsAs(Seq("test"))
+      ds.getTypeNames.toList must containTheSameElementsAs(Seq("test"))
 
-      val features = SelfClosingIterator(ds2.getFeatureSource("test").getFeatures(Filter.INCLUDE).features()).toList
+      val results = SelfClosingIterator(ds.getFeatureReader(new Query("test"), Transaction.AUTO_COMMIT)).toList
+      results must containTheSameElementsAs(features)
+    }
 
-      features must haveSize(1)
-      features.head mustEqual sf
+    "query with multiple threads" >> {
+      // Load a new datastore to read metadata and stuff
+      val ds = DataStoreFinder.getDataStore(Map("fs.path" -> dir.getPath, "fs.read-threads" -> "4"))
+      ds.getTypeNames.toList must containTheSameElementsAs(Seq("test"))
+
+      val results = SelfClosingIterator(ds.getFeatureReader(new Query("test"), Transaction.AUTO_COMMIT)).toList
+      results must containTheSameElementsAs(features)
     }
 
     "call create schema on existing type" >> {
-      val ds2 = DataStoreFinder.getDataStore(Map(
+      val ds = DataStoreFinder.getDataStore(Map(
         "fs.path" -> dir.getPath,
         "fs.encoding" -> "parquet",
         "fs.config" -> "parquet.compression=gzip")).asInstanceOf[FileSystemDataStore]
@@ -108,7 +118,7 @@ class FileSystemDataStoreTest extends Specification {
 
       PartitionScheme.addToSft(sameSft, partitionScheme)
 
-      ds2.createSchema(sameSft) must not(throwA[Throwable])
+      ds.createSchema(sameSft) must not(throwA[Throwable])
     }
 
     "reject schemas with reserved words" >> {
@@ -130,26 +140,28 @@ class FileSystemDataStoreTest extends Specification {
 
       val filters = Seq(
         "INCLUDE",
-        "name = 'test'",
+        s"name IN ${(0 until 10).mkString("('test", "','test", "')")}",
         "bbox(geom, 5, 5, 15, 15)",
-        "dtg DURING 2017-06-05T04:03:00.0000Z/2017-06-05T04:04:00.0000Z",
-        "dtg > '2017-06-05T04:03:00.0000Z' AND dtg < '2017-06-05T04:04:00.0000Z'",
-        "dtg DURING 2017-06-05T04:03:00.0000Z/2017-06-05T04:04:00.0000Z and bbox(geom, 5, 5, 15, 15)"
+        "dtg DURING 2017-06-05T04:03:00.0000Z/2017-06-07T04:04:00.0000Z",
+        "dtg > '2017-06-05T04:03:00.0000Z' AND dtg < '2017-06-07T04:04:00.0000Z'",
+        "dtg DURING 2017-06-05T04:03:00.0000Z/2017-06-07T04:04:00.0000Z and bbox(geom, 5, 5, 15, 15)"
       ).map(ECQL.toFilter)
       val transforms = Seq(null, Array("name"), Array("dtg", "geom"))
 
       foreach(filters) { filter =>
         foreach(transforms) { transform =>
           val query = new Query("test", filter, transform)
-          val features = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
-          features must haveLength(1)
-          val feature = features.head
+          val results = SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
+          results must haveLength(features.length)
           if (transform == null) {
-            feature.getAttributeCount mustEqual 4
-            feature.getAttributes mustEqual sf.getAttributes
+            results must containTheSameElementsAs(features)
           } else {
-            feature.getAttributeCount mustEqual transform.length
-            foreach(transform)(t => feature.getAttribute(t) mustEqual sf.getAttribute(t))
+            results.map(_.getID) must containTheSameElementsAs(features.map(_.getID))
+            foreach(results) { result =>
+              result.getAttributeCount mustEqual transform.length
+              val matched = features.find(_.getID == result.getID).get
+              foreach(transform)(t => result.getAttribute(t) mustEqual matched.getAttribute(t))
+            }
           }
         }
       }
