@@ -9,6 +9,7 @@
 package org.locationtech.geomesa.kafka.data
 
 import java.io.IOException
+import java.net.URL
 import java.util.concurrent.ScheduledExecutorService
 import java.util.{Properties, UUID}
 
@@ -21,6 +22,7 @@ import org.apache.kafka.clients.producer.{KafkaProducer, Producer}
 import org.apache.kafka.common.serialization.{ByteArrayDeserializer, ByteArraySerializer}
 import org.geotools.data.simple.{SimpleFeatureReader, SimpleFeatureStore}
 import org.geotools.data.{Query, Transaction}
+import org.locationtech.geomesa.features.SerializationType
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStoreFactory.NamespaceConfig
 import org.locationtech.geomesa.index.geotools.{GeoMesaFeatureCollection, GeoMesaFeatureReader, GeoMesaFeatureSource, MetadataBackedDataStore}
@@ -53,7 +55,11 @@ class KafkaDataStore(val config: KafkaDataStoreConfig)
   override protected def catalog: String = config.catalog
 
   override val metadata: GeoMesaMetadata[String] =
-    new ZookeeperMetadata(s"${config.catalog}/$MetadataPath", config.zookeepers, MetadataStringSerializer)
+    if (config.serialization == SerializationType.CONFLUENT && config.schemaRegistryUrl.isDefined) {
+      new ConfluentMetadata(new SchemaRegistry())
+    } else {
+      new ZookeeperMetadata(s"${config.catalog}/$MetadataPath", config.zookeepers, MetadataStringSerializer)
+    }
 
   override val stats: GeoMesaStats = new UnoptimizedRunnableStats(this)
 
@@ -289,6 +295,7 @@ object KafkaDataStore extends LazyLogging {
                                   topics: TopicConfig,
                                   serialization: SerializationType,
                                   indices: IndexConfig,
+                                  schemaRegistryUrl: Option[URL],
                                   looseBBox: Boolean,
                                   authProvider: AuthorizationsProvider,
                                   audit: Option[(AuditWriter, AuditProvider, String)],

@@ -66,6 +66,7 @@ object GeoMessageSerializer {
 
   val KryoVersion: Byte = 2
   val AvroVersion: Byte = 3
+  val ConfluentVersion: Byte = 3
 
   val VersionHeader = "v"
 
@@ -89,6 +90,11 @@ object GeoMessageSerializer {
     val (serializer, version) = serialization match {
       case SerializationType.KRYO => (kryoSerializer, KryoVersion)
       case SerializationType.AVRO => (avroSerializer, AvroVersion)
+      case SerializationType.CONFLUENT =>
+        val confluentBuilder = ConfluentFeatureSerializer.builder(sft).withoutId.withUserData.immutable
+
+        val confluentSerializer =
+        (confluentSerializer, ConfluentVersion)
       case _ => throw new NotImplementedError(s"Unexpected serialization type $serialization")
     }
     new GeoMessageSerializer(sft, serializer, kryoSerializer, avroSerializer, version)

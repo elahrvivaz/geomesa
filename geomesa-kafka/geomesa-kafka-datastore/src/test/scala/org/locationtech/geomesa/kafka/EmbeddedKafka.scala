@@ -10,10 +10,14 @@ package org.locationtech.geomesa.kafka
 
 import java.io.Closeable
 
+import io.confluent.kafka.schemaregistry.avro.AvroCompatibilityLevel
+import io.confluent.kafka.schemaregistry.RestApp
 import kafka.server.KafkaConfig
 import kafka.utils.TestUtils
 import kafka.zk.EmbeddedZookeeper
+import org.apache.curator.test.InstanceSpec
 import org.apache.kafka.common.network.ListenerName
+import org.locationtech.geomesa.kafka.EmbeddedKafka._
 import org.locationtech.geomesa.utils.io.PathUtils
 
 class EmbeddedKafka extends Closeable {
@@ -32,7 +36,12 @@ class EmbeddedKafka extends Closeable {
     TestUtils.createServer(new KafkaConfig(config))
   }
 
+  private val schemaRegistryApp = new RestApp(InstanceSpec.getRandomPort, zookeepers, KAFKA_SCHEMAS_TOPIC, AVRO_COMPATIBILITY_TYPE)
+  schemaRegistryApp.start()
+
   val brokers = s"127.0.0.1:${server.boundPort(ListenerName.normalised("PLAINTEXT"))}"
+
+  val schemaRegistryUrl: String = schemaRegistryApp.restConnect
 
   // for kafka 1.0.0:
   // import org.apache.kafka.common.network.ListenerName
@@ -40,8 +49,14 @@ class EmbeddedKafka extends Closeable {
   // val brokers = s"127.0.0.1:${server.socketServer.boundPort(ListenerName.forSecurityProtocol(SecurityProtocol.PLAINTEXT))}"
 
   override def close(): Unit = {
+    try { schemaRegistryApp.stop() } catch { case e: Throwable => }
     try { server.shutdown() } catch { case _: Throwable => }
     try { zookeeper.shutdown() } catch { case _: Throwable => }
     PathUtils.deleteRecursively(logs.toPath)
   }
+}
+
+object EmbeddedKafka {
+  private val KAFKA_SCHEMAS_TOPIC = "_schemas"
+  private val AVRO_COMPATIBILITY_TYPE = AvroCompatibilityLevel.NONE.name
 }
