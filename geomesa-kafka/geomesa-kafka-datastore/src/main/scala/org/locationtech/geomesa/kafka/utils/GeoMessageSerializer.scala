@@ -180,14 +180,18 @@ class GeoMessageSerializer(sft: SimpleFeatureType,
     *
     * @param key the serialized message key
     * @param value the serialized message body
+    * @param timestamp the kafka message timestamp
     * @return the deserialized message
     */
-  def deserialize(key: Array[Byte], value: Array[Byte], headers: Map[String, Array[Byte]] = Map.empty): GeoMessage = {
+  def deserialize(key: Array[Byte],
+                  value: Array[Byte],
+                  headers: Map[String, Array[Byte]] = Map.empty,
+                  timestamp: Option[Long] = None): GeoMessage = {
     try {
       headers.get(GeoMessageSerializer.VersionHeader) match {
-        case Some(h) if h.length == 1 && h(0) == GeoMessageSerializer.KryoVersion => deserialize(key, value, kryo)
-        case Some(h) if h.length == 1 && h(0) == GeoMessageSerializer.AvroVersion => deserialize(key, value, avro)
-        case _ => tryDeserializeVersions(key, value)
+        case Some(h) if h.length == 1 && h(0) == GeoMessageSerializer.KryoVersion => deserialize(key, value, kryo, timestamp)
+        case Some(h) if h.length == 1 && h(0) == GeoMessageSerializer.AvroVersion => deserialize(key, value, avro, timestamp)
+        case _ => tryDeserializeVersions(key, value, timestamp)
       }
     } catch {
       case NonFatal(e) =>
@@ -244,10 +248,13 @@ class GeoMessageSerializer(sft: SimpleFeatureType,
     * @param deserializer deserializer appropriate for the message encoding
     * @return
     */
-  private def deserialize(key: Array[Byte], value: Array[Byte], deserializer: SimpleFeatureSerializer): GeoMessage = {
+  private def deserialize(key: Array[Byte],
+                          value: Array[Byte],
+                          deserializer: SimpleFeatureSerializer,
+                          timestamp: Option[Long]): GeoMessage = {
     if (key.isEmpty) { Clear } else {
       val id = new String(key, StandardCharsets.UTF_8)
-      if (value == null) { Delete(id) } else { Change(deserializer.deserialize(id, value)) }
+      if (value == null) { Delete(id) } else { Change(deserializer.deserialize(id, value, timestamp)) }
     }
   }
 
@@ -261,16 +268,16 @@ class GeoMessageSerializer(sft: SimpleFeatureType,
     * @param value message value
     * @return
     */
-  private def tryDeserializeVersions(key: Array[Byte], value: Array[Byte]): GeoMessage = {
+  private def tryDeserializeVersions(key: Array[Byte], value: Array[Byte], timestamp: Option[Long]): GeoMessage = {
     if (key.length == 10 && key(0) == 1 && Seq('C', 'D', 'X').contains(key(1).toChar)) {
       try { deserializeV1(key, value) } catch {
         case NonFatal(e) =>
-          try { tryDeserializeTypes(key, value) } catch {
+          try { tryDeserializeTypes(key, value, timestamp) } catch {
             case NonFatal(suppressed) => e.addSuppressed(suppressed); throw e
           }
       }
     } else {
-      tryDeserializeTypes(key, value)
+      tryDeserializeTypes(key, value, timestamp)
     }
   }
 
@@ -281,10 +288,10 @@ class GeoMessageSerializer(sft: SimpleFeatureType,
     * @param value message value
     * @return
     */
-  private def tryDeserializeTypes(key: Array[Byte], value: Array[Byte]): GeoMessage = {
-    try { deserialize(key, value, serializer) } catch {
+  private def tryDeserializeTypes(key: Array[Byte], value: Array[Byte], timestamp: Option[Long]): GeoMessage = {
+    try { deserialize(key, value, serializer, timestamp) } catch {
       case NonFatal(e) =>
-        try { deserialize(key, value, if (serializer.eq(kryo)) { avro } else { kryo }) } catch {
+        try { deserialize(key, value, if (serializer.eq(kryo)) { avro } else { kryo }, timestamp) } catch {
           case NonFatal(suppressed) => e.addSuppressed(suppressed); throw e
         }
     }

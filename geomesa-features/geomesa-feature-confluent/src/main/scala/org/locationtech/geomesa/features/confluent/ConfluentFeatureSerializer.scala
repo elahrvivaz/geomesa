@@ -12,6 +12,8 @@ import java.io.{InputStream, OutputStream}
 import java.net.URL
 import java.util.Date
 
+import com.typesafe.scalalogging.LazyLogging
+import com.vividsolutions.jts.geom.Geometry
 import com.vividsolutions.jts.io.WKTReader
 import io.confluent.kafka.schemaregistry.client.{CachedSchemaRegistryClient, SchemaRegistryClient}
 import io.confluent.kafka.serializers.KafkaAvroDeserializer
@@ -22,6 +24,7 @@ import org.locationtech.geomesa.features.{ScalaSimpleFeatureFactory, SimpleFeatu
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 import scala.collection.JavaConverters._
+import scala.util.control.NonFatal
 
 object ConfluentFeatureSerializer {
   def builder(sft: SimpleFeatureType, schemaRegistryUrl: URL): Builder =
@@ -42,23 +45,43 @@ object ConfluentFeatureSerializer {
 class ConfluentFeatureSerializer(sft: SimpleFeatureType,
                                  schemaRegistryClient: SchemaRegistryClient,
                                  val options: Set[SerializationOption] = Set.empty)
-    extends SimpleFeatureSerializer {
+    extends SimpleFeatureSerializer with LazyLogging {
 
   private val kafkaAvroDeserializer = new KafkaAvroDeserializer(schemaRegistryClient)
   private val wktReader = new WKTReader()
+  var geomSrcAttributeName: Option[String] = None
 
-  override def deserialize(id: String, bytes: Array[Byte], timestamp: Option[Date]): SimpleFeature = {
+  override def deserialize(id: String, bytes: Array[Byte], timestamp: Option[Long]): SimpleFeature = {
     val genericRecord = kafkaAvroDeserializer.deserialize("", bytes).asInstanceOf[GenericRecord]
     val attrs = sft.getAttributeDescriptors.asScala.map(_.getLocalName).map { attrName =>
       if (attrName == geomAttributeName) {
-        wktReader.read(genericRecord.get(attrName).toString)
+        geomSrcAttributeName.map(readFieldAsWkt(genericRecord, _).get).getOrElse {
+          // Here we find a valid geom field in the first record or throw.
+          sft.getAttributeDescriptors.asScala.map(_.getLocalName)
+            .map{ n => (n, readFieldAsWkt(genericRecord, n)) }
+            .find(_._2.isDefined).map { kv =>
+              geomSrcAttributeName = Option(kv._1)
+              kv._2.get
+            }.getOrElse {
+            throw new UnsupportedOperationException("No valid WKT field found in avro data for " +
+              s"ConfluentFeatureSerializer in first record $genericRecord.  Valid Geometry field is required.")
+          }
+        }
       } else if (attrName == dateAttributeName) {
-        timestamp.get
+        new Date(timestamp.get)
       } else {
         genericRecord.get(attrName)
       }
     }
     ScalaSimpleFeatureFactory.buildFeature(sft, attrs, id)
+  }
+
+  private def readFieldAsWkt(genericRecord: GenericRecord, fieldName: String): Option[Geometry] = {
+    try {
+      Option(wktReader.read(genericRecord.get(fieldName).toString))
+    } catch {
+      case NonFatal(t) => None
+    }
   }
 
   // Implement the following if we find we need them

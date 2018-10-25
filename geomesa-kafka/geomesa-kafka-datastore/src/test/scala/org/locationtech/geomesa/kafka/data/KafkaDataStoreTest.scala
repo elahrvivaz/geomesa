@@ -23,6 +23,7 @@ import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.curator.framework.CuratorFrameworkFactory
 import org.apache.curator.retry.ExponentialBackoffRetry
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
+import org.apache.kafka.common.serialization.StringSerializer
 import org.geotools.data._
 import org.geotools.factory.Hints
 import org.geotools.filter.identity.FeatureIdImpl
@@ -133,27 +134,34 @@ class KafkaDataStoreTest extends Specification with Mockito with LazyLogging {
 
     "read schemas from confluent schema registry" >> {
       val topic = "confluent-test"
-
       val producerProps = new Properties()
       producerProps.put(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG, kafka.brokers)
-      producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, "io.confluent.kafka.serializers.KafkaAvroSerializer")
+      producerProps.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, classOf[StringSerializer])
       producerProps.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, classOf[KafkaAvroSerializer])
       producerProps.put("schema.registry.url", kafka.schemaRegistryUrl)
       val producer = new KafkaProducer[String, GenericRecord](producerProps)
 
       val key = "confluentTestKey"
-      val userSchema = """{"type":"record","name":"myrecord","fields":[{"name":"f1","type":"string","name":"f2","type":"string"}]}"""
+      val userSchema =
+        """{
+          |  "type":"record",
+          |  "name":"myrecord",
+          |  "fields":[
+          |    {"name":"f1","type":["null","string"]},
+          |    {"name":"f2","type":"string"}
+          |  ]
+          |}""".stripMargin
       val parser = new Schema.Parser()
       val schema = parser.parse(userSchema)
       val avroRecord = new GenericData.Record(schema)
       avroRecord.put("f1", "value1")
-      avroRecord.put("f2", "POINT(0 0)")
+      avroRecord.put("f2", "POINT(10 20)")
 
       val record = new ProducerRecord[String, GenericRecord](topic, 0, 1540486908L, key, avroRecord)
       producer.send(record)
 
       val confluentStoreProps = Map("kafka.serialization.type" -> "confluent",
-                                    "kafka.schema.registry.url" -> kafka.schemaRegistryUrl)
+        "kafka.schema.registry.url" -> kafka.schemaRegistryUrl)
       val kds = getStore(zkPath = "", consumers = 1, confluentStoreProps)
       val fs = kds.getFeatureSource(topic) // start the consumer polling
       eventually(40, 100.millis)(SelfClosingIterator(fs.getFeatures.features).toArray.length mustEqual 1)

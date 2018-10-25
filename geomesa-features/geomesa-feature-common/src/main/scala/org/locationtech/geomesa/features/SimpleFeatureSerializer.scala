@@ -9,7 +9,6 @@
 package org.locationtech.geomesa.features
 
 import java.io.{InputStream, OutputStream}
-import java.util.Date
 
 import org.locationtech.geomesa.features.SerializationOption.SerializationOption
 import org.opengis.feature.simple.SimpleFeature
@@ -122,7 +121,7 @@ trait SimpleFeatureSerializer extends HasEncodingOptions {
     * @param bytes bytes
     * @return
     */
-  def deserialize(id: String, bytes: Array[Byte], timestamp: Option[Date]): SimpleFeature = deserialize(id, bytes)
+  def deserialize(id: String, bytes: Array[Byte], timestamp: Option[Long]): SimpleFeature = deserialize(id, bytes)
 }
 
 object SimpleFeatureSerializer {

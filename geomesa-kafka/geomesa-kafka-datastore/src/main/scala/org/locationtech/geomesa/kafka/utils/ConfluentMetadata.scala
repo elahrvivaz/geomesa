@@ -81,17 +81,10 @@ class ConfluentMetadata(val schemaRegistry: SchemaRegistryClient) extends GeoMes
   override def scan(typeName: String, prefix: String, cache: Boolean): Seq[(String, String)] =
     throw new NotImplementedError(s"ConfluentMetadata only supports ATTRIBUTES_KEY")
 
-  override def insert(typeName: String, key: String, value: String): Unit =
-    throw new NotImplementedError("ConfluentMetadata is read-only")
-
-  override def insert(typeName: String, kvPairs: Map[String, String]): Unit =
-    throw new NotImplementedError("ConfluentMetadata is read-only")
-
-  override def remove(typeName: String, key: String): Unit =
-    throw new NotImplementedError("ConfluentMetadata is read-only")
-
-  override def delete(typeName: String): Unit =
-    throw new NotImplementedError("ConfluentMetadata is read-only")
+  override def insert(typeName: String, key: String, value: String): Unit = {}
+  override def insert(typeName: String, kvPairs: Map[String, String]): Unit = {}
+  override def remove(typeName: String, key: String): Unit = {}
+  override def delete(typeName: String): Unit = {}
 }
 
 object ConfluentMetadata extends LazyLogging {
@@ -102,27 +95,30 @@ object ConfluentMetadata extends LazyLogging {
     builder.setDefaultGeometry(ConfluentFeatureSerializer.geomAttributeName)
     builder.add(ConfluentFeatureSerializer.geomAttributeName, classOf[Geometry])
     builder.add(ConfluentFeatureSerializer.dateAttributeName, classOf[Date])
-    schema.getFields.asScala.map(_.schema).foreach(addSchemaToBuilder(builder, _))
+    schema.getFields.asScala.foreach(addSchemaToBuilder(builder, _))
     builder.buildFeatureType()
   }
 
-  def addSchemaToBuilder(builder: SimpleFeatureTypeBuilder, schema: Schema): Unit = {
-    schema.getType match {
-      case STRING => builder.add(schema.getName, classOf[java.lang.String])
-      case BOOLEAN => builder.add(schema.getName, classOf[java.lang.Boolean])
-      case INT => builder.add(schema.getName, classOf[java.lang.Integer])
-      case DOUBLE => builder.add(schema.getName, classOf[java.lang.Double])
-      case LONG => builder.add(schema.getName, classOf[java.lang.Long])
-      case FLOAT => builder.add(schema.getName, classOf[java.lang.Float])
+  def addSchemaToBuilder(builder: SimpleFeatureTypeBuilder,
+                         field: Schema.Field,
+                         typeOverride: Option[Schema.Type] = None): Unit = {
+    typeOverride.getOrElse(field.schema().getType) match {
+      case STRING => builder.add(field.name(), classOf[java.lang.String])
+      case BOOLEAN => builder.add(field.name(), classOf[java.lang.Boolean])
+      case INT => builder.add(field.name(), classOf[java.lang.Integer])
+      case DOUBLE => builder.add(field.name(), classOf[java.lang.Double])
+      case LONG => builder.add(field.name(), classOf[java.lang.Long])
+      case FLOAT => builder.add(field.name(), classOf[java.lang.Float])
       case BYTES => logger.error("Avro schema requested BYTES, which is not yet supported") //todo: support
-      case UNION => schema.getTypes.asScala.find(_.getType != NULL).foreach(addSchemaToBuilder(builder, _)) //todo: support more union types and log any errors better
+      case UNION => field.schema().getTypes.asScala.map(_.getType).find(_ != NULL)
+                         .foreach(t => addSchemaToBuilder(builder, field, Option(t))) //todo: support more union types and log any errors better
       case MAP => logger.error("Avro schema requested MAP, which is not yet supported") //todo: support
       case RECORD => logger.error("Avro schema requested RECORD, which is not yet supported") //todo: support
-      case ENUM => builder.add(schema.getName, classOf[java.lang.String])
+      case ENUM => builder.add(field.name(), classOf[java.lang.String])
       case ARRAY => logger.error("Avro schema requested ARRAY, which is not yet supported") //todo: support
       case FIXED => logger.error("Avro schema requested FIXED, which is not yet supported") //todo: support
       case NULL => logger.error("Avro schema requested NULL, which is not yet supported") //todo: support
-      case _ => logger.error(s"Avro schema requested unknown type ${schema.getType}")
+      case _ => logger.error(s"Avro schema requested unknown type ${field.schema().getType}")
     }
   }
 }
