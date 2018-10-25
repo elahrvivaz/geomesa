@@ -8,6 +8,7 @@
 
 package org.locationtech.geomesa.kafka.utils
 
+import java.net.URL
 import java.nio.charset.StandardCharsets
 
 import com.typesafe.scalalogging.LazyLogging
@@ -15,6 +16,7 @@ import org.apache.kafka.clients.producer.Partitioner
 import org.apache.kafka.common.Cluster
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.features.avro.AvroFeatureSerializer
+import org.locationtech.geomesa.features.confluent.ConfluentFeatureSerializer
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
 import org.locationtech.geomesa.features.{SerializationType, SimpleFeatureSerializer}
 import org.locationtech.geomesa.kafka.utils.GeoMessage.{Change, Clear, Delete}
@@ -76,12 +78,14 @@ object GeoMessageSerializer {
     * Create a message serializer
     *
     * @param sft simple feature type
-    * @param serialization serialization type (avro or kryo)
+    * @param serialization serialization type (avro, kryo, or confluent)
+    * @param schemaRegistryUrl Confluent schema registry url
     * @param `lazy` use lazy deserialization
     * @return
     */
   def apply(sft: SimpleFeatureType,
             serialization: SerializationType = SerializationType.KRYO,
+            schemaRegistryUrl: Option[URL],
             `lazy`: Boolean = false): GeoMessageSerializer = {
     val kryoBuilder = KryoFeatureSerializer.builder(sft).withoutId.withUserData.immutable
     val avroBuilder = AvroFeatureSerializer.builder(sft).withoutId.withUserData.immutable
@@ -91,10 +95,12 @@ object GeoMessageSerializer {
       case SerializationType.KRYO => (kryoSerializer, KryoVersion)
       case SerializationType.AVRO => (avroSerializer, AvroVersion)
       case SerializationType.CONFLUENT =>
-        val confluentBuilder = ConfluentFeatureSerializer.builder(sft).withoutId.withUserData.immutable
-
-        val confluentSerializer =
-        (confluentSerializer, ConfluentVersion)
+        val confluentBuilder = schemaRegistryUrl match {
+          case Some(srUrl) => ConfluentFeatureSerializer.builder(sft, srUrl).withoutId.withUserData.immutable
+          case None =>
+            throw new IllegalArgumentException("Confluent serialization used, however no schema-registry url provided.")
+        }
+        (confluentBuilder.build(), ConfluentVersion)
       case _ => throw new NotImplementedError(s"Unexpected serialization type $serialization")
     }
     new GeoMessageSerializer(sft, serializer, kryoSerializer, avroSerializer, version)
@@ -139,7 +145,7 @@ object GeoMessageSerializer {
   * Serializes `GeoMessage`s
   *
   * @param sft simple feature type being serialized
-  * @param serializer serializer used for writing messages
+  * @param serializer serializer used for reading or writing messages
   * @param kryo kryo serializer used for deserializing kryo messages
   * @param avro avro serializer used for deserializing avro messages
   * @param version version byte corresponding to the serializer type

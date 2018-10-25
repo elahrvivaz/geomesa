@@ -8,31 +8,116 @@
 
 package org.locationtech.geomesa.kafka.utils
 
+import java.util.concurrent.TimeUnit
+
+import com.github.benmanes.caffeine.cache.{CacheLoader, Caffeine, LoadingCache}
+import com.typesafe.scalalogging.LazyLogging
+import io.confluent.kafka.schemaregistry.client.SchemaRegistryClient
+import org.apache.avro.Schema
+import org.geotools.feature.simple.SimpleFeatureTypeBuilder
+import org.locationtech.geomesa.kafka.utils.ConfluentMetadata._
 import org.locationtech.geomesa.index.metadata.GeoMesaMetadata
+import org.locationtech.geomesa.kafka.data.KafkaDataStore
+import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
+import org.opengis.feature.simple.SimpleFeatureType
 
-class ConfluentMetadata(schemaRegistry: SchemaRegistry) extends GeoMesaMetadata[String] {
+import scala.collection.JavaConverters._
+import scala.util.control.NonFatal
 
-  override def getFeatureTypes: Array[String] = synchronized(schemas.keys.toArray)
+class ConfluentMetadata(schemaRegistry: SchemaRegistryClient) extends GeoMesaMetadata[String] with LazyLogging {
 
-  override def read(typeName: String, key: String, cache: Boolean): Option[String] = synchronized {
-    schemas.get(typeName).flatMap(_.get(key))
-  }
+  val topicSftCache: LoadingCache[String, String] =
+    Caffeine.newBuilder()
+      .expireAfterWrite(10, TimeUnit.MINUTES)
+      .build(
+        new CacheLoader[String, String] {
+          def load(topic: String): String = getSftSpecForTopic(topic).orNull
+        }
+      )
 
-  override def scan(typeName: String, prefix: String, cache: Boolean): Seq[(String, String)] = synchronized {
-    schemas.get(typeName) match {
-      case None => Seq.empty
-      case Some(m) => m.filterKeys(_.startsWith(prefix)).toSeq
+  protected def getSftSpecForTopic(topic: String): Option[String] =
+    try {
+      val subject = topic + "-value"
+      val schemaId = schemaRegistry.getLatestSchemaMetadata(subject).getId
+      val sft = schemaToSft(schemaRegistry.getByID(schemaId), topic) // todo: what are the restrictions on sftName
+      KafkaDataStore.setTopic(sft, topic)
+      Option(SimpleFeatureTypes.encodeType(sft, includeUserData = true))
+    } catch {
+      case NonFatal(t) =>
+        logger.error("Error retrieving schema from confluent registry.  Returning None.", t)
+        None
+    }
+
+  override def getFeatureTypes: Array[String] = topicSftCache.asMap().values().asScala.toArray
+
+  override def read(typeName: String, key: String, cache: Boolean): Option[String] = {
+    if (key != GeoMesaMetadata.ATTRIBUTES_KEY) {
+      logger.warn(s"Requested read on ConfluentMetadata with unsupported key $key. " +
+        s"ConfluentMetadata only supports ${GeoMesaMetadata.ATTRIBUTES_KEY}")
+    } else {
+      if (!cache) {
+        getSftSpecForTopic(typeName)
+      } else {
+        Option(topicSftCache.get(typeName))
+      }
     }
   }
 
-  override def invalidateCache(typeName: String, key: String): Unit = {}
+  override def invalidateCache(typeName: String, key: String): Unit = {
+    if (key != GeoMesaMetadata.ATTRIBUTES_KEY) {
+      logger.warn(s"Requested invalidate cache on ConfluentMetadata with unsupported key $key. " +
+        s"ConfluentMetadata only supports ${GeoMesaMetadata.ATTRIBUTES_KEY}")
+    } else {
+      topicSftCache.invalidate(typeName)
+    }
+  }
 
   override def close(): Unit = {}
 
+  override def scan(typeName: String, prefix: String, cache: Boolean): Seq[(String, String)] =
+    throw new NotImplementedError(s"ConfluentMetadata only supports ATTRIBUTES_KEY")
 
+  override def insert(typeName: String, key: String, value: String): Unit =
+    throw new NotImplementedError("ConfluentMetadata is read-only")
 
-  override def insert(typeName: String, key: String, value: String): Unit =  throw new NotImplementedError()
-  override def insert(typeName: String, kvPairs: Map[String, String]): Unit =  throw new NotImplementedError()
-  override def remove(typeName: String, key: String): Unit =  throw new NotImplementedError()
-  override def delete(typeName: String): Unit =  throw new NotImplementedError()
+  override def insert(typeName: String, kvPairs: Map[String, String]): Unit =
+    throw new NotImplementedError("ConfluentMetadata is read-only")
+
+  override def remove(typeName: String, key: String): Unit =
+    throw new NotImplementedError("ConfluentMetadata is read-only")
+
+  override def delete(typeName: String): Unit =
+    throw new NotImplementedError("ConfluentMetadata is read-only")
+}
+
+object ConfluentMetadata extends LazyLogging {
+  def schemaToSft(schema: Schema, sftName: String): SimpleFeatureType = {
+    val builder = new SimpleFeatureTypeBuilder
+    builder.setName(sftName) //todo: SetNamespaceURI?
+    builder.setCRS(DefaultGeographicCRS.WGS84)
+    builder.setDefaultGeometry(GEOM_FIELD_NAME)
+    schema.getFields.asScala.foreach{ field =>
+      val fieldSchema = field.schema()
+      import org.apache.avro.Schema.Type._
+      fieldSchema.getType match {
+        case STRING => builder.add(fieldSchema.getName, classOf[java.lang.String])
+        case BOOLEAN => builder.add(fieldSchema.getName, classOf[java.lang.Boolean])
+        case INT => builder.add(fieldSchema.getName, classOf[java.lang.Integer])
+        case DOUBLE => builder.add(fieldSchema.getName, classOf[java.lang.Double])
+        case LONG => builder.add(fieldSchema.getName, classOf[java.lang.Long])
+        case FLOAT => builder.add(fieldSchema.getName, classOf[java.lang.Float])
+        case BYTES => logger.error("Avro schema requested BYTES, which is not yet supported")//todo: support
+        case UNION => logger.error("Avro schema requested UNION, which is not yet supported")//todo: support
+        case MAP => logger.error("Avro schema requested MAP, which is not yet supported")//todo: support
+        case RECORD => logger.error("Avro schema requested RECORD, which is not yet supported")//todo: support
+        case ENUM => builder.add(fieldSchema.getName, classOf[java.lang.String])
+        case ARRAY => logger.error("Avro schema requested ARRAY, which is not yet supported")//todo: support
+        case FIXED => logger.error("Avro schema requested FIXED, which is not yet supported")//todo: support
+        case NULL => logger.error("Avro schema requested NULL, which is not yet supported")//todo: support
+        case _ => logger.error(s"Avro schema requested unknown type ${fieldSchema.getType}")
+      }
+    }
+    builder.add(GEOM_FIELD_NAME, classOf[Geometry])
+    builder.add(DATE_FIELD_NAME, classOf[Date])  // Uses the timestamp instead of an attribute
+    builder.buildFeatureType()
 }

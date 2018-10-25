@@ -104,7 +104,7 @@ object KafkaCacheLoader {
                              lazyDeserialization: Boolean,
                              initialLoadConfig: Option[IndexConfig]) extends ThreadedConsumer with KafkaCacheLoader {
 
-    private val serializer = GeoMessageSerializer(sft, `lazy` = lazyDeserialization)
+    private val serializer = GeoMessageSerializer(sft, schemaRegistryUrl = None, `lazy` = lazyDeserialization)
 
     try { classOf[ConsumerRecord[Any, Any]].getMethod("timestamp") } catch {
       case _: NoSuchMethodException => logger.warn("This version of Kafka doesn't support timestamps, using system time")

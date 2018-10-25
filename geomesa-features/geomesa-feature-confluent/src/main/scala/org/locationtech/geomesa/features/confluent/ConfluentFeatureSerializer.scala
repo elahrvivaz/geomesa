@@ -8,95 +8,77 @@
 
 package org.locationtech.geomesa.features.confluent
 
-import java.io.{ByteArrayInputStream, ByteArrayOutputStream, InputStream, OutputStream}
+import java.io.{InputStream, OutputStream}
+import java.net.URL
+import java.util.Date
 
+import com.vividsolutions.jts.io.WKTReader
+import io.confluent.kafka.schemaregistry.client.{CachedSchemaRegistryClient, SchemaRegistryClient}
+import io.confluent.kafka.serializers.KafkaAvroDeserializer
+import org.apache.avro.generic.GenericRecord
+import org.locationtech.geomesa.features.confluent.ConfluentFeatureSerializer._
 import org.locationtech.geomesa.features.SerializationOption.SerializationOption
-import org.locationtech.geomesa.features.SimpleFeatureSerializer.LimitedSerialization
-import org.locationtech.geomesa.features.{ScalaSimpleFeature, SimpleFeatureSerializer}
-import org.locationtech.geomesa.utils.cache.SoftThreadLocal
+import org.locationtech.geomesa.features.{ScalaSimpleFeatureFactory, SimpleFeatureSerializer}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
-object ConfluentFeatureSerializer {
-  def builder(sft: SimpleFeatureType): Builder = new Builder(sft)
+import scala.collection.JavaConverters._
 
-  class Builder private [AvroFeatureSerializer] (sft: SimpleFeatureType)
+object ConfluentFeatureSerializer {
+  def builder(sft: SimpleFeatureType, schemaRegistryUrl: URL): Builder =
+    new Builder(sft, schemaRegistryUrl)
+
+  class Builder private [ConfluentFeatureSerializer] (sft: SimpleFeatureType, schemaRegistryUrl: URL)
       extends SimpleFeatureSerializer.Builder[Builder] {
-    override def build(): AvroFeatureSerializer = new AvroFeatureSerializer(sft, options.toSet)
+
+    override def build(): ConfluentFeatureSerializer =
+      new ConfluentFeatureSerializer(sft,
+                                     new CachedSchemaRegistryClient(schemaRegistryUrl.toExternalForm, 100),
+                                     options.toSet)
   }
+  val geomAttributeName = "_geom"
+  val dateAttributeName = "_date"
 }
 
-/**
- * @param sft the simple feature type to encode
- * @param options the options to apply when encoding
- */
-class AvroFeatureSerializer(sft: SimpleFeatureType, val options: Set[SerializationOption] = Set.empty)
+class ConfluentFeatureSerializer(sft: SimpleFeatureType,
+                                 schemaRegistryClient: SchemaRegistryClient,
+                                 val options: Set[SerializationOption] = Set.empty)
     extends SimpleFeatureSerializer {
 
-  private val writer = new AvroSimpleFeatureWriter(sft, options)
-  private val reader = FeatureSpecificReader(sft, options)
+  private val kafkaAvroDeserializer = new KafkaAvroDeserializer(schemaRegistryClient)
+  private val wktReader = new WKTReader()
 
-  override def serialize(feature: SimpleFeature): Array[Byte] = {
-    val out = AvroFeatureSerializer.outputs.getOrElseUpdate(new ByteArrayOutputStream())
-    out.reset()
-    serialize(feature, out)
-    out.toByteArray
+  override def deserialize(id: String, bytes: Array[Byte], timestamp: Option[Date]): SimpleFeature = {
+    val genericRecord = kafkaAvroDeserializer.deserialize("", bytes).asInstanceOf[GenericRecord]
+    val attrs = sft.getAttributeDescriptors.asScala.map(_.getLocalName).map { attrName =>
+      if (attrName == geomAttributeName) {
+        wktReader.read(genericRecord.get(attrName).toString)
+      } else if (attrName == dateAttributeName) {
+        timestamp.get
+      } else {
+        genericRecord.get(attrName)
+      }
+    }
+    ScalaSimpleFeatureFactory.buildFeature(sft, attrs, id)
   }
 
-  override def serialize(feature: SimpleFeature, out: OutputStream): Unit = {
-    val encoder = AvroFeatureSerializer.encoder(out)
-    writer.write(feature, encoder)
-    encoder.flush()
-  }
+  // Implement the following if we find we need them
 
-  override def deserialize(in: InputStream): SimpleFeature = reader.read(null, AvroFeatureSerializer.decoder(in))
+  override def deserialize(in: InputStream): SimpleFeature = throw new NotImplementedError()
 
-  override def deserialize(bytes: Array[Byte]): SimpleFeature = deserialize(bytes, 0, bytes.length)
+  override def deserialize(bytes: Array[Byte]): SimpleFeature = throw new NotImplementedError()
 
   override def deserialize(bytes: Array[Byte], offset: Int, length: Int): SimpleFeature =
-    reader.read(null, AvroFeatureSerializer.decoder(bytes, offset, length))
+    throw new NotImplementedError()
 
-  override def deserialize(id: String, in: InputStream): SimpleFeature = {
-    val feature = deserialize(in)
-    feature.asInstanceOf[ScalaSimpleFeature].setId(id) // TODO cast??
-    feature
-  }
+  override def deserialize(id: String, in: InputStream): SimpleFeature =
+    throw new NotImplementedError()
 
-  override def deserialize(id: String, bytes: Array[Byte], offset: Int, length: Int): SimpleFeature = {
-    val feature = deserialize(bytes, offset, length)
-    feature.asInstanceOf[ScalaSimpleFeature].setId(id) // TODO cast??
-    feature
-  }
-}
-
-/**
- * @param original the simple feature type that was encoded
- * @param projected the simple feature type to project to when decoding
- * @param options the options what were applied when encoding
- */
-class ProjectingAvroFeatureDeserializer(original: SimpleFeatureType, projected: SimpleFeatureType,
-                                        val options: Set[SerializationOption] = Set.empty)
-    extends SimpleFeatureSerializer with LimitedSerialization {
-
-  private val reader = FeatureSpecificReader(original, projected, options)
+  override def deserialize(id: String, bytes: Array[Byte], offset: Int, length: Int): SimpleFeature =
+    throw new NotImplementedError()
 
   override def serialize(feature: SimpleFeature): Array[Byte] =
-    throw new NotImplementedError("This instance only handles deserialization")
+    throw new NotImplementedError("ConfluentSerializer is read-only")
 
-  override def deserialize(bytes: Array[Byte]): SimpleFeature = decode(new ByteArrayInputStream(bytes))
-
-  private var reuse: BinaryDecoder = _
-
-  def decode(is: InputStream): SimpleFeature = {
-    reuse = DecoderFactory.get().directBinaryDecoder(is, reuse)
-    reader.read(null, reuse)
-  }
+  override def serialize(feature: SimpleFeature, out: OutputStream): Unit =
+    throw new NotImplementedError("ConfluentSerializer is read-only")
 }
-
-/**
- * @param sft the simple feature type to decode
- * @param options the options what were applied when encoding
- */
-@deprecated("Replaced with AvroFeatureSerializer")
-class AvroFeatureDeserializer(sft: SimpleFeatureType, options: Set[SerializationOption] = Set.empty)
-    extends AvroFeatureSerializer(sft, options)
-
