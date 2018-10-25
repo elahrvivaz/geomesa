@@ -74,7 +74,7 @@
         <jaiext.version>1.0.16</jaiext.version>
         <imageio-ext.version>1.1.18</imageio-ext.version>
         <jts.version>1.14.0</jts.version>
-        <avro.version>1.7.5</avro.version>
+        <avro.version>1.8.2</avro.version>
         <parquet.version>1.9.0</parquet.version>
         <orc.version>1.4.4</orc.version>
         <jackson.version>2.6.5</jackson.version> <!-- used by spark and arrow (which defaults to 2.7.1) -->
