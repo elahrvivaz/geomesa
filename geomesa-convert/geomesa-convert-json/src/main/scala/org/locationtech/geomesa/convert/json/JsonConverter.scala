@@ -23,58 +23,72 @@ import org.locationtech.geomesa.convert2.{AbstractConverter, ConverterConfig, Fi
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.opengis.feature.simple.SimpleFeatureType
 
-import scala.collection.JavaConversions._
-
 class JsonConverter(targetSft: SimpleFeatureType, config: JsonConfig, fields: Seq[JsonField], options: BasicOptions)
     extends AbstractConverter(targetSft, config, fields, options) {
 
-  private val parser = new JsonParser
   private val featurePath = config.featurePath.map(JsonPath.compile(_))
 
-  override protected def read(is: InputStream, ec: EvaluationContext): CloseableIterator[Array[Any]] = {
-    val reader = new JsonReader(new InputStreamReader(is, options.encoding))
-    reader.setLenient(true)
-
-    val elements = new Iterator[JsonElement] {
-      override def hasNext: Boolean = reader.peek() != JsonToken.END_DOCUMENT
-      override def next(): JsonElement = {
-        val res = parser.parse(reader)
-        // extract the line number, only accessible from reader.toString
-        JsonConverter.lineRegex.findFirstMatchIn(reader.toString).foreach { m =>
-          ec.counter.setLineCount(m.group(1).toLong)
-        }
-        res
-      }
-    }
-
-    // NB:  Currently the JSON support for Converters parses the entire JSON document into memory.
-    //  In the event that we wish to build SimpleFeatures from a 'feature' path and the 'root' path, we have a small issue.
-    //  This solution involves handing a pointer to the feature path and the entire document.
-    //  In the converter config, use 'root-path' to defined paths which reference the entire document.
-
-    val records = featurePath match {
-      case None =>
-        elements.map(Array[Any](_))
-
-      case Some(path) =>
-        elements.flatMap { element =>
-          path.read[JsonArray](element, JsonConverter.jsonConfiguration).map(o => Array[Any](o, element)).iterator
-        }
-    }
-
-    CloseableIterator(records, reader.close())
-  }
+  override protected def read(is: InputStream, ec: EvaluationContext): CloseableIterator[Array[Any]] =
+    JsonConverter.toValues(JsonConverter.parse(new InputStreamReader(is, options.encoding), ec), featurePath)
 }
 
 object JsonConverter extends GeoJsonParsing {
 
-  private val jsonConfiguration =
+  import scala.collection.JavaConverters._
+
+  private val configuration =
     Configuration.builder()
         .jsonProvider(new GsonJsonProvider)
         .options(com.jayway.jsonpath.Option.DEFAULT_PATH_LEAF_TO_NULL)
         .build()
 
+  private val parser = new JsonParser() // note: appears to be thread-safe
+
   private val lineRegex = """JsonReader at line (\d+)""".r
+
+  /**
+    * Parse a decoded input stream, setting line numbers in the evaluation context
+    *
+    * @param input input reader
+    * @param ec evaluation context
+    * @return
+    */
+  def parse(input: Reader, ec: EvaluationContext): CloseableIterator[JsonElement] = {
+    val reader = new JsonReader(input)
+    reader.setLenient(true)
+
+    new CloseableIterator[JsonElement] {
+      override def hasNext: Boolean = reader.peek() != JsonToken.END_DOCUMENT
+      override def next(): JsonElement = {
+        val res = parser.parse(reader)
+        // extract the line number, only accessible from reader.toString
+        lineRegex.findFirstMatchIn(reader.toString).foreach { m =>
+          ec.counter.setLineCount(m.group(1).toLong)
+        }
+        res
+      }
+      override def close(): Unit = reader.close()
+    }
+  }
+
+  /**
+    * Converts json elements into valuse for processing
+    *
+    * @param elements elements
+    * @param path feature path
+    * @return
+    */
+  def toValues(elements: CloseableIterator[JsonElement], path: Option[JsonPath]): CloseableIterator[Array[Any]] = {
+    path match {
+      case None => elements.map(Array[Any](_))
+      case Some(p) =>
+        elements.flatMap { element =>
+          p.read[JsonArray](element, JsonConverter.configuration).iterator.asScala.map { o =>
+            Array[Any](o, element)
+          }
+        }
+    }
+  }
 
   case class JsonConfig(`type`: String,
                         featurePath: Option[String],
@@ -99,7 +113,7 @@ object JsonConverter extends GeoJsonParsing {
     protected def unwrap(elem: JsonElement): AnyRef
 
     override def eval(args: Array[Any])(implicit ec: EvaluationContext): Any = {
-      val e = try { jsonPath.read[JsonElement](args(i), jsonConfiguration) } catch {
+      val e = try { jsonPath.read[JsonElement](args(i), configuration) } catch {
         case _: PathNotFoundException => JsonNull.INSTANCE
       }
       mutableArray(0) = if (e.isJsonNull) { null } else { unwrap(e) }

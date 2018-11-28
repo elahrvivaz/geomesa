@@ -6,14 +6,14 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  ***********************************************************************/
 
-package org.locationtech.geomesa.convert2.composite
+package org.locationtech.geomesa.convert.json
 
 import com.typesafe.config.Config
 import org.locationtech.geomesa.convert2.transforms.Predicate
 import org.locationtech.geomesa.convert2.{SimpleFeatureConverter, SimpleFeatureConverterFactory}
 import org.opengis.feature.simple.SimpleFeatureType
 
-class CompositeConverterFactory extends SimpleFeatureConverterFactory {
+class JsonCompositeConverterFactory extends SimpleFeatureConverterFactory {
 
   import scala.collection.JavaConverters._
 
@@ -26,11 +26,12 @@ class CompositeConverterFactory extends SimpleFeatureConverterFactory {
           val converter = if (conf.hasPath(converterName)) {
             SimpleFeatureConverter(sft, conf.getConfig(converterName)) // load from local conf (within composite converter)
           } else {
-            SimpleFeatureConverter(sft, converterName) // load from a global named reference
+            SimpleFeatureConverter(sft, converterName) // load from a gobal named reference
           }
           (pred, converter)
         }
-      Some(new CompositeConverter(sft, converters))
+      None
+//      Some(new CompositeConverter(sft, converters))
     }
   }
 }
