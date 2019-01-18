@@ -11,9 +11,10 @@ package org.locationtech.geomesa.fs.storage.orc.jobs
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.io.NullWritable
 import org.apache.hadoop.mapreduce._
-import org.apache.hadoop.mapreduce.lib.input.FileInputFormat
+import org.apache.hadoop.mapreduce.lib.input.{FileInputFormat, FileSplit}
 import org.apache.orc.mapred.OrcStruct
-import org.apache.orc.mapreduce.OrcInputFormat
+import org.apache.orc.mapreduce.{OrcInputFormat, OrcMapreduceRecordReader}
+import org.apache.orc.{OrcConf, OrcFile}
 import org.geotools.data.Query
 import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, TransformSimpleFeature}
@@ -28,7 +29,20 @@ import org.opengis.filter.Filter
 
 class OrcSimpleFeatureInputFormat extends FileInputFormat[Void, SimpleFeature] {
 
-  private val delegate = new OrcInputFormat[OrcStruct]
+  // override the delegate format to set UTC reader options, which aren't exposed
+  // copied from OrcInputFormat
+  private val delegate: OrcInputFormat[OrcStruct] = new OrcInputFormat[OrcStruct] {
+    override def createRecordReader(inputSplit: InputSplit,
+                                    taskAttemptContext: TaskAttemptContext): RecordReader[NullWritable, OrcStruct] = {
+      val split = inputSplit.asInstanceOf[FileSplit]
+      val conf = taskAttemptContext.getConfiguration
+      val readerOptions =
+        OrcFile.readerOptions(conf).maxLength(OrcConf.MAX_FILE_LENGTH.getLong(conf)).useUTCTimestamp(true)
+      val file = OrcFile.createReader(split.getPath, readerOptions)
+      val options = org.apache.orc.mapred.OrcInputFormat.buildOptions(conf, file, split.getStart, split.getLength)
+      new OrcMapreduceRecordReader[OrcStruct](file, options)
+    }
+  }
 
   override def createRecordReader(split: InputSplit, context: TaskAttemptContext): OrcSimpleFeatureRecordReader = {
     val delegateReader = delegate.createRecordReader(split, context)
