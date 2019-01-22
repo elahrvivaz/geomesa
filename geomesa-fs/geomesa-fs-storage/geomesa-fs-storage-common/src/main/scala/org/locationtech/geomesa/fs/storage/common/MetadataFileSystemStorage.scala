@@ -16,6 +16,7 @@ import org.locationtech.jts.geom.Envelope
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.geotools.data.Query
+import org.locationtech.geomesa.filter.factory.FastFilterFactory
 import org.locationtech.geomesa.fs.storage.api._
 import org.locationtech.geomesa.fs.storage.common.MetadataFileSystemStorage.WriterCallback
 import org.locationtech.geomesa.fs.storage.common.utils.StorageUtils.FileType
@@ -89,7 +90,7 @@ abstract class MetadataFileSystemStorage(conf: Configuration,
 
     val sft = metadata.getSchema
     val q = QueryRunner.default.configureQuery(sft, query)
-    val filter = Option(q.getFilter).filter(_ != Filter.INCLUDE)
+    val filter = Option(q.getFilter).filter(_ != Filter.INCLUDE).map(FastFilterFactory.optimize(sft, _))
     val transform = q.getHints.getTransform
 
     val paths = partitions.iterator.asScala.flatMap(getFilePaths(_).asScala)
