@@ -90,7 +90,7 @@ abstract class MetadataFileSystemStorage(conf: Configuration,
 
     val sft = metadata.getSchema
     val q = QueryRunner.default.configureQuery(sft, query)
-    val filter = Option(q.getFilter).filter(_ != Filter.INCLUDE).map(FastFilterFactory.optimize(sft, _))
+    val filter = Option(q.getFilter).filter(_ != Filter.INCLUDE)
     val transform = q.getHints.getTransform
 
     val paths = partitions.iterator.asScala.flatMap(getFilePaths(_).asScala)
