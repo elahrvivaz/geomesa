@@ -53,7 +53,7 @@ class XZ2Scheme(bits: Int, geom: String, leaf: Boolean) extends SpatialScheme(bi
   override def generateRanges(xy: Seq[(Double, Double, Double, Double)]): Seq[Long] =
     xz2.ranges(xy).flatMap(ir => ir.lower to ir.upper)
 }
-
+ // TODO getFilterPartitions
 abstract class SpatialScheme(bits: Int, geom: String, leaf: Boolean) extends PartitionScheme {
 
   require(bits % 2 == 0, "Resolution must be an even number")

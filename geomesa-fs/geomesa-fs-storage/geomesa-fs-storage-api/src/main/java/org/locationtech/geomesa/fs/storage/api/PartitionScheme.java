@@ -9,9 +9,9 @@
 package org.locationtech.geomesa.fs.storage.api;
 
 import org.opengis.feature.simple.SimpleFeature;
-import org.opengis.feature.simple.SimpleFeatureType;
 import org.opengis.filter.Filter;
 
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 
@@ -40,6 +40,19 @@ public interface PartitionScheme {
      * @return list of partitions that may have results from the filter
      */
     List<String> getPartitions(Filter filter);
+
+    /**
+     * Return a list of modified filters and partitions. Each filter will have been simplified to
+     * remove any predicates that are implicitly true for the associated partitions
+     *
+     * @param filter filter
+     * @param partitions partitions
+     * @return list of simplified filters and partitions
+     */
+    default List<FilterPartitions> getFilterPartitions(Filter filter, List<String> partitions) {
+        // default implementation does no optimization
+        return Collections.singletonList(new FilterPartitions(filter, partitions));
+    }
 
     /**
      *

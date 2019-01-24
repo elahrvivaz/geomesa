@@ -11,18 +11,23 @@ package org.locationtech.geomesa.fs.storage.common.partitions
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
 import java.time.{ZoneOffset, ZonedDateTime}
-import java.util.{Date, Optional}
+import java.util.{Collections, Date, Optional}
 
-import org.locationtech.geomesa.filter.FilterHelper
-import org.locationtech.geomesa.fs.storage.api.{PartitionScheme, PartitionSchemeFactory}
+import org.locationtech.geomesa.filter.Bounds.Bound
+import org.locationtech.geomesa.filter.{Bounds, FilterHelper}
+import org.locationtech.geomesa.fs.storage.api.{FilterPartitions, PartitionScheme, PartitionSchemeFactory}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
+
+import scala.annotation.tailrec
 
 class DateTimeScheme(fmtStr: String,
                      stepUnit: ChronoUnit,
                      step: Int,
                      dtg: String,
                      leaf: Boolean) extends PartitionScheme {
+
+  import scala.collection.JavaConverters._
 
   private val MinDateTime = ZonedDateTime.of(0, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC)
   private val MaxDateTime = ZonedDateTime.of(9999, 12, 31, 23, 59, 59, 999000000, ZoneOffset.UTC)
@@ -35,17 +40,67 @@ class DateTimeScheme(fmtStr: String,
     fmt.format(feature.getAttribute(dtg).asInstanceOf[Date].toInstant.atZone(ZoneOffset.UTC))
 
   override def getPartitions(filter: Filter): java.util.List[String] = {
-    import scala.collection.JavaConverters._
-
     val bounds = FilterHelper.extractIntervals(filter, dtg, handleExclusiveBounds = true)
-    val intervals = bounds.values.map { b =>
-      (b.lower.value.getOrElse(MinDateTime), b.upper.value.getOrElse(MaxDateTime))
-    }
-
-    intervals.flatMap { case (start, end) =>
+    val intervals = bounds.values.map(b => (b.lower.value.getOrElse(MinDateTime), b.upper.value.getOrElse(MaxDateTime)))
+    val partitions = intervals.flatMap { case (start, end) =>
       val count = stepUnit.between(start, end).toInt + 1
       Seq.tabulate(count)(i => fmt.format(start.plus(step * i, stepUnit)))
-    }.asJava
+    }
+    partitions.distinct.asJava
+  }
+
+  override def getFilterPartitions(filter: Filter,
+                                   partitions: java.util.List[String]): java.util.List[FilterPartitions] = {
+    val bounds = FilterHelper.extractIntervals(filter, dtg, handleExclusiveBounds = true)
+    if (bounds.disjoint) {
+      Collections.emptyList()
+    } else if (bounds.isEmpty) {
+      Collections.singletonList(new FilterPartitions(filter, partitions))
+    } else {
+      val covered = new java.util.ArrayList[String]()
+      val partial = new java.util.ArrayList[String]()
+      val iter = partitions.iterator
+      while (iter.hasNext) {
+        val name = iter.next()
+        val start = ZonedDateTime.parse(name, fmt)
+        val end = start.plus(step, stepUnit)
+        val partition = Bounds(Bound(Some(start), inclusive = true), Bound(Some(end), inclusive = true))
+
+        @tailrec
+        def check(intervals: Iterator[Bounds[ZonedDateTime]]): Option[java.util.ArrayList[String]] = {
+          val b = intervals.next()
+          if (b.covers(partition)) {
+            Some(covered)
+          } else if (b.intersects(partition)) {
+            Some(partial)
+          } else if (!intervals.hasNext) {
+            None
+          } else {
+            check(intervals)
+          }
+        }
+
+        check(bounds.values.iterator).foreach(_.add(name))
+      }
+
+      def coveredFilter: Filter = {
+        import org.locationtech.geomesa.filter.{isTemporalFilter, partitionSubFilters, andOption}
+        andOption(partitionSubFilters(filter, isTemporalFilter(_, dtg))._2).getOrElse(Filter.INCLUDE)
+      }
+
+      if (covered.isEmpty && partial.isEmpty) {
+        Collections.emptyList // equivalent to Filter.EXCLUDE
+      } else if (covered.isEmpty) {
+        Collections.singletonList(new FilterPartitions(filter, partial))
+      } else if (partial.isEmpty) {
+        Collections.singletonList(new FilterPartitions(coveredFilter, covered))
+      } else {
+        val filterPartitions = new java.util.ArrayList[FilterPartitions](2)
+        filterPartitions.add(new FilterPartitions(coveredFilter, covered))
+        filterPartitions.add(new FilterPartitions(filter, partial))
+        filterPartitions
+      }
+    }
   }
 
   // TODO This may not be the best way to calculate max depth...

@@ -12,11 +12,9 @@ package org.locationtech.geomesa.fs.storage.common
 import java.util.Collections
 
 import com.typesafe.scalalogging.LazyLogging
-import org.locationtech.jts.geom.Envelope
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.geotools.data.Query
-import org.locationtech.geomesa.filter.factory.FastFilterFactory
 import org.locationtech.geomesa.fs.storage.api._
 import org.locationtech.geomesa.fs.storage.common.MetadataFileSystemStorage.WriterCallback
 import org.locationtech.geomesa.fs.storage.common.utils.StorageUtils.FileType
@@ -24,6 +22,7 @@ import org.locationtech.geomesa.fs.storage.common.utils.{PathCache, StorageUtils
 import org.locationtech.geomesa.index.planning.QueryRunner
 import org.locationtech.geomesa.utils.io.WithClose
 import org.locationtech.geomesa.utils.stats.MethodProfiling
+import org.locationtech.jts.geom.Envelope
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
@@ -86,20 +85,23 @@ abstract class MetadataFileSystemStorage(conf: Configuration,
   override def getReader(partitions: java.util.List[String], query: Query, threads: Int): FileSystemReader = {
     import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
-    // TODO ask the partition manager the geometry is fully covered?
+    logger.debug(s"Threading the read of ${partitions.size} partitions with $threads reader threads")
 
     val sft = metadata.getSchema
     val q = QueryRunner.default.configureQuery(sft, query)
-    val filter = Option(q.getFilter).filter(_ != Filter.INCLUDE)
     val transform = q.getHints.getTransform
 
-    val paths = partitions.iterator.asScala.flatMap(getFilePaths(_).asScala)
+    val scheme = metadata.getPartitionScheme
+    val filters = scheme.getFilterPartitions(Option(q.getFilter).getOrElse(Filter.INCLUDE), partitions)
 
-    val reader = createReader(sft, filter, transform)
+    val readers = filters.asScala.iterator.map { filterPartition =>
+      val filter = Option(filterPartition.filter).filter(_ != Filter.INCLUDE)
+      val reader = createReader(sft, filter, transform)
+      val paths = partitions.iterator.asScala.flatMap(getFilePaths(_).asScala)
+      (reader, paths)
+    }
 
-    logger.debug(s"Threading the read of ${partitions.size} partitions with $threads reader threads")
-
-    FileSystemThreadedReader(reader, paths, threads)
+    FileSystemThreadedReader(readers, threads)
   }
 
   override def getFilePaths(partition: String): java.util.List[Path] = {
@@ -141,7 +143,7 @@ abstract class MetadataFileSystemStorage(conf: Configuration,
       var written = 0L
 
       val reader = createReader(sft, None, None)
-      def threaded = FileSystemThreadedReader(reader, toCompact.toIterator, threads)
+      def threaded = FileSystemThreadedReader(Iterator.single(reader -> toCompact.toIterator), threads)
       val callback = new CompactCallback(partition, dataPath, toCompact)
 
       WithClose(createWriter(sft, dataPath, callback), threaded) { case (writer, features) =>

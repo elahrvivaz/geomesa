@@ -104,5 +104,16 @@ class BoundsTest extends Specification {
       Bounds.intersection(Bounds(Bound.unbounded, inclusive), Bounds(Bound.unbounded, exclusive)) must beSome(Bounds(Bound.unbounded, exclusive))
       Bounds.intersection(Bounds(Bound.unbounded, exclusive), Bounds(Bound.unbounded, inclusive)) must beSome(Bounds(Bound.unbounded, exclusive))
     }
+
+    "cover" >> {
+
+    }
+
+    "intersect" >> {
+      val left  = Bounds(Bound(Some(Int.box(0)), inclusive = true), Bound(Some(Int.box(10)), inclusive = true))
+      val right = Bounds(Bound(Some(Int.box(5)), inclusive = true), Bound(Some(Int.box(15)), inclusive = true))
+      left.intersects(right) must beTrue
+      right.intersects(left) must beTrue
+    }
   }
 }

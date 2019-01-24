@@ -52,6 +52,69 @@ case class Bounds[T](lower: Bound[T], upper: Bound[T]) {
     */
   def isEquals: Boolean = !isRange
 
+  /**
+    * Does this bounds cover the other bounds?
+    *
+    * @param other other bounds
+    * @return
+    */
+  def covers(other: Bounds[T]): Boolean = {
+    upper.value.forall { up =>
+      other.upper.value.exists { case oup: Comparable[Any] =>
+        val c = oup.compareTo(up)
+        c < 0 || (c == 0 && upper.inclusive || other.upper.exclusive)
+      }
+    } && lower.value.forall { lo =>
+      other.lower.value.exists { case olo: Comparable[Any] =>
+        val c = olo.compareTo(lo)
+        c > 0 || (c == 0 && lower.inclusive || other.lower.exclusive)
+      }
+    }
+  }
+
+  /**
+    * Does this bounds intersect the other bounds?
+    *
+    * @param other other bounds
+    * @return
+    */
+  def intersects(other: Bounds[T]): Boolean = {
+    upper.value.forall { up =>
+      other.lower.value.forall { case olo: Comparable[Any] =>
+        val c = olo.compareTo(up)
+        c > 0 || (c == 0 && lower.inclusive || other.lower.exclusive)
+      }
+    } && lower.value.forall { lo =>
+      other.upper.value.forall { case oup: Comparable[Any] =>
+        val c = oup.compareTo(up)
+        c < 0 || (c == 0 && upper.inclusive && other.upper.inclusive)
+      }
+
+    }
+
+    if (lower.value.isEmpty) {
+      upper.value.forall { up =>
+        other.lower.value.forall { case olo: Comparable[Any] =>
+          val c = olo.compareTo(up)
+          c < 0 || (c == 0 && upper.inclusive && other.lower.inclusive)
+        }
+      }
+    } else if (upper.value.isEmpty) {
+      other.upper.value.forall { case oup: Comparable[Any] =>
+        val c = oup.compareTo(lower.value.get)
+        c > 0 || (c == 0 && lower.inclusive && other.upper.inclusive)
+      }
+    } else {
+      other.lower.value.forall { case olo: Comparable[Any] =>
+        val c = olo.compareTo(lower.value.get)
+        c > 0 || (c == 0 && lower.inclusive && other.lower.inclusive)
+      } && other.upper.value.forall { case oup: Comparable[Any] =>
+        val c = oup.compareTo(upper.value.get)
+        c < 0 || (c == 0 && upper.inclusive && other.upper.inclusive)
+      }
+    }
+  }
+
   override def toString: String = {
     (if (lower.inclusive) { "[" } else { "(" }) + lower.value.getOrElse("-\u221E") + "," +
       upper.value.getOrElse("+\u221E") + (if (upper.inclusive) { "]" } else { ")" })
