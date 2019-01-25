@@ -46,12 +46,11 @@ public interface PartitionScheme {
      * remove any predicates that are implicitly true for the associated partitions
      *
      * @param filter filter
-     * @param partitions partitions
      * @return list of simplified filters and partitions
      */
-    default List<FilterPartitions> getFilterPartitions(Filter filter, List<String> partitions) {
+    default List<FilterPartitions> getPartitionsForQuery(Filter filter) {
         // default implementation does no optimization
-        return Collections.singletonList(new FilterPartitions(filter, partitions));
+        return Collections.singletonList(new FilterPartitions(filter, getPartitions(filter)));
     }
 
     /**

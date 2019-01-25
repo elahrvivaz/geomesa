@@ -14,7 +14,7 @@ import java.time.{ZoneOffset, ZonedDateTime}
 import java.util.{Collections, Date, Optional}
 
 import org.locationtech.geomesa.filter.Bounds.Bound
-import org.locationtech.geomesa.filter.{Bounds, FilterHelper}
+import org.locationtech.geomesa.filter.{Bounds, FilterHelper, FilterValues}
 import org.locationtech.geomesa.fs.storage.api.{FilterPartitions, PartitionScheme, PartitionSchemeFactory}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
@@ -39,32 +39,21 @@ class DateTimeScheme(fmtStr: String,
   override def getPartition(feature: SimpleFeature): String =
     fmt.format(feature.getAttribute(dtg).asInstanceOf[Date].toInstant.atZone(ZoneOffset.UTC))
 
-  override def getPartitions(filter: Filter): java.util.List[String] = {
-    val bounds = FilterHelper.extractIntervals(filter, dtg, handleExclusiveBounds = true)
-    val intervals = bounds.values.map(b => (b.lower.value.getOrElse(MinDateTime), b.upper.value.getOrElse(MaxDateTime)))
-    val partitions = intervals.flatMap { case (start, end) =>
-      val count = stepUnit.between(start, end).toInt + 1
-      Seq.tabulate(count)(i => fmt.format(start.plus(step * i, stepUnit)))
-    }
-    partitions.distinct.asJava
-  }
+  override def getPartitions(filter: Filter): java.util.List[String] =
+    getPartitions(FilterHelper.extractIntervals(filter, dtg, handleExclusiveBounds = true)).map(fmt.format).asJava
 
-  override def getFilterPartitions(filter: Filter,
-                                   partitions: java.util.List[String]): java.util.List[FilterPartitions] = {
+  override def getPartitionsForQuery(filter: Filter): java.util.List[FilterPartitions] = {
     val bounds = FilterHelper.extractIntervals(filter, dtg, handleExclusiveBounds = true)
     if (bounds.disjoint) {
       Collections.emptyList()
     } else if (bounds.isEmpty) {
-      Collections.singletonList(new FilterPartitions(filter, partitions))
+      Collections.singletonList(new FilterPartitions(filter, getPartitions(bounds).map(fmt.format).asJava))
     } else {
       val covered = new java.util.ArrayList[String]()
       val partial = new java.util.ArrayList[String]()
-      val iter = partitions.iterator
-      while (iter.hasNext) {
-        val name = iter.next()
-        val start = ZonedDateTime.parse(name, fmt)
+      getPartitions(bounds).foreach { start =>
         val end = start.plus(step, stepUnit)
-        val partition = Bounds(Bound(Some(start), inclusive = true), Bound(Some(end), inclusive = true))
+        val partition = Bounds(Bound(Some(start), inclusive = true), Bound(Some(end), inclusive = false))
 
         @tailrec
         def check(intervals: Iterator[Bounds[ZonedDateTime]]): Option[java.util.ArrayList[String]] = {
@@ -80,7 +69,7 @@ class DateTimeScheme(fmtStr: String,
           }
         }
 
-        check(bounds.values.iterator).foreach(_.add(name))
+        check(bounds.values.iterator).foreach(_.add(fmt.format(start)))
       }
 
       def coveredFilter: Filter = {
@@ -121,6 +110,15 @@ class DateTimeScheme(fmtStr: String,
       StepOpt           -> step.toString,
       LeafStorage       -> leaf.toString
     ).asJava
+  }
+
+  private def getPartitions(bounds: FilterValues[Bounds[ZonedDateTime]]): Seq[ZonedDateTime] = {
+    val intervals = bounds.values.map(b => (b.lower.value.getOrElse(MinDateTime), b.upper.value.getOrElse(MaxDateTime)))
+    val partitions = intervals.flatMap { case (start, end) =>
+      val count = stepUnit.between(start, end).toInt + 1
+      Seq.tabulate(count)(i => start.plus(step * i, stepUnit))
+    }
+    partitions.distinct
   }
 
   override def equals(other: Any): Boolean = other match {

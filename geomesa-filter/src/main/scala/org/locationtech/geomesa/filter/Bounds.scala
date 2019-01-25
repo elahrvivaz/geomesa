@@ -79,38 +79,9 @@ case class Bounds[T](lower: Bound[T], upper: Bound[T]) {
     * @return
     */
   def intersects(other: Bounds[T]): Boolean = {
-    upper.value.forall { up =>
-      other.lower.value.forall { case olo: Comparable[Any] =>
-        val c = olo.compareTo(up)
-        c > 0 || (c == 0 && lower.inclusive || other.lower.exclusive)
-      }
-    } && lower.value.forall { lo =>
-      other.upper.value.forall { case oup: Comparable[Any] =>
-        val c = oup.compareTo(up)
-        c < 0 || (c == 0 && upper.inclusive && other.upper.inclusive)
-      }
-
-    }
-
-    if (lower.value.isEmpty) {
-      upper.value.forall { up =>
-        other.lower.value.forall { case olo: Comparable[Any] =>
-          val c = olo.compareTo(up)
-          c < 0 || (c == 0 && upper.inclusive && other.lower.inclusive)
-        }
-      }
-    } else if (upper.value.isEmpty) {
-      other.upper.value.forall { case oup: Comparable[Any] =>
-        val c = oup.compareTo(lower.value.get)
-        c > 0 || (c == 0 && lower.inclusive && other.upper.inclusive)
-      }
-    } else {
-      other.lower.value.forall { case olo: Comparable[Any] =>
-        val c = olo.compareTo(lower.value.get)
-        c > 0 || (c == 0 && lower.inclusive && other.lower.inclusive)
-      } && other.upper.value.forall { case oup: Comparable[Any] =>
-        val c = oup.compareTo(upper.value.get)
-        c < 0 || (c == 0 && upper.inclusive && other.upper.inclusive)
+    Bounds.largerLowerBound(lower, other.lower).value.forall { lo =>
+      Bounds.smallerUpperBound(upper, other.upper).value.forall { up =>
+        lo.asInstanceOf[Comparable[Any]].compareTo(up) < 0 // TODO <= ?
       }
     }
   }

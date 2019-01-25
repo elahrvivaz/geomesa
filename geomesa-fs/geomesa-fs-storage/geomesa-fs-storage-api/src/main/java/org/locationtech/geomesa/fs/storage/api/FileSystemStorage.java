@@ -13,6 +13,7 @@ import org.geotools.data.Query;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.filter.Filter;
 
+import java.util.HashSet;
 import java.util.List;
 
 public interface FileSystemStorage {
@@ -31,7 +32,9 @@ public interface FileSystemStorage {
      *
      * @return partitions
      */
-    List<PartitionMetadata> getPartitions();
+    default List<PartitionMetadata> getPartitions() {
+        return getMetadata().getPartitions();
+    }
 
     /**
      * Convenience method that delegates to the partition scheme
@@ -41,7 +44,31 @@ public interface FileSystemStorage {
      *
      * @return partitions
      */
-    List<PartitionMetadata> getPartitions(Filter filter);
+    default List<PartitionMetadata> getPartitions(Filter filter) {
+        // Get the partitions from the partition scheme
+        // if the result is empty, then scan all partitions
+        List<PartitionMetadata> all = getMetadata().getPartitions();
+        if (filter != Filter.INCLUDE) {
+            HashSet<String> covering = new HashSet<>(getMetadata().getPartitionScheme().getPartitions(filter));
+            if (!covering.isEmpty()) {
+                all.removeIf(partitionMetadata -> !covering.contains(partitionMetadata.name()));
+            }
+
+        }
+        return all;
+    }
+
+    /**
+     * Convenience method that delegates to the partition scheme
+     *
+     * @see StorageMetadata#getPartitionScheme()
+     * @see PartitionScheme#getPartitionsForQuery(org.opengis.filter.Filter)
+     *
+     * @return partitions and predicates for each partition
+     */
+    default List<FilterPartitions> getPartitionsForQuery(Filter filter) {
+        return getMetadata().getPartitionScheme().getPartitionsForQuery(filter);
+    }
 
     /**
      * Convenience method that delegates to the partition scheme
@@ -52,7 +79,9 @@ public interface FileSystemStorage {
      * @param feature simple feature
      * @return partition feature should be written to
      */
-    String getPartition(SimpleFeature feature);
+    default String getPartition(SimpleFeature feature) {
+        return getMetadata().getPartitionScheme().getPartition(feature);
+    }
 
     /**
      * Get a writer for a given partition. This method is thread-safe and can be called multiple times,
@@ -64,13 +93,57 @@ public interface FileSystemStorage {
     FileSystemWriter getWriter(String partition);
 
     /**
+     * Get a reader for all relevant partitions
+     *
+     * @param query query
+     * @return reader
+     */
+    default FileSystemReader getReader(Query query) {
+        return getReader(query, 1);
+    }
+
+    /**
+     * Get a reader for all relevant partitions
+     *
+     * @param query query
+     * @param threads suggested threads used for reading data files
+     * @return reader
+     */
+    FileSystemReader getReader(Query query, int threads);
+
+    /**
+     * Get a reader for a single partition
+     *
+     * @param query query
+     * @param partition partition to read
+     * @return reader
+     */
+    default FileSystemReader getPartitionReader(Query query, String partition) {
+        return getPartitionReader(query, partition, 1);
+    }
+
+    /**
+     * Get a reader for a single partition
+     *
+     * @param query query
+     * @param partition partition to read
+     * @param threads suggested threads used for reading data files
+     * @return reader
+     */
+    FileSystemReader getPartitionReader(Query query, String partition, int threads);
+
+    /**
      * Get a reader for a given set of partitions, using a single thread
      *
      * @param partitions partitions
      * @param query query
      * @return reader
+     * @deprecated use getPartitionReader(Query, partition)
      */
-    FileSystemReader getReader(List<String> partitions, Query query);
+    @Deprecated
+    default FileSystemReader getReader(List<String> partitions, Query query) {
+        return getReader(partitions, query, 1);
+    }
 
     /**
      * Get a reader for a given set of partitions
@@ -79,7 +152,9 @@ public interface FileSystemStorage {
      * @param query query
      * @param threads suggested threads used for reading data files
      * @return reader
+     * @deprecated use getPartitionReader(Query, partition)
      */
+    @Deprecated
     FileSystemReader getReader(List<String> partitions, Query query, int threads);
 
     /**
@@ -98,7 +173,9 @@ public interface FileSystemStorage {
      *
      * @param partition partition
      */
-    void compact(String partition);
+    default void compact(String partition) {
+        compact(partition, 1);
+    }
 
     /**
      * Compact a partition - merge multiple data files into a single file.

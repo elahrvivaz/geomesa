@@ -11,15 +11,14 @@ package org.locationtech.geomesa.fs.storage.converter
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 
-import org.locationtech.jts.geom.Envelope
 import org.apache.hadoop.fs.{FileContext, Path}
 import org.geotools.data.Query
 import org.locationtech.geomesa.convert2.SimpleFeatureConverter
 import org.locationtech.geomesa.fs.storage.api._
 import org.locationtech.geomesa.fs.storage.common.utils.PathCache
 import org.locationtech.geomesa.fs.storage.converter.ConverterStorage.ConverterMetadata
-import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
-import org.opengis.filter.Filter
+import org.locationtech.jts.geom.Envelope
+import org.opengis.feature.simple.SimpleFeatureType
 
 class ConverterStorage(fc: FileContext,
                        root: Path,
@@ -40,29 +39,15 @@ class ConverterStorage(fc: FileContext,
 
   override def getMetadata: StorageMetadata = metadata
 
-  override def getPartitions: java.util.List[PartitionMetadata] = metadata.getPartitions
+  override def getReader(original: Query, threads: Int): FileSystemReader = {
 
-  override def getPartitions(filter: Filter): java.util.List[PartitionMetadata] = {
-    val all = getPartitions
-    if (filter == Filter.INCLUDE) { all } else {
-      val coveringPartitions = new java.util.HashSet(metadata.getPartitionScheme.getPartitions(filter))
-      if (!coveringPartitions.isEmpty) {
-        val iter = all.iterator()
-        while (iter.hasNext) {
-          if (!coveringPartitions.contains(iter.next.name)) {
-            iter.remove()
-          }
-        }
-      }
-      all
-    }
   }
 
-  override def getPartition(feature: SimpleFeature): String = partitionScheme.getPartition(feature)
+  override def getPartitionReader(original: Query, partition: String, threads: Int): FileSystemReader = {
 
-  override def getReader(partitions: java.util.List[String], query: Query): FileSystemReader =
-    getReader(partitions, query, 1)
+  }
 
+  @deprecated
   override def getReader(partitions: java.util.List[String], query: Query, threads: Int): FileSystemReader =
     new ConverterPartitionReader(this, partitions.asScala, converter, query.getFilter)
 

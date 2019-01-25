@@ -106,7 +106,8 @@ class BoundsTest extends Specification {
     }
 
     "cover" >> {
-
+      // TODO
+      ok
     }
 
     "intersect" >> {
