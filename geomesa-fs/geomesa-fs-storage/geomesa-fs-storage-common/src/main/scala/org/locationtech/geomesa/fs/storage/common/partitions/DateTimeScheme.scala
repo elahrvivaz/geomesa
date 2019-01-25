@@ -42,55 +42,55 @@ class DateTimeScheme(fmtStr: String,
   override def getPartitions(filter: Filter): java.util.List[String] =
     getPartitions(FilterHelper.extractIntervals(filter, dtg, handleExclusiveBounds = true)).map(fmt.format).asJava
 
-  override def getPartitionsForQuery(filter: Filter): java.util.List[FilterPartitions] = {
-    val bounds = FilterHelper.extractIntervals(filter, dtg, handleExclusiveBounds = true)
-    if (bounds.disjoint) {
-      Collections.emptyList()
-    } else if (bounds.isEmpty) {
-      Collections.singletonList(new FilterPartitions(filter, getPartitions(bounds).map(fmt.format).asJava))
-    } else {
-      val covered = new java.util.ArrayList[String]()
-      val partial = new java.util.ArrayList[String]()
-      getPartitions(bounds).foreach { start =>
-        val end = start.plus(step, stepUnit)
-        val partition = Bounds(Bound(Some(start), inclusive = true), Bound(Some(end), inclusive = false))
-
-        @tailrec
-        def check(intervals: Iterator[Bounds[ZonedDateTime]]): Option[java.util.ArrayList[String]] = {
-          val b = intervals.next()
-          if (b.covers(partition)) {
-            Some(covered)
-          } else if (b.intersects(partition)) {
-            Some(partial)
-          } else if (!intervals.hasNext) {
-            None
-          } else {
-            check(intervals)
-          }
-        }
-
-        check(bounds.values.iterator).foreach(_.add(fmt.format(start)))
-      }
-
-      def coveredFilter: Filter = {
-        import org.locationtech.geomesa.filter.{isTemporalFilter, partitionSubFilters, andOption}
-        andOption(partitionSubFilters(filter, isTemporalFilter(_, dtg))._2).getOrElse(Filter.INCLUDE)
-      }
-
-      if (covered.isEmpty && partial.isEmpty) {
-        Collections.emptyList() // equivalent to Filter.EXCLUDE
-      } else if (covered.isEmpty) {
-        Collections.singletonList(new FilterPartitions(filter, partial))
-      } else if (partial.isEmpty) {
-        Collections.singletonList(new FilterPartitions(coveredFilter, covered))
-      } else {
-        val filterPartitions = new java.util.ArrayList[FilterPartitions](2)
-        filterPartitions.add(new FilterPartitions(coveredFilter, covered))
-        filterPartitions.add(new FilterPartitions(filter, partial))
-        filterPartitions
-      }
-    }
-  }
+//  override def getPartitionsForQuery(filter: Filter): java.util.List[FilterPartitions] = {
+//    val bounds = FilterHelper.extractIntervals(filter, dtg, handleExclusiveBounds = true)
+//    if (bounds.disjoint) {
+//      Collections.emptyList()
+//    } else if (bounds.isEmpty) {
+//      Collections.singletonList(new FilterPartitions(filter, getPartitions(bounds).map(fmt.format).asJava))
+//    } else {
+//      val covered = new java.util.ArrayList[String]()
+//      val partial = new java.util.ArrayList[String]()
+//      getPartitions(bounds).foreach { start =>
+//        val end = start.plus(step, stepUnit)
+//        val partition = Bounds(Bound(Some(start), inclusive = true), Bound(Some(end), inclusive = false))
+//
+//        @tailrec
+//        def check(intervals: Iterator[Bounds[ZonedDateTime]]): Option[java.util.ArrayList[String]] = {
+//          val b = intervals.next()
+//          if (b.covers(partition)) {
+//            Some(covered)
+//          } else if (b.intersects(partition)) {
+//            Some(partial)
+//          } else if (!intervals.hasNext) {
+//            None
+//          } else {
+//            check(intervals)
+//          }
+//        }
+//
+//        check(bounds.values.iterator).foreach(_.add(fmt.format(start)))
+//      }
+//
+//      def coveredFilter: Filter = {
+//        import org.locationtech.geomesa.filter.{isTemporalFilter, partitionSubFilters, andOption}
+//        andOption(partitionSubFilters(filter, isTemporalFilter(_, dtg))._2).getOrElse(Filter.INCLUDE)
+//      }
+//
+//      if (covered.isEmpty && partial.isEmpty) {
+//        Collections.emptyList() // equivalent to Filter.EXCLUDE
+//      } else if (covered.isEmpty) {
+//        Collections.singletonList(new FilterPartitions(filter, partial))
+//      } else if (partial.isEmpty) {
+//        Collections.singletonList(new FilterPartitions(coveredFilter, covered))
+//      } else {
+//        val filterPartitions = new java.util.ArrayList[FilterPartitions](2)
+//        filterPartitions.add(new FilterPartitions(coveredFilter, covered))
+//        filterPartitions.add(new FilterPartitions(filter, partial))
+//        filterPartitions
+//      }
+//    }
+//  }
 
   // TODO This may not be the best way to calculate max depth...
   // especially if we are going to use other separators

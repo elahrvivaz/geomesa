@@ -37,46 +37,46 @@ class Z2Scheme(bits: Int, geom: String, leaf: Boolean) extends SpatialScheme(bit
 
   override protected def generateRanges(xy: Seq[(Double, Double, Double, Double)]): Seq[IndexRange] = z2.ranges(xy)
 
-  override def getPartitionsForQuery(filter: Filter): java.util.List[FilterPartitions] = {
-    val bounds = FilterHelper.extractGeometries(filter, geom, intersect = true)
-    if (bounds.disjoint) {
-      Collections.emptyList()
-    } else if (bounds.isEmpty) {
-      Collections.singletonList(new FilterPartitions(filter, partitions(ranges(Seq.empty)).asJava))
-    } else {
-      val covered = new java.util.ArrayList[String]()
-      val partial = new java.util.ArrayList[String]()
-
-      ranges(bounds.values).foreach { range =>
-        if (range.contained) {
-          partitions(Seq(range)).foreach(covered.add)
-        } else {
-          partitions(Seq(range)).foreach(partial.add)
-        }
-      }
-
-      // if any ranges were fully covered by one bounds and partially by another, deduplicate them
-      partial.removeAll(covered)
-
-      def coveredFilter: Filter = {
-        import org.locationtech.geomesa.filter.isSpatialFilter
-        FilterExtractingVisitor(filter, geom, isSpatialFilter _)._2.getOrElse(Filter.INCLUDE)
-      }
-
-      if (covered.isEmpty && partial.isEmpty) {
-        Collections.emptyList() // equivalent to Filter.EXCLUDE
-      } else if (covered.isEmpty) {
-        Collections.singletonList(new FilterPartitions(filter, partial))
-      } else if (partial.isEmpty) {
-        Collections.singletonList(new FilterPartitions(coveredFilter, covered))
-      } else {
-        val filterPartitions = new java.util.ArrayList[FilterPartitions](2)
-        filterPartitions.add(new FilterPartitions(coveredFilter, covered))
-        filterPartitions.add(new FilterPartitions(filter, partial))
-        filterPartitions
-      }
-    }
-  }
+//  override def getPartitionsForQuery(filter: Filter): java.util.List[FilterPartitions] = {
+//    val bounds = FilterHelper.extractGeometries(filter, geom, intersect = true)
+//    if (bounds.disjoint) {
+//      Collections.emptyList()
+//    } else if (bounds.isEmpty) {
+//      Collections.singletonList(new FilterPartitions(filter, partitions(ranges(Seq.empty)).asJava))
+//    } else {
+//      val covered = new java.util.ArrayList[String]()
+//      val partial = new java.util.ArrayList[String]()
+//
+//      ranges(bounds.values).foreach { range =>
+//        if (range.contained) {
+//          partitions(Seq(range)).foreach(covered.add)
+//        } else {
+//          partitions(Seq(range)).foreach(partial.add)
+//        }
+//      }
+//
+//      // if any ranges were fully covered by one bounds and partially by another, deduplicate them
+//      partial.removeAll(covered)
+//
+//      def coveredFilter: Filter = {
+//        import org.locationtech.geomesa.filter.isSpatialFilter
+//        FilterExtractingVisitor(filter, geom, isSpatialFilter _)._2.getOrElse(Filter.INCLUDE)
+//      }
+//
+//      if (covered.isEmpty && partial.isEmpty) {
+//        Collections.emptyList() // equivalent to Filter.EXCLUDE
+//      } else if (covered.isEmpty) {
+//        Collections.singletonList(new FilterPartitions(filter, partial))
+//      } else if (partial.isEmpty) {
+//        Collections.singletonList(new FilterPartitions(coveredFilter, covered))
+//      } else {
+//        val filterPartitions = new java.util.ArrayList[FilterPartitions](2)
+//        filterPartitions.add(new FilterPartitions(coveredFilter, covered))
+//        filterPartitions.add(new FilterPartitions(filter, partial))
+//        filterPartitions
+//      }
+//    }
+//  }
 }
 
 object Z2Scheme {

@@ -13,9 +13,9 @@ import java.util.Collections
 import java.util.concurrent.TimeUnit
 
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
 import org.geotools.data.Query
+import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.fs.storage.api._
 import org.locationtech.geomesa.fs.storage.common.MetadataFileSystemStorage.WriterCallback
 import org.locationtech.geomesa.fs.storage.common.utils.StorageUtils.FileType
@@ -66,18 +66,22 @@ abstract class MetadataFileSystemStorage(metadata: org.locationtech.geomesa.fs.s
     val scheme = metadata.getPartitionScheme
     val filters = scheme.getPartitionsForQuery(Option(query.getFilter).getOrElse(Filter.INCLUDE))
 
-    var count = 0L
     val readers = filters.asScala.iterator.flatMap { fp =>
       val paths = fp.partitions.iterator.asScala.flatMap(getFilePaths(_).asScala)
       if (paths.isEmpty) { Iterator.empty } else {
         val filter = Option(fp.filter).filter(_ != Filter.INCLUDE)
         val reader = createReader(sft, filter, transform)
-        count += fp.partitions.size()
+        logger.debug(s"  Using filter ${filter.map(ECQL.toCQL).getOrElse("INCLUDE")} on partitions " +
+            fp.partitions.asScala.mkString(", "))
         Iterator.single(reader -> paths)
       }
     }
 
-    logger.debug(s"Threading the read of $count partitions with $threads reader threads")
+    logger.debug(s"Running query '${query.getTypeName}' ${ECQL.toCQL(query.getFilter)}")
+    logger.debug(s"  Original filter: ${ECQL.toCQL(original.getFilter)}")
+    logger.debug(s"  Transforms: ${query.getHints.getTransformDefinition.map(t => if (t.isEmpty) { "empty" } else { t }).getOrElse("none")}")
+    logger.debug(s"  Threading the read of ${filters.asScala.map(_.partitions.size).sum} partitions" +
+        s" with $threads reader threads")
 
     if (readers.isEmpty) {
       MetadataFileSystemStorage.EmptyReader
