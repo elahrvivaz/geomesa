@@ -12,19 +12,21 @@ import java.util.Collections
 import java.util.concurrent.atomic.AtomicBoolean
 
 import org.apache.hadoop.fs.{FileContext, Path}
-import org.geotools.data.Query
 import org.locationtech.geomesa.convert2.SimpleFeatureConverter
 import org.locationtech.geomesa.fs.storage.api._
+import org.locationtech.geomesa.fs.storage.common.MetadataFileSystemStorage.WriterCallback
 import org.locationtech.geomesa.fs.storage.common.utils.PathCache
+import org.locationtech.geomesa.fs.storage.common.{FileSystemPathReader, MetadataFileSystemStorage}
 import org.locationtech.geomesa.fs.storage.converter.ConverterStorage.ConverterMetadata
 import org.locationtech.jts.geom.Envelope
 import org.opengis.feature.simple.SimpleFeatureType
+import org.opengis.filter.Filter
 
 class ConverterStorage(fc: FileContext,
                        root: Path,
                        sft: SimpleFeatureType,
                        converter: SimpleFeatureConverter,
-                       partitionScheme: PartitionScheme) extends FileSystemStorage {
+                       partitionScheme: PartitionScheme) extends MetadataFileSystemStorage(new ConverterMetadata(fc, root, sft, partitionScheme)) {
 
   // TODO close converter...
   // the problem is that we aggressively cache storage instances for performance (in FileSystemStorageManager),
@@ -33,23 +35,20 @@ class ConverterStorage(fc: FileContext,
   // actually need to be closed, and since they will only open a single connection per converter, the
   // impact should be low
 
-  private val metadata = new ConverterMetadata(fc, root, sft, partitionScheme)
-
   import scala.collection.JavaConverters._
 
-  override def getMetadata: StorageMetadata = metadata
+  // note: should only be used in the write path, which we have overridden
+  override protected def extension: String = throw new NotImplementedError()
 
-  override def getReader(original: Query, threads: Int): FileSystemReader = {
+  override protected def createWriter(sft: SimpleFeatureType,
+                                      file: Path,
+                                      callback: WriterCallback): FileSystemWriter = throw new NotImplementedError()
 
+  override protected def createReader(sft: SimpleFeatureType,
+                                      filter: Option[Filter],
+                                      transform: Option[(String, SimpleFeatureType)]): FileSystemPathReader = {
+    new ConverterFileSystemReader(fc, converter, filter, transform)
   }
-
-  override def getPartitionReader(original: Query, partition: String, threads: Int): FileSystemReader = {
-
-  }
-
-  @deprecated
-  override def getReader(partitions: java.util.List[String], query: Query, threads: Int): FileSystemReader =
-    new ConverterPartitionReader(this, partitions.asScala, converter, query.getFilter)
 
   override def getFilePaths(partition: String): java.util.List[Path] = {
     val path = new Path(root, partition)
@@ -60,9 +59,6 @@ class ConverterStorage(fc: FileContext,
 
   override def getWriter(partition: String): FileSystemWriter =
     throw new UnsupportedOperationException("Converter storage does not support feature writing")
-
-  override def compact(partition: String): Unit =
-    throw new UnsupportedOperationException("Converter storage does not support compactions")
 
   override def compact(partition: String, threads: Int): Unit =
     throw new UnsupportedOperationException("Converter storage does not support compactions")

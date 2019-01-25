@@ -78,7 +78,7 @@ class DateTimeScheme(fmtStr: String,
       }
 
       if (covered.isEmpty && partial.isEmpty) {
-        Collections.emptyList // equivalent to Filter.EXCLUDE
+        Collections.emptyList() // equivalent to Filter.EXCLUDE
       } else if (covered.isEmpty) {
         Collections.singletonList(new FilterPartitions(filter, partial))
       } else if (partial.isEmpty) {
@@ -134,11 +134,11 @@ object DateTimeScheme {
   val Name = "datetime"
 
   object Config {
-    val DateTimeFormatOpt   = "datetime-format"
-    val StepUnitOpt         = "step-unit"
-    val StepOpt             = "step"
-    val DtgAttribute        = "dtg-attribute"
-    val LeafStorage: String = SpatialPartitionSchemeConfig.LeafStorage
+    val DateTimeFormatOpt: String = "datetime-format"
+    val StepUnitOpt      : String = "step-unit"
+    val StepOpt          : String = "step"
+    val DtgAttribute     : String = "dtg-attribute"
+    val LeafStorage      : String = LeafStorageConfig
   }
 
   object Formats {

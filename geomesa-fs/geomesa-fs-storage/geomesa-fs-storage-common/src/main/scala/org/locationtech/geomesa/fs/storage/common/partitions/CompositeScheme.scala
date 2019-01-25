@@ -31,9 +31,18 @@ class CompositeScheme(schemes: Seq[PartitionScheme]) extends PartitionScheme {
   override def getPartitions(filter: Filter): java.util.List[String] =
     schemes.map(_.getPartitions(filter).asScala).reduce((a, b) => for (i <- a; j <-b) yield { s"$i/$j" }).asJava
 
-//  override def getPartitionsForQuery(filter: Filter): java.util.List[FilterPartitions] = {
-//
-//  }
+  override def getPartitionsForQuery(filter: Filter): java.util.List[FilterPartitions] = {
+    val head = schemes.head.getPartitionsForQuery(filter).asScala
+    val reduced = schemes.tail.foldLeft(head) { (fps, scheme) =>
+      fps.flatMap { fp =>
+        scheme.getPartitionsForQuery(fp.filter).asScala.map { tier =>
+          val paths = fp.partitions().asScala.flatMap(p1 => tier.partitions.asScala.map(p2 => s"$p1/$p2"))
+          new FilterPartitions(tier.filter, paths.asJava)
+        }
+      }
+    }
+    reduced.asJava
+  }
 
   override def getMaxDepth: Int = schemes.map(_.getMaxDepth).sum
 

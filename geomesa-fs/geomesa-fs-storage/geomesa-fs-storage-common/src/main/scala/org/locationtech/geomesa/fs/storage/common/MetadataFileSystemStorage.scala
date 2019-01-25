@@ -34,8 +34,7 @@ import scala.collection.mutable.ListBuffer
   *
   * @param metadata metadata
   */
-abstract class MetadataFileSystemStorage(conf: Configuration,
-                                         metadata: org.locationtech.geomesa.fs.storage.api.StorageMetadata)
+abstract class MetadataFileSystemStorage(metadata: org.locationtech.geomesa.fs.storage.api.StorageMetadata)
     extends FileSystemStorage with MethodProfiling with LazyLogging {
 
   import scala.collection.JavaConverters._

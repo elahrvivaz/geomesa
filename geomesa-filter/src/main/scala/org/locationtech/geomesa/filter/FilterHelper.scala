@@ -486,6 +486,8 @@ object FilterHelper {
     Some(FilterValues(Seq(Bounds.everything[T]), precise = false))
   }
 
+  def propertyNames(filter: Filter): Seq[String] = propertyNames(filter, null)
+
   def propertyNames(filter: Filter, sft: SimpleFeatureType): Seq[String] =
     DataUtilities.attributeNames(filter, sft).toSeq.distinct.sorted
 
