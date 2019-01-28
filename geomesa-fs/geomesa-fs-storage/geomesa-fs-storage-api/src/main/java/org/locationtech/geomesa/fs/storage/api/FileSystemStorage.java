@@ -13,6 +13,7 @@ import org.geotools.data.Query;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.filter.Filter;
 
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -39,46 +40,65 @@ public interface FileSystemStorage {
     }
 
     /**
-     * Convenience method that delegates to the partition scheme
-     *
-     * @see StorageMetadata#getPartitionScheme()
-     * @see PartitionScheme#getPartitions(org.opengis.filter.Filter)
+     * Gets a list of partitions that match the given filter
      *
      * @return partitions
      */
     default List<PartitionMetadata> getPartitions(Filter filter) {
-        // Get the partitions from the partition scheme
-        // if the result is empty, then scan all partitions
-        List<PartitionMetadata> all = getMetadata().getPartitions();
-        if (filter != Filter.INCLUDE) {
-            HashSet<String> covering = new HashSet<>(getMetadata().getPartitionScheme().getPartitions(filter));
-            if (!covering.isEmpty()) {
-                all.removeIf(partitionMetadata -> !covering.contains(partitionMetadata.name()));
+        if (filter == Filter.INCLUDE) {
+            return getMetadata().getPartitions();
+        } else {
+            Optional<List<FilterPartitions>> fromFilter =
+                  getMetadata().getPartitionScheme().getPartitionsForQuery(filter, false);
+            if (!fromFilter.isPresent()) {
+                return getMetadata().getPartitions();
+            } else if (fromFilter.get().isEmpty()) {
+                return Collections.emptyList();
+            } else {
+                HashSet<String> intersecting = new HashSet<>();
+                for (FilterPartitions fps: fromFilter.get()) {
+                    intersecting.addAll(fps.partitions());
+                }
+                List<PartitionMetadata> result = new ArrayList<>();
+                for (PartitionMetadata pm: getMetadata().getPartitions()) {
+                    if (intersecting.contains(pm.name())) {
+                        result.add(pm);
+                    }
+                }
+                return result;
             }
-
         }
-        return all;
     }
 
     /**
-     * Convenience method that delegates to the partition scheme
+     * Get partitions that match a given filter. Each set of partitions will have a simplified
+     * filter that should be applied to that set
      *
-     * @see StorageMetadata#getPartitionScheme()
-     * @see PartitionScheme#getPartitionsForQuery(org.opengis.filter.Filter)
+     * If there are no partitions that match the filter, an empty list will be returned
      *
      * @return partitions and predicates for each partition
      */
     default List<FilterPartitions> getPartitionsForQuery(Filter filter) {
         Optional<List<FilterPartitions>> opt = getMetadata().getPartitionScheme().getPartitionsForQuery(filter);
-        if (opt.isPresent()) {
-            return opt.get();
+        if (opt.isPresent() && opt.get().isEmpty()) {
+            return Collections.emptyList();
         } else {
-            List<PartitionMetadata> partitions = getMetadata().getPartitions();
-            List<String> names = new java.util.ArrayList<>(partitions.size());
-            for (PartitionMetadata partition: partitions) {
+            List<PartitionMetadata> all = getMetadata().getPartitions();
+            List<String> names = new java.util.ArrayList<>(all.size());
+            for (PartitionMetadata partition: all) {
                 names.add(partition.name());
             }
-            return Collections.singletonList(new FilterPartitions(filter, names));
+            if (!opt.isPresent()) {
+                return Collections.singletonList(new FilterPartitions(filter, names));
+            } else {
+                List<FilterPartitions> result = new ArrayList<>();
+                for (FilterPartitions fp: opt.get()) {
+                    List<String> partitions = new ArrayList<>(fp.partitions());
+                    partitions.retainAll(names);
+                    result.add(new FilterPartitions(fp.filter(), partitions));
+                }
+                return result;
+            }
         }
     }
 

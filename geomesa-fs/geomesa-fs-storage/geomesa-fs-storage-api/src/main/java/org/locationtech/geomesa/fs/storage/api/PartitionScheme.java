@@ -53,10 +53,31 @@ public interface PartitionScheme {
      * Return a list of modified filters and partitions. Each filter will have been simplified to
      * remove any predicates that are implicitly true for the associated partitions
      *
+     * If the filter does not constrain partitions at all, then an empty option will be returned,
+     * indicating all partitions much be searched. If the filter excludes all potential partitions,
+     * then an empty list of partitions will be returned
+     *
      * @param filter filter
      * @return list of simplified filters and partitions
      */
     default Optional<List<FilterPartitions>> getPartitionsForQuery(Filter filter) {
+        return getPartitionsForQuery(filter, true);
+    }
+
+    /**
+     * Return a list of modified filters and partitions. If `simplify` is true, each filter will have
+     * been simplified to remove any predicates that are implicitly true for the associated partitions,
+     * otherwise all intersecting partitions will be returned in one group
+     *
+     * If the filter does not constrain partitions at all, then an empty option will be returned,
+     * indicating all partitions much be searched. If the filter excludes all potential partitions,
+     * then an empty list of partitions will be returned
+     *
+     * @param filter filter
+     * @param simplify simplify filters based on intersecting/covered partitions
+     * @return list of simplified filters and partitions
+     */
+    default Optional<List<FilterPartitions>> getPartitionsForQuery(Filter filter, boolean simplify) {
         List<String> partitions = getPartitions(filter);
         // default implementation does no optimization
         if (partitions.isEmpty()) {

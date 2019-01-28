@@ -90,15 +90,13 @@ class FileSystemFeatureStore(val storage: FileSystemStorage,
   override def buildFeatureType(): SimpleFeatureType = sft
 
   override def getBoundsInternal(query: Query): ReferencedEnvelope = {
-    import org.locationtech.geomesa.utils.geotools.{CRS_EPSG_4326, wholeWorldEnvelope}
+    import org.locationtech.geomesa.utils.geotools.CRS_EPSG_4326
+    val envelope = new ReferencedEnvelope(CRS_EPSG_4326)
     val partitions = storage.getPartitions(query.getFilter).iterator
-    if (!partitions.hasNext) { wholeWorldEnvelope } else {
-      val envelope = new ReferencedEnvelope(CRS_EPSG_4326)
-      while (partitions.hasNext) {
-        envelope.expandToInclude(partitions.next.bounds())
-      }
-      envelope
+    while (partitions.hasNext) {
+      envelope.expandToInclude(partitions.next.bounds())
     }
+    envelope
   }
 
   override def getCountInternal(query: Query): Int = {

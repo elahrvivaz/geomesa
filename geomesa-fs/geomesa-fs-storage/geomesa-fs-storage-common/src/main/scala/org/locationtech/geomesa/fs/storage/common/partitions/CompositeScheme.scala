@@ -10,7 +10,7 @@ package org.locationtech.geomesa.fs.storage.common.partitions
 
 import java.util.Optional
 
-import org.locationtech.geomesa.fs.storage.api.{FilterPartitions, PartitionScheme, PartitionSchemeFactory}
+import org.locationtech.geomesa.fs.storage.api.{PartitionScheme, PartitionSchemeFactory}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
@@ -28,6 +28,7 @@ class CompositeScheme(schemes: Seq[PartitionScheme]) extends PartitionScheme {
 
   override def getPartition(feature: SimpleFeature): String = schemes.map(_.getPartition(feature)).mkString("/")
 
+  @deprecated
   override def getPartitions(filter: Filter): java.util.List[String] =
     schemes.map(_.getPartitions(filter).asScala).reduce((a, b) => for (i <- a; j <-b) yield { s"$i/$j" }).asJava
 
