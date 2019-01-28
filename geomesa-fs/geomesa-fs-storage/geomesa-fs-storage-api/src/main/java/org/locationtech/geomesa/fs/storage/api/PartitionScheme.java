@@ -14,6 +14,7 @@ import org.opengis.filter.Filter;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public interface PartitionScheme {
 
@@ -36,9 +37,16 @@ public interface PartitionScheme {
      * Return a list of partitions that the system needs to query
      * in order to satisfy a filter predicate
      *
+     * Note that if the filter does not constrain the partitions at
+     * all, an empty list will be returned. This can't be disambiguated
+     * with a filter that doesn't match any partitions - instead, use
+     * `getPartitionsForQuery`
+     *
      * @param filter filter
      * @return list of partitions that may have results from the filter
+     * @deprecated use getPartitionsForQuery
      */
+    @Deprecated
     List<String> getPartitions(Filter filter);
 
     /**
@@ -48,9 +56,14 @@ public interface PartitionScheme {
      * @param filter filter
      * @return list of simplified filters and partitions
      */
-    default List<FilterPartitions> getPartitionsForQuery(Filter filter) {
+    default Optional<List<FilterPartitions>> getPartitionsForQuery(Filter filter) {
+        List<String> partitions = getPartitions(filter);
         // default implementation does no optimization
-        return Collections.singletonList(new FilterPartitions(filter, getPartitions(filter)));
+        if (partitions.isEmpty()) {
+            return Optional.empty();
+        } else {
+            return Optional.of(Collections.singletonList(new FilterPartitions(filter, partitions)));
+        }
     }
 
     /**

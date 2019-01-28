@@ -13,8 +13,10 @@ import org.geotools.data.Query;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.filter.Filter;
 
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 
 public interface FileSystemStorage {
 
@@ -67,7 +69,17 @@ public interface FileSystemStorage {
      * @return partitions and predicates for each partition
      */
     default List<FilterPartitions> getPartitionsForQuery(Filter filter) {
-        return getMetadata().getPartitionScheme().getPartitionsForQuery(filter);
+        Optional<List<FilterPartitions>> opt = getMetadata().getPartitionScheme().getPartitionsForQuery(filter);
+        if (opt.isPresent()) {
+            return opt.get();
+        } else {
+            List<PartitionMetadata> partitions = getMetadata().getPartitions();
+            List<String> names = new java.util.ArrayList<>(partitions.size());
+            for (PartitionMetadata partition: partitions) {
+                names.add(partition.name());
+            }
+            return Collections.singletonList(new FilterPartitions(filter, names));
+        }
     }
 
     /**

@@ -24,8 +24,8 @@ object FlatScheme extends PartitionScheme {
 
   override def getPartitions(filter: Filter): java.util.List[String] = Collections.singletonList("")
 
-  override def getPartitionsForQuery(filter: Filter): java.util.List[FilterPartitions] =
-    Collections.singletonList(new FilterPartitions(filter, Collections.singletonList("")))
+//  override def getPartitionsForQuery(filter: Filter): java.util.List[FilterPartitions] =
+//    Collections.singletonList(new FilterPartitions(filter, Collections.singletonList("")))
 
   override def getMaxDepth: Int = 0
 

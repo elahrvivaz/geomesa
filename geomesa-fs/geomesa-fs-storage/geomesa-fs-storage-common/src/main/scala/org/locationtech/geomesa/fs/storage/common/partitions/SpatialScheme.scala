@@ -32,10 +32,8 @@ abstract class SpatialScheme(bits: Int, geom: String, leaf: Boolean) extends Par
 
   protected def generateRanges(xy: Seq[(Double, Double, Double, Double)]): Seq[IndexRange]
 
-  protected def ranges(bounds: Seq[Geometry]): Seq[IndexRange] = {
-    val geoms = if (bounds.isEmpty) { Seq(WholeWorldPolygon) } else { bounds }
-    generateRanges(geoms.map(GeometryUtils.bounds))
-  }
+  protected def ranges(bounds: Seq[Geometry]): Seq[IndexRange] =
+    generateRanges((if (bounds.isEmpty) { Seq(WholeWorldPolygon) } else { bounds }).map(GeometryUtils.bounds))
 
   protected def partitions(ranges: Seq[IndexRange]): Seq[String] =
     ranges.flatMap(r => r.lower to r.upper).distinct.map(_.formatted(format))

@@ -14,14 +14,21 @@ import java.util.List;
 import java.util.Objects;
 import java.util.StringJoiner;
 
+/**
+ * Holder for a filter to be applied to a group of partitions
+ */
 public class FilterPartitions {
 
     private Filter filter;
 
     private List<String> partitions;
 
-    public FilterPartitions() {}
-
+    /**
+     * Constructor
+     *
+     * @param filter filter
+     * @param partitions partitions associated with the filter
+     */
     public FilterPartitions(Filter filter, List<String> partitions) {
         if (filter == null) {
             throw new NullPointerException("Filter must not be null");
@@ -32,10 +39,20 @@ public class FilterPartitions {
         this.partitions = partitions;
     }
 
+    /**
+     * Filter to be applied to the included partitions
+     *
+     * @return filter
+     */
     public Filter filter() {
         return filter;
     }
 
+    /**
+     * Partitions that match the filter
+     *
+     * @return partitions
+     */
     public List<String> partitions() {
         return partitions;
     }
