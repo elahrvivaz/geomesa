@@ -15,9 +15,7 @@ import org.opengis.filter.Filter;
 
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.HashSet;
 import java.util.List;
-import java.util.Optional;
 
 public interface FileSystemStorage {
 
@@ -48,22 +46,34 @@ public interface FileSystemStorage {
         if (filter == Filter.INCLUDE) {
             return getMetadata().getPartitions();
         } else {
-            Optional<List<FilterPartitions>> fromFilter =
-                  getMetadata().getPartitionScheme().getPartitionsForQuery(filter, false);
-            if (!fromFilter.isPresent()) {
+            List<FilterPartitions> fps = getMetadata().getPartitionScheme().getPartitions(filter).orElse(null);
+            if (fps == null) {
                 return getMetadata().getPartitions();
-            } else if (fromFilter.get().isEmpty()) {
-                return Collections.emptyList();
             } else {
-                HashSet<String> intersecting = new HashSet<>();
-                for (FilterPartitions fps: fromFilter.get()) {
-                    intersecting.addAll(fps.partitions());
-                }
+                List<PartitionMetadata> all = null;
                 List<PartitionMetadata> result = new ArrayList<>();
-                for (PartitionMetadata pm: getMetadata().getPartitions()) {
-                    if (intersecting.contains(pm.name())) {
-                        result.add(pm);
+                for (FilterPartitions fp: fps) {
+                    if (fp.partial()) {
+                        if (all == null) {
+                            all = getMetadata().getPartitions();
+                        }
+                        for (String partition: fp.partitions()) {
+                            for (PartitionMetadata metadata: all) {
+                                if (metadata.name().startsWith(partition)) {
+                                    result.add(metadata);
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        for (String partition: fp.partitions()) {
+                            PartitionMetadata metadata = getMetadata().getPartition(partition);
+                            if (metadata != null) {
+                                result.add(metadata);
+                            }
+                        }
                     }
+
                 }
                 return result;
             }
@@ -79,26 +89,47 @@ public interface FileSystemStorage {
      * @return partitions and predicates for each partition
      */
     default List<FilterPartitions> getPartitionsForQuery(Filter filter) {
-        Optional<List<FilterPartitions>> opt = getMetadata().getPartitionScheme().getPartitionsForQuery(filter);
-        if (opt.isPresent() && opt.get().isEmpty()) {
-            return Collections.emptyList();
-        } else {
+        List<FilterPartitions> fps = getMetadata().getPartitionScheme().getPartitions(filter).orElse(null);
+        if (fps == null) {
             List<PartitionMetadata> all = getMetadata().getPartitions();
             List<String> names = new java.util.ArrayList<>(all.size());
             for (PartitionMetadata partition: all) {
                 names.add(partition.name());
             }
-            if (!opt.isPresent()) {
-                return Collections.singletonList(new FilterPartitions(filter, names));
-            } else {
-                List<FilterPartitions> result = new ArrayList<>();
-                for (FilterPartitions fp: opt.get()) {
-                    List<String> partitions = new ArrayList<>(fp.partitions());
-                    partitions.retainAll(names);
-                    result.add(new FilterPartitions(fp.filter(), partitions));
+            return Collections.singletonList(new FilterPartitions(filter, names, false));
+        } else {
+            List<String> all = null;
+            List<FilterPartitions> result = new ArrayList<>();
+            for (FilterPartitions fp: fps) {
+                List<String> partitions = new ArrayList<>();
+                if (fp.partial()) {
+                    if (all == null) {
+                        List<PartitionMetadata> metadata = getMetadata().getPartitions();
+                        all = new ArrayList<>(metadata.size());
+                        for (PartitionMetadata partition: metadata) {
+                            all.add(partition.name());
+                        }
+                    }
+                    for (String partition: fp.partitions()) {
+                        for (String name: all) {
+                            if (name.startsWith(partition)) {
+                                partitions.add(name);
+                                break;
+                            }
+                        }
+                    }
+                } else {
+                    for (String partition: fp.partitions()) {
+                        if (getMetadata().getPartition(partition) != null) {
+                            partitions.add(partition);
+                        }
+                    }
                 }
-                return result;
+                if (!partitions.isEmpty()) {
+                    result.add(new FilterPartitions(fp.filter(), partitions, false));
+                }
             }
+            return result;
         }
     }
 

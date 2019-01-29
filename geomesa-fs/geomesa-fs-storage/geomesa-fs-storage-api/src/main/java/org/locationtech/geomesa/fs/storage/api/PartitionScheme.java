@@ -11,7 +11,6 @@ package org.locationtech.geomesa.fs.storage.api;
 import org.opengis.feature.simple.SimpleFeature;
 import org.opengis.filter.Filter;
 
-import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -34,57 +33,18 @@ public interface PartitionScheme {
     String getPartition(SimpleFeature feature);
 
     /**
-     * Return a list of partitions that the system needs to query
-     * in order to satisfy a filter predicate
-     *
-     * Note that if the filter does not constrain the partitions at
-     * all, an empty list will be returned. This can't be disambiguated
-     * with a filter that doesn't match any partitions - instead, use
-     * `getPartitionsForQuery`
-     *
-     * @param filter filter
-     * @return list of partitions that may have results from the filter
-     * @deprecated use getPartitionsForQuery
-     */
-    @Deprecated
-    List<String> getPartitions(Filter filter);
-
-    /**
      * Return a list of modified filters and partitions. Each filter will have been simplified to
      * remove any predicates that are implicitly true for the associated partitions
      *
      * If the filter does not constrain partitions at all, then an empty option will be returned,
-     * indicating all partitions much be searched. If the filter excludes all potential partitions,
+     * indicating all partitions must be searched. If the filter excludes all potential partitions,
      * then an empty list of partitions will be returned
      *
      * @param filter filter
      * @return list of simplified filters and partitions
      */
-    default Optional<List<FilterPartitions>> getPartitionsForQuery(Filter filter) {
-        return getPartitionsForQuery(filter, true);
-    }
-
-    /**
-     * Return a list of modified filters and partitions. If `simplify` is true, each filter will have
-     * been simplified to remove any predicates that are implicitly true for the associated partitions,
-     * otherwise all intersecting partitions will be returned in one group
-     *
-     * If the filter does not constrain partitions at all, then an empty option will be returned,
-     * indicating all partitions much be searched. If the filter excludes all potential partitions,
-     * then an empty list of partitions will be returned
-     *
-     * @param filter filter
-     * @param simplify simplify filters based on intersecting/covered partitions
-     * @return list of simplified filters and partitions
-     */
-    default Optional<List<FilterPartitions>> getPartitionsForQuery(Filter filter, boolean simplify) {
-        List<String> partitions = getPartitions(filter);
-        // default implementation does no optimization
-        if (partitions.isEmpty()) {
-            return Optional.empty();
-        } else {
-            return Optional.of(Collections.singletonList(new FilterPartitions(filter, partitions)));
-        }
+    default Optional<List<FilterPartitions>> getPartitions(Filter filter) {
+        return Optional.empty();
     }
 
     /**

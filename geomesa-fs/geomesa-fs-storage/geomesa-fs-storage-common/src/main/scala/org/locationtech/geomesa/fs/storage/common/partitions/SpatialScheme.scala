@@ -12,7 +12,7 @@ import java.util.regex.Pattern
 import java.util.{Collections, Optional}
 
 import org.locationtech.geomesa.filter.FilterHelper
-import org.locationtech.geomesa.fs.storage.api.{PartitionScheme, PartitionSchemeFactory}
+import org.locationtech.geomesa.fs.storage.api.{FilterPartitions, PartitionScheme, PartitionSchemeFactory}
 import org.locationtech.geomesa.fs.storage.common.partitions.SpatialScheme.Config
 import org.locationtech.geomesa.utils.geotools.{GeometryUtils, WholeWorldPolygon}
 import org.locationtech.jts.geom.Geometry
@@ -32,18 +32,17 @@ abstract class SpatialScheme(bits: Int, geom: String, leaf: Boolean) extends Par
 
   protected def generateRanges(xy: Seq[(Double, Double, Double, Double)]): Seq[IndexRange]
 
-  protected def ranges(bounds: Seq[Geometry]): Seq[IndexRange] =
-    generateRanges((if (bounds.isEmpty) { Seq(WholeWorldPolygon) } else { bounds }).map(GeometryUtils.bounds))
+  protected def partitions(bounds: Seq[Geometry]): Seq[String] = {
+    val geoms = if (bounds.isEmpty) { Seq(WholeWorldPolygon) } else { bounds }
+    generateRanges(geoms.map(GeometryUtils.bounds)).flatMap(r => r.lower to r.upper).distinct.map(_.formatted(format))
+  }
 
-  protected def partitions(ranges: Seq[IndexRange]): Seq[String] =
-    ranges.flatMap(r => r.lower to r.upper).distinct.map(_.formatted(format))
-
-  override def getPartitions(filter: Filter): java.util.List[String] = {
+  override def getPartitions(filter: Filter): Optional[java.util.List[FilterPartitions]] = {
     val geometries = FilterHelper.extractGeometries(filter, geom, intersect = true)
     if (geometries.disjoint) {
-      Collections.emptyList()
+      Optional.of(Collections.emptyList())
     } else {
-      partitions(ranges(geometries.values)).asJava
+      Optional.of(Collections.singletonList(new FilterPartitions(filter, partitions(geometries.values).asJava, false)))
     }
   }
 

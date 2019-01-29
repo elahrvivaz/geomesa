@@ -69,23 +69,9 @@ abstract class MetadataFileSystemStorage(metadata: org.locationtech.geomesa.fs.s
       if (t.isEmpty) { "empty" } else { t } }.getOrElse("none"))
 
     val scheme = metadata.getPartitionScheme
-    val filters = scheme.getPartitionsForQuery(Option(query.getFilter).getOrElse(Filter.INCLUDE))
+    val filters = scheme.getPartitions(Option(query.getFilter).getOrElse(Filter.INCLUDE)).orElse(null)
 
-    val readers = if (filters.isPresent) {
-      val filterSeq = filters.get.asScala
-      logger.debug(s"  Threading the read of ${filterSeq.map(_.partitions.size).sum} partitions with " +
-          s"$threads reader threads")
-      filterSeq.iterator.flatMap { fp =>
-        val paths = fp.partitions.iterator.asScala.flatMap(getFilePaths(_).asScala)
-        if (paths.isEmpty) { Iterator.empty } else {
-          val filter = Option(fp.filter).filter(_ != Filter.INCLUDE)
-          val reader = createReader(sft, filter, transform)
-          logger.debug(s"  Using filter ${filter.map(ECQL.toCQL).getOrElse("INCLUDE")} on partitions " +
-              fp.partitions.asScala.mkString(", "))
-          Iterator.single(reader -> paths)
-        }
-      }
-    } else {
+    val readers = if (filters == null) {
       val partitions = metadata.getPartitions
       val paths = partitions.iterator.asScala.flatMap(p => getFilePaths(p.name).asScala)
       val filter = Option(query.getFilter).filter(_ != Filter.INCLUDE)
@@ -94,6 +80,19 @@ abstract class MetadataFileSystemStorage(metadata: org.locationtech.geomesa.fs.s
       logger.debug(s"  Using filter ${filter.map(ECQL.toCQL).getOrElse("INCLUDE")} on partitions " +
           partitions.asScala.mkString(", "))
       Iterator.single(reader -> paths)
+    } else {
+      logger.debug(s"  Threading the read of ${filters.asScala.map(_.partitions.size).sum} partitions with " +
+          s"$threads reader threads")
+      filters.asScala.iterator.flatMap { fp =>
+        val paths = fp.partitions.iterator.asScala.flatMap(p => getFilePaths(p).asScala)
+        if (paths.isEmpty) { Iterator.empty } else {
+          val filter = Option(fp.filter).filter(_ != Filter.INCLUDE)
+          val reader = createReader(sft, filter, transform)
+          logger.debug(s"  Using filter ${filter.map(ECQL.toCQL).getOrElse("INCLUDE")} on partitions " +
+              fp.partitions.asScala.mkString(", "))
+          Iterator.single(reader -> paths)
+        }
+      }
     }
 
     if (readers.isEmpty) {
@@ -121,7 +120,7 @@ abstract class MetadataFileSystemStorage(metadata: org.locationtech.geomesa.fs.s
 
       val scheme = metadata.getPartitionScheme
       // TODO is there a way to avoid calculating all partitions up front?
-      val filters = scheme.getPartitionsForQuery(queryFilter.getOrElse(Filter.INCLUDE))
+      val filters = scheme.getPartitions(queryFilter.getOrElse(Filter.INCLUDE))
       val filter = filters.asScala.flatMap[Filter] { fps =>
         fps.asScala.collectFirst { case fp if fp.partitions().contains(partition) => fp.filter }
       }
@@ -145,7 +144,7 @@ abstract class MetadataFileSystemStorage(metadata: org.locationtech.geomesa.fs.s
     logger.debug(s"  Threading the read of ${partitions.size} partitions with $threads reader threads")
 
     val scheme = metadata.getPartitionScheme
-    val filters = scheme.getPartitionsForQuery(Option(query.getFilter).getOrElse(Filter.INCLUDE))
+    val filters = scheme.getPartitions(Option(query.getFilter).getOrElse(Filter.INCLUDE))
     val readers = if (filters.isPresent) {
       filters.get.asScala.iterator.flatMap { fp =>
         val paths = fp.partitions.iterator.asScala.flatMap { partition =>

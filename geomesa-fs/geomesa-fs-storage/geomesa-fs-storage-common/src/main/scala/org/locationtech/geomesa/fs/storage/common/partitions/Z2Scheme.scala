@@ -8,7 +8,7 @@
 
 package org.locationtech.geomesa.fs.storage.common.partitions
 
-import java.util.Collections
+import java.util.{Collections, Optional}
 
 import org.locationtech.geomesa.curve.Z2SFC
 import org.locationtech.geomesa.filter.FilterHelper
@@ -21,8 +21,6 @@ import org.opengis.feature.simple.SimpleFeature
 import org.opengis.filter.Filter
 
 class Z2Scheme(bits: Int, geom: String, leaf: Boolean) extends SpatialScheme(bits, geom, leaf) {
-
-  import scala.collection.JavaConverters._
 
   private val z2 = new Z2SFC(bits / 2)
 
@@ -37,12 +35,15 @@ class Z2Scheme(bits: Int, geom: String, leaf: Boolean) extends SpatialScheme(bit
 
   override protected def generateRanges(xy: Seq[(Double, Double, Double, Double)]): Seq[IndexRange] = z2.ranges(xy)
 
-//  override def getPartitionsForQuery(filter: Filter): java.util.List[FilterPartitions] = {
+//  override def getPartitions(filter: Filter): Optional[java.util.List[FilterPartitions]] = {
+//
+//  }
+//  override def getPartitionsForQuery(filter: Filter, simplify: Boolean): Optional[java.util.List[FilterPartitions]] = {
 //    val bounds = FilterHelper.extractGeometries(filter, geom, intersect = true)
 //    if (bounds.disjoint) {
-//      Collections.emptyList()
+//      Optional.of(Collections.emptyList())
 //    } else if (bounds.isEmpty) {
-//      Collections.singletonList(new FilterPartitions(filter, partitions(ranges(Seq.empty)).asJava))
+//      Optional.empty()
 //    } else {
 //      val covered = new java.util.ArrayList[String]()
 //      val partial = new java.util.ArrayList[String]()
@@ -64,16 +65,16 @@ class Z2Scheme(bits: Int, geom: String, leaf: Boolean) extends SpatialScheme(bit
 //      }
 //
 //      if (covered.isEmpty && partial.isEmpty) {
-//        Collections.emptyList() // equivalent to Filter.EXCLUDE
+//        Optional.of(Collections.emptyList()) // equivalent to Filter.EXCLUDE
 //      } else if (covered.isEmpty) {
-//        Collections.singletonList(new FilterPartitions(filter, partial))
+//        Optional.of(Collections.singletonList(new FilterPartitions(filter, partial)))
 //      } else if (partial.isEmpty) {
-//        Collections.singletonList(new FilterPartitions(coveredFilter, covered))
+//        Optional.of(Collections.singletonList(new FilterPartitions(coveredFilter, covered)))
 //      } else {
 //        val filterPartitions = new java.util.ArrayList[FilterPartitions](2)
 //        filterPartitions.add(new FilterPartitions(coveredFilter, covered))
 //        filterPartitions.add(new FilterPartitions(filter, partial))
-//        filterPartitions
+//        Optional.of(filterPartitions)
 //      }
 //    }
 //  }

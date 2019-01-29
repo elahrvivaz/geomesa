@@ -27,8 +27,6 @@ class DateTimeScheme(fmtStr: String,
                      dtg: String,
                      leaf: Boolean) extends PartitionScheme {
 
-  import scala.collection.JavaConverters._
-
   private val MinDateTime = ZonedDateTime.of(0, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC)
   private val MaxDateTime = ZonedDateTime.of(9999, 12, 31, 23, 59, 59, 999000000, ZoneOffset.UTC)
 
@@ -39,11 +37,7 @@ class DateTimeScheme(fmtStr: String,
   override def getPartition(feature: SimpleFeature): String =
     fmt.format(feature.getAttribute(dtg).asInstanceOf[Date].toInstant.atZone(ZoneOffset.UTC))
 
-  @deprecated
-  override def getPartitions(filter: Filter): java.util.List[String] =
-    getPartitions(FilterHelper.extractIntervals(filter, dtg, handleExclusiveBounds = true)).map(fmt.format).asJava
-
-  override def getPartitionsForQuery(filter: Filter): Optional[java.util.List[FilterPartitions]] = {
+  override def getPartitions(filter: Filter): Optional[java.util.List[FilterPartitions]] = {
     val bounds = FilterHelper.extractIntervals(filter, dtg, handleExclusiveBounds = true)
     if (bounds.disjoint) {
       Optional.of(Collections.emptyList())
@@ -74,20 +68,20 @@ class DateTimeScheme(fmtStr: String,
       }
 
       def coveredFilter: Filter = {
-        import org.locationtech.geomesa.filter.{isTemporalFilter, partitionSubFilters, andOption}
+        import org.locationtech.geomesa.filter.{andOption, isTemporalFilter, partitionSubFilters}
         andOption(partitionSubFilters(filter, isTemporalFilter(_, dtg))._2).getOrElse(Filter.INCLUDE)
       }
 
       if (covered.isEmpty && partial.isEmpty) {
         Optional.of(Collections.emptyList()) // equivalent to Filter.EXCLUDE
       } else if (covered.isEmpty) {
-        Optional.of(Collections.singletonList(new FilterPartitions(filter, partial)))
+        Optional.of(Collections.singletonList(new FilterPartitions(filter, partial, false)))
       } else if (partial.isEmpty) {
-        Optional.of(Collections.singletonList(new FilterPartitions(coveredFilter, covered)))
+        Optional.of(Collections.singletonList(new FilterPartitions(coveredFilter, covered, false)))
       } else {
         val filterPartitions = new java.util.ArrayList[FilterPartitions](2)
-        filterPartitions.add(new FilterPartitions(coveredFilter, covered))
-        filterPartitions.add(new FilterPartitions(filter, partial))
+        filterPartitions.add(new FilterPartitions(coveredFilter, covered, false))
+        filterPartitions.add(new FilterPartitions(filter, partial, false))
         Optional.of(filterPartitions)
       }
     }

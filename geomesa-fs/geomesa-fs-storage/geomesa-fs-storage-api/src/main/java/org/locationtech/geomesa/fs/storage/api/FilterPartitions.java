@@ -23,13 +23,16 @@ public class FilterPartitions {
 
     private List<String> partitions;
 
+    private boolean partial;
+
     /**
      * Constructor
      *
      * @param filter filter
      * @param partitions partitions associated with the filter
+     * @param partial do the partitions match the full partition format, or only partially
      */
-    public FilterPartitions(Filter filter, List<String> partitions) {
+    public FilterPartitions(Filter filter, List<String> partitions, boolean partial) {
         if (filter == null) {
             throw new NullPointerException("Filter must not be null");
         } else if (partitions == null) {
@@ -37,6 +40,7 @@ public class FilterPartitions {
         }
         this.filter = filter;
         this.partitions = partitions;
+        this.partial = partial;
     }
 
     /**
@@ -57,6 +61,15 @@ public class FilterPartitions {
         return partitions;
     }
 
+    /**
+     * Are the partitions full partition paths, or only partial matches
+     *
+     * @return partial
+     */
+    public boolean partial() {
+        return partial;
+    }
+
     @Override
     public boolean equals(Object o) {
         if (this == o) {
@@ -66,12 +79,13 @@ public class FilterPartitions {
             return false;
         }
         FilterPartitions that = (FilterPartitions) o;
-        return Objects.equals(filter, that.filter) && Objects.equals(partitions, that.partitions);
+        return partial == that.partial &&
+               Objects.equals(filter, that.filter) && Objects.equals(partitions, that.partitions);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(filter, partitions);
+        return Objects.hash(filter, partitions, partial);
     }
 
     @Override
@@ -80,6 +94,6 @@ public class FilterPartitions {
         for (String partition: partitions) {
             joiner.add(partition);
         }
-        return "FilterPartitions(filter=" + filter + ",partitions=" + joiner + ")";
+        return "FilterPartitions(filter=" + filter + ",partial=" + partial + ",partitions=" + joiner + ")";
     }
 }
