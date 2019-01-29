@@ -12,6 +12,8 @@ import org.locationtech.jts.geom.{Coordinate, Geometry}
 
 object GeometryUtils {
 
+  // functions copied from org.locationtech.geomesa.utils.geotools.GeometryUtils to prevent a dependency link
+
   def addWayPointsToBBOX(g: Geometry): Geometry = {
     val geomArray = g.getCoordinates
     val correctedGeom = addWayPoints(geomArray)
