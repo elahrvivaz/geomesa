@@ -98,6 +98,7 @@ abstract class LocalQueryRunner(stats: GeoMesaStats, authProvider: Option[Author
 }
 
 object LocalQueryRunner {
+
   import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
   import scala.collection.JavaConversions._
