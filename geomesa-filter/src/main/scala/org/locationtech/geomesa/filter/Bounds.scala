@@ -60,7 +60,7 @@ case class Bounds[T](lower: Bound[T], upper: Bound[T]) {
     */
   def covers(other: Bounds[T]): Boolean = {
     // if the end is unbounded, it will always cover, so use .forall
-    // if the end is bounded and other.end is unbounded, the it will never cover, so use .exists on the inner check
+    // if the end is bounded and other.end is unbounded, then it will never cover, so use .exists on the inner check
     // if both end and other.end are bounded, then compare them
     upper.value.forall { up =>
       other.upper.value.exists { oup =>

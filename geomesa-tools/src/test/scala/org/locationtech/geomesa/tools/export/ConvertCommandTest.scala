@@ -6,16 +6,19 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  ***********************************************************************/
 
-package org.locationtech.geomesa.tools
+package org.locationtech.geomesa.tools.export
 
 import java.io.{File, FilenameFilter}
 import java.nio.charset.StandardCharsets
 
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.commons.io.FileUtils
+import org.geotools.data.Query
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.tools.utils.DataFormats.DataFormat
-import org.locationtech.geomesa.tools.utils.{CLArgResolver, DataFormats}
+import org.locationtech.geomesa.tools.ConvertCommand
+import org.locationtech.geomesa.tools.export.formats.ExportFormats
+import org.locationtech.geomesa.tools.export.formats.ExportFormats.ExportFormat
+import org.locationtech.geomesa.tools.utils.CLArgResolver
 import org.locationtech.geomesa.utils.io.{PathUtils, WithClose}
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
@@ -41,49 +44,50 @@ class ConvertCommandTest extends Specification with LazyLogging {
     FileUtils.readFileToString(file, StandardCharsets.UTF_8)
   }
 
-  val inFormats = Seq(DataFormats.Csv, DataFormats.Tsv, DataFormats.Json)
-  val outFormats = DataFormats.values.filter( _ != DataFormats.Null ).toSeq
+  val inFormats = Seq(ExportFormats.Csv, ExportFormats.Tsv, ExportFormats.Json)
+  val outFormats = ExportFormats.values.filter(_ != ExportFormats.Null).toSeq
 
   for (in <- inFormats; out <- outFormats) {
     logger.debug(s"Testing $in to $out converter")
     testPair(in, out)
   }
 
-  def getInputFileAndConf(fmt: DataFormat): (String, String) = {
+  def getInputFileAndConf(fmt: ExportFormat): (String, String) = {
     fmt match {
-      case DataFormats.Csv  => (csvInput,  csvConf)
-      case DataFormats.Tsv  => (tsvInput,  tsvConf)
-      case DataFormats.Json => (jsonInput, jsonConf)
+      case ExportFormats.Csv  => (csvInput,  csvConf)
+      case ExportFormats.Tsv  => (tsvInput,  tsvConf)
+      case ExportFormats.Json => (jsonInput, jsonConf)
     }
   }
 
-  def testPair(inFmt: DataFormat, outFmt: DataFormat): Unit = {
+  def testPair(inFmt: ExportFormat, outFmt: ExportFormat): Unit = {
     s"Convert Command should convert $inFmt -> $outFmt" in {
       val (inputFile, conf) = getInputFileAndConf(inFmt)
       val sft = CLArgResolver.getSft(conf)
 
-      def withCommand[T](test: (ConvertCommand) => T): T = {
+      def withCommand[T](test: ConvertCommand => T): T = {
+        val file = if (outFmt == ExportFormats.Leaflet) {
+          File.createTempFile("convertTest", ".html")
+        } else {
+          File.createTempFile("convertTest", s".${outFmt.toString.toLowerCase}")
+        }
+        file.delete() // some output formats require that the file doesn't exist
         val command = new ConvertCommand
         command.params.files.add(inputFile)
         command.params.config = conf
         command.params.spec = conf
         command.params.outputFormat = outFmt
-        command.params.file =
-          if (outFmt == DataFormats.Leaflet) {
-            File.createTempFile("convertTest", s".html")
-          } else {
-            File.createTempFile("convertTest", s".${outFmt.toString.toLowerCase}")
-          }
+        command.params.file = file.getAbsolutePath
 
         try {
           test(command)
         } finally {
-          if (!command.params.file.delete()) {
-            command.params.file.deleteOnExit()
+          if (!file.delete()) {
+            file.deleteOnExit()
           }
-          if (outFmt == DataFormats.Shp) {
-            val root = command.params.file.getName.takeWhile(_ != '.') + "."
-            command.params.file.getParentFile.listFiles(new FilenameFilter() {
+          if (outFmt == ExportFormats.Shp) {
+            val root = file.getName.takeWhile(_ != '.') + "."
+            file.getParentFile.listFiles(new FilenameFilter() {
               override def accept(dir: File, name: String) = name.startsWith(root)
             }).foreach { file =>
               if (!file.delete()) {
@@ -101,7 +105,7 @@ class ConvertCommandTest extends Specification with LazyLogging {
       }
       "get an Exporter" in {
         withCommand { command =>
-          WithClose(ConvertCommand.getExporter(command.params, null))(_ must not(beNull))
+          WithClose(ConvertCommand.getExporter(command.params, ExportFormats.Csv, null))(_ must not(beNull))
         }
       }
       "convert File" in {
@@ -109,14 +113,14 @@ class ConvertCommandTest extends Specification with LazyLogging {
           val converter = ConvertCommand.getConverter(command.params, sft)
           val ec = converter.createEvaluationContext(Map("inputFilePath" -> inputFile))
           val files = Iterator.single(inputFile).flatMap(PathUtils.interpretPath)
-          val features = ConvertCommand.convertFeatures(files, converter, ec, None, None)
+          val features = ConvertCommand.convertFeatures(files, converter, ec, new Query())
           features.toSeq must haveLength(3)
         }
       }
       "export data" in {
         withCommand { command =>
           command.execute()
-          command.params.file.length() must beGreaterThan(0L)
+          new File(command.params.file).length() must beGreaterThan(0L)
         }
       }
     }

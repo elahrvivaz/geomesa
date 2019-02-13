@@ -8,7 +8,7 @@
 
 package org.locationtech.geomesa.tools
 
-import java.io._
+import java.io.File
 import java.util.zip.Deflater
 
 import com.beust.jcommander.{ParameterException, Parameters}
@@ -17,18 +17,23 @@ import org.geotools.data.Query
 import org.geotools.factory.Hints
 import org.locationtech.geomesa.convert.EvaluationContext
 import org.locationtech.geomesa.convert2.SimpleFeatureConverter
-import org.locationtech.geomesa.index.geoserver.ViewParams
-import org.locationtech.geomesa.tools.ConvertParameters.ConvertParameters
-import org.locationtech.geomesa.tools.export._
+import org.locationtech.geomesa.filter.filterToString
+import org.locationtech.geomesa.index.metadata.NoOpMetadata
+import org.locationtech.geomesa.index.planning.LocalQueryRunner
+import org.locationtech.geomesa.index.planning.LocalQueryRunner.ArrowDictionaryHook
+import org.locationtech.geomesa.index.stats.MetadataBackedStats
+import org.locationtech.geomesa.tools.export.ExportCommand
+import org.locationtech.geomesa.tools.export.ExportCommand.{ExportParams, createOutputStream, createWriter, ensureOutputFile}
+import org.locationtech.geomesa.tools.export.formats.ExportFormats.ExportFormat
+import org.locationtech.geomesa.tools.export.formats.FileSystemExporter.{OrcFileSystemExporter, ParquetFileSystemExporter}
 import org.locationtech.geomesa.tools.export.formats._
 import org.locationtech.geomesa.tools.utils.CLArgResolver
-import org.locationtech.geomesa.tools.utils.DataFormats._
-import org.locationtech.geomesa.utils.collection.{CloseableIterator, SelfClosingIterator}
+import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.io.fs.FileSystemDelegate.FileHandle
 import org.locationtech.geomesa.utils.io.fs.LocalDelegate.StdInHandle
 import org.locationtech.geomesa.utils.io.{CloseWithLogging, PathUtils, WithClose}
-import org.locationtech.geomesa.utils.stats.MethodProfiling
+import org.locationtech.geomesa.utils.stats.{MethodProfiling, SeqStat, Stat}
 import org.locationtech.geomesa.utils.text.TextTools.getPlural
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
@@ -40,18 +45,17 @@ class ConvertCommand extends Command with MethodProfiling with LazyLogging {
 
   override def execute(): Unit = {
     def complete(count: Option[Long], time: Long): Unit =
-      Command.user.info(s"Conversion complete to ${Option(params.file).map(_.getPath).getOrElse("standard out")} " +
+      Command.user.info(s"Conversion complete to ${Option(params.file).getOrElse("standard out")} " +
           s"in ${time}ms${count.map(c => s" for $c features").getOrElse("")}")
 
     profile(complete _)(convertAndExport())
   }
 
   private def convertAndExport(): Option[Long] = {
-    import ConvertCommand.{getConverter, getExporter}
 
-    import scala.collection.JavaConversions._
+    import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
-    val files = if (params.files.nonEmpty) { params.files.iterator.flatMap(PathUtils.interpretPath) } else {
+    val files = if (!params.files.isEmpty) { params.files.iterator.asScala.flatMap(PathUtils.interpretPath) } else {
       StdInHandle.available().map(Iterator.single).getOrElse {
         throw new ParameterException("Missing option: <files>... is required")
       }
@@ -61,20 +65,17 @@ class ConvertCommand extends Command with MethodProfiling with LazyLogging {
 
     Command.user.info(s"Using SFT definition: ${SimpleFeatureTypes.encodeType(sft)}")
 
-    val converter = getConverter(params, sft)
-    val filter = Option(params.cqlFilter)
-    filter.foreach(f => Command.user.debug(s"Applying CQL filter $f"))
+    val format = ExportCommand.getOutputFormat(params)
+    val query = ExportCommand.createQuery(sft, format, params)
+
+    val converter = ConvertCommand.getConverter(params, sft)
     val ec = converter.createEvaluationContext(EvaluationContext.inputFileParam(""))
-    val maxFeatures = Option(params.maxFeatures).map(_.intValue())
 
-    def features(): CloseableIterator[SimpleFeature] =
-      ConvertCommand.convertFeatures(files, converter, ec, filter, maxFeatures)
-
-    val exporter = getExporter(params, features())
+    val exporter = ConvertCommand.getExporter(params, format, query.getHints)
 
     try {
-      exporter.start(sft)
-      val count = WithClose(features())(exporter.export)
+      exporter.start(query.getHints.getReturnSft)
+      val count = WithClose(ConvertCommand.convertFeatures(files, converter, ec, query))(exporter.export)
       val records = ec.counter.getLineCount - (if (params.noHeader) { 0 } else { params.files.size })
       Command.user.info(s"Converted ${getPlural(records, "line")} "
           + s"with ${getPlural(ec.counter.getSuccess, "success", "successes")} "
@@ -90,71 +91,97 @@ class ConvertCommand extends Command with MethodProfiling with LazyLogging {
 object ConvertCommand extends LazyLogging {
 
   def getConverter(params: ConvertParameters, sft: SimpleFeatureType): SimpleFeatureConverter = {
-    val converterConfig = {
-      if (params.config != null)
-        CLArgResolver.getConfig(params.config)
-      else throw new ParameterException("Unable to parse Simple Feature type from sft config or string")
+    val converterConfig = if (params.config != null) {
+      CLArgResolver.getConfig(params.config)
+    } else {
+      throw new ParameterException("Unable to parse Simple Feature type from sft config or string")
     }
     SimpleFeatureConverter(sft, converterConfig)
   }
 
-  def getExporter(params: ConvertParameters, features: => CloseableIterator[SimpleFeature]): FeatureExporter = {
-    import org.locationtech.geomesa.index.conf.QueryHints.RichHints
+  /**
+    * Get an exporter
+    *
+    * @param params parameters
+    * @param format export format
+    * @param hints query hints
+    * @return
+    */
+  def getExporter(params: ConvertParameters, format: ExportFormat, hints: Hints): FeatureExporter = {
 
-    lazy val outputStream: OutputStream = ExportCommand.createOutputStream(params.file, params.gzip)
-    lazy val writer: Writer = ExportCommand.getWriter(params)
-    lazy val avroCompression = Option(params.gzip).map(_.toInt).getOrElse(Deflater.DEFAULT_COMPRESSION)
-    lazy val hints = {
-      val q = new Query("")
-      Option(params.hints).foreach { hints =>
-        q.getHints.put(Hints.VIRTUAL_TABLE_PARAMETERS, hints)
-        ViewParams.setHints(q)
-      }
-      q.getHints
-    }
-    lazy val arrowDictionaries: Map[String, Array[AnyRef]] = {
-      val attributes = hints.getArrowDictionaryFields
-      if (attributes.isEmpty) { Map.empty } else {
-        val values = attributes.map(a => a -> scala.collection.mutable.HashSet.empty[AnyRef])
-        SelfClosingIterator(features).foreach(f => values.foreach { case (a, v) => v.add(f.getAttribute(a))})
-        values.map { case (attribute, value) => attribute -> value.toArray }.toMap
-      }
+    import ExportFormats._
+
+    lazy val avroCompression = if (params.gzip == null) { Deflater.DEFAULT_COMPRESSION } else {
+      val compression = params.gzip.toInt
+      params.gzip = null // disable compressing the output stream, as it's handled by the avro writer
+      compression
     }
 
-    params.outputFormat match {
-      case Csv | Tsv => new DelimitedExporter(writer, params.outputFormat, None, !params.noHeader)
-      case Shp       => new ShapefileExporter(ExportCommand.checkShpFile(params))
-      case Json      => new GeoJsonExporter(writer)
-      case Gml | Xml => new GmlExporter(outputStream)
-      case Avro      => new AvroExporter(outputStream, avroCompression)
-      case Bin       => new BinExporter(hints, outputStream)
-      case Arrow     => new ArrowExporter(hints, outputStream, arrowDictionaries)
-      case Leaflet   => new LeafletMapExporter(params)
-      case _         => throw new ParameterException(s"Format ${params.outputFormat} is not supported.")
+    format match {
+      case Arrow          => new ArrowExporter(hints, createOutputStream(params), Map.empty)
+      case Avro           => new AvroExporter(avroCompression, createOutputStream(params))
+      case Bin            => new BinExporter(hints, createOutputStream(params))
+      case Csv            => DelimitedExporter.csv(createWriter(params), !params.noHeader, includeIds = true)
+      case GeoJson | Json => new GeoJsonExporter(createWriter(params))
+      case Gml | Xml      => new GmlExporter(createOutputStream(params))
+      case Html | Leaflet => new LeafletMapExporter(params)
+      case Null           => NullExporter
+      case Orc            => new OrcFileSystemExporter(ensureOutputFile(params, format))
+      case Parquet        => new ParquetFileSystemExporter(ensureOutputFile(params, format))
+      case Shp            => new ShapefileExporter(new File(ensureOutputFile(params, format)))
+      case Tsv            => DelimitedExporter.tsv(createWriter(params), !params.noHeader, includeIds = true)
+      // shouldn't happen unless someone adds a new format and doesn't implement it here
+      case _ => throw new UnsupportedOperationException(s"Format $format can't be exported")
     }
   }
 
-  def convertFeatures(files: Iterator[FileHandle],
-                      converter: SimpleFeatureConverter,
-                      ec: EvaluationContext,
-                      filter: Option[Filter],
-                      maxFeatures: Option[Int]): CloseableIterator[SimpleFeature] = {
+  def convertFeatures(
+      files: Iterator[FileHandle],
+      converter: SimpleFeatureConverter,
+      ec: EvaluationContext,
+      query: Query): CloseableIterator[SimpleFeature] = {
 
     import EvaluationContext.RichEvaluationContext
+    import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
-    val all = CloseableIterator(files).flatMap { file =>
+    def convert(): CloseableIterator[SimpleFeature] = CloseableIterator(files).flatMap { file =>
       ec.setInputFilePath(file.path)
       val is = PathUtils.handleCompression(file.open, file.path)
       converter.process(is, ec)
     }
-    val filtered = filter.map(f => all.filter(f.evaluate)).getOrElse(all)
-    val limited = maxFeatures.map(filtered.take).getOrElse(filtered)
-    limited
-  }
-}
 
-object ConvertParameters {
+    def filter(iter: CloseableIterator[SimpleFeature]): CloseableIterator[SimpleFeature] =
+      if (query.getFilter == Filter.INCLUDE) { iter } else { iter.filter(query.getFilter.evaluate) }
+
+    def limit(iter: CloseableIterator[SimpleFeature]): CloseableIterator[SimpleFeature] =
+      if (query.isMaxFeaturesUnlimited) { iter } else { iter.take(query.getMaxFeatures) }
+
+    def transform(iter: CloseableIterator[SimpleFeature]): CloseableIterator[SimpleFeature] = {
+      val stats = new MetadataBackedStats(null, new NoOpMetadata[Stat], false) {
+        override def runStats[T <: Stat](sft: SimpleFeatureType, stats: String, ignored: Filter): Seq[T] = {
+          val stat = Stat(sft, stats)
+          try {
+            WithClose(limit(filter(convert())))(_.foreach(stat.observe))
+            stat match {
+              case s: SeqStat => s.stats.asInstanceOf[Seq[T]]
+              case s => Seq(s).asInstanceOf[Seq[T]]
+            }
+          } catch {
+            case e: Exception =>
+              logger.error(s"Error running stats query with stats '$stats' and filter '${filterToString(ignored)}'", e)
+              Seq.empty
+          }
+        }
+        override protected def write(typeName: String, stats: Seq[MetadataBackedStats.WritableStat]): Unit = {}
+      }
+      val hook = Some(ArrowDictionaryHook(stats, Option(query.getFilter).filter(_ != Filter.INCLUDE)))
+      LocalQueryRunner.transform(converter.targetSft, iter, query.getHints.getTransform, query.getHints, hook)
+    }
+
+    transform(limit(filter(convert())))
+  }
+
   @Parameters(commandDescription = "Convert files using GeoMesa's internal converter framework")
-  class ConvertParameters extends FileExportParams with InputFilesParam with OptionalTypeNameParam
-    with RequiredFeatureSpecParam with RequiredConverterConfigParam
+  class ConvertParameters extends ExportParams with InputFilesParam with OptionalTypeNameParam
+      with RequiredFeatureSpecParam with RequiredConverterConfigParam
 }

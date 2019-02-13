@@ -25,7 +25,7 @@ import org.locationtech.geomesa.tools.DistributedRunParam.RunModes
 import org.locationtech.geomesa.tools.DistributedRunParam.RunModes.RunMode
 import org.locationtech.geomesa.tools._
 import org.locationtech.geomesa.tools.ingest.IngestCommand.IngestParams
-import org.locationtech.geomesa.tools.utils.{CLArgResolver, DataFormats, Prompt}
+import org.locationtech.geomesa.tools.utils.{CLArgResolver, Prompt}
 import org.locationtech.geomesa.utils.geotools.{ConfigSftParsing, SimpleFeatureTypes}
 import org.locationtech.geomesa.utils.io.fs.LocalDelegate.StdInHandle
 import org.locationtech.geomesa.utils.io.{PathUtils, WithClose}
@@ -62,11 +62,14 @@ trait IngestCommand[DS <: DataStore] extends DataStoreCommand[DS] with Interacti
     }
 
     val format = {
-      val param = Option(params.format).flatMap(f => DataFormats.values.find(_.toString.equalsIgnoreCase(f)))
-      // back compatible check for 'geojson' as a format (instead, just use 'json')
-      lazy val geojson = if ("geojson".equalsIgnoreCase(params.format)) { Some(DataFormats.Json) } else { None }
-      lazy val file = inputs.flatMap(DataFormats.fromFileName(_).right.toOption).headOption
-      param.orElse(geojson).orElse(file).orNull
+      val raw = if (params.format != null) { Some(params.format) } else {
+        inputs.iterator.map(PathUtils.getUncompressedExtension).filter(_.nonEmpty).headOption
+      }
+      raw.map {
+        case r if r.equalsIgnoreCase("gml")     => "xml"
+        case r if r.equalsIgnoreCase("geojson") => "json"
+        case r => r.toLowerCase(Locale.US)
+      }
     }
 
     val remote = inputs.exists(PathUtils.isRemote)
@@ -79,7 +82,7 @@ trait IngestCommand[DS <: DataStore] extends DataStoreCommand[DS] with Interacti
       }
     }
 
-    val mode = if (format == DataFormats.Shp) {
+    val mode = if (format.contains("shp")) {
       // shapefiles have to be ingested locally, as we need access to the related files
       if (Option(params.mode).exists(_ != RunModes.Local)) {
         Command.user.warn("Forcing run mode to local for shapefile ingestion")
@@ -122,9 +125,9 @@ trait IngestCommand[DS <: DataStore] extends DataStoreCommand[DS] with Interacti
       }
       val (inferredSft, inferredConverter) = {
         val opt = format match {
-          case null => SimpleFeatureConverter.infer(() => file.open, Option(sft))
-          case DataFormats.Shp => ShapefileConverterFactory.infer(file.path, Option(sft))
-          case fmt => TypeAwareInference.infer(fmt.toString.toLowerCase(Locale.US), () => file.open, Option(sft))
+          case None => SimpleFeatureConverter.infer(() => file.open, Option(sft))
+          case Some("shp") => ShapefileConverterFactory.infer(file.path, Option(sft))
+          case Some(fmt) => TypeAwareInference.infer(fmt.toString, () => file.open, Option(sft))
         }
         opt.getOrElse {
           throw new ParameterException("Could not determine converter from inputs - please specify a converter")
@@ -180,7 +183,11 @@ trait IngestCommand[DS <: DataStore] extends DataStoreCommand[DS] with Interacti
     createIngest(mode, sft, converter, inputs).run()
   }
 
-  protected def createIngest(mode: RunMode, sft: SimpleFeatureType, converter: Config, inputs: Seq[String]): Runnable = {
+  protected def createIngest(
+      mode: RunMode,
+      sft: SimpleFeatureType,
+      converter: Config,
+      inputs: Seq[String]): Runnable = {
     mode match {
       case RunModes.Local =>
         new LocalConverterIngest(connection, sft, converter, inputs, params.threads)
