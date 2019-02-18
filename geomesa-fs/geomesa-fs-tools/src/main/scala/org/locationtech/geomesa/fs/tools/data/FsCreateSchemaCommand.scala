@@ -11,7 +11,6 @@ package org.locationtech.geomesa.fs.tools.data
 import com.beust.jcommander.{ParameterException, Parameters}
 import org.locationtech.geomesa.fs.FileSystemDataStore
 import org.locationtech.geomesa.fs.storage.common.conf.{PartitionSchemeArgResolver, SchemeArgs}
-import org.locationtech.geomesa.fs.storage.common.partitions.SpatialPartitionSchemeConfig
 import org.locationtech.geomesa.fs.storage.common.{Encodings, PartitionScheme}
 import org.locationtech.geomesa.fs.tools.FsDataStoreCommand
 import org.locationtech.geomesa.fs.tools.FsDataStoreCommand.{EncodingParam, FsParams, SchemeParams}
@@ -30,17 +29,19 @@ class FsCreateSchemaCommand extends CreateSchemaCommand[FileSystemDataStore] wit
 
 object FsCreateSchemaCommand {
 
+  import scala.collection.JavaConverters._
+
   @Parameters(commandDescription = "Create a GeoMesa feature type")
   class FsCreateSchemaParams extends CreateSchemaParams with FsParams with EncodingParam with SchemeParams
 
   def setOptions(sft: SimpleFeatureType, params: EncodingParam with SchemeParams): Unit = {
-    import scala.collection.JavaConverters._
+    import org.locationtech.geomesa.fs.storage.common.partitions.LeafStorageConfig
 
     val scheme = PartitionSchemeArgResolver.getArg(SchemeArgs(params.scheme, sft)) match {
       case Left(e) => throw new ParameterException(e)
       case Right(s) if s.isLeafStorage == params.leafStorage => s
       case Right(s) =>
-        val opts = s.getOptions.asScala.updated(SpatialPartitionSchemeConfig.LeafStorage, params.leafStorage.toString).toMap
+        val opts = s.getOptions.asScala.updated(LeafStorageConfig, params.leafStorage.toString).toMap
         PartitionScheme.apply(sft, s.getName, opts.asJava)
     }
 
