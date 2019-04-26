@@ -8,8 +8,8 @@
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>geomesa-convert-all_2.11</artifactId>
-    <name>GeoMesa Convert All</name>
+    <artifactId>geomesa-convert-parquet_2.11</artifactId>
+    <name>GeoMesa Convert Parquet</name>
 
     <dependencies>
         <dependency>
@@ -22,40 +22,30 @@
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-convert-fixedwidth_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-fs-storage-parquet_${scala.binary.version}</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-convert-jdbc_${scala.binary.version}</artifactId>
+            <groupId>org.apache.parquet</groupId>
+            <artifactId>parquet-column</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-convert-json_${scala.binary.version}</artifactId>
+            <groupId>org.apache.parquet</groupId>
+            <artifactId>parquet-hadoop</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-convert-shp_${scala.binary.version}</artifactId>
+            <groupId>org.apache.parquet</groupId>
+            <artifactId>parquet-avro</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-convert-parquet_${scala.binary.version}</artifactId>
+            <groupId>org.apache.avro</groupId>
+            <artifactId>avro</artifactId>
+            <version>1.8.2</version>
         </dependency>
         <dependency>
-            <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-convert-text_${scala.binary.version}</artifactId>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-client</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-convert-xml_${scala.binary.version}</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-convert-scripting_${scala.binary.version}</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-convert-redis-cache_${scala.binary.version}</artifactId>
-        </dependency>
+
         <dependency>
             <groupId>org.specs2</groupId>
             <artifactId>specs2-core_${scala.binary.version}</artifactId>
@@ -67,12 +57,6 @@
         <dependency>
             <groupId>org.slf4j</groupId>
             <artifactId>slf4j-log4j12</artifactId>
-            <scope>test</scope>
-        </dependency>
-        <dependency>
-            <groupId>org.mortbay.jetty</groupId>
-            <artifactId>jetty</artifactId>
-            <version>6.1.26</version>
             <scope>test</scope>
         </dependency>
     </dependencies>
