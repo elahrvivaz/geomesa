@@ -22,7 +22,7 @@ import org.geotools.feature.DefaultFeatureCollection
 import org.geotools.filter.text.cql2.CQL
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
+import org.locationtech.geomesa.accumulo.TestWithFeatureTypes
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators.Z2Iterator
 import org.locationtech.geomesa.features.ScalaSimpleFeature
@@ -48,7 +48,7 @@ import org.specs2.runner.JUnitRunner
 import scala.collection.JavaConversions._
 
 @RunWith(classOf[JUnitRunner])
-class AccumuloDataStoreTest extends Specification with TestWithMultipleSfts {
+class AccumuloDataStoreTest extends Specification with TestWithFeatureTypes {
 
   sequential
 

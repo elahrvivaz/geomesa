@@ -13,7 +13,7 @@ import org.geotools.data._
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
+import org.locationtech.geomesa.accumulo.TestWithFeatureTypes
 import org.locationtech.geomesa.accumulo.index.JoinIndex
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.index.index.attribute.AttributeIndex
@@ -31,7 +31,7 @@ import org.specs2.runner.JUnitRunner
 import scala.collection.JavaConversions._
 
 @RunWith(classOf[JUnitRunner])
-class AccumuloDataStoreDeleteTest extends Specification with TestWithMultipleSfts {
+class AccumuloDataStoreDeleteTest extends Specification with TestWithFeatureTypes {
 
   sequential
 

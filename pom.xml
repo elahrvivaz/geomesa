@@ -133,6 +133,8 @@
         <maven.test.jvmargs>-Duser.timezone=UTC -Xms1g -Xmx8g -XX:-UseGCOverheadLimit -Djava.net.preferIPv4Stack=true -Djava.awt.headless=true -Dgeomesa.scan.ranges.target=500</maven.test.jvmargs>
         <test.fork.count>1</test.fork.count>
         <test.fork.reuse>true</test.fork.reuse>
+        <!-- allows skipping of unit tests while running integration tests -->
+        <surefire.test.skip>${skipTests}</surefire.test.skip>
     </properties>
 
     <profiles>
@@ -2333,7 +2335,7 @@
                 <!-- marked provided due to license issues -->
                 <groupId>jline</groupId>
                 <artifactId>jline</artifactId>
-                <version>1.0</version>
+                <version>2.11</version>
                 <scope>provided</scope>
             </dependency>
             <dependency>
@@ -2518,11 +2520,41 @@
                         <forkCount>${test.fork.count}</forkCount>
                         <reuseForks>${test.fork.reuse}</reuseForks>
                         <forkedProcessTimeoutInSeconds>0</forkedProcessTimeoutInSeconds>
+                        <skipTests>${surefire.test.skip}</skipTests>
                         <includes>
                             <include>**/*Test.java</include>
                         </includes>
                         <argLine>${maven.test.jvmargs}</argLine>
                     </configuration>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <!-- 3.0.0-M3 was released 2018-12-20 -->
+                    <version>3.0.0-M3</version>
+                    <configuration>
+                        <forkCount>${test.fork.count}</forkCount>
+                        <reuseForks>${test.fork.reuse}</reuseForks>
+                        <forkedProcessTimeoutInSeconds>0</forkedProcessTimeoutInSeconds>
+                        <includes>
+                            <include>**/*IT.java</include>
+                        </includes>
+                        <argLine>${maven.test.jvmargs}</argLine>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>integration-test</id>
+                            <goals>
+                                <goal>integration-test</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>verify</id>
+                            <goals>
+                                <goal>verify</goal>
+                            </goals>
+                        </execution>
+                    </executions>
                 </plugin>
                 <plugin>
                     <groupId>org.apache.maven.plugins</groupId>

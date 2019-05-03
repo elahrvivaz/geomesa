@@ -19,7 +19,7 @@ import org.geotools.filter.text.cql2.CQL
 import org.geotools.filter.text.ecql.ECQL
 import org.geotools.util.Converters
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
+import org.locationtech.geomesa.accumulo.TestWithFeatureTypes
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.utils.collection.{CloseableIterator, SelfClosingIterator}
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -30,7 +30,7 @@ import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
-class AccumuloDataStoreTransformsTest extends Specification with TestWithMultipleSfts {
+class AccumuloDataStoreTransformsTest extends Specification with TestWithFeatureTypes {
 
   import org.locationtech.geomesa.filter.ff
 

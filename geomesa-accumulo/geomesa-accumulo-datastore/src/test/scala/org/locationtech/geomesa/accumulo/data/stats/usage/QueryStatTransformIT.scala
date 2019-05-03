@@ -15,6 +15,7 @@ import org.geotools.data.Query
 import org.geotools.filter.text.cql2.CQL
 import org.geotools.geometry.jts.ReferencedEnvelope
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.accumulo.TestWithMiniCluster
 import org.locationtech.geomesa.accumulo.audit.{AccumuloAuditService, AccumuloQueryEventTransform}
 import org.locationtech.geomesa.accumulo.util.GeoMesaBatchWriterConfig
 import org.locationtech.geomesa.index.audit.QueryEvent
@@ -26,13 +27,14 @@ import org.specs2.runner.JUnitRunner
 import scala.collection.JavaConverters._
 
 @RunWith(classOf[JUnitRunner])
-class QueryStatTransformTest extends Specification {
+class QueryStatTransformIT extends TestWithMiniCluster {
 
   val table = "QueryStatTransformTest"
   val featureName = "stat-writer-test"
 
-  val connector = new MockInstance().getConnector("user", new PasswordToken("password"))
-  connector.tableOperations().create(table)
+  step {
+    connector.tableOperations().create(table)
+  }
 
   "QueryStatTransform" should {
 

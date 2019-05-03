@@ -18,7 +18,7 @@ import org.geotools.filter.text.ecql.ECQL
 import org.geotools.geometry.jts.JTSFactoryFinder
 import org.geotools.util.Converters
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
+import org.locationtech.geomesa.accumulo.TestWithFeatureTypes
 import org.locationtech.geomesa.accumulo.data.AccumuloQueryPlan.{EmptyPlan, JoinPlan}
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators.TestData
@@ -44,7 +44,7 @@ import scala.collection.JavaConversions._
 import scala.util.Random
 
 @RunWith(classOf[JUnitRunner])
-class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts {
+class AccumuloDataStoreQueryTest extends Specification with TestWithFeatureTypes {
 
   import org.locationtech.geomesa.filter.ff
 

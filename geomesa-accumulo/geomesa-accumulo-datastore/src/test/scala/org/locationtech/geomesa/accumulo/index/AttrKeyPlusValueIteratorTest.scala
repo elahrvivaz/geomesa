@@ -12,7 +12,7 @@ import org.geotools.data.Query
 import org.geotools.factory.CommonFactoryFinder
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
+import org.locationtech.geomesa.accumulo.TestWithFeatureTypes
 import org.locationtech.geomesa.accumulo.data.AccumuloQueryPlan.BatchScanPlan
 import org.locationtech.geomesa.accumulo.iterators.{AttributeKeyValueIterator, FilterTransformIterator}
 import org.locationtech.geomesa.features.ScalaSimpleFeature
@@ -25,7 +25,7 @@ import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
-class AttrKeyPlusValueIteratorTest extends Specification with TestWithMultipleSfts {
+class AttrKeyPlusValueIteratorTest extends Specification with TestWithFeatureTypes {
 
   val spec =
     "name:String:index=join:cardinality=high," +

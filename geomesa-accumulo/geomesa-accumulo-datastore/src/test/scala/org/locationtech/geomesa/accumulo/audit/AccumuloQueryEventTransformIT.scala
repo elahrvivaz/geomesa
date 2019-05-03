@@ -9,24 +9,17 @@
 package org.locationtech.geomesa.accumulo.audit
 
 import org.apache.accumulo.core.client.BatchWriterConfig
-import org.apache.accumulo.core.client.mock.MockInstance
-import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.security.Authorizations
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.accumulo.TestWithMiniCluster
 import org.locationtech.geomesa.index.audit.QueryEvent
 import org.locationtech.geomesa.utils.io.WithClose
-import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
-class AccumuloQueryEventTransformTest extends Specification {
+class AccumuloQueryEventTransformIT extends TestWithMiniCluster {
 
-  lazy val mockInstanceId = "mycloud"
-  lazy val mockUser = "user"
-  lazy val mockPassword = "password"
-
-  lazy val mockInstance = new MockInstance(mockInstanceId)
-  lazy val connector = mockInstance.getConnector(mockUser, new PasswordToken(mockPassword))
+  import scala.collection.JavaConverters._
 
   "AccumuloQueryEventTransform" should {
     "Convert from and to mutations" in {
@@ -43,14 +36,15 @@ class AccumuloQueryEventTransformTest extends Specification {
         deleted = true
       )
 
-      connector.tableOperations().create("AccumuloQueryEventTransformTest")
+      val table = "AccumuloQueryEventTransformTest"
 
-      WithClose(connector.createBatchWriter("AccumuloQueryEventTransformTest", new BatchWriterConfig())) { writer =>
+      connector.tableOperations().create(table)
+
+      WithClose(connector.createBatchWriter(table, new BatchWriterConfig())) { writer =>
         writer.addMutation(AccumuloQueryEventTransform.toMutation(event))
       }
-      val restored = WithClose(connector.createScanner("AccumuloQueryEventTransformTest", new Authorizations)) { reader =>
-        import scala.collection.JavaConversions._
-        AccumuloQueryEventTransform.toEvent(reader)
+      val restored = WithClose(connector.createScanner(table, new Authorizations)) { reader =>
+        AccumuloQueryEventTransform.toEvent(reader.asScala)
       }
 
       restored mustEqual event

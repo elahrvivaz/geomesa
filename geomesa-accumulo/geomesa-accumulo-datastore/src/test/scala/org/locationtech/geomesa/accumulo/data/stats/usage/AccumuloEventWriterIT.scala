@@ -8,28 +8,23 @@
 
 package org.locationtech.geomesa.accumulo.data.stats.usage
 
-import org.apache.accumulo.core.client.mock.MockInstance
-import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.security.Authorizations
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.accumulo.TestWithMiniCluster
 import org.locationtech.geomesa.accumulo.audit.{AccumuloAuditService, AccumuloEventReader, AccumuloEventWriter, AccumuloQueryEventTransform}
 import org.locationtech.geomesa.index.audit.QueryEvent
 import org.locationtech.geomesa.utils.text.DateParsing
-import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
-class AccumuloEventWriterTest extends Specification {
+class AccumuloEventWriterIT extends TestWithMiniCluster {
 
-  val catalogTable = "geomesa_catalog"
-  val featureName = "stat_writer_test"
-  val statsTable = s"${catalogTable}_${featureName}_queries"
+  val featureName = getClass.getSimpleName
+  val statsTable = s"geomesa_catalog_${featureName}_queries"
 
   val auths = new Authorizations()
 
-  val connector = new MockInstance().getConnector("user", new PasswordToken("password"))
-
-  val statReader = new AccumuloEventReader(connector, statsTable)
+  lazy val statReader = new AccumuloEventReader(connector, statsTable)
 
   "StatWriter" should {
 

@@ -9,7 +9,7 @@
 package org.locationtech.geomesa.accumulo.data
 
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
+import org.locationtech.geomesa.accumulo.TestWithFeatureTypes
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.index.index.attribute.AttributeIndex
 import org.locationtech.geomesa.index.index.id.IdIndex
@@ -18,7 +18,7 @@ import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
-class DateIndexTest extends Specification with TestWithMultipleSfts {
+class DateIndexTest extends Specification with TestWithFeatureTypes {
 
   val spec = "name:String:index=full,dtg:Date,*geom:Point:srid=4326"
 

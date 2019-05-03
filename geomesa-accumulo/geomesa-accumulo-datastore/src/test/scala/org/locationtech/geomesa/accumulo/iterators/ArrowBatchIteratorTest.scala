@@ -17,7 +17,7 @@ import org.geotools.data.{Query, Transaction}
 import org.geotools.feature.simple.SimpleFeatureTypeBuilder
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
+import org.locationtech.geomesa.accumulo.TestWithFeatureTypes
 import org.locationtech.geomesa.arrow.io.SimpleFeatureArrowFileReader
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.index.conf.QueryHints
@@ -32,7 +32,7 @@ import org.specs2.runner.JUnitRunner
 import scala.util.Try
 
 @RunWith(classOf[JUnitRunner])
-class ArrowBatchIteratorTest extends TestWithMultipleSfts {
+class ArrowBatchIteratorTest extends TestWithFeatureTypes {
 
   sequential
 

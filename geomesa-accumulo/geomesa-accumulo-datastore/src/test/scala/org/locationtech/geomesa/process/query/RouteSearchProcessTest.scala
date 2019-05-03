@@ -10,7 +10,7 @@ package org.locationtech.geomesa.process.query
 
 import org.geotools.data.store.ReTypingFeatureCollection
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
+import org.locationtech.geomesa.accumulo.TestWithFeatureTypes
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.utils.collection.SelfClosingIterator
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -19,7 +19,7 @@ import org.specs2.runner.JUnitRunner
 import scala.util.Random
 
 @RunWith(classOf[JUnitRunner])
-class RouteSearchProcessTest extends TestWithMultipleSfts {
+class RouteSearchProcessTest extends TestWithFeatureTypes {
 
   sequential
 

@@ -28,4 +28,65 @@
         <module>geomesa-accumulo-tools</module>
     </modules>
 
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.apache.accumulo</groupId>
+                    <artifactId>accumulo-maven-plugin</artifactId>
+                    <version>${accumulo.version}</version>
+                    <configuration>
+                        <instanceName>${mini.accumulo.instance}</instanceName>
+                        <rootPassword>${mini.accumulo.password}</rootPassword>
+                    </configuration>
+                    <executions>
+                        <execution>
+                            <id>start-plugin</id>
+                            <phase>pre-integration-test</phase>
+                            <goals>
+                                <goal>start</goal>
+                            </goals>
+                        </execution>
+                        <execution>
+                            <id>stop-plugin</id>
+                            <phase>post-integration-test</phase>
+                            <goals>
+                                <goal>stop</goal>
+                            </goals>
+                        </execution>
+                    </executions>
+                </plugin>
+                <plugin>
+                    <groupId>org.apache.maven.plugins</groupId>
+                    <artifactId>maven-failsafe-plugin</artifactId>
+                    <configuration>
+                        <systemPropertyVariables>
+                            <mini.accumulo.instance>${mini.accumulo.instance}</mini.accumulo.instance>
+                            <mini.accumulo.password>${mini.accumulo.password}</mini.accumulo.password>
+                        </systemPropertyVariables>
+                    </configuration>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+
+        <plugins>
+            <plugin>
+                <groupId>org.apache.accumulo</groupId>
+                <artifactId>accumulo-maven-plugin</artifactId>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-failsafe-plugin</artifactId>
+            </plugin>
+        </plugins>
+    </build>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.apache.accumulo</groupId>
+            <artifactId>accumulo-minicluster</artifactId>
+            <version>${accumulo.version}</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
 </project>

@@ -13,6 +13,8 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <mini.accumulo.instance>accumulo-datastore</mini.accumulo.instance>
+        <mini.accumulo.password>accumulo-datastore</mini.accumulo.password>
     </properties>
 
     <dependencies>
