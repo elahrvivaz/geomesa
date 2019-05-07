@@ -13,14 +13,15 @@ import java.nio.charset.{Charset, StandardCharsets}
 
 import com.typesafe.config.Config
 import org.apache.commons.io.IOUtils
+import org.locationtech.geomesa.convert.EvaluationContext
 import org.locationtech.geomesa.convert.Modes.{ErrorMode, ParseMode}
 import org.locationtech.geomesa.convert.SimpleFeatureConverters.SimpleFeatureConverterWrapper
-import org.locationtech.geomesa.convert._
 import org.locationtech.geomesa.convert.text.DelimitedTextConverter._
 import org.locationtech.geomesa.convert.text.DelimitedTextConverterFactory.{DelimitedTextConfigConvert, DelimitedTextOptionsConvert}
 import org.locationtech.geomesa.convert2.AbstractConverter.BasicField
 import org.locationtech.geomesa.convert2.AbstractConverterFactory.{BasicFieldConvert, ConverterConfigConvert, ConverterOptionsConvert, FieldConvert, PrimitiveConvert}
 import org.locationtech.geomesa.convert2.transforms.Expression
+import org.locationtech.geomesa.convert2.validators.SimpleFeatureValidator
 import org.locationtech.geomesa.convert2.{AbstractConverterFactory, TypeInference}
 import org.locationtech.geomesa.features.serialization.ObjectType
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
@@ -81,7 +82,7 @@ class DelimitedTextConverterFactory
           }
 
           val options = DelimitedTextOptions(None, CharNotSpecified, CharNotSpecified, None,
-            SimpleFeatureValidator.default, ParseMode.Default, ErrorMode(), StandardCharsets.UTF_8)
+            SimpleFeatureValidator.default, Map.empty, ParseMode.Default, ErrorMode(), StandardCharsets.UTF_8)
 
           val config = configConvert.to(converterConfig)
               .withFallback(fieldConvert.to(fields))
@@ -101,7 +102,9 @@ class DelimitedTextConverterFactory
   override def canProcess(conf: Config): Boolean =
     conf.hasPath("type") && conf.getString("type").equalsIgnoreCase(typeToProcess)
 
-  override def buildConverter(sft: SimpleFeatureType, conf: Config): SimpleFeatureConverter[String] = {
+  override def buildConverter(
+      sft: SimpleFeatureType,
+      conf: Config): org.locationtech.geomesa.convert.SimpleFeatureConverter[String] = {
     val converter = apply(sft, conf).orNull.asInstanceOf[DelimitedTextConverter]
     if (converter == null) {
       throw new IllegalStateException("Could not create converter - did you call canProcess()?")
@@ -128,27 +131,29 @@ object DelimitedTextConverterFactory {
 
   object DelimitedTextConfigConvert extends ConverterConfigConvert[DelimitedTextConfig] {
 
-    override protected def decodeConfig(cur: ConfigObjectCursor,
-                                        typ: String,
-                                        idField: Option[Expression],
-                                        caches: Map[String, Config],
-                                        userData: Map[String, Expression]): Either[ConfigReaderFailures, DelimitedTextConfig] = {
+    override protected def decodeConfig(
+        cur: ConfigObjectCursor,
+        typ: String,
+        idField: Option[Expression],
+        caches: Map[String, Config],
+        userData: Map[String, Expression]): Either[ConfigReaderFailures, DelimitedTextConfig] = {
       for { format <- cur.atKey("format").right.flatMap(_.asString).right } yield {
         DelimitedTextConfig(typ, format, idField, caches, userData)
       }
     }
 
-    override protected def encodeConfig(config: DelimitedTextConfig,
-                                        base: java.util.Map[String, AnyRef]): Unit = {
+    override protected def encodeConfig(
+        config: DelimitedTextConfig,
+        base: java.util.Map[String, AnyRef]): Unit = {
       base.put("format", config.format)
     }
-
   }
 
   object DelimitedTextOptionsConvert extends ConverterOptionsConvert[DelimitedTextOptions] {
     override protected def decodeOptions(
         cur: ConfigObjectCursor,
-        validators: SimpleFeatureValidator,
+        validators: Seq[String],
+        reporters: Map[String, Config],
         parseMode: ParseMode,
         errorMode: ErrorMode,
         encoding: Charset): Either[ConfigReaderFailures, DelimitedTextOptions] = {
@@ -178,7 +183,7 @@ object DelimitedTextConverterFactory {
         escape    <- optionalChar("escape").right
         delimiter <- option("delimiter", PrimitiveConvert.charConfigReader).right
       } yield {
-        DelimitedTextOptions(skipLines, quote, escape, delimiter, validators, parseMode, errorMode, encoding)
+        DelimitedTextOptions(skipLines, quote, escape, delimiter, validators, reporters, parseMode, errorMode, encoding)
       }
     }
 
