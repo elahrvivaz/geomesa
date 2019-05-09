@@ -8,7 +8,6 @@
 
 package org.locationtech.geomesa.accumulo.filter
 
-import com.typesafe.scalalogging.LazyLogging
 import org.geotools.filter.text.ecql.ECQL
 import org.geotools.geometry.jts.ReferencedEnvelope
 import org.geotools.referencing.crs.DefaultGeographicCRS
@@ -17,9 +16,8 @@ import org.locationtech.geomesa.filter.visitor.BoundsFilterVisitor
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
-
 @RunWith(classOf[JUnitRunner])
-class BoundsFilterVisitorTest extends Specification with LazyLogging {
+class BoundsFilterVisitorTest extends Specification {
 
   "BoundsFilterVisitor" should {
     "work for during" >> {
@@ -27,7 +25,4 @@ class BoundsFilterVisitorTest extends Specification with LazyLogging {
       BoundsFilterVisitor.visit(filter) mustEqual new ReferencedEnvelope(0.0, 1.0, 0.0, 1.0, DefaultGeographicCRS.WGS84)
     }
   }
-
 }
-
-

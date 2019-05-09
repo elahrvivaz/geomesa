@@ -11,6 +11,7 @@ package org.locationtech.geomesa.accumulo
 import org.geotools.data.{DataStoreFinder, Query, Transaction}
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloDataStoreParams}
 import org.locationtech.geomesa.index.utils.ExplainString
+import org.locationtech.geomesa.utils.collection.SelfClosingIterator
 import org.locationtech.geomesa.utils.geotools.FeatureUtils
 import org.locationtech.geomesa.utils.io.WithClose
 import org.opengis.feature.simple.SimpleFeature
@@ -27,38 +28,14 @@ import scala.collection.JavaConverters._
   */
 abstract class TestWithDataStore extends TestWithMiniCluster {
 
-  def additionalDsParams(): Map[String, Any] = Map.empty
+  def additionalDsParams(): Map[String, AnyRef] = Map.empty
 
   // we use class name to prevent spillage between unit tests in the mock connector
   lazy val catalog = getClass.getSimpleName
 
-//  val EmptyUserAuthorizations = new Authorizations()
-//  val EmptyUserAuthSeq = Seq.empty[String]
-//
-//  val MockUserAuthorizationsString = "A,B,C"
-//  val MockUserAuthorizations = new Authorizations(
-//    MockUserAuthorizationsString.split(",").map(_.getBytes()).toList.asJava
-//  )
-//  val MockUserAuthSeq = Seq("A", "B", "C")
-//
-//  lazy val mockInstanceId = "mycloud"
-//  lazy val mockZookeepers = "myzoo"
-//  lazy val mockUser = "user"
-//  lazy val mockPassword = "password"
-//
-//
-//  lazy val mockInstance = new MockInstance(mockInstanceId)
-//
-//  // assign some default authorizations to this mock user
-//  lazy val connector: Connector = {
-//    val mockConnector = mockInstance.getConnector(mockUser, new PasswordToken(mockPassword))
-//    mockConnector.securityOperations().changeUserAuthorizations(mockUser, MockUserAuthorizations)
-//    mockConnector
-//  }
-
   lazy val dsParams = Map(
     AccumuloDataStoreParams.ConnectorParam.key -> connector,
-    AccumuloDataStoreParams.CachingParam.key   -> false,
+    AccumuloDataStoreParams.CachingParam.key   -> Boolean.box(false),
     // note the table needs to be different to prevent testing errors
     AccumuloDataStoreParams.CatalogParam.key   -> catalog
   ) ++ additionalDsParams()
@@ -69,10 +46,21 @@ abstract class TestWithDataStore extends TestWithMiniCluster {
   override def map(fragments: => Fragments): Fragments = super.map(fragments ^ fragmentFactory.step(ds.dispose()))
 
   /**
-   * Call to load the test features into the data store
-   */
+    * Ingest a single feature to the data store
+    *
+    * @param feature feature to ingest
+    */
+  def addFeature(feature: SimpleFeature): Unit = addFeatures(Seq(feature))
+
+  /**
+    * Ingest features to the data store
+    *
+    * @param features features to ingest (non-empty)
+    */
   def addFeatures(features: Seq[SimpleFeature]): Unit = {
-    val sft = features.head.getFeatureType.getTypeName
+    val sft = features.headOption.map(_.getFeatureType.getTypeName).getOrElse {
+      throw new IllegalArgumentException("Trying to add an empty feature collection")
+    }
     WithClose(ds.getFeatureWriterAppend(sft, Transaction.AUTO_COMMIT)) { writer =>
       features.foreach { f =>
         FeatureUtils.copyToWriter(writer, f, useProvidedFid = true)
@@ -82,6 +70,9 @@ abstract class TestWithDataStore extends TestWithMiniCluster {
   }
 
   def clearFeatures(typeName: String): Unit = ds.getFeatureSource(typeName).removeFeatures(Filter.INCLUDE)
+
+  def runQuery(query: Query): Seq[SimpleFeature] =
+    SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList
 
   def explain(query: Query): String = {
     val o = new ExplainString

@@ -36,7 +36,7 @@ class AccumuloQueryEventTransformIT extends TestWithMiniCluster {
         deleted = true
       )
 
-      val table = "AccumuloQueryEventTransformTest"
+      val table = getClass.getSimpleName
 
       connector.tableOperations().create(table)
 

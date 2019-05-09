@@ -338,7 +338,7 @@ class AccumuloDataStore(val connector: Connector, override val config: AccumuloD
 
   override def dispose(): Unit = {
     super.dispose()
-    kerberosTgtRenewer.foreach( _.shutdown() )
+    kerberosTgtRenewer.foreach( _.shutdown())
   }
 }
 
@@ -365,18 +365,20 @@ object AccumuloDataStore extends LazyLogging {
     * @param recordThreads number of threads used to join against the record table. Because record scans
     *                      are single-row ranges, increasing this too much can cause performance to decrease
     */
-  case class AccumuloDataStoreConfig(catalog: String,
-                                     defaultVisibilities: String,
-                                     generateStats: Boolean,
-                                     authProvider: AuthorizationsProvider,
-                                     audit: Option[(AuditWriter with AuditReader, AuditProvider, String)],
-                                     queryTimeout: Option[Long],
-                                     looseBBox: Boolean,
-                                     caching: Boolean,
-                                     writeThreads: Int,
-                                     queryThreads: Int,
-                                     recordThreads: Int,
-                                     namespace: Option[String]) extends GeoMesaDataStoreConfig
+  case class AccumuloDataStoreConfig(
+      catalog: String,
+      defaultVisibilities: String,
+      generateStats: Boolean,
+      authProvider: AuthorizationsProvider,
+      audit: Option[(AuditWriter with AuditReader, AuditProvider, String)],
+      queryTimeout: Option[Long],
+      looseBBox: Boolean,
+      caching: Boolean,
+      writeThreads: Int,
+      queryThreads: Int,
+      recordThreads: Int,
+      namespace: Option[String]
+    ) extends GeoMesaDataStoreConfig
 
   /**
     * Converts the old 'index schema' into the appropriate index identifiers

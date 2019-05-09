@@ -64,7 +64,7 @@ object KNNQuery extends LazyLogging {
     else {
         val newGH = ghPQ.next()
         // copy the query in order to pass the original to the next recursion
-        val newQuery = generateKNNQuery(newGH, query, source)
+        val newQuery = generateKNNQuery(newGH, query, source.getSchema.getGeometryDescriptor.getLocalName)
 
         val newFeatures = SelfClosingIterator(source.getFeatures(newQuery).features)
 
@@ -83,10 +83,10 @@ object KNNQuery extends LazyLogging {
   /**
    * Generate a new query by narrowing another down to a single GeoHash
    */
-  def generateKNNQuery(gh: GeoHash, oldQuery: Query, source: SimpleFeatureSource): Query = {
+  def generateKNNQuery(gh: GeoHash, oldQuery: Query, geom: String): Query = {
 
     // setup a new BBOX filter to add to the original suite
-    val geomProp = ff.property(source.getSchema.getGeometryDescriptor.getName)
+    val geomProp = ff.property(geom)
 
     val newGHEnv = new ReferencedEnvelope(gh.bbox, oldQuery.getCoordinateSystem)
 
@@ -99,4 +99,6 @@ object KNNQuery extends LazyLogging {
     newQuery.setFilter(ff.and(newGHFilter, oldQuery.getFilter))
     newQuery
   }
+
+
 }

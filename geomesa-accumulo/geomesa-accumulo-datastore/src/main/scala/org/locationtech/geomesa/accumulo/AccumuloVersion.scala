@@ -8,8 +8,12 @@
 
 package org.locationtech.geomesa.accumulo
 
+import java.io.File
+import java.lang.reflect.Constructor
+
 import org.apache.accumulo.core.Constants
 import org.apache.accumulo.core.client.admin.TimeType
+import org.apache.accumulo.core.client.security.tokens.KerberosToken
 import org.apache.accumulo.core.client.{Connector, TableExistsException}
 import org.apache.accumulo.core.security.Authorizations
 import org.apache.hadoop.io.Text
@@ -36,34 +40,25 @@ object AccumuloVersion extends Enumeration {
 
   def getMetadataTable: String = {
     accumuloVersion match {
-      case V15 =>
-        getTypeFromClass("org.apache.accumulo.core.Constants", "METADATA_TABLE_NAME")
-      case V16 =>
-        getTypeFromClass("org.apache.accumulo.core.metadata.MetadataTable", "NAME")
-      case _ =>
-        getTypeFromClass("org.apache.accumulo.core.metadata.MetadataTable", "NAME")
+      case V15 => getTypeFromClass("org.apache.accumulo.core.Constants", "METADATA_TABLE_NAME")
+      case V16 => getTypeFromClass("org.apache.accumulo.core.metadata.MetadataTable", "NAME")
+      case _   => getTypeFromClass("org.apache.accumulo.core.metadata.MetadataTable", "NAME")
     }
   }
 
   def getMetadataColumnFamily: Text = {
     accumuloVersion match {
-      case V15 =>
-        getTypeFromClass("org.apache.accumulo.core.Constants", "METADATA_DATAFILE_COLUMN_FAMILY")
-      case V16 =>
-        getTypeFromClass("org.apache.accumulo.core.metadata.schema.MetadataSchema$TabletsSection$DataFileColumnFamily", "NAME")
-      case _ =>
-        getTypeFromClass("org.apache.accumulo.core.metadata.schema.MetadataSchema$TabletsSection$DataFileColumnFamily", "NAME")
+      case V15 => getTypeFromClass("org.apache.accumulo.core.Constants", "METADATA_DATAFILE_COLUMN_FAMILY")
+      case V16 => getTypeFromClass("org.apache.accumulo.core.metadata.schema.MetadataSchema$TabletsSection$DataFileColumnFamily", "NAME")
+      case _   => getTypeFromClass("org.apache.accumulo.core.metadata.schema.MetadataSchema$TabletsSection$DataFileColumnFamily", "NAME")
     }
   }
 
   def getEmptyAuths: Authorizations = {
     accumuloVersion match {
-      case V15 =>
-        getTypeFromClass("org.apache.accumulo.core.Constants", "NO_AUTHS")
-      case V16 =>
-        getTypeFromClass("org.apache.accumulo.core.security.Authorizations", "EMPTY")
-      case _ =>
-        getTypeFromClass("org.apache.accumulo.core.security.Authorizations", "EMPTY")
+      case V15 => getTypeFromClass("org.apache.accumulo.core.Constants", "NO_AUTHS")
+      case V16 => getTypeFromClass("org.apache.accumulo.core.security.Authorizations", "EMPTY")
+      case _   => getTypeFromClass("org.apache.accumulo.core.security.Authorizations", "EMPTY")
     }
   }
 
@@ -84,7 +79,7 @@ object AccumuloVersion extends Enumeration {
       }
       try { tableOps.create(table, true, if (logical) { TimeType.LOGICAL } else { TimeType.MILLIS }); true } catch {
         // this can happen with multiple threads but shouldn't cause any issues
-        case e: TableExistsException => false
+        case _: TableExistsException => false
       }
     }
   }
@@ -106,6 +101,27 @@ object AccumuloVersion extends Enumeration {
         // this can happen with multiple threads but shouldn't cause any issue
         case e: Exception if e.getClass.getSimpleName == "NamespaceExistsException" => false
       }
+    }
+  }
+
+  /**
+    * Create a kerberos token
+    *
+    * @param user user name
+    * @param keytabPath key tab path
+    * @return
+    */
+  def createKerberosToken(user: String, keytabPath: String): KerberosToken = {
+    val file = new File(keytabPath)
+    val constructors = classOf[KerberosToken].getConstructors.asInstanceOf[Array[Constructor[KerberosToken]]]
+    // prioritize the old method that replaces the hadoop user
+    constructors.find(_.getParameterTypes.toSeq == Seq(classOf[String], classOf[File], classOf[Boolean])) match {
+      case Some(c) => c.newInstance(user, file, java.lang.Boolean.TRUE)
+      case None =>
+        val latest = constructors.find(_.getParameterTypes.toSeq == Seq(classOf[String], classOf[File])).getOrElse {
+          throw new NoSuchMethodError(s"Could not find constructor for KerberosToken: found ${constructors.mkString(", ")}")
+        }
+        latest.newInstance(user, file)
     }
   }
 

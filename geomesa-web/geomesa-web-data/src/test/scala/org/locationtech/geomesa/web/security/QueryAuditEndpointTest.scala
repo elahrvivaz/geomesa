@@ -19,11 +19,10 @@ import org.geotools.filter.text.ecql.ECQL
 import org.json4s.native.JsonMethods._
 import org.json4s.{DefaultFormats, Formats, _}
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.TestWithDataStore
+import org.locationtech.geomesa.accumulo.TestWithFeatureType
 import org.locationtech.geomesa.accumulo.audit.{AccumuloAuditService, AccumuloEventWriter}
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStoreParams
 import org.locationtech.geomesa.filter.filterToString
-import org.locationtech.geomesa.index.api.GeoMesaFeatureIndex
 import org.locationtech.geomesa.index.audit.QueryEvent
 import org.locationtech.geomesa.index.conf.QueryHints
 import org.locationtech.geomesa.index.geoserver.ViewParams
@@ -34,13 +33,14 @@ import org.scalatra.test.specs2.MutableScalatraSpec
 import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
-class QueryAuditEndpointTest extends TestWithDataStore with MutableScalatraSpec {
+class QueryAuditEndpointTest extends TestWithFeatureType with MutableScalatraSpec {
 
   sequential
 
   override val spec: String = "name:String,dtg:Date,*geom:Point:srid=4326"
 
-  override def additionalDsParams(): Map[String, Any] = Map(AccumuloDataStoreParams.AuditQueriesParam.key -> true)
+  override def additionalDsParams(): Map[String, AnyRef] =
+    Map(AccumuloDataStoreParams.AuditQueriesParam.key -> Boolean.box(true))
 
   private var startDate: String = _
   private var endDate: String = _
@@ -100,12 +100,11 @@ class QueryAuditEndpointTest extends TestWithDataStore with MutableScalatraSpec 
   val persistence = new PropertiesPersistence() {
     override protected def persist(properties: Properties): Unit = {}
     override protected def load(properties: Properties): Unit = {
-      properties.put(s"ds.test.${AccumuloDataStoreParams.InstanceIdParam.key}", mockInstanceId)
-      properties.put(s"ds.test.${AccumuloDataStoreParams.ZookeepersParam.key}", mockZookeepers)
-      properties.put(s"ds.test.${AccumuloDataStoreParams.UserParam.key}", mockUser)
-      properties.put(s"ds.test.${AccumuloDataStoreParams.PasswordParam.key}", mockPassword)
+      properties.put(s"ds.test.${AccumuloDataStoreParams.InstanceIdParam.key}", instanceId)
+      properties.put(s"ds.test.${AccumuloDataStoreParams.ZookeepersParam.key}", zookeepers)
+      properties.put(s"ds.test.${AccumuloDataStoreParams.UserParam.key}", connector.whoami())
+      properties.put(s"ds.test.${AccumuloDataStoreParams.PasswordParam.key}", password)
       properties.put(s"ds.test.${AccumuloDataStoreParams.CatalogParam.key}", catalog)
-      properties.put(s"ds.test.${AccumuloDataStoreParams.MockParam.key}", "true")
     }
   }
 

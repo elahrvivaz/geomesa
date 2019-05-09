@@ -43,6 +43,9 @@
                         <execution>
                             <id>start-plugin</id>
                             <phase>pre-integration-test</phase>
+                            <configuration>
+                                <skip>${skipTests}</skip>
+                            </configuration>
                             <goals>
                                 <goal>start</goal>
                             </goals>
@@ -50,6 +53,9 @@
                         <execution>
                             <id>stop-plugin</id>
                             <phase>post-integration-test</phase>
+                            <configuration>
+                                <skip>${skipTests}</skip>
+                            </configuration>
                             <goals>
                                 <goal>stop</goal>
                             </goals>

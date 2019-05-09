@@ -11,7 +11,7 @@ package org.locationtech.geomesa.jobs.accumulo
 import org.geotools.data.Query
 import org.geotools.filter.text.ecql.ECQL
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.TestWithDataStore
+import org.locationtech.geomesa.accumulo.TestWithFeatureType
 import org.locationtech.geomesa.accumulo.data.AccumuloQueryPlan.JoinPlan
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.index.conf.QueryHints
@@ -19,11 +19,10 @@ import org.locationtech.geomesa.index.index.attribute.AttributeIndex
 import org.locationtech.geomesa.index.index.z2.Z2Index
 import org.locationtech.geomesa.index.index.z3.Z3Index
 import org.locationtech.geomesa.index.planning.QueryPlanner.CostEvaluation
-import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
-class AccumuloJobUtilsTest extends Specification with TestWithDataStore {
+class AccumuloJobUtilsTest extends TestWithFeatureType {
 
   override val spec =
     "name:String:index=join:cardinality=high,age:Int:index=full:cardinality=high,dtg:Date,*geom:Point:srid=4326"

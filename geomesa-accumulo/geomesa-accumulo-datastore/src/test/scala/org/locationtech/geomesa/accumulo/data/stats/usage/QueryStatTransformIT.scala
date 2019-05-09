@@ -29,7 +29,7 @@ import scala.collection.JavaConverters._
 @RunWith(classOf[JUnitRunner])
 class QueryStatTransformIT extends TestWithMiniCluster {
 
-  val table = "QueryStatTransformTest"
+  val table = getClass.getSimpleName
   val featureName = "stat-writer-test"
 
   step {

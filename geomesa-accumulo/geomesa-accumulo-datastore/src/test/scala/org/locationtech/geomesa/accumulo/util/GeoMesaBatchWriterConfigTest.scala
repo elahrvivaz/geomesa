@@ -19,11 +19,12 @@ import org.specs2.runner.JUnitRunner
 
 @RunWith(classOf[JUnitRunner])
 class GeoMesaBatchWriterConfigTest extends Specification {
-  val bwc = GeoMesaBatchWriterConfig()    // Builds new BWC which has not been mutated by some other test.
 
   import AccumuloProperties.BatchWriterProperties
 
   sequential
+
+  val bwc = GeoMesaBatchWriterConfig()    // Builds new BWC which has not been mutated by some other test.
 
   "GeoMesaBatchWriterConfig" should {
     "have defaults set" in {

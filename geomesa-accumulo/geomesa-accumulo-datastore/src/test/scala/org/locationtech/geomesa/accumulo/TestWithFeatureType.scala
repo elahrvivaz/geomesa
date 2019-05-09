@@ -29,6 +29,8 @@ abstract class TestWithFeatureType extends TestWithDataStore {
     ds.getSchema(sftName) // reload the sft from the ds to ensure all user data is set properly
   }
 
+  def clearFeatures(): Unit = clearFeatures(sft.getTypeName) // make sure the schema is created by using the lazy val
+
   // after all tests, drop the tables we created to free up memory
   override def map(fragments: => Fragments): Fragments =
     super.map(fragments ^ fragmentFactory.step(ds.removeSchema(sftName)))
