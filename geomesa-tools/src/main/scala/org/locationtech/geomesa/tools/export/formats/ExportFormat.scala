@@ -20,12 +20,14 @@ import org.opengis.feature.simple.SimpleFeatureType
   * @param name common name
   * @param extensions file extensions corresponding to the format
   * @param streaming does this format support writing to an output stream, or not (i.e. requires a random-access file)
+  * @param countable does this format accurately count bytes as they're written, or not (i.e. only after `close()`)
   * @param bytesPerAttribute estimated bytes per attribute
   */
 sealed abstract class ExportFormat(
     val name: String,
     val extensions: Seq[String],
     val streaming: Boolean,
+    val countable: Boolean,
     bytesPerAttribute: Float) {
 
   val bytesPerFeatureProperty = SystemProperty(s"org.locationtech.geomesa.export.$name.bytes-per-feature")
@@ -57,31 +59,31 @@ object ExportFormat {
   // note: these estimated sizes are based on exporting 86602 gdelt records from 2018-01-01
   // with the attributes GLOBALEVENTID,SQLDATE,MonthYear,Actor1Code,Actor1Name,dtg,geom
 
-  case object Arrow extends ExportFormat("arrow", Seq("arrow"), true, 6.6f) with ArrowBytesPerFeature
+  case object Arrow extends ExportFormat("arrow", Seq("arrow"), true, true, 6.6f) with ArrowBytesPerFeature
 
-  case object Avro extends ExportFormat("avro", Seq("avro"), true, 1.9f)
+  case object Avro extends ExportFormat("avro", Seq("avro"), true, true, 1.9f)
 
-  case object Bin extends ExportFormat("bin", Seq("bin"), true, -1) with BinBytesPerFeature
+  case object Bin extends ExportFormat("bin", Seq("bin"), true, true, -1) with BinBytesPerFeature
 
-  case object Csv extends ExportFormat("csv", Seq("csv"), true, 12)
+  case object Csv extends ExportFormat("csv", Seq("csv"), true, true, 12)
 
-  case object Json extends ExportFormat("json", Seq("json", "geojson"), true, 32)
+  case object Json extends ExportFormat("json", Seq("json", "geojson"), true, true, 32)
 
-  case object Gml2 extends ExportFormat("gml2", Seq("gml2"), true, 78)
+  case object Gml2 extends ExportFormat("gml2", Seq("gml2"), true, false, 78)
 
-  case object Gml3 extends ExportFormat("gml", Seq("xml", "gml", "gml3"), true, 73)
+  case object Gml3 extends ExportFormat("gml", Seq("xml", "gml", "gml3"), true, false, 73)
 
-  case object Leaflet extends ExportFormat("leaflet", Seq("html"), true, 32)
+  case object Leaflet extends ExportFormat("leaflet", Seq("html"), true, true, 32)
 
-  case object Null extends ExportFormat("null", Seq.empty, true, 0)
+  case object Null extends ExportFormat("null", Seq.empty, true, true, 0)
 
-  case object Orc extends ExportFormat("orc", Seq("orc"), false, 1.4f)
+  case object Orc extends ExportFormat("orc", Seq("orc"), false, false, 1.4f)
 
-  case object Parquet extends ExportFormat("parquet", Seq("parquet"), false, 1.6f)
+  case object Parquet extends ExportFormat("parquet", Seq("parquet"), false, false, 1.6f)
 
-  case object Shp extends ExportFormat("shp", Seq("shp"), false, 105)
+  case object Shp extends ExportFormat("shp", Seq("shp"), false, false, 105)
 
-  case object Tsv extends ExportFormat("tsv", Seq("tsv"), true,  12)
+  case object Tsv extends ExportFormat("tsv", Seq("tsv"), true, true,  12)
 
   trait ArrowBytesPerFeature extends ExportFormat {
     abstract override def bytesPerFeature(sft: SimpleFeatureType): Float = {

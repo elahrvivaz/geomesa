@@ -457,10 +457,10 @@ object ExportCommand extends LazyLogging {
       if (features.isEmpty) {
         exported
       } else {
-        // if it's a streaming format, the bytes should be available now and we can compare to our chunk size
-        // if it's a random-access format, the bytes aren't generally available until after closing the writer,
+        // if it's a countable format, the bytes should be available now and we can compare to our chunk size
+        // otherwise, the bytes aren't generally available until after closing the writer,
         // so we have to go with our initial estimate and adjust after the first chunk
-        if (options.format.streaming) {
+        if (options.format.countable) {
           val bytes = exporter.bytes
           if (estimator.done(bytes)) {
             nextChunk()

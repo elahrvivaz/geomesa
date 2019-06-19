@@ -267,8 +267,8 @@ object ExportJob extends JobWithLibJars {
       lazy val names = new IncrementingFileName(file)
       Config.getChunks(conf) match {
         case None => new ExportRecordWriter(job, opts, hints)
-        case Some(c) if opts.format.streaming => new ExportStreamingChunkedRecordWriter(job, names, opts, hints, c)
-        case Some(c) => new ExportChunkedRecordWriter(job, names, opts, hints, c)
+        case Some(c) if opts.format.countable => new ExportChunkedRecordWriter(job, names, opts, hints, c)
+        case Some(c) => new ExportUncountableChunkedRecordWriter(job, names, opts, hints, c)
       }
     }
   }
@@ -300,7 +300,7 @@ object ExportJob extends JobWithLibJars {
   }
 
   /**
-    * Record writer that wraps a chunked streaming FeatureExporter. Because the exporter is streaming,
+    * Record writer that wraps a chunked countable FeatureExporter. Because the exporter is countable,
     * the bytes written should be fairly accurate after every feature
     *
     * @param context task context
@@ -309,7 +309,7 @@ object ExportJob extends JobWithLibJars {
     * @param hints query hints
     * @param chunks chunk size, in bytes
     */
-  class ExportStreamingChunkedRecordWriter(
+  class ExportChunkedRecordWriter(
       context: TaskAttemptContext,
       files: Iterator[String],
       opts: ExportOptions,
@@ -346,8 +346,8 @@ object ExportJob extends JobWithLibJars {
   }
 
   /**
-    * Record writer that wraps a chunked non-streaming FeatureExporter. Because the exporter is not
-    * streaming, the bytes written will generally only be accurate after the exporter is closed
+    * Record writer that wraps a chunked non-countable FeatureExporter. Because the exporter is not
+    * countable, the bytes written will generally only be accurate after the exporter is closed
     *
     * @param context task context
     * @param files source for file names
@@ -355,7 +355,7 @@ object ExportJob extends JobWithLibJars {
     * @param hints query hints
     * @param chunks chunk size, in bytes
     */
-  class ExportChunkedRecordWriter(
+  class ExportUncountableChunkedRecordWriter(
       context: TaskAttemptContext,
       files: Iterator[String],
       opts: ExportOptions,
