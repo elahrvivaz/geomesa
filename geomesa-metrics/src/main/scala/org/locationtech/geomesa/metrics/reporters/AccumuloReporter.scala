@@ -18,7 +18,6 @@ import com.codahale.metrics._
 import com.google.common.base.Charsets
 import org.apache.accumulo.core.client._
 import org.apache.accumulo.core.client.admin.TimeType
-import org.apache.accumulo.core.client.mock.MockInstance
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.data.{Mutation, Value}
 import org.apache.accumulo.core.security.ColumnVisibility
@@ -26,6 +25,7 @@ import org.apache.hadoop.io.Text
 
 import scala.collection.JavaConversions._
 import scala.language.implicitConversions
+import scala.util.control.NonFatal
 
 /**
  * Reporter for dropwizard metrics that will write to accumulo
@@ -89,7 +89,15 @@ object AccumuloReporter {
     def mock(mock: Boolean): Builder = { this.mock = mock; this }
 
     def build(instanceId: String, zookeepers: String, user: String, password: String): AccumuloReporter = {
-      val instance = if (mock) new MockInstance(instanceId) else new ZooKeeperInstance(instanceId, zookeepers)
+      val instance: Instance = if (mock) {
+        try {
+          Class.forName("org.apache.accumulo.core.client.mock.MockInstance").getConstructor(classOf[String]).newInstance(instanceId).asInstanceOf[Instance]
+        } catch {
+          case NonFatal(e) => throw new RuntimeException("Error creating mock instance: mocking may not be available", e)
+        }
+      } else {
+        new ZooKeeperInstance(instanceId, zookeepers)
+      }
       val connector = instance.getConnector(user, new PasswordToken(password))
       new AccumuloReporter(registry, connector, table, Option(visibilities),
         clock, locale, filter, rateUnit, durationUnit)

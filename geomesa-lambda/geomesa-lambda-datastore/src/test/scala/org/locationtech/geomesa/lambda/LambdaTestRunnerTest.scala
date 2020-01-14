@@ -11,10 +11,10 @@ package org.locationtech.geomesa.lambda
 import java.time.{Clock, Instant, ZoneId, ZoneOffset}
 
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.client.mock.MockInstance
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.lambda.LambdaTestRunnerTest.LambdaTest
+import org.locationtech.geomesa.accumulo.data.MiniCluster
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 import org.specs2.specification.BeforeAfterAll
@@ -54,7 +54,7 @@ class LambdaTestRunnerTest extends Specification with BeforeAfterAll with LazyLo
 
 object LambdaTestRunnerTest {
 
-  val connector = new MockInstance("lambda").getConnector("root", new PasswordToken(""))
+  val connector =  MiniCluster.connection
 
   trait LambdaTest extends Specification {
 

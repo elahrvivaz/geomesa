@@ -89,7 +89,7 @@
 
         <!-- *** provided artifacts, not bundled to support multiple environments *** -->
 
-        <accumulo.version>1.8.1</accumulo.version>
+        <accumulo.version>2.0.0</accumulo.version>
         <zookeeper.version>3.4.10</zookeeper.version>
         <thrift.version>0.9.3</thrift.version>
         <hadoop.version>2.6.4</hadoop.version>
@@ -129,7 +129,7 @@
         <copyright.year>2019</copyright.year>
 
         <!-- recommended installation versions -->
-        <accumulo.version.recommended>1.9.3</accumulo.version.recommended>
+        <accumulo.version.recommended>2.0.0</accumulo.version.recommended>
         <hbase.version.recommended>1.4.11</hbase.version.recommended>
         <cassandra.server.version.recommended>3.11.4</cassandra.server.version.recommended>
         <cassandra.driver.version.recommended>3.7.2</cassandra.driver.version.recommended>
@@ -1380,7 +1380,7 @@
                 <artifactId>mango-core</artifactId>
                 <version>1.2.0</version>
             </dependency>
-            <!-- note: accumulo uses guava 17, but geotools uses 11. The methods we use happen to exist
+            <!-- note: accumulo uses guava 28, but geotools uses 11. The methods we use happen to exist
                  in both, but try to use guava sparingly. -->
             <dependency>
                 <groupId>com.google.guava</groupId>
@@ -2120,6 +2120,12 @@
             <dependency>
                 <groupId>org.apache.accumulo</groupId>
                 <artifactId>accumulo-test</artifactId>
+                <version>${accumulo.version}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.accumulo</groupId>
+                <artifactId>accumulo-minicluster</artifactId>
                 <version>${accumulo.version}</version>
                 <scope>test</scope>
             </dependency>
