@@ -11,7 +11,7 @@ package org.locationtech.geomesa.accumulo.data
 import java.util.Map.Entry
 
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.client.{Connector, IteratorSetting, ScannerBase}
+import org.apache.accumulo.core.client.{AccumuloClient, IteratorSetting, ScannerBase}
 import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.accumulo.core.security.Authorizations
 import org.apache.hadoop.io.Text
@@ -113,18 +113,18 @@ object AccumuloQueryPlan extends LazyLogging {
       val auths = ds.auths
       if (PartitionParallelScan.toBoolean.contains(true)) {
         // kick off all the scans at once
-        tables.map(scanner(ds.connector, _, auths)).foldLeft(CloseableIterator.empty[Entry[Key, Value]])(_ ++ _)
+        tables.map(scanner(ds.client, _, auths)).foldLeft(CloseableIterator.empty[Entry[Key, Value]])(_ ++ _)
       } else {
         // kick off the scans sequentially as they finish
-        SelfClosingIterator(tables.iterator).flatMap(scanner(ds.connector, _, auths))
+        SelfClosingIterator(tables.iterator).flatMap(scanner(ds.client, _, auths))
       }
     }
 
     private def scanner(
-        connector: Connector,
+        client: AccumuloClient,
         table: String,
         auths: Authorizations): CloseableIterator[Entry[Key, Value]] = {
-      val scanner = connector.createScanner(table, auths)
+      val scanner = client.createScanner(table, auths)
       scanner.setRange(range)
       configure(scanner)
       SelfClosingIterator(scanner.iterator.asScala, scanner.close())
@@ -148,30 +148,30 @@ object AccumuloQueryPlan extends LazyLogging {
 
     override def scan(ds: AccumuloDataStore): CloseableIterator[Entry[Key, Value]] =
       // calculate authorizations up front so that multi-threading doesn't mess up auth providers
-      scan(ds.connector, ds.auths)
+      scan(ds.client, ds.auths)
 
     /**
       * Scan with pre-computed auths
       *
-      * @param connector connector
+      * @param client AccumuloClient
       * @param auths auths
       * @return
       */
-    def scan(connector: Connector, auths: Authorizations): CloseableIterator[Entry[Key, Value]] = {
+    def scan(client: AccumuloClient, auths: Authorizations): CloseableIterator[Entry[Key, Value]] = {
       if (PartitionParallelScan.toBoolean.contains(true)) {
         // kick off all the scans at once
-        tables.map(scanner(connector, _, auths)).foldLeft(CloseableIterator.empty[Entry[Key, Value]])(_ ++ _)
+        tables.map(scanner(client, _, auths)).foldLeft(CloseableIterator.empty[Entry[Key, Value]])(_ ++ _)
       } else {
         // kick off the scans sequentially as they finish
-        SelfClosingIterator(tables.iterator).flatMap(scanner(connector, _, auths))
+        SelfClosingIterator(tables.iterator).flatMap(scanner(client, _, auths))
       }
     }
 
     private def scanner(
-        connector: Connector,
+        client: AccumuloClient,
         table: String,
         auths: Authorizations): CloseableIterator[Entry[Key, Value]] = {
-      val scanner = connector.createBatchScanner(table, auths, numThreads)
+      val scanner = client.createBatchScanner(table, auths, numThreads)
       scanner.setRanges(ranges.asJava)
       configure(scanner)
       SelfClosingIterator(scanner.iterator.asScala, scanner.close())
@@ -203,31 +203,31 @@ object AccumuloQueryPlan extends LazyLogging {
       val joinTables = joinQuery.tables.iterator
       if (PartitionParallelScan.toBoolean.contains(true)) {
         // kick off all the scans at once
-        tables.map(scanner(ds.connector, _, joinTables.next, auths))
+        tables.map(scanner(ds.client, _, joinTables.next, auths))
             .foldLeft(CloseableIterator.empty[Entry[Key, Value]])(_ ++ _)
       } else {
         // kick off the scans sequentially as they finish
-        SelfClosingIterator(tables.iterator).flatMap(scanner(ds.connector, _, joinTables.next, auths))
+        SelfClosingIterator(tables.iterator).flatMap(scanner(ds.client, _, joinTables.next, auths))
       }
     }
 
     private def scanner(
-        connector: Connector,
+        client: AccumuloClient,
         table: String,
         joinTable: String,
         auths: Authorizations): CloseableIterator[Entry[Key, Value]] = {
       val primary = if (ranges.lengthCompare(1) == 0) {
-        val scanner = connector.createScanner(table, auths)
+        val scanner = client.createScanner(table, auths)
         scanner.setRange(ranges.head)
         scanner
       } else {
-        val scanner = connector.createBatchScanner(table, auths, numThreads)
+        val scanner = client.createBatchScanner(table, auths, numThreads)
         scanner.setRanges(ranges.asJava)
         scanner
       }
       configure(primary)
       val join = joinQuery.copy(tables = Seq(joinTable))
-      val bms = new BatchMultiScanner(connector, primary, join, joinFunction, auths)
+      val bms = new BatchMultiScanner(client, primary, join, joinFunction, auths)
       SelfClosingIterator(bms.iterator, bms.close())
     }
   }

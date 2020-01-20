@@ -88,14 +88,14 @@ object DtgAgeOffIterator extends LazyLogging {
 
   def list(ds: AccumuloDataStore, sft: SimpleFeatureType): Option[IteratorSetting] = {
     import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichIterator
-    val tableOps = ds.connector.tableOperations()
+    val tableOps = ds.client.tableOperations()
     ds.getAllIndexTableNames(sft.getTypeName).iterator.filter(tableOps.exists).flatMap { table =>
       IteratorScope.values.iterator.flatMap(scope => Option(tableOps.getIteratorSetting(table, Name, scope))).headOption
     }.headOption
   }
 
   def set(ds: AccumuloDataStore, sft: SimpleFeatureType, expiry: Duration, dtg: String): Unit = {
-    val tableOps = ds.connector.tableOperations()
+    val tableOps = ds.client.tableOperations()
     ds.manager.indices(sft).foreach { index =>
       index.getTableNames(None).foreach { table =>
         if (tableOps.exists(table)) {
@@ -106,7 +106,7 @@ object DtgAgeOffIterator extends LazyLogging {
   }
 
   def clear(ds: AccumuloDataStore, sft: SimpleFeatureType): Unit = {
-    val tableOps = ds.connector.tableOperations()
+    val tableOps = ds.client.tableOperations()
     ds.getAllIndexTableNames(sft.getTypeName).filter(tableOps.exists).foreach { table =>
       if (IteratorScope.values.exists(scope => tableOps.getIteratorSetting(table, Name, scope) != null)) {
         tableOps.removeIterator(table, Name, java.util.EnumSet.allOf(classOf[IteratorScope]))

@@ -14,7 +14,7 @@ import java.util.concurrent.{ScheduledThreadPoolExecutor, TimeUnit}
 
 import com.google.common.util.concurrent.MoreExecutors
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.client.{BatchWriter, Connector}
+import org.apache.accumulo.core.client.{BatchWriter, AccumuloClient}
 import org.apache.accumulo.core.data.Mutation
 import org.locationtech.geomesa.accumulo.AccumuloVersion
 import org.locationtech.geomesa.accumulo.util.GeoMesaBatchWriterConfig
@@ -24,7 +24,7 @@ import org.locationtech.geomesa.utils.conf.GeoMesaSystemProperties.SystemPropert
 /**
  * Manages writing of usage stats in a background thread.
  */
-class AccumuloEventWriter(connector: Connector, table: String) extends Runnable with Closeable with LazyLogging {
+class AccumuloEventWriter(client: AccumuloClient, table: String) extends Runnable with Closeable with LazyLogging {
 
   private val delay = AccumuloEventWriter.WriteInterval.toDuration.get.toMillis
 
@@ -70,8 +70,8 @@ class AccumuloEventWriter(connector: Connector, table: String) extends Runnable 
 
   private def getWriter: BatchWriter = synchronized {
     if (maybeWriter == null) {
-      AccumuloVersion.createTableIfNeeded(connector, table)
-      maybeWriter = connector.createBatchWriter(table, batchWriterConfig)
+      AccumuloVersion.createTableIfNeeded(client, table)
+      maybeWriter = client.createBatchWriter(table, batchWriterConfig)
     }
     maybeWriter
   }

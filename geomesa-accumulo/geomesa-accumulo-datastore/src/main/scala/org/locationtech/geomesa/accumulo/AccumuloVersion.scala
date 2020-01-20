@@ -11,7 +11,7 @@ package org.locationtech.geomesa.accumulo
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.Constants
 import org.apache.accumulo.core.client.admin.TimeType
-import org.apache.accumulo.core.client.{Connector, TableExistsException}
+import org.apache.accumulo.core.client.{AccumuloClient, TableExistsException}
 import org.apache.accumulo.core.security.Authorizations
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.utils.conf.SemanticVersion
@@ -77,17 +77,17 @@ object AccumuloVersion extends Enumeration with LazyLogging {
   /**
     * Creates the table if it doesn't exist
     *
-    * @param connector connector
+    * @param client client
     * @param table table name
     * @param logical use logical time?
     * @return true if table was created, false if it already existed
     */
-  def createTableIfNeeded(connector: Connector, table: String, logical: Boolean = true): Boolean = {
-    val tableOps = connector.tableOperations()
+  def createTableIfNeeded(client: AccumuloClient, table: String, logical: Boolean = true): Boolean = {
+    val tableOps = client.tableOperations()
     if (tableOps.exists(table)) { false } else {
       val dot = table.indexOf('.')
       if (dot > 0) {
-        createNamespaceIfNeeded(connector, table.substring(0, dot))
+        createNamespaceIfNeeded(client, table.substring(0, dot))
       }
       try { tableOps.create(table, true, if (logical) { TimeType.LOGICAL } else { TimeType.MILLIS }); true } catch {
         // this can happen with multiple threads but shouldn't cause any issues
@@ -99,13 +99,13 @@ object AccumuloVersion extends Enumeration with LazyLogging {
   /**
     * Creates the namespace if it doesn't exist
     *
-    * @param connector connector
+    * @param client client
     * @param namespace namespace
     * @return true if namespace was created, false if it already existed
     */
-  def createNamespaceIfNeeded(connector: Connector, namespace: String): Boolean = {
+  def createNamespaceIfNeeded(client: AccumuloClient, namespace: String): Boolean = {
     require(accumuloVersion != V15, s"Table namespaces are not supported in Accumulo 1.5 - for namespace '$namespace'")
-    val nsOps = classOf[Connector].getMethod("namespaceOperations").invoke(connector)
+    val nsOps = classOf[AccumuloClient].getMethod("namespaceOperations").invoke(client)
     if (nameSpaceExists(nsOps, nsOps.getClass, namespace)) { false } else {
       val createMethod = nsOps.getClass.getMethod("create", classOf[String])
       createMethod.setAccessible(true)
@@ -117,11 +117,11 @@ object AccumuloVersion extends Enumeration with LazyLogging {
   }
 
   @deprecated("Replaced with createTableIfNeeded")
-  def ensureTableExists(connector: Connector, table: String, logical: Boolean = true): Unit =
-    createTableIfNeeded(connector, table, logical)
+  def ensureTableExists(client: AccumuloClient, table: String, logical: Boolean = true): Unit =
+    createTableIfNeeded(client, table, logical)
 
   @deprecated("Replaced with createNamespaceIfNeeded")
-  def ensureNamespaceExists(connector: Connector, namespace: String): Unit = createNamespaceIfNeeded(connector, namespace)
+  def ensureNamespaceExists(client: AccumuloClient, namespace: String): Unit = createNamespaceIfNeeded(client, namespace)
 
   private def nameSpaceExists(nsOps: AnyRef, nsOpsClass: Class[_], ns: String): Boolean = {
     val existsMethod = nsOpsClass.getMethod("exists", classOf[String])

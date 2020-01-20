@@ -55,15 +55,17 @@ import scala.util.control.NonFatal
  * This class handles DataStores which are stored in Accumulo Tables. To be clear, one table may
  * contain multiple features addressed by their featureName.
  *
- * @param connector Accumulo connector
+ * @param client Accumulo client
  * @param config configuration values
  */
-class AccumuloDataStore(val connector: Connector, override val config: AccumuloDataStoreConfig)
+class AccumuloDataStore(val client: AccumuloClient, override val config: AccumuloDataStoreConfig)
     extends GeoMesaDataStore[AccumuloDataStore](config) with ZookeeperLocking {
 
   import scala.collection.JavaConverters._
 
-  override val metadata = new AccumuloBackedMetadata(connector, config.catalog, MetadataStringSerializer)
+  override val mock: Boolean = false
+
+  override val metadata = new AccumuloBackedMetadata(client, config.catalog, MetadataStringSerializer)
 
   private val oldMetadata = new SingleRowAccumuloMetadata(metadata)
 
@@ -88,8 +90,8 @@ class AccumuloDataStore(val connector: Connector, override val config: AccumuloD
     */
   def auths: Authorizations = new Authorizations(config.authProvider.getAuthorizations.asScala: _*)
 
-  @deprecated("Use connector.tableOperations()")
-  lazy val tableOps: TableOperations = connector.tableOperations()
+  @deprecated("Use client.tableOperations()")
+  lazy val tableOps: TableOperations = client.tableOperations()
 
   override def delete(): Unit = {
     // note: don't delete the query audit table
@@ -144,8 +146,8 @@ class AccumuloDataStore(val connector: Connector, override val config: AccumuloD
     val versions = getTypeNames.iterator.flatMap { typeName =>
       getAllIndexTableNames(typeName).iterator.flatMap { table =>
         try {
-          if (connector.tableOperations().exists(table)) {
-            WithClose(connector.createScanner(table, new Authorizations())) { scanner =>
+          if (client.tableOperations().exists(table)) {
+            WithClose(client.createScanner(table, new Authorizations())) { scanner =>
               ProjectVersionIterator.scanProjectVersion(scanner).iterator
             }
           } else {
@@ -167,8 +169,8 @@ class AccumuloDataStore(val connector: Connector, override val config: AccumuloD
       case -1 => ""
       case i  => config.catalog.substring(0, i)
     }
-    AccumuloVersion.createNamespaceIfNeeded(connector, namespace)
-    val canLoad = connector.namespaceOperations().testClassLoad(namespace,
+    AccumuloVersion.createNamespaceIfNeeded(client, namespace)
+    val canLoad = client.namespaceOperations().testClassLoad(namespace,
       classOf[ProjectVersionIterator].getName, classOf[SortedKeyValueIterator[_, _]].getName)
 
     if (!canLoad) {
@@ -208,7 +210,7 @@ class AccumuloDataStore(val connector: Connector, override val config: AccumuloD
     super.onSchemaCreated(sft)
     if (sft.statsEnabled) {
       // configure the stats combining iterator on the table for this sft
-      stats.configureStatCombiner(connector, sft)
+      stats.configureStatCombiner(client, sft)
     }
     sft.getFeatureExpiration.foreach {
       case IngestTimeExpiration(ttl) => AgeOffIterator.set(this, sft, ttl)
@@ -251,10 +253,10 @@ class AccumuloDataStore(val connector: Connector, override val config: AccumuloD
     super.onSchemaUpdated(sft, previous)
 
     if (previous.statsEnabled) {
-      stats.removeStatCombiner(connector, previous)
+      stats.removeStatCombiner(client, previous)
     }
     if (sft.statsEnabled) {
-      stats.configureStatCombiner(connector, sft)
+      stats.configureStatCombiner(client, sft)
     }
 
     AgeOffIterator.clear(this, previous)
@@ -335,7 +337,7 @@ class AccumuloDataStore(val connector: Connector, override val config: AccumuloD
           val lock = acquireCatalogLock()
           try {
             if (!metadata.read(typeName, configuredKey, cache = false).contains("true")) {
-              stats.configureStatCombiner(connector, sft)
+              stats.configureStatCombiner(client, sft)
               metadata.insert(typeName, configuredKey, "true")
             }
           } finally {

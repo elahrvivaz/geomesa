@@ -55,7 +55,7 @@ class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloD
 
   import scala.collection.JavaConverters._
 
-  private val tableOps = ds.connector.tableOperations()
+  private val tableOps = ds.client.tableOperations()
 
   // noinspection ScalaDeprecation
   override def createTable(
@@ -64,12 +64,8 @@ class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloD
       splits: => Seq[Array[Byte]]): Unit = {
     val table = index.configureTableName(partition) // writes table name to metadata
     // create table if it doesn't exist
-    val created = if (ds.connector.isInstanceOf[org.apache.accumulo.core.client.mock.MockConnector]) {
-      // we need to synchronize creation of tables in mock accumulo as it's not thread safe
-      ds.connector.synchronized(AccumuloVersion.createTableIfNeeded(ds.connector, table, index.sft.isLogicalTime))
-    } else {
-      AccumuloVersion.createTableIfNeeded(ds.connector, table, index.sft.isLogicalTime)
-    }
+    val created = AccumuloVersion.createTableIfNeeded(ds.client, table, index.sft.isLogicalTime)
+    
 
     // even if the table existed, we still need to check the splits and locality groups if its shared
     if (created || index.keySpace.sharing.nonEmpty) {
@@ -114,12 +110,7 @@ class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloD
   override def renameTable(from: String, to: String): Unit = {
     if (tableOps.exists(from)) {
       // noinspection ScalaDeprecation
-      if (ds.connector.isInstanceOf[org.apache.accumulo.core.client.mock.MockConnector]) {
-        // we need to synchronize renaming tables in mock accumulo as it's not thread safe
-        ds.connector.synchronized(tableOps.rename(from, to))
-      } else {
-        tableOps.rename(from, to)
-      }
+      tableOps.rename(from, to)
     }
   }
 
@@ -127,12 +118,7 @@ class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloD
     tables.par.foreach { table =>
       if (tableOps.exists(table)) {
         // noinspection ScalaDeprecation
-        if (ds.connector.isInstanceOf[org.apache.accumulo.core.client.mock.MockConnector]) {
-          // we need to synchronize deleting of tables in mock accumulo as it's not thread safe
-          ds.connector.synchronized(tableOps.delete(table))
-        } else {
-          tableOps.delete(table)
-        }
+        tableOps.delete(table)
       }
     }
   }
@@ -142,7 +128,7 @@ class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloD
     tables.par.foreach { table =>
       if (tableOps.exists(table)) {
         val config = GeoMesaBatchWriterConfig().setMaxWriteThreads(ds.config.writeThreads)
-        WithClose(ds.connector.createBatchDeleter(table, auths, ds.config.queryThreads, config)) { deleter =>
+        WithClose(ds.client.createBatchDeleter(table, auths, ds.config.queryThreads, config)) { deleter =>
           val range = prefix.map(p => Range.prefix(new Text(p))).getOrElse(new Range())
           deleter.setRanges(Collections.singletonList(range))
           deleter.delete()
@@ -330,7 +316,7 @@ object AccumuloIndexAdapter {
 
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
-    private val multiWriter = ds.connector.createMultiTableBatchWriter(GeoMesaBatchWriterConfig())
+    private val multiWriter = ds.client.createMultiTableBatchWriter(GeoMesaBatchWriterConfig())
     private val writers = indices.toArray.map { index =>
       val table = index.getTableNames(partition) match {
         case Seq(t) => t // should always be writing to a single table here

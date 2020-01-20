@@ -13,7 +13,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.{Executors, Future, LinkedBlockingQueue, TimeUnit}
 
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.client.{Connector, ScannerBase}
+import org.apache.accumulo.core.client.{AccumuloClient, ScannerBase}
 import org.apache.accumulo.core.data.{Key, Value}
 import org.apache.accumulo.core.security.Authorizations
 import org.locationtech.geomesa.accumulo.data.AccumuloQueryPlan.{BatchScanPlan, JoinFunction}
@@ -23,7 +23,7 @@ import scala.collection.JavaConversions._
 /**
   * Runs a join scan against two tables
   *
-  * @param connector connector
+  * @param client AccumuloClient
   * @param in input scan
   * @param join join scan
   * @param joinFunction maps results of input scan to ranges for join scan
@@ -31,7 +31,7 @@ import scala.collection.JavaConversions._
   * @param numThreads threads
   * @param batchSize batch size
   */
-class BatchMultiScanner(connector: Connector,
+class BatchMultiScanner(client: AccumuloClient,
                         in: ScannerBase,
                         join: BatchScanPlan,
                         joinFunction: JoinFunction,
@@ -73,7 +73,7 @@ class BatchMultiScanner(connector: Connector,
             inQ.drainTo(entries)
             val task = executor.submit(new Runnable {
               override def run(): Unit = {
-                val iterator = join.copy(ranges = entries.map(joinFunction)).scan(connector, auths)
+                val iterator = join.copy(ranges = entries.map(joinFunction)).scan(client, auths)
                 try {
                   iterator.foreach(outQ.put)
                 } finally {

@@ -8,7 +8,7 @@
 
 package org.locationtech.geomesa.accumulo.data
 
-import org.apache.accumulo.core.client.Connector
+import org.apache.accumulo.core.client.AccumuloClient
 import org.apache.accumulo.core.data.{Mutation, Range, Value}
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.AccumuloVersion
@@ -17,7 +17,7 @@ import org.locationtech.geomesa.index.metadata.{GeoMesaMetadata, KeyValueStoreMe
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.io.{CloseQuietly, CloseWithLogging}
 
-class AccumuloBackedMetadata[T](val connector: Connector, val table: String, val serializer: MetadataSerializer[T])
+class AccumuloBackedMetadata[T](val client: AccumuloClient, val table: String, val serializer: MetadataSerializer[T])
     extends KeyValueStoreMetadata[T] {
 
   import scala.collection.JavaConverters._
@@ -33,15 +33,15 @@ class AccumuloBackedMetadata[T](val connector: Connector, val table: String, val
       throw new IllegalStateException("Trying to write using a closed instance")
     }
     writerCreated = true
-    connector.createBatchWriter(table, config)
+    client.createBatchWriter(table, config)
   }
 
-  override protected def checkIfTableExists: Boolean = connector.tableOperations().exists(table)
+  override protected def checkIfTableExists: Boolean = client.tableOperations().exists(table)
 
-  override protected def createTable(): Unit = AccumuloVersion.createTableIfNeeded(connector, table)
+  override protected def createTable(): Unit = AccumuloVersion.createTableIfNeeded(client, table)
 
   override protected def createEmptyBackup(timestamp: String): AccumuloBackedMetadata[T] =
-    new AccumuloBackedMetadata(connector, s"${table}_${timestamp}_bak", serializer)
+    new AccumuloBackedMetadata(client, s"${table}_${timestamp}_bak", serializer)
 
   override protected def write(rows: Seq[(Array[Byte], Array[Byte])]): Unit = {
     rows.foreach { case (k, v) =>
@@ -54,14 +54,14 @@ class AccumuloBackedMetadata[T](val connector: Connector, val table: String, val
 
   override protected def delete(rows: Seq[Array[Byte]]): Unit = {
     val ranges = rows.map(r => Range.exact(new Text(r))).asJava
-    val deleter = connector.createBatchDeleter(table, AccumuloVersion.getEmptyAuths, 1, config)
+    val deleter = client.createBatchDeleter(table, AccumuloVersion.getEmptyAuths, 1, config)
     deleter.setRanges(ranges)
     deleter.delete()
     deleter.close()
   }
 
   override protected def scanValue(row: Array[Byte]): Option[Array[Byte]] = {
-    val scanner = connector.createScanner(table, AccumuloVersion.getEmptyAuths)
+    val scanner = client.createScanner(table, AccumuloVersion.getEmptyAuths)
     scanner.setRange(Range.exact(new Text(row)))
     try {
       val iter = scanner.iterator
@@ -78,7 +78,7 @@ class AccumuloBackedMetadata[T](val connector: Connector, val table: String, val
   override protected def scanRows(prefix: Option[Array[Byte]]): CloseableIterator[(Array[Byte], Array[Byte])] = {
     // ensure we don't scan any single-row encoded values
     val range = prefix.map(p => Range.prefix(new Text(p))).getOrElse(new Range("", "~"))
-    val scanner = connector.createScanner(table, AccumuloVersion.getEmptyAuths)
+    val scanner = client.createScanner(table, AccumuloVersion.getEmptyAuths)
     scanner.setRange(range)
     CloseableIterator(scanner.iterator.asScala.map(r => (r.getKey.getRow.copyBytes, r.getValue.get)), scanner.close())
   }
@@ -102,11 +102,11 @@ object AccumuloBackedMetadata {
     import scala.collection.JavaConverters._
 
     // if the table doesn't exist, we assume that we don't ever need to check it for old-encoded rows
-    private val tableExists = metadata.connector.tableOperations().exists(metadata.table)
+    private val tableExists = metadata.client.tableOperations().exists(metadata.table)
 
     def getFeatureTypes: Array[String] = {
       if (!tableExists) { Array.empty } else {
-        val scanner = metadata.connector.createScanner(metadata.table, AccumuloVersion.getEmptyAuths)
+        val scanner = metadata.client.createScanner(metadata.table, AccumuloVersion.getEmptyAuths)
         // restrict to just one cf so we only get 1 hit per feature
         // use attributes as it's the only thing that's been there through all geomesa versions
         scanner.fetchColumnFamily(new Text(GeoMesaMetadata.AttributesKey))
@@ -125,8 +125,8 @@ object AccumuloBackedMetadata {
       */
     def migrate(typeName: String): Unit = {
       if (tableExists) {
-        val scanner = metadata.connector.createScanner(metadata.table, AccumuloVersion.getEmptyAuths)
-        val writer = metadata.connector.createBatchWriter(metadata.table, GeoMesaBatchWriterConfig())
+        val scanner = metadata.client.createScanner(metadata.table, AccumuloVersion.getEmptyAuths)
+        val writer = metadata.client.createBatchWriter(metadata.table, GeoMesaBatchWriterConfig())
         try {
           scanner.setRange(SingleRowAccumuloMetadata.getRange(typeName))
           scanner.iterator.asScala.foreach { entry =>

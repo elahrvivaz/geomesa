@@ -10,7 +10,7 @@ package org.locationtech.geomesa.accumulo.audit
 
 import java.time.ZonedDateTime
 
-import org.apache.accumulo.core.client.Connector
+import org.apache.accumulo.core.client.AccumuloClient
 import org.apache.accumulo.core.data.Range
 import org.apache.accumulo.core.security.Authorizations
 import org.locationtech.geomesa.utils.audit.AuditedEvent
@@ -20,17 +20,17 @@ import org.locationtech.geomesa.utils.collection.{IsSynchronized, MaybeSynchroni
 /**
   * Manages reading of usage stats
   */
-class AccumuloEventReader(connector: Connector, table: String) {
+class AccumuloEventReader(client: AccumuloClient, table: String) {
 
   private val tableExists: MaybeSynchronized[Boolean] =
-    if (connector.tableOperations().exists(table)) { new NotSynchronized(true) } else { new IsSynchronized(false) }
+    if (client.tableOperations().exists(table)) { new NotSynchronized(true) } else { new IsSynchronized(false) }
 
   def query[T <: AuditedEvent](typeName: String,
                                dates: (ZonedDateTime, ZonedDateTime),
                                auths: Authorizations)
                               (implicit transform: AccumuloEventTransform[T]): Iterator[T] = {
     if (!checkTable) { Iterator.empty } else {
-      val scanner = connector.createScanner(table, auths)
+      val scanner = client.createScanner(table, auths)
       val rangeStart = s"$typeName~${dates._1.format(AccumuloEventTransform.dateFormat)}"
       val rangeEnd = s"$typeName~${dates._2.format(AccumuloEventTransform.dateFormat)}"
       scanner.setRange(new Range(rangeStart, rangeEnd))
@@ -41,7 +41,7 @@ class AccumuloEventReader(connector: Connector, table: String) {
   private def checkTable: Boolean = {
     if (tableExists.get) {
       true
-    } else if (connector.tableOperations().exists(table)) {
+    } else if (client.tableOperations().exists(table)) {
       tableExists.set(true, false)
       true
     } else {

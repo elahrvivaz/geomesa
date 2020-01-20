@@ -10,7 +10,7 @@ package org.locationtech.geomesa.accumulo.audit
 
 import java.time.ZonedDateTime
 
-import org.apache.accumulo.core.client.Connector
+import org.apache.accumulo.core.client.AccumuloClient
 import org.apache.accumulo.core.security.Authorizations
 import org.locationtech.geomesa.index.audit.QueryEvent
 import org.locationtech.geomesa.security.AuthorizationsProvider
@@ -18,13 +18,13 @@ import org.locationtech.geomesa.utils.audit._
 
 import scala.reflect.ClassTag
 
-class AccumuloAuditService(connector: Connector,
+class AccumuloAuditService(client: AccumuloClient,
                            authProvider: AuthorizationsProvider,
                            val table: String,
                            write: Boolean) extends AuditWriter with AuditReader with AuditLogger {
 
-  private val writer = if (write) { new AccumuloEventWriter(connector, table) } else { null }
-  private val reader = new AccumuloEventReader(connector, table)
+  private val writer = if (write) { new AccumuloEventWriter(client, table) } else { null }
+  private val reader = new AccumuloEventReader(client, table)
 
   override def writeEvent[T <: AuditedEvent](event: T)(implicit ct: ClassTag[T]): Unit = {
     if (writer != null) {

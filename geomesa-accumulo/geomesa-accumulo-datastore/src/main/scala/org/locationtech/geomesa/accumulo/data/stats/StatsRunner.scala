@@ -105,7 +105,9 @@ class StatsRunner(ds: AccumuloDataStore) extends Runnable with Closeable {
 class StatRunner(ds: AccumuloDataStore, sft: SimpleFeatureType, lockTimeout: Option[Long] = None)
     extends Callable[Instant] with ZookeeperLocking {
 
-  override val connector = ds.connector
+  override val mock: Boolean = false
+
+  override val client = ds.client
 
   /**
     * Runs stats for the simple feature type
@@ -152,7 +154,7 @@ class StatRunner(ds: AccumuloDataStore, sft: SimpleFeatureType, lockTimeout: Opt
     */
   private def getLastUpdate: Instant = {
     ds.metadata.read(sft.getTypeName, GeoMesaMetadata.StatsGenerationKey, cache = false) match {
-      case Some(dt) => Instant.from(GeoToolsDateFormat.parse(dt))
+      case Some(dt:CharSequence) => Instant.from(GeoToolsDateFormat.parse(dt))
       case None     => Instant.ofEpochSecond(0)
     }
   }

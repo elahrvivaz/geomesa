@@ -13,7 +13,7 @@ import java.util.concurrent.{ScheduledFuture, ScheduledThreadPoolExecutor, TimeU
 
 import com.google.common.collect.ImmutableSortedSet
 import com.google.common.util.concurrent.MoreExecutors
-import org.apache.accumulo.core.client.Connector
+import org.apache.accumulo.core.client.AccumuloClient
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.{AccumuloBackedMetadata, _}
 import org.locationtech.geomesa.index.stats.GeoMesaStats.{GeoMesaStatWriter, StatUpdater}
@@ -70,18 +70,18 @@ class AccumuloGeoMesaStats(ds: AccumuloDataStore, val metadata: AccumuloBackedMe
     *
     * Note: should be called with a distributed lock on the stats table
     *
-    * @param connector accumulo connector
+    * @param client accumulo client
     * @param sft simple feature type
     */
-  def configureStatCombiner(connector: Connector, sft: SimpleFeatureType): Unit = {
+  def configureStatCombiner(client: AccumuloClient, sft: SimpleFeatureType): Unit = {
     import MetadataBackedStats._
 
-    StatsCombiner.configure(sft, connector, metadata.table, metadata.typeNameSeparator.toString)
+    StatsCombiner.configure(sft, client, metadata.table, metadata.typeNameSeparator.toString)
 
     val keys = Seq(CountKey, BoundsKeyPrefix, TopKKeyPrefix, FrequencyKeyPrefix, HistogramKeyPrefix)
     val splits = keys.map(k => new Text(metadata.encodeRow(sft.getTypeName, k)))
     // noinspection RedundantCollectionConversion
-    connector.tableOperations().addSplits(metadata.table, ImmutableSortedSet.copyOf(splits.toIterable))
+    client.tableOperations().addSplits(metadata.table, ImmutableSortedSet.copyOf(splits.toIterable))
   }
 
   /**
@@ -89,11 +89,11 @@ class AccumuloGeoMesaStats(ds: AccumuloDataStore, val metadata: AccumuloBackedMe
     *
     * Note: should be called with a distributed lock on the stats table
     *
-    * @param connector accumulo connector
+    * @param client accumulo client
     * @param sft simple feature type
     */
-  def removeStatCombiner(connector: Connector, sft: SimpleFeatureType): Unit =
-    StatsCombiner.remove(sft, connector, metadata.table, metadata.typeNameSeparator.toString)
+  def removeStatCombiner(client: AccumuloClient, sft: SimpleFeatureType): Unit =
+    StatsCombiner.remove(sft, client, metadata.table, metadata.typeNameSeparator.toString)
 
   override protected def write(typeName: String, stats: Seq[WritableStat]): Unit = {
     val (merge, overwrite) = stats.partition(_.merge)
@@ -115,7 +115,7 @@ class AccumuloGeoMesaStats(ds: AccumuloDataStore, val metadata: AccumuloBackedMe
     */
   private [accumulo] def compact(wait: Boolean = true): Unit = {
     compactionScheduled.set(false)
-    ds.connector.tableOperations().compact(metadata.table, null, null, true, wait)
+    ds.client.tableOperations().compact(metadata.table, null, null, true, wait)
     lastCompaction.set(System.currentTimeMillis())
   }
 
@@ -127,8 +127,8 @@ class AccumuloGeoMesaStats(ds: AccumuloDataStore, val metadata: AccumuloBackedMe
       // new rows after writing them, so the combiner does not need to be correct yet
       super.rename(sft, previous)
       // now remove the old sft and configure the new one
-      removeStatCombiner(ds.connector, previous)
-      configureStatCombiner(ds.connector, sft)
+      removeStatCombiner(ds.client, previous)
+      configureStatCombiner(ds.client, sft)
     }
 
     override def updater(sft: SimpleFeatureType): StatUpdater =
@@ -155,7 +155,7 @@ object AccumuloGeoMesaStats {
 
   def apply(ds: AccumuloDataStore): AccumuloGeoMesaStats = {
     val table = s"${ds.config.catalog}_stats"
-    new AccumuloGeoMesaStats(ds, new AccumuloBackedMetadata(ds.connector, table, new StatsMetadataSerializer(ds)))
+    new AccumuloGeoMesaStats(ds, new AccumuloBackedMetadata(ds.client, table, new StatsMetadataSerializer(ds)))
   }
 
   private [stats] val executor = {

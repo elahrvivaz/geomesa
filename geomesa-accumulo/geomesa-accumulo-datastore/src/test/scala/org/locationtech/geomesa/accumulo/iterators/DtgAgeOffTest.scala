@@ -73,10 +73,10 @@ class DtgAgeOffTest extends Specification with TestWithDataStore {
 
       val dsWithExtraAuth = {
         val connWithExtraAuth = {
-          val mockInstance = new MockInstance("mycloud")
-          val mockConnector = mockInstance.getConnector("user2", new PasswordToken("password2"))
-          mockConnector.securityOperations().changeUserAuthorizations("user2", new Authorizations("A,B,C,D"))
-          mockConnector
+          val miniCluster = MiniCluster
+          val mcConnection = MiniCluster.connection
+          mcConnection.securityOperations().changeUserAuthorizations("user2", new Authorizations("A,B,C,D"))
+          mcConnection
         }
         val params = dsParams ++ Map(AccumuloDataStoreParams.ConnectorParam.key -> connWithExtraAuth)
         DataStoreFinder.getDataStore(params.asJava).asInstanceOf[AccumuloDataStore]

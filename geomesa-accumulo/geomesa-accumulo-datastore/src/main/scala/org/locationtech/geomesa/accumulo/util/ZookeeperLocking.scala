@@ -8,13 +8,11 @@
 
 package org.locationtech.geomesa.accumulo.util
 
-import org.apache.accumulo.core.client.Connector
-import org.apache.accumulo.core.client.mock.MockConnector
+import org.apache.accumulo.core.client.AccumuloClient
 
 trait ZookeeperLocking extends org.locationtech.geomesa.utils.zk.ZookeeperLocking {
 
-  def connector: Connector
+  def client: AccumuloClient
 
-  override protected def mock: Boolean = connector.isInstanceOf[MockConnector]
-  override protected def zookeepers: String = connector.getInstance.getZooKeepers
+  override protected def zookeepers: String = client.properties.getProperty("instance.zookeepers")
 }
