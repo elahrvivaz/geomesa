@@ -9,16 +9,17 @@
 package org.locationtech.geomesa.accumulo.data
 
 import com.typesafe.scalalogging.LazyLogging
+import org.apache.accumulo.core.client.{AccumuloClient}
 import org.apache.accumulo.minicluster.MiniAccumuloCluster
 import java.io.File
-import java.nio.file.Files
+import com.google.common.io.Files
 
 case object MiniCluster extends LazyLogging {
 
   lazy val cluster: MiniAccumuloCluster = {
 
     logger.info("Starting accumulo minicluster")
-    File miniClusterTempDir = Files.createTempDir();
+    val miniClusterTempDir: File = Files.createTempDir();
     val cluster = new MiniAccumuloCluster( miniClusterTempDir, "admin")
 
     cluster.start
@@ -26,7 +27,7 @@ case object MiniCluster extends LazyLogging {
     cluster
   }
 
-  lazy val connection: Connection = cluster.getConnection
+  lazy val client: AccumuloClient =  cluster.createAccumuloClient("root", "admin")
 
   sys.addShutdownHook({
     logger.info("Stopping accumulo minicluster")

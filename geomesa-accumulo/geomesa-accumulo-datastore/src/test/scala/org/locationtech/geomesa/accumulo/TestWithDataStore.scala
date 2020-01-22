@@ -8,8 +8,8 @@
 
 package org.locationtech.geomesa.accumulo
 
-import org.apache.accumulo.core.client.Connector
-import org.apache.accumulo.core.client.mock.MockInstance
+import org.apache.accumulo.core.client.AccumuloClient
+import org.locationtech.geomesa.accumulo.data.MiniCluster
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.data.Key
 import org.apache.accumulo.core.security.Authorizations
@@ -37,7 +37,7 @@ trait TestWithDataStore extends Specification {
 
   def additionalDsParams(): Map[String, Any] = Map.empty
 
-  // we use class name to prevent spillage between unit tests in the mock connector
+  // we use class name to prevent spillage between unit tests in the MiniCluster
   lazy val sftName: String = getClass.getSimpleName
 
   val EmptyUserAuthorizations = new Authorizations()
@@ -49,23 +49,19 @@ trait TestWithDataStore extends Specification {
   )
   val MockUserAuthSeq = Seq("A", "B", "C")
 
-  lazy val mockInstanceId = "mycloud"
-  lazy val mockZookeepers = "myzoo"
-  lazy val mockUser = "user"
-  lazy val mockPassword = "password"
   lazy val catalog = sftName
 
   lazy val mockInstance = new MockInstance(mockInstanceId)
 
   // assign some default authorizations to this mock user
-  lazy val connector: Connector = {
-    val mockConnector = mockInstance.getConnector(mockUser, new PasswordToken(mockPassword))
-    mockConnector.securityOperations().changeUserAuthorizations(mockUser, MockUserAuthorizations)
-    mockConnector
+  lazy val client: AccumuloClient = {
+    val miniCluster = MiniCluster.connection
+    miniCluster.securityOperations().changeUserAuthorizations(mockUser, MockUserAuthorizations)
+    miniCluster
   }
 
   lazy val dsParams = Map(
-    AccumuloDataStoreParams.ConnectorParam.key -> connector,
+    AccumuloDataStoreParams.ConnectorParam.key -> client,
     AccumuloDataStoreParams.CachingParam.key   -> false,
     // note the table needs to be different to prevent testing errors
     AccumuloDataStoreParams.CatalogParam.key   -> catalog

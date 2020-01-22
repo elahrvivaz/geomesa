@@ -10,8 +10,7 @@ package org.locationtech.geomesa.accumulo.iterators
 
 import java.time.{ZoneOffset, ZonedDateTime}
 import java.util.{Collections, Date}
-
-import org.apache.accumulo.core.client.mock.MockInstance
+import org.locationtech.geomesa.accumulo.data.MiniCluster
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.security.Authorizations
 import org.geotools.data.{DataStore, DataStoreFinder}

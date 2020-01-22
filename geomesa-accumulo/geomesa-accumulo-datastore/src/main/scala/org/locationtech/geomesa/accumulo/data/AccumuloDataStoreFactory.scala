@@ -108,39 +108,43 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
   }
 
   def buildAccumuloClient(params: JMap[String,Serializable], useMock: Boolean): AccumuloClient = {
-    val instance = InstanceIdParam.lookup(params)
-    val user = UserParam.lookup(params)
-    val password = PasswordParam.lookup(params)
-    val keytabPath = KeytabPathParam.lookup(params)
-    val zookeepers = ZookeepersParam.lookup(params)
-    // NB: For those wanting to set this via JAVA_OPTS, this key is "instance.zookeeper.timeout" in Accumulo 1.6.x.
-    val timeout = GeoMesaSystemProperties.getProperty(ClientProperty.INSTANCE_ZK_TIMEOUT.getKey)
-    val props = new Properties()
-    // Build authentication token according to how we are authenticating
-    val authTokenTypeTuple : (String, AuthenticationToken) = if (password != null && keytabPath == null) {
-      ("org.apache.accumulo.core.client.security.tokens.PasswordToken", new PasswordToken(password.getBytes("UTF-8")))
-    } else if (password == null && keytabPath != null) {
-        // This API is only in Accumulo >=1.7, but canProcess should ensure this isn't actually invoked on earlier
-        ("kerberos", new KerberosToken(user, new java.io.File(keytabPath)))
-    } else {
-      // Should never reach here thanks to canProcess
-      throw new IllegalArgumentException("Neither or both of password & keytabPath are set")
+    if(useMock){
+      org.locationtech.geomesa.accumulo.data.MiniCluster
+    }else{
+      val instance = InstanceIdParam.lookup(params)
+      val user = UserParam.lookup(params)
+      val password = PasswordParam.lookup(params)
+      val keytabPath = KeytabPathParam.lookup(params)
+      val zookeepers = ZookeepersParam.lookup(params)
+      // NB: For those wanting to set this via JAVA_OPTS, this key is "instance.zookeeper.timeout" in Accumulo 1.6.x.
+      val timeout = GeoMesaSystemProperties.getProperty(ClientProperty.INSTANCE_ZK_TIMEOUT.getKey)
+      val props = new Properties()
+      // Build authentication token according to how we are authenticating
+      val authTokenTypeTuple : (String, AuthenticationToken) = if (password != null && keytabPath == null) {
+        ("org.apache.accumulo.core.client.security.tokens.PasswordToken", new PasswordToken(password.getBytes("UTF-8")))
+      } else if (password == null && keytabPath != null) {
+          // This API is only in Accumulo >=1.7, but canProcess should ensure this isn't actually invoked on earlier
+          ("kerberos", new KerberosToken(user, new java.io.File(keytabPath)))
+      } else {
+        // Should never reach here thanks to canProcess
+        throw new IllegalArgumentException("Neither or both of password & keytabPath are set")
+      }
+
+
+      val (tokenType, token) = authTokenTypeTuple
+
+      props.put("auth.type", tokenType)
+      props.put("auth.principal", user)
+      props.put("auth.token", token)
+
+
+      
+      props.put("instance.name", instance)
+      props.put("instance.zookeepers", zookeepers)
+      if (timeout !=  null) props.put(ClientProperty.INSTANCE_ZK_TIMEOUT, timeout)
+      
+      Accumulo.newClient().from(props).build()
     }
-
-
-    val (tokenType, token) = authTokenTypeTuple
-
-    props.put("auth.type", tokenType)
-    props.put("auth.principal", user)
-    props.put("auth.token", token)
-
-
-    
-    props.put("instance.name", instance)
-    props.put("instance.zookeepers", zookeepers)
-    if (timeout !=  null) props.put(ClientProperty.INSTANCE_ZK_TIMEOUT, timeout)
-    
-    Accumulo.newClient().from(props).build()
   }
 
   def buildConfig(client: AccumuloClient, params: JMap[String, Serializable]): AccumuloDataStoreConfig = {
