@@ -72,10 +72,9 @@ class DtgAgeOffTest extends Specification with TestWithDataStore {
 
       val dsWithExtraAuth = {
         val connWithExtraAuth = {
-          val miniCluster = MiniCluster
-          val mcConnection = MiniCluster.connection
-          mcConnection.securityOperations().changeUserAuthorizations("user2", new Authorizations("A,B,C,D"))
-          mcConnection
+          val client = MiniCluster.client
+          client.securityOperations().changeUserAuthorizations("user2", new Authorizations("A,B,C,D"))
+          client
         }
         val params = dsParams ++ Map(AccumuloDataStoreParams.ConnectorParam.key -> connWithExtraAuth)
         DataStoreFinder.getDataStore(params.asJava).asInstanceOf[AccumuloDataStore]

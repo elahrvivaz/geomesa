@@ -8,7 +8,7 @@
 
 package org.locationtech.geomesa.accumulo.data.stats.usage
 
-import org.apache.accumulo.core.client.mock.MockInstance
+import org.locationtech.geomesa.accumulo.data.MiniCluster
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.security.Authorizations
 import org.geotools.data.Query
@@ -31,8 +31,8 @@ class QueryStatTransformTest extends Specification {
   val table = "QueryStatTransformTest"
   val featureName = "stat-writer-test"
 
-  val connector = new MockInstance().getConnector("user", new PasswordToken("password"))
-  connector.tableOperations().create(table)
+  val client = MiniCluster.client
+  client.tableOperations().create(table)
 
   "QueryStatTransform" should {
 
@@ -41,13 +41,13 @@ class QueryStatTransformTest extends Specification {
       // currently we don't restore table and feature in the query stat - thus setting them null here
       val stat = QueryEvent(AccumuloAuditService.StoreType, featureName, 500L, "user1", "attr=1", "hint1=true", 101L, 201L, 11)
 
-      val writer = connector.createBatchWriter(table, GeoMesaBatchWriterConfig())
+      val writer = client.createBatchWriter(table, GeoMesaBatchWriterConfig())
 
       writer.addMutation(AccumuloQueryEventTransform.toMutation(stat))
       writer.flush()
       writer.close()
 
-      val scanner = connector.createScanner(table, new Authorizations())
+      val scanner = client.createScanner(table, new Authorizations())
 
       val converted = AccumuloQueryEventTransform.toEvent(scanner.iterator().asScala.toList)
 

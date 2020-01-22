@@ -8,7 +8,7 @@
 
 package org.locationtech.geomesa.accumulo.data.stats.usage
 
-import org.apache.accumulo.core.client.mock.MockInstance
+import org.locationtech.geomesa.accumulo.data.MiniCluster
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.security.Authorizations
 import org.junit.runner.RunWith
@@ -27,14 +27,14 @@ class AccumuloEventWriterTest extends Specification {
 
   val auths = new Authorizations()
 
-  val connector = new MockInstance().getConnector("user", new PasswordToken("password"))
+  lazy val client = MiniCluster.client
 
-  val statReader = new AccumuloEventReader(connector, statsTable)
+  val statReader = new AccumuloEventReader(client, statsTable)
 
   "StatWriter" should {
 
     "write query stats asynchronously" in {
-      val writer = new AccumuloEventWriter(connector, statsTable)
+      val writer = new AccumuloEventWriter(client, statsTable)
       implicit val transform: AccumuloQueryEventTransform.type = AccumuloQueryEventTransform
 
       writer.queueStat(QueryEvent(AccumuloAuditService.StoreType,

@@ -109,7 +109,7 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
 
   def buildAccumuloClient(params: JMap[String,Serializable], useMock: Boolean): AccumuloClient = {
     if(useMock){
-      org.locationtech.geomesa.accumulo.data.MiniCluster
+      throw new IllegalArgumentException("useMock = true has been removed.")
     }else{
       val instance = InstanceIdParam.lookup(params)
       val user = UserParam.lookup(params)

@@ -1784,12 +1784,6 @@
             </dependency>
             <dependency>
                 <groupId>org.apache.accumulo</groupId>
-                <artifactId>accumulo-minicluster</artifactId>
-                <version>${accumulo.version}</version>
-                <scope>provided</scope>
-            </dependency>
-            <dependency>
-                <groupId>org.apache.accumulo</groupId>
                 <artifactId>accumulo-start</artifactId>
                 <version>${accumulo.version}</version>
                 <scope>provided</scope>

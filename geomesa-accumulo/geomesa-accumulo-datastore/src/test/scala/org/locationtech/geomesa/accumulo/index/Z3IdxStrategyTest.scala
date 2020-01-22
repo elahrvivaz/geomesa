@@ -80,7 +80,7 @@ class Z3IdxStrategyTest extends Specification with TestWithDataStore {
 
       ds.manager.indices(sft).filter(_.name == Z3Index.name).flatMap(_.getTableNames()).foreach { table =>
         println(table)
-        ds.connector.createScanner(table, new Authorizations()).foreach { r =>
+        ds.client.createScanner(table, new Authorizations()).foreach { r =>
           val prefix = 2 // table sharing + split
           val bytes = r.getKey.getRow.getBytes
           val keyZ = Longs.fromByteArray(bytes.drop(prefix))

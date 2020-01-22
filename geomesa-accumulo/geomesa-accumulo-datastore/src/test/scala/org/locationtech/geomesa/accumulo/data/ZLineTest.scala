@@ -51,7 +51,7 @@ class ZLineTest extends Specification with TestWithDataStore {
       skipped("testing")
       new Z3Index(ds, sft, "geom", "dtg", IndexMode.ReadWrite).getTableNames().foreach { table =>
         println(table)
-        val scanner = ds.connector.createScanner(table, new Authorizations())
+        val scanner = ds.client.createScanner(table, new Authorizations())
         println(scanner.toSeq.length)
         scanner.close()
       }

@@ -10,7 +10,6 @@ package org.locationtech.geomesa.accumulo.data.stats.usage
 
 import java.time.{Instant, ZoneOffset, ZonedDateTime}
 
-import org.apache.accumulo.core.client.mock.MockInstance
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.security.Authorizations
 import org.junit.runner.RunWith
@@ -19,6 +18,7 @@ import org.locationtech.geomesa.index.audit.QueryEvent
 import org.locationtech.geomesa.utils.text.DateParsing
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
+import org.locationtech.geomesa.accumulo.data.MiniCluster
 
 @RunWith(classOf[JUnitRunner])
 class UsageStatReaderTest extends Specification {
@@ -29,11 +29,11 @@ class UsageStatReaderTest extends Specification {
 
   implicit val transform: AccumuloEventTransform[QueryEvent] = AccumuloQueryEventTransform
 
-  val connector = new MockInstance().getConnector("user", new PasswordToken("password"))
+  val client = MiniCluster.client
 
   val auths = new Authorizations()
 
-  val writer = new AccumuloEventWriter(connector, statsTable)
+  val writer = new AccumuloEventWriter(client, statsTable)
 
   def writeStat(stats: Seq[QueryEvent], tableName: String): Unit = {
     stats.foreach(writer.queueStat(_))
@@ -49,7 +49,7 @@ class UsageStatReaderTest extends Specification {
     )
     writeStat(stats, statsTable)
 
-    val reader = new AccumuloEventReader(connector, statsTable)
+    val reader = new AccumuloEventReader(client, statsTable)
 
     "query all stats in order" in {
       val dates = (ZonedDateTime.ofInstant(Instant.EPOCH, ZoneOffset.UTC), ZonedDateTime.now(ZoneOffset.UTC))

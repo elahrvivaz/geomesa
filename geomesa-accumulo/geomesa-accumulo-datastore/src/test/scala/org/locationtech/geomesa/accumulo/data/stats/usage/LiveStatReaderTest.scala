@@ -10,7 +10,6 @@ package org.locationtech.geomesa.accumulo.data.stats.usage
 
 import java.time.{Instant, ZoneOffset, ZonedDateTime}
 
-import org.apache.accumulo.core.client.ZooKeeperInstance
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.security.Authorizations
 import org.junit.runner.RunWith
@@ -18,14 +17,14 @@ import org.locationtech.geomesa.accumulo.audit.{AccumuloEventReader, AccumuloQue
 import org.locationtech.geomesa.index.audit.QueryEvent
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
+import org.locationtech.geomesa.accumulo.data.MiniCluster
 
 @RunWith(classOf[JUnitRunner])
 class LiveStatReaderTest extends Specification {
 
   sequential
 
-  lazy val connector = new ZooKeeperInstance("mycloud", "zoo1,zoo2,zoo3")
-                         .getConnector("root", new PasswordToken("password"))
+  lazy val client = MiniCluster.client
 
   val table = "geomesa_catalog"
   val feature = "twitter"
@@ -36,7 +35,7 @@ class LiveStatReaderTest extends Specification {
 
       skipped("Meant for integration")
 
-      val reader = new AccumuloEventReader(connector, s"${table}_${feature}_queries")
+      val reader = new AccumuloEventReader(client, s"${table}_${feature}_queries")
 
       val dates = (ZonedDateTime.ofInstant(Instant.EPOCH, ZoneOffset.UTC), ZonedDateTime.now(ZoneOffset.UTC))
       val results = reader.query[QueryEvent](feature, dates, new Authorizations())(AccumuloQueryEventTransform)

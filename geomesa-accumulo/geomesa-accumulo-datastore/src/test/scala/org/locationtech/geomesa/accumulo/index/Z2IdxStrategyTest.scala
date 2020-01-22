@@ -63,7 +63,7 @@ class Z2IdxStrategyTest extends Specification with TestWithDataStore {
       println()
       ds.manager.indices(sft).filter(_.name == Z2Index.name).flatMap(_.getTableNames()).foreach { table =>
         println(table)
-        ds.connector.createScanner(table, new Authorizations()).foreach { r =>
+        ds.client.createScanner(table, new Authorizations()).foreach { r =>
           val bytes = r.getKey.getRow.getBytes
           val keyZ = Longs.fromByteArray(bytes.drop(2))
           val (x, y) = Z2SFC.invert(Z2(keyZ))
