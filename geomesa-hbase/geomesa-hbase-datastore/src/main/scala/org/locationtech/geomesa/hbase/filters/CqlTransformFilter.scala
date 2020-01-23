@@ -9,7 +9,6 @@
 package org.locationtech.geomesa.hbase.filters
 import java.nio.charset.StandardCharsets
 
-import com.typesafe.scalalogging.StrictLogging
 import org.apache.hadoop.hbase.exceptions.DeserializationException
 import org.apache.hadoop.hbase.filter.Filter.ReturnCode
 import org.apache.hadoop.hbase.filter.FilterBase
@@ -19,10 +18,12 @@ import org.locationtech.geomesa.features.SerializationOption.SerializationOption
 import org.locationtech.geomesa.features.kryo.{KryoBufferSimpleFeature, KryoFeatureSerializer}
 import org.locationtech.geomesa.hbase.filters.CqlTransformFilter.DelegateFilter
 import org.locationtech.geomesa.index.api.{FilterStrategy, GeoMesaFeatureIndex, IndexKeySpace}
+import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 import org.locationtech.geomesa.index.iterators.IteratorCache
 import org.locationtech.geomesa.index.stats.GeoMesaStats
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.index.{ByteArrays, IndexMode}
+import org.locationtech.geomesa.utils.stats.MethodProfiling
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 
@@ -35,7 +36,7 @@ import scala.util.control.NonFatal
   *
   * @param delegate delegate filter
   */
-class CqlTransformFilter(delegate: DelegateFilter) extends FilterBase {
+class CqlTransformFilter(delegate: DelegateFilter) extends FilterBase with MethodProfiling {
 
   /**
     * From the Filter javadocs:
@@ -54,13 +55,13 @@ class CqlTransformFilter(delegate: DelegateFilter) extends FilterBase {
     * </ul>
     */
 
-  override def filterKeyValue(v: Cell): ReturnCode = delegate.filterKeyValue(v)
-  override def transformCell(v: Cell): Cell = delegate.transformCell(v)
-  override def toByteArray: Array[Byte] = CqlTransformFilter.serialize(delegate)
+  override def filterKeyValue(v: Cell): ReturnCode = profile(s"$this filtered kv")(delegate.filterKeyValue(v))
+  override def transformCell(v: Cell): Cell = profile(s"$this transformed kv")(delegate.transformCell(v))
+  override def toByteArray: Array[Byte] = profile(s"$this serialized to bytes")(CqlTransformFilter.serialize(delegate))
   override def toString: String = delegate.toString
 }
 
-object CqlTransformFilter extends StrictLogging {
+object CqlTransformFilter extends MethodProfiling {
 
   val Priority: Int = 30
 
@@ -73,7 +74,7 @@ object CqlTransformFilter extends StrictLogging {
     */
   @throws(classOf[DeserializationException])
   def parseFrom(pbBytes: Array[Byte]): org.apache.hadoop.hbase.filter.Filter =
-    new CqlTransformFilter(deserialize(pbBytes))
+    profile(s"Deserialized ${pbBytes.length} bytes into CqlTransformFilter")(new CqlTransformFilter(deserialize(pbBytes)))
 
   /**
     * Create a new filter. Typically, filters created by this method will just be serialized to bytes and sent

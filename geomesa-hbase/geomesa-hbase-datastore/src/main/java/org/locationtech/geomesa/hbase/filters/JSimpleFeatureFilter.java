@@ -190,23 +190,38 @@ public class JSimpleFeatureFilter extends FilterBase {
 
     @Override
     public ReturnCode filterKeyValue(Cell v) throws IOException {
+        long start = System.currentTimeMillis();
+        try {
         // TODO GEOMESA-1804 is visibility filter first in the FilterList?
         // NOTE: the reusable sf buffer is set here and the filter and transformer depend on it
         reusable.setBuffer(v.getValueArray(), v.getValueOffset(), v.getValueLength());
         // TODO GEOMESA-1803 we need to set the id properly
         return localFilter.filterKeyValue(v);
+        } finally {
+            logger.debug(this + " filter kv in " + (System.currentTimeMillis() - start) + "ms");
+        }
     }
 
     @Override
     public Cell transformCell(Cell v) throws IOException {
+        long start = System.currentTimeMillis();
+        try {
         return transformer.transformCell(v);
+        } finally {
+            logger.debug(this + " transform kv in " + (System.currentTimeMillis() - start) + "ms");
+        }
     }
 
     // TODO: Add static method to compute byte array from SFT and Filter.
     @Override
     public byte[] toByteArray() throws IOException {
+        long start = System.currentTimeMillis();
+        try {
         byte[][] arrays = {getLengthArray(sftString), getLengthArray(filterString), getLengthArray(transform), getLengthArray(transformSchema)};
         return Bytes.add(arrays);
+    } finally {
+        logger.debug(this + " serialized in " + (System.currentTimeMillis() - start) + "ms");
+    }
     }
 
     @Override
@@ -215,8 +230,13 @@ public class JSimpleFeatureFilter extends FilterBase {
     }
 
     public static byte[] toByteArray(String sftString, String filterString, String transform, String transformSchema) throws IOException {
+        long start = System.currentTimeMillis();
+        try {
         byte[][] arrays = {getLengthArray(sftString), getLengthArray(filterString), getLengthArray(transform), getLengthArray(transformSchema)};
         return Bytes.add(arrays);
+        } finally {
+            logger.debug("static serialized in " + (System.currentTimeMillis() - start) + "ms");
+        }
     }
 
     private static byte[] getLengthArray(String s) {
@@ -238,6 +258,8 @@ public class JSimpleFeatureFilter extends FilterBase {
 
     public static org.apache.hadoop.hbase.filter.Filter parseFrom(final byte [] pbBytes) throws DeserializationException {
         logger.trace("Parsing filter of length: " + pbBytes.length);
+        long start = System.currentTimeMillis();
+        try {
         int sftLen =  Bytes.readAsInt(pbBytes, 0, 4);
         String sftString = new String(pbBytes, 4, sftLen);
 
@@ -255,6 +277,9 @@ public class JSimpleFeatureFilter extends FilterBase {
             return new JSimpleFeatureFilter(sftString, filterString, transformString, transformSchemaString);
         } catch (Exception e) {
             throw new DeserializationException(e);
+        }
+        } finally {
+            logger.debug("deserialized " + pbBytes.length + " bytes in " + (System.currentTimeMillis() - start) + "ms");
         }
     }
 

@@ -31,7 +31,7 @@ import org.locationtech.geomesa.hbase.HBaseSystemProperties.{CoprocessorPath, Ta
 import org.locationtech.geomesa.hbase.coprocessor.aggregators.{HBaseArrowAggregator, HBaseBinAggregator, HBaseDensityAggregator, HBaseStatsAggregator}
 import org.locationtech.geomesa.hbase.coprocessor.{AllCoprocessors, CoprocessorConfig, GeoMesaCoprocessor}
 import org.locationtech.geomesa.hbase.data.HBaseQueryPlan.{CoprocessorPlan, EmptyPlan, ScanPlan}
-import org.locationtech.geomesa.hbase.filters.{CqlTransformFilter, Z2HBaseFilter, Z3HBaseFilter}
+import org.locationtech.geomesa.hbase.filters.{CqlTransformFilter, JSimpleFeatureFilter, Z2HBaseFilter, Z3HBaseFilter}
 import org.locationtech.geomesa.hbase.utils.HBaseVersions
 import org.locationtech.geomesa.index.api.IndexAdapter.IndexWriter
 import org.locationtech.geomesa.index.api.WritableFeature.FeatureWrapper
@@ -44,10 +44,12 @@ import org.locationtech.geomesa.index.iterators.StatsScan
 import org.locationtech.geomesa.index.planning.LocalQueryRunner
 import org.locationtech.geomesa.index.planning.LocalQueryRunner.ArrowDictionaryHook
 import org.locationtech.geomesa.utils.collection.CloseableIterator
+import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes.Configs
 import org.locationtech.geomesa.utils.index.ByteArrays
 import org.locationtech.geomesa.utils.io.{CloseWithLogging, FlushWithLogging, WithClose}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
+import org.opengis.filter.Filter
 
 import scala.util.control.NonFatal
 
@@ -240,8 +242,14 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
 
       val filters = {
         // if there is a coprocessorConfig it handles filter/transform
-        val cqlFilter = if (coprocessorConfig.isDefined || (ecql.isEmpty && transform.isEmpty)) { Seq.empty } else {
-          Seq((CqlTransformFilter.Priority, CqlTransformFilter(schema, strategy.index, ecql, transform)))
+        val cqlFilter : Seq[(Int, org.apache.hadoop.hbase.filter.Filter)] =
+        if (coprocessorConfig.isDefined || (ecql.isEmpty && transform.isEmpty)) { Seq.empty } else {
+          val filt = if ("true".equalsIgnoreCase(System.getProperty("geomesa.hbase.java"))) {
+            new JSimpleFeatureFilter(schema, ecql.getOrElse(Filter.INCLUDE), hints.getTransformDefinition.orNull, SimpleFeatureTypes.encodeType(returnSchema))
+          } else {
+            CqlTransformFilter(schema, strategy.index, ecql, transform)
+          }
+          Seq((CqlTransformFilter.Priority, filt))
         }
 
         // TODO pull this out to be SPI loaded so that new indices can be added seamlessly
