@@ -35,7 +35,7 @@ class AccumuloDataStoreDeleteTest extends Specification with TestWithMultipleSft
 
   sequential
 
-  lazy val tableOps = ds.connector.tableOperations()
+  lazy val tableOps = ds.client.tableOperations()
 
   def createFeature(schema: String = "name:String:index=join,*geom:Point:srid=4326,dtg:Date") = {
     val sft = createNewSchema(schema, Some("dtg"))

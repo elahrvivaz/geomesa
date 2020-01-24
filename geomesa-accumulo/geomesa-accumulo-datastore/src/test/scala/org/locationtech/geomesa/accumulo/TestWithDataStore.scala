@@ -49,13 +49,18 @@ trait TestWithDataStore extends Specification {
   )
   val MockUserAuthSeq = Seq("A", "B", "C")
 
+  lazy val mockInstanceId = "mycloud"
+  lazy val mockZookeepers = "myzoo"
+  lazy val mockUser = "user"
+  lazy val mockPassword = "password"
+
   lazy val catalog = sftName
 
-  lazy val mockInstance = new MockInstance(mockInstanceId)
+  
 
   // assign some default authorizations to this mock user
   lazy val client: AccumuloClient = {
-    val miniCluster = MiniCluster.connection
+    val miniCluster = MiniCluster.client
     miniCluster.securityOperations().changeUserAuthorizations(mockUser, MockUserAuthorizations)
     miniCluster
   }

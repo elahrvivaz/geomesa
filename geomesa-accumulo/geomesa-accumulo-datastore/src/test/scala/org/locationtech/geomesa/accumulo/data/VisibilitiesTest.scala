@@ -44,14 +44,14 @@ class VisibilitiesTest extends TestWithDataStore {
   }
 
   val privDS = {
-    val connector = mockInstance.getConnector("priv", new PasswordToken(mockPassword))
-    connector.securityOperations().changeUserAuthorizations("priv", new Authorizations("user", "admin"))
-    DataStoreFinder.getDataStore(dsParams ++ Map(AccumuloDataStoreParams.ConnectorParam.key -> connector))
+    val client = MiniCluster.client
+    client.securityOperations().changeUserAuthorizations("priv", new Authorizations("user", "admin"))
+    DataStoreFinder.getDataStore(dsParams ++ Map(AccumuloDataStoreParams.ConnectorParam.key -> client))
   }
   val unprivDS = {
-    val connector = mockInstance.getConnector("unpriv", new PasswordToken(mockPassword))
-    connector.securityOperations().changeUserAuthorizations("unpriv", new Authorizations("user"))
-    DataStoreFinder.getDataStore(dsParams ++ Map(AccumuloDataStoreParams.ConnectorParam.key -> connector))
+    val client = MiniCluster.client
+    client.securityOperations().changeUserAuthorizations("unpriv", new Authorizations("user"))
+    DataStoreFinder.getDataStore(dsParams ++ Map(AccumuloDataStoreParams.ConnectorParam.key -> client))
   }
 
   step {

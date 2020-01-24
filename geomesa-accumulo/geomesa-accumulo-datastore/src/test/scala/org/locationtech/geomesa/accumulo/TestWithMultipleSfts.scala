@@ -10,7 +10,7 @@ package org.locationtech.geomesa.accumulo
 
 import java.util.concurrent.atomic.AtomicInteger
 
-import org.apache.accumulo.core.client.mock.MockInstance
+import org.locationtech.geomesa.accumulo.data.MiniCluster
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.geotools.data.{DataStoreFinder, Query, Transaction}
 import org.geotools.util.factory.Hints
@@ -33,15 +33,15 @@ import scala.collection.mutable.ArrayBuffer
  */
 trait TestWithMultipleSfts extends Specification {
 
-  // we use class name to prevent spillage between unit tests in the mock connector
+  // we use class name to prevent spillage between unit tests in the mini cluster
   protected val sftBaseName = getClass.getSimpleName
   private val sftCounter = new AtomicInteger(0)
   private val sfts = ArrayBuffer.empty[SimpleFeatureType]
 
-  val connector = new MockInstance("mycloud").getConnector("user", new PasswordToken("password"))
+  val client = MiniCluster.client
 
   val dsParams = Map(
-    AccumuloDataStoreParams.ConnectorParam.key -> connector,
+    AccumuloDataStoreParams.ConnectorParam.key -> client,
     AccumuloDataStoreParams.CachingParam.key   -> false,
     // note the table needs to be different to prevent testing errors
     AccumuloDataStoreParams.CatalogParam.key   -> sftBaseName)

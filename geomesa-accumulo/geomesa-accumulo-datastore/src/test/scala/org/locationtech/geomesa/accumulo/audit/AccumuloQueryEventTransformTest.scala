@@ -9,7 +9,7 @@
 package org.locationtech.geomesa.accumulo.audit
 
 import org.apache.accumulo.core.client.BatchWriterConfig
-import org.apache.accumulo.core.client.mock.MockInstance
+import org.locationtech.geomesa.accumulo.data.MiniCluster
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.security.Authorizations
 import org.junit.runner.RunWith
@@ -21,12 +21,7 @@ import org.specs2.runner.JUnitRunner
 @RunWith(classOf[JUnitRunner])
 class AccumuloQueryEventTransformTest extends Specification {
 
-  lazy val mockInstanceId = "mycloud"
-  lazy val mockUser = "user"
-  lazy val mockPassword = "password"
-
-  lazy val mockInstance = new MockInstance(mockInstanceId)
-  lazy val connector = mockInstance.getConnector(mockUser, new PasswordToken(mockPassword))
+  lazy val client = MiniCluster.client
 
   "AccumuloQueryEventTransform" should {
     "Convert from and to mutations" in {
@@ -43,12 +38,12 @@ class AccumuloQueryEventTransformTest extends Specification {
         deleted = true
       )
 
-      connector.tableOperations().create("AccumuloQueryEventTransformTest")
+      client.tableOperations().create("AccumuloQueryEventTransformTest")
 
-      WithClose(connector.createBatchWriter("AccumuloQueryEventTransformTest", new BatchWriterConfig())) { writer =>
+      WithClose(client.createBatchWriter("AccumuloQueryEventTransformTest", new BatchWriterConfig())) { writer =>
         writer.addMutation(AccumuloQueryEventTransform.toMutation(event))
       }
-      val restored = WithClose(connector.createScanner("AccumuloQueryEventTransformTest", new Authorizations)) { reader =>
+      val restored = WithClose(client.createScanner("AccumuloQueryEventTransformTest", new Authorizations)) { reader =>
         import scala.collection.JavaConversions._
         AccumuloQueryEventTransform.toEvent(reader)
       }

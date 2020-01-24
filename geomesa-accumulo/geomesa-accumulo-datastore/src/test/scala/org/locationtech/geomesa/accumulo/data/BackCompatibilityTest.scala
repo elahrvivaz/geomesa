@@ -13,7 +13,6 @@ import java.io._
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.client.BatchWriterConfig
-import org.apache.accumulo.core.client.mock.MockInstance
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.core.data.Mutation
 import org.apache.accumulo.core.security.{Authorizations, ColumnVisibility}
@@ -33,6 +32,7 @@ import org.locationtech.geomesa.index.api.GeoMesaFeatureIndex
 import org.locationtech.geomesa.index.conf.QueryHints
 import org.locationtech.geomesa.utils.collection.SelfClosingIterator
 import org.locationtech.geomesa.utils.io.WithClose
+import org.locationtech.geomesa.accumulo.data.MiniCluster
 import org.opengis.filter.Filter
 import org.specs2.matcher.MatchResult
 import org.specs2.mutable.Specification
@@ -52,7 +52,7 @@ class BackCompatibilityTest extends Specification with LazyLogging {
 
   implicit val allocator: BufferAllocator = new RootAllocator(Long.MaxValue)
 
-  lazy val connector = new MockInstance("mycloud").getConnector("user", new PasswordToken("password"))
+  lazy val client = MiniCluster.client
 
   val queries = Seq(
     ("INCLUDE", Seq(0, 1, 2, 3, 4, 5, 6, 7, 8, 9)),
@@ -106,7 +106,7 @@ class BackCompatibilityTest extends Specification with LazyLogging {
 
     // get the data store
     val ds = DataStoreFinder.getDataStore(Map(
-      AccumuloDataStoreParams.ConnectorParam.key -> connector,
+      AccumuloDataStoreParams.ConnectorParam.key -> client,
       AccumuloDataStoreParams.CachingParam.key   -> false,
       AccumuloDataStoreParams.CatalogParam.key   -> sftName
     )).asInstanceOf[AccumuloDataStore]
@@ -191,7 +191,7 @@ class BackCompatibilityTest extends Specification with LazyLogging {
 
       val sftName = restoreTables(readVersion(getFile(s"data/versioned-data-$name.kryo")))
       val ds = DataStoreFinder.getDataStore(Map(
-        AccumuloDataStoreParams.ConnectorParam.key -> connector,
+        AccumuloDataStoreParams.ConnectorParam.key -> client,
         AccumuloDataStoreParams.CachingParam.key   -> false,
         AccumuloDataStoreParams.CatalogParam.key   -> sftName
       )).asInstanceOf[AccumuloDataStore]
@@ -223,11 +223,11 @@ class BackCompatibilityTest extends Specification with LazyLogging {
   def restoreTables(tables: Seq[TableMutations]): String = {
     // reload the tables
     tables.foreach { case TableMutations(table, mutations) =>
-      if (connector.tableOperations.exists(table)) {
-        connector.tableOperations.delete(table)
+      if (client.tableOperations.exists(table)) {
+        client.tableOperations.delete(table)
       }
-      connector.tableOperations.create(table)
-      val bw = connector.createBatchWriter(table, new BatchWriterConfig)
+      client.tableOperations.create(table)
+      val bw = client.createBatchWriter(table, new BatchWriterConfig)
       bw.addMutations(mutations)
       bw.flush()
       bw.close()
@@ -326,12 +326,12 @@ class BackCompatibilityWriter extends TestWithDataStore {
         output.write(text.getBytes, 0, text.getLength)
       }
 
-      val tables = connector.tableOperations().list().filter(_.startsWith(sftName))
+      val tables = client.tableOperations().list().filter(_.startsWith(sftName))
       output.writeInt(tables.size)
       tables.foreach { table =>
         output.writeAscii(table)
-        output.writeInt(connector.createScanner(table, new Authorizations()).size)
-        connector.createScanner(table, new Authorizations()).foreach { entry =>
+        output.writeInt(client.createScanner(table, new Authorizations()).size)
+        client.createScanner(table, new Authorizations()).foreach { entry =>
           val key = entry.getKey
           Seq(key.getRow, key.getColumnFamily, key.getColumnQualifier, key.getColumnVisibility).foreach(writeText)
           output.writeLong(key.getTimestamp)

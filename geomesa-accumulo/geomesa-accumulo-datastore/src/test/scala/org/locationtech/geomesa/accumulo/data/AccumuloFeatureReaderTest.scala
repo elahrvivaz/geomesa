@@ -46,7 +46,7 @@ class AccumuloFeatureReaderTest extends Specification with TestWithDataStore {
   val filter = ECQL.toFilter("bbox(geom, -10, -10, 10, 10) and dtg during 2010-05-07T00:00:00.000Z/2010-05-08T00:00:00.000Z")
 
   def dataStoreWithAudit(events: ArrayBuffer[AuditedEvent]) =
-    new AccumuloDataStore(ds.connector, ds.config.copy(audit = Some(new MockAuditWriter(events), new ParamsAuditProvider, "")))
+    new AccumuloDataStore(ds.client, ds.config.copy(audit = Some(new MockAuditWriter(events), new ParamsAuditProvider, "")))
 
   class MockAuditWriter(events: ArrayBuffer[AuditedEvent]) extends AuditWriter with AuditReader {
     override def writeEvent[T <: AuditedEvent](stat: T)(implicit ct: ClassTag[T]): Unit = events.append(stat)
