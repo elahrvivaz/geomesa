@@ -196,8 +196,9 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
     val ranges = new java.util.ArrayList[RowRange](byteRanges.length)
     byteRanges.foreach {
       case BoundedByteRange(start, stop) => ranges.add(new RowRange(start, true, stop, false))
-      case SingleRowByteRange(row)       => ranges.add(new RowRange(row, true, row, true))
+      case SingleRowByteRange(row)       => ranges.add(new RowRange(row, true, ByteArrays.rowFollowingRow(row), false))
     }
+    val small = byteRanges.headOption.exists(_.isInstanceOf[SingleRowByteRange])
 
     val tables = index.getTablesForQuery(filter.filter).map(TableName.valueOf)
     val (colFamily, schema) = groups.group(index.sft, hints.getTransformDefinition, ecql)
@@ -215,7 +216,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
         LocalQueryRunner.transform(schema, features, transform, hints, arrowHook)
       }
       if (ranges.isEmpty) { EmptyPlan(strategy.filter, resultsToFeatures) } else {
-        val scans = configureScans(ranges, colFamily, Seq.empty, coprocessor = false)
+        val scans = configureScans(ranges, small, colFamily, Seq.empty, coprocessor = false)
         ScanPlan(filter, tables, ranges.asScala, scans, resultsToFeatures)
       }
     } else {
@@ -265,13 +266,11 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
         (cqlFilter ++ indexFilter).sortBy(_._1).map(_._2)
       }
 
-      // lazy since this will fail for empty scans
-      lazy val scans = configureScans(ranges, colFamily, filters, coprocessorConfig.isDefined)
-
       coprocessorConfig match {
         case None =>
           val resultsToFeatures = HBaseIndexAdapter.resultsToFeatures(index, returnSchema)
           if (ranges.isEmpty) { EmptyPlan(strategy.filter, resultsToFeatures) } else {
+            val scans = configureScans(ranges, small, colFamily, filters, coprocessor = false)
             ScanPlan(filter, tables, ranges.asScala, scans, resultsToFeatures)
           }
 
@@ -279,7 +278,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
           if (ranges.isEmpty) {
             EmptyPlan(strategy.filter, _ => c.reduce(CloseableIterator.empty))
           } else {
-            val Seq(scan) = scans
+            val Seq(scan) = configureScans(ranges, small, colFamily, filters, coprocessor = true)
             CoprocessorPlan(filter, tables, ranges.asScala, scan, c)
           }
       }
@@ -292,16 +291,18 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
     new HBaseIndexWriter(ds, indices, WritableFeature.wrapper(sft, groups), partition)
 
   /**
-    * Configure the hbase scan
-    *
-    * @param ranges ranges to scan, non-empty. needs to be mutable as hbase will sort it in place
-    * @param colFamily col family to scan
-    * @param filters scan filters
-    * @param coprocessor coprocessor scan or not
-    * @return
-    */
+   * Configure the hbase scan
+   *
+   * @param ranges ranges to scan, non-empty. needs to be mutable as hbase will sort it in place
+   * @param small whether 'small' ranges (i.e. gets)
+   * @param colFamily col family to scan
+   * @param filters scan filters
+   * @param coprocessor coprocessor scan or not
+   * @return
+   */
   protected def configureScans(
       ranges: java.util.List[RowRange],
+      small: Boolean,
       colFamily: Array[Byte],
       filters: Seq[HFilter],
       coprocessor: Boolean): Seq[Scan] = {
@@ -312,30 +313,39 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
 
     logger.debug(s"HBase client scanner: block caching: $cacheBlocks, caching: $cacheSize")
 
-    if (coprocessor || !ranges.get(0).isStopRowInclusive) { // stopRowInclusive indicates a 'small' single row scan
+    if (coprocessor) {
       val mrrf = new MultiRowRangeFilter(ranges)
-      // note: our coprocessors always expect a filter list
-      // note: mrrf first priority
-      val filter = if (coprocessor || filters.nonEmpty) { new FilterList(filters.+:(mrrf): _*) } else { mrrf }
       val sorted = mrrf.getRowRanges
-      val scan = new Scan(sorted.get(0).getStartRow, sorted.get(sorted.size() - 1).getStopRow).addFamily(colFamily).setFilter(filter).setCacheBlocks(cacheBlocks)
+      val scan = new Scan(sorted.get(0).getStartRow, sorted.get(sorted.size() - 1).getStopRow)
+      // note: our coprocessors always expect a filter list, mrrf first priority
+      scan.addFamily(colFamily).setFilter(new FilterList(filters.+:(mrrf): _*)).setCacheBlocks(cacheBlocks)
       cacheSize.foreach(scan.setCaching)
       ds.applySecurity(scan)
       Seq(scan)
-    } else {
+    } else if (small) {
       val filter = filters match {
         case Nil    => None
         case Seq(f) => Some(f)
         case f      => Some(new FilterList(f: _*))
       }
       ranges.asScala.map { r =>
-        val scan = new Scan(r.getStartRow, ByteArrays.rowFollowingRow(r.getStopRow)).addFamily(colFamily).setSmall(true)
+        val scan = new Scan(r.getStartRow, r.getStopRow)
+        scan.addFamily(colFamily).setCacheBlocks(cacheBlocks).setSmall(true)
         filter.foreach(scan.setFilter)
-        scan.setCacheBlocks(cacheBlocks)
         cacheSize.foreach(scan.setCaching)
         ds.applySecurity(scan)
         scan
       }
+    } else {
+      val mrrf = new MultiRowRangeFilter(ranges)
+      val sorted = mrrf.getRowRanges
+      val scan = new Scan(sorted.get(0).getStartRow, sorted.get(sorted.size() - 1).getStopRow)
+      // note: mrrf first priority
+      scan.setFilter(if (filters.nonEmpty) { new FilterList(filters.+:(mrrf): _*) } else { mrrf })
+      scan.addFamily(colFamily).setCacheBlocks(cacheBlocks)
+      cacheSize.foreach(scan.setCaching)
+      ds.applySecurity(scan)
+      Seq(scan)
     }
   }
 }

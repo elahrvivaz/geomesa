@@ -87,11 +87,12 @@ object HBaseBatchScan {
         t.setUncaughtExceptionHandler(Threads.LOGGING_EXCEPTION_HANDLER)
         t.setPriority(Thread.NORM_PRIORITY)
         println(s"creating new thread for scan against $table")
+        new Exception().printStackTrace()
         t
       }
     }
 
-    private val pool = new ThreadPoolExecutor(1, threads, 60, TimeUnit.SECONDS, new SynchronousQueue[Runnable], factory)
+    private val pool = Executors.newFixedThreadPool(threads, factory)
     private val htable = connection.getTable(table, pool)
     private val scan = htable.getScanner(range)
 

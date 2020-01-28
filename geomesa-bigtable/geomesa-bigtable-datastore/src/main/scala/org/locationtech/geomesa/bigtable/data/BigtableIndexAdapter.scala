@@ -24,6 +24,7 @@ class BigtableIndexAdapter(ds: BigtableDataStore) extends HBaseIndexAdapter(ds) 
 
   override protected def configureScans(
       ranges: java.util.List[RowRange],
+      small: Boolean,
       colFamily: Array[Byte],
       filters: Seq[HFilter],
       coprocessor: Boolean): Seq[Scan] = {
