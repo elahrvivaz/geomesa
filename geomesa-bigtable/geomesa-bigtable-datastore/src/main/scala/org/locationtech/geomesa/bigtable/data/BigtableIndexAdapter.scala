@@ -8,16 +8,12 @@
 
 package org.locationtech.geomesa.bigtable.data
 
-import java.util.UUID
-
 import com.google.cloud.bigtable.hbase.BigtableExtendedScan
-import com.google.common.collect.Lists
-import com.typesafe.scalalogging.LazyLogging
 import org.apache.hadoop.hbase.client.Scan
+import org.apache.hadoop.hbase.filter.MultiRowRangeFilter.RowRange
 import org.apache.hadoop.hbase.filter.{Filter => HFilter}
 import org.locationtech.geomesa.hbase.data.HBaseIndexAdapter
-import org.locationtech.geomesa.index.api.GeoMesaFeatureIndex
-import org.locationtech.geomesa.utils.text.StringSerialization
+import org.locationtech.geomesa.utils.index.ByteArrays
 
 class BigtableIndexAdapter(ds: BigtableDataStore) extends HBaseIndexAdapter(ds) {
 
@@ -27,10 +23,11 @@ class BigtableIndexAdapter(ds: BigtableDataStore) extends HBaseIndexAdapter(ds) 
   override val tableNameLimit: Option[Int] = Some(50)
 
   override protected def configureScans(
-      originalRanges: Seq[Scan],
+      ranges: java.util.List[RowRange],
       colFamily: Array[Byte],
       filters: Seq[HFilter],
       coprocessor: Boolean): Seq[Scan] = {
+
     if (filters.nonEmpty) {
       // bigtable does support some filters, but currently we only use custom filters that aren't supported
       throw new IllegalArgumentException(s"Bigtable doesn't support filters: ${filters.mkString(", ")}")
@@ -38,26 +35,30 @@ class BigtableIndexAdapter(ds: BigtableDataStore) extends HBaseIndexAdapter(ds) 
 
     // check if these are large scans or small scans (e.g. gets)
     // only in the case of 'ID IN ()' queries will the scans be small
-    if (originalRanges.headOption.exists(_.isSmall)) {
-      originalRanges.map(s => new Scan(s).addFamily(colFamily))
-    } else {
-      val sortedRowRanges = HBaseIndexAdapter.sortAndMerge(originalRanges)
-      val numRanges = sortedRowRanges.size()
-      val numThreads = ds.config.queryThreads
-      // TODO GEOMESA-1802 parameterize this?
-      val rangesPerThread = math.min(ds.config.maxRangesPerExtendedScan, math.max(1,math.ceil(numRanges/numThreads*2).toInt))
-      // TODO GEOMESA-1802 align partitions with region boundaries
-      val groupedRanges = Lists.partition(sortedRowRanges, rangesPerThread)
-
-      // group scans into batches to achieve some client side parallelism
-      val groupedScans = groupedRanges.asScala.map { localRanges =>
-        val scan = new BigtableExtendedScan()
-        localRanges.asScala.foreach(r => scan.addRange(r.getStartRow, r.getStopRow))
-        scan.addFamily(colFamily)
-        scan
+    // stopRowInclusive indicates a 'small' single row scan
+    if (ranges.get(0).isStopRowInclusive) {
+      ranges.asScala.map { r =>
+        new Scan()
+            .withStartRow(r.getStartRow, r.isStartRowInclusive)
+            .withStopRow(r.getStopRow, r.isStopRowInclusive)
+            .setSmall(true)
+            .addFamily(colFamily)
       }
-
-      groupedScans
+    } else {
+      val scan = new BigtableExtendedScan()
+      var start: Array[Byte] = ranges.get(0).getStartRow
+      var stop: Array[Byte] = ranges.get(0).getStopRow
+      ranges.asScala.foreach { r =>
+        if (ByteArrays.ByteOrdering.lt(r.getStartRow, start)) {
+          start = r.getStartRow
+        }
+        if (ByteArrays.ByteOrdering.gt(r.getStopRow, stop)) {
+          stop = r.getStopRow
+        }
+        scan.addRange(r.getStartRow, r.getStopRow)
+      }
+      scan.addFamily(colFamily).withStartRow(start, true).withStopRow(stop, false)
+      Seq(scan)
     }
   }
 }

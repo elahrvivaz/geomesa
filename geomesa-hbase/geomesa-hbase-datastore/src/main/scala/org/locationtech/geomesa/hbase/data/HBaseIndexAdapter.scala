@@ -9,8 +9,8 @@
 package org.locationtech.geomesa.hbase.data
 
 import java.nio.charset.StandardCharsets
+import java.util.Locale
 import java.util.regex.Pattern
-import java.util.{Collections, Locale}
 
 import com.typesafe.scalalogging.{LazyLogging, StrictLogging}
 import org.apache.hadoop.fs.Path
@@ -186,16 +186,17 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
 
     import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
-
     val QueryStrategy(filter, byteRanges, _, _, ecql, hints, _) = strategy
     val index = filter.index
 
     // index api defines empty start/end for open-ended range
     // index api defines start row inclusive, end row exclusive
     // both these conventions match the conventions for hbase scan objects
-    val ranges = byteRanges.map {
-      case BoundedByteRange(start, end) => new Scan(start, end)
-      case SingleRowByteRange(row)      => new Scan(row, ByteArrays.rowFollowingRow(row)).setSmall(true)
+    // we create a mutable java list in order to avoid copying it over again before passing to hbase
+    val ranges = new java.util.ArrayList[RowRange](byteRanges.length)
+    byteRanges.foreach {
+      case BoundedByteRange(start, stop) => ranges.add(new RowRange(start, true, stop, false))
+      case SingleRowByteRange(row)       => ranges.add(new RowRange(row, true, row, true))
     }
 
     val tables = index.getTablesForQuery(filter.filter).map(TableName.valueOf)
@@ -213,9 +214,9 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
         }
         LocalQueryRunner.transform(schema, features, transform, hints, arrowHook)
       }
-      if (strategy.ranges.isEmpty) { EmptyPlan(strategy.filter, resultsToFeatures) } else {
+      if (ranges.isEmpty) { EmptyPlan(strategy.filter, resultsToFeatures) } else {
         val scans = configureScans(ranges, colFamily, Seq.empty, coprocessor = false)
-        ScanPlan(filter, tables, ranges, scans, resultsToFeatures)
+        ScanPlan(filter, tables, ranges.asScala, scans, resultsToFeatures)
       }
     } else {
       lazy val returnSchema = transform.map(_._2).getOrElse(schema)
@@ -271,7 +272,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
         case None =>
           val resultsToFeatures = HBaseIndexAdapter.resultsToFeatures(index, returnSchema)
           if (ranges.isEmpty) { EmptyPlan(strategy.filter, resultsToFeatures) } else {
-            ScanPlan(filter, tables, ranges, scans, resultsToFeatures)
+            ScanPlan(filter, tables, ranges.asScala, scans, resultsToFeatures)
           }
 
         case Some(c) =>
@@ -279,7 +280,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
             EmptyPlan(strategy.filter, _ => c.reduce(CloseableIterator.empty))
           } else {
             val Seq(scan) = scans
-            CoprocessorPlan(filter, tables, ranges, scan, c)
+            CoprocessorPlan(filter, tables, ranges.asScala, scan, c)
           }
       }
     }
@@ -293,16 +294,17 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
   /**
     * Configure the hbase scan
     *
-    * @param originalRanges ranges to scan
+    * @param ranges ranges to scan, non-empty. needs to be mutable as hbase will sort it in place
     * @param colFamily col family to scan
     * @param filters scan filters
     * @param coprocessor coprocessor scan or not
     * @return
     */
-  protected def configureScans(originalRanges: Seq[Scan],
-                               colFamily: Array[Byte],
-                               filters: Seq[HFilter],
-                               coprocessor: Boolean): Seq[Scan] = {
+  protected def configureScans(
+      ranges: java.util.List[RowRange],
+      colFamily: Array[Byte],
+      filters: Seq[HFilter],
+      coprocessor: Boolean): Seq[Scan] = {
     import scala.collection.JavaConverters._
 
     val cacheBlocks = HBaseSystemProperties.ScannerBlockCaching.toBoolean.get // has a default value so .get is safe
@@ -310,101 +312,30 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
 
     logger.debug(s"HBase client scanner: block caching: $cacheBlocks, caching: $cacheSize")
 
-    if (coprocessor) {
-      val scan = new Scan()
-      scan.addFamily(colFamily)
-      // note: mrrf first priority
-      val mrrf = new MultiRowRangeFilter(sortAndMerge(originalRanges))
+    if (coprocessor || !ranges.get(0).isStopRowInclusive) { // stopRowInclusive indicates a 'small' single row scan
+      val mrrf = new MultiRowRangeFilter(ranges)
       // note: our coprocessors always expect a filter list
-      scan.setFilter(new FilterList(filters.+:(mrrf): _*))
-      scan.setCacheBlocks(cacheBlocks)
+      // note: mrrf first priority
+      val filter = if (coprocessor || filters.nonEmpty) { new FilterList(filters.+:(mrrf): _*) } else { mrrf }
+      val sorted = mrrf.getRowRanges
+      val scan = new Scan(sorted.get(0).getStartRow, sorted.get(sorted.size() - 1).getStopRow).addFamily(colFamily).setFilter(filter).setCacheBlocks(cacheBlocks)
       cacheSize.foreach(scan.setCaching)
       ds.applySecurity(scan)
       Seq(scan)
-    } else if (originalRanges.headOption.exists(_.isSmall)) {
+    } else {
       val filter = filters match {
         case Nil    => None
         case Seq(f) => Some(f)
         case f      => Some(new FilterList(f: _*))
       }
-      originalRanges.map { s =>
-        val scan = new Scan(s).addFamily(colFamily)
+      ranges.asScala.map { r =>
+        val scan = new Scan(r.getStartRow, ByteArrays.rowFollowingRow(r.getStopRow)).addFamily(colFamily).setSmall(true)
         filter.foreach(scan.setFilter)
         scan.setCacheBlocks(cacheBlocks)
         cacheSize.foreach(scan.setCaching)
         ds.applySecurity(scan)
         scan
       }
-    } else {
-      val rowRanges = sortAndMerge(originalRanges)
-
-      // TODO GEOMESA-1806 parameterize this?
-      val rangesPerThread = math.min(ds.config.maxRangesPerExtendedScan,
-        math.max(1, math.ceil(rowRanges.size() / ds.config.queryThreads * 2).toInt))
-
-      // group scans into batches to achieve some client side parallelism
-      // we double the initial size to account for extra groupings based on the shard byte
-      val groupedScans = new java.util.ArrayList[Scan]((rowRanges.size() / rangesPerThread + 1) * 2)
-
-      def addGroup(group: java.util.List[RowRange]): Unit = {
-        val s = new Scan(group.get(0).getStartRow, group.get(group.size() - 1).getStopRow).addFamily(colFamily)
-        if (group.size() > 1) {
-          // TODO GEOMESA-1806
-          // currently, the MultiRowRangeFilter constructor will call sortAndMerge a second time
-          // this is unnecessary as we have already sorted and merged
-          val mrrf = new MultiRowRangeFilter(group)
-          // note: mrrf first priority
-          s.setFilter(if (filters.isEmpty) { mrrf } else { new FilterList(filters.+:(mrrf): _*) })
-        } else {
-          filters match {
-            case Nil    => // no-op
-            case Seq(f) => s.setFilter(f)
-            case f      => s.setFilter(new FilterList(f: _*))
-          }
-        }
-
-        s.setCacheBlocks(cacheBlocks)
-        cacheSize.foreach(s.setCaching)
-
-        // apply visibilities
-        ds.applySecurity(s)
-
-        groupedScans.add(s)
-      }
-
-      // TODO GEOMESA-1806 align partitions with region boundaries
-
-      if (!rowRanges.isEmpty) {
-        var i = 1
-        var groupStart = 0
-        var groupCount = 1
-        var groupFirstByte: Byte =
-          if (rowRanges.get(0).getStartRow.isEmpty) { 0 } else { rowRanges.get(0).getStartRow()(0) }
-
-        while (i < rowRanges.size()) {
-          val nextRange = rowRanges.get(i)
-          // add the group if we hit our group size or if we transition the first byte (i.e. our shard byte)
-          if (groupCount == rangesPerThread ||
-              (nextRange.getStartRow.length > 0 && groupFirstByte != nextRange.getStartRow()(0))) {
-            // note: excludes current range we're checking
-            addGroup(rowRanges.subList(groupStart, i))
-            groupFirstByte = if (nextRange.getStopRow.isEmpty) { Byte.MaxValue } else { nextRange.getStopRow()(0) }
-            groupStart = i
-            groupCount = 1
-          } else {
-            groupCount += 1
-          }
-          i += 1
-        }
-
-        // add the final group - there will always be at least one remaining range
-        addGroup(rowRanges.subList(groupStart, i))
-      }
-
-      // shuffle the ranges, otherwise our threads will tend to all hit the same region server at once
-      Collections.shuffle(groupedScans)
-
-      groupedScans.asScala
     }
   }
 }
@@ -428,6 +359,7 @@ object HBaseIndexAdapter extends LazyLogging {
     * @param ranges scan ranges
     * @return
     */
+  @deprecated
   def sortAndMerge(ranges: Seq[Scan]): java.util.List[RowRange] = {
     val rowRanges = new java.util.ArrayList[RowRange](ranges.length)
     ranges.foreach(r => rowRanges.add(new RowRange(r.getStartRow, true, r.getStopRow, false)))
