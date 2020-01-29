@@ -9,7 +9,7 @@
 package org.locationtech.geomesa.hbase.data
 
 import java.nio.charset.StandardCharsets
-import java.util.Locale
+import java.util.{Collections, Locale}
 import java.util.regex.Pattern
 
 import com.typesafe.scalalogging.{LazyLogging, StrictLogging}
@@ -293,7 +293,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
   /**
    * Configure the hbase scan
    *
-   * @param ranges ranges to scan, non-empty. needs to be mutable as hbase will sort it in place
+   * @param ranges ranges to scan, non-empty. needs to be mutable as we will sort it in place
    * @param small whether 'small' ranges (i.e. gets)
    * @param colFamily col family to scan
    * @param filters scan filters
@@ -337,15 +337,72 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
         scan
       }
     } else {
-      val mrrf = new MultiRowRangeFilter(ranges)
-      val sorted = mrrf.getRowRanges
-      val scan = new Scan(sorted.get(0).getStartRow, sorted.get(sorted.size() - 1).getStopRow)
-      // note: mrrf first priority
-      scan.setFilter(if (filters.nonEmpty) { new FilterList(filters.+:(mrrf): _*) } else { mrrf })
-      scan.addFamily(colFamily).setCacheBlocks(cacheBlocks)
-      cacheSize.foreach(scan.setCaching)
-      ds.applySecurity(scan)
-      Seq(scan)
+      // our ranges are non-overlapping, so just sort them but don't bother merging them
+      Collections.sort(ranges)
+
+      // TODO GEOMESA-1806 parameterize this?
+      val rangesPerThread = math.min(ds.config.maxRangesPerExtendedScan,
+        math.max(1, math.ceil(ranges.size() / ds.config.queryThreads * 2).toInt))
+
+      // group scans into batches to achieve some client side parallelism
+      // we double the initial size to account for extra groupings based on the shard byte
+      val groupedScans = new java.util.ArrayList[Scan]((ranges.size() / rangesPerThread + 1) * 2)
+
+      def addGroup(group: java.util.List[RowRange]): Unit = {
+        val s = new Scan(group.get(0).getStartRow, group.get(group.size() - 1).getStopRow)
+        if (group.size() > 1) {
+          // TODO GEOMESA-1806
+          // currently, the MultiRowRangeFilter constructor will call sortAndMerge a second time
+          // this is unnecessary as we have already sorted and merged
+          val mrrf = new MultiRowRangeFilter(group)
+          // note: mrrf first priority
+          s.setFilter(if (filters.isEmpty) { mrrf } else { new FilterList(filters.+:(mrrf): _*) })
+        } else {
+          filters match {
+            case Nil    => // no-op
+            case Seq(f) => s.setFilter(f)
+            case f      => s.setFilter(new FilterList(f: _*))
+          }
+        }
+
+        s.addFamily(colFamily).setCacheBlocks(cacheBlocks)
+        cacheSize.foreach(s.setCaching)
+
+        // apply visibilities
+        ds.applySecurity(s)
+
+        groupedScans.add(s)
+      }
+
+      // TODO GEOMESA-1806 align partitions with region boundaries
+      var i = 1
+      var groupStart = 0
+      var groupCount = 1
+      var groupFirstByte: Byte = if (ranges.get(0).getStartRow.isEmpty) { 0 } else { ranges.get(0).getStartRow()(0) }
+
+      while (i < ranges.size()) {
+        val nextRange = ranges.get(i)
+        // add the group if we hit our group size or if we transition the first byte (i.e. our shard byte)
+        if (groupCount == rangesPerThread ||
+            (nextRange.getStartRow.length > 0 && groupFirstByte != nextRange.getStartRow()(0))) {
+          // note: excludes current range we're checking
+          addGroup(ranges.subList(groupStart, i))
+          groupFirstByte = if (nextRange.getStopRow.isEmpty) { Byte.MaxValue } else { nextRange.getStopRow()(0) }
+          groupStart = i
+          groupCount = 1
+        } else {
+          groupCount += 1
+        }
+        i += 1
+      }
+
+      // add the final group - there will always be at least one remaining range
+      addGroup(ranges.subList(groupStart, i))
+
+      // shuffle the ranges, otherwise our threads will tend to all hit the same region server at once
+      Collections.shuffle(groupedScans)
+
+      groupedScans.asScala
     }
   }
 }

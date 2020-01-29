@@ -119,12 +119,7 @@ object HBaseQueryPlan {
         table: TableName,
         copyScans: Boolean): CloseableIterator[SimpleFeature] = {
       val s = if (copyScans) { scans.map(new Scan(_)) } else { scans }
-      val results = if (scans.lengthCompare(1) == 0) {
-        HBaseBatchScan(ds.connection, table, s.head, ds.config.queryThreads)
-      } else {
-        HBaseBatchScan(ds.connection, table, s, ds.config.queryThreads)
-      }
-      SelfClosingIterator(resultsToFeatures(results), results.close())
+      resultsToFeatures(HBaseBatchScan(ds.connection, table, s, ds.config.queryThreads))
     }
   }
 
