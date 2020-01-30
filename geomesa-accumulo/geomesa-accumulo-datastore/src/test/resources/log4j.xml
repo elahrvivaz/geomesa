@@ -19,6 +19,9 @@
     <category name="hsqldb">
         <priority value="warn"/>
     </category>
+    <category name="org.apache.accumulo.core.clientImpl.TabletServerBatchReader">
+        <priority value="error"/>
+    </category>
 
     <!-- un-comment the following line to enable verbose log messages
          from the index query-planner; this can be helpful in debugging

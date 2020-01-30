@@ -27,5 +27,14 @@
         <module>geomesa-accumulo-stats-gs-plugin</module>
         <module>geomesa-accumulo-tools</module>
     </modules>
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>com.google.guava</groupId>
+                <artifactId>guava</artifactId>
+                <version>${accumulo.guava.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
     
 </project>

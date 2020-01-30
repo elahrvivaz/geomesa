@@ -22,7 +22,7 @@ import scala.util.{Success, Try}
 object AccumuloVersion extends Enumeration with LazyLogging {
 
   type AccumuloVersion = Value
-  val V15, V16, V17, V18, V19 = Value
+  val V15, V16, V17, V18, V19, V20 = Value
 
   lazy val accumuloVersion: AccumuloVersion = Try(SemanticVersion(Constants.VERSION, lenient = true)) match {
     case Success(v) if v.major == 1 && v.minor == 9 => V19

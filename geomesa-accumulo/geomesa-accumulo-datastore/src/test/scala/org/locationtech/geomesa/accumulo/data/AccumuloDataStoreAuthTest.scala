@@ -67,6 +67,7 @@ class AccumuloDataStoreAuthTest extends Specification with TestWithDataStore {
         ds must not(beNull)
         ds.config.authProvider must beAnInstanceOf[FilteringAuthorizationsProvider]
         ds.config.authProvider.asInstanceOf[FilteringAuthorizationsProvider].wrappedProvider must beAnInstanceOf[DefaultAuthorizationsProvider]
+        System.out.println(ds.auths)
         ds.auths mustEqual new Authorizations("user")
       }
 

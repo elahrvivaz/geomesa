@@ -17,7 +17,7 @@ import java.util.{Date, Map => JMap}
 import com.github.benmanes.caffeine.cache.Caffeine
 import com.google.common.collect.{ImmutableMap, ImmutableSetMultimap}
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.client.{BatchWriterConfig, Connector, TableExistsException}
+import org.apache.accumulo.core.client.{BatchWriterConfig, AccumuloClient, TableExistsException}
 import org.apache.accumulo.core.data.{Key, Mutation, Range, Value}
 import org.apache.accumulo.core.security.{Authorizations, TablePermission}
 import org.geotools.coverage.grid.GridEnvelope2D
@@ -32,7 +32,7 @@ import org.locationtech.geomesa.utils.geohash.BoundingBox
 
 import scala.collection.JavaConversions._
 
-class AccumuloRasterStore(val connector: Connector,
+class AccumuloRasterStore(val client: AccumuloClient,
                           val tableName: String,
                           val authorizationsProvider: AuthorizationsProvider,
                           val writeVisibilities: String,
@@ -47,12 +47,12 @@ class AccumuloRasterStore(val connector: Connector,
     new BatchWriterConfig().setMaxMemory(writeMemory).setMaxWriteThreads(writeThreads)
   val numQThreads = queryThreadsConfig.getOrElse(20)
 
-  private val tableOps       = connector.tableOperations()
-  private val securityOps    = connector.securityOperations
+  private val tableOps       = clientor.tableOperations()
+  private val securityOps    = client.securityOperations
   private val profileTable   = s"${tableName}_queries"
   private def getBoundsRowID = tableName + "_bounds"
 
-  private val usageStats = if (collectStats) new AccumuloAuditService(connector, authorizationsProvider, profileTable, true) else null
+  private val usageStats = if (collectStats) new AccumuloAuditService(client, authorizationsProvider, profileTable, true) else null
 
   def getAuths = new Authorizations(authorizationsProvider.getAuthorizations: _*)
 
@@ -69,7 +69,7 @@ class AccumuloRasterStore(val connector: Connector,
   }
 
   def getRasters(rasterQuery: RasterQuery): Iterator[Raster] = {
-    val batchScanner = connector.createBatchScanner(tableName, getAuths, numQThreads)
+    val batchScanner = client.createBatchScanner(tableName, getAuths, numQThreads)
     val plan = AccumuloRasterQueryPlanner.getQueryPlan(rasterQuery, getResToGeoHashLenMap, getResToBoundsMap)
     plan match {
       case Some(qp) =>
@@ -83,7 +83,7 @@ class AccumuloRasterStore(val connector: Connector,
 
   def getBounds: BoundingBox = {
     ensureBoundsTableExists()
-    val scanner = connector.createScanner(GEOMESA_RASTER_BOUNDS_TABLE, getAuths)
+    val scanner = client.createScanner(GEOMESA_RASTER_BOUNDS_TABLE, getAuths)
     scanner.setRange(new Range(getBoundsRowID))
     val resultingBounds = SelfClosingIterator(scanner.iterator, scanner.close)
     if (resultingBounds.isEmpty) {
@@ -136,7 +136,7 @@ class AccumuloRasterStore(val connector: Connector,
 
   def metaScanner: () => SelfClosingIterator[Entry[Key, Value]] = () => {
     ensureBoundsTableExists()
-    val scanner = connector.createScanner(GEOMESA_RASTER_BOUNDS_TABLE, getAuths)
+    val scanner = client.createScanner(GEOMESA_RASTER_BOUNDS_TABLE, getAuths)
     scanner.setRange(new Range(getBoundsRowID))
     SelfClosingIterator(scanner.iterator, scanner.close)
   }
@@ -187,7 +187,7 @@ class AccumuloRasterStore(val connector: Connector,
   }
 
   private def writeMutations(tableName: String, mutations: Mutation*) {
-    val writer = connector.createBatchWriter(tableName, bwConfig)
+    val writer = client.createBatchWriter(tableName, bwConfig)
     mutations.foreach { m => writer.addMutation(m) }
     writer.flush()
     writer.close()
@@ -210,7 +210,7 @@ class AccumuloRasterStore(val connector: Connector,
     // TODO: WCS: ensure that this does not duplicate what is done in AccumuloDataStore
     // Perhaps consolidate with different default configurations
     // GEOMESA-564
-    val user = connector.whoami
+    val user = client.whoami
     val defaultVisibilities = authorizationsProvider.getAuthorizations.toString.replaceAll(",", "&")
     if (!tableOps.exists(tableName)) {
         createTables(user, defaultVisibilities, Array(tableName, profileTable):_*)
@@ -258,7 +258,7 @@ class AccumuloRasterStore(val connector: Connector,
   private def deleteMetaData(): Unit = {
     try {
       if (tableOps.exists(GEOMESA_RASTER_BOUNDS_TABLE)) {
-        val deleter = connector.createBatchDeleter(GEOMESA_RASTER_BOUNDS_TABLE, getAuths, 3, bwConfig)
+        val deleter = client.createBatchDeleter(GEOMESA_RASTER_BOUNDS_TABLE, getAuths, 3, bwConfig)
         val deleteRange = new Range(getBoundsRowID)
         deleter.setRanges(Seq(deleteRange))
         deleter.delete()
@@ -289,7 +289,7 @@ object AccumuloRasterStore {
             queryThreadsConfig: Option[Int] = None,
             collectStats: Boolean = false): AccumuloRasterStore = {
 
-    val conn = AccumuloStoreHelper.buildAccumuloConnector(username, password, instanceId, zookeepers, useMock)
+    val conn = AccumuloStoreHelper.buildAccumuloClient(username, password, instanceId, zookeepers, useMock)
 
     val authorizationsProvider = AccumuloStoreHelper.getAuthorizationsProvider(auths.split(","), conn)
 

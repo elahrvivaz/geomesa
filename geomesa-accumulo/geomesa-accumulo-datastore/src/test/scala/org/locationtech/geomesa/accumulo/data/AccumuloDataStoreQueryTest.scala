@@ -122,15 +122,6 @@ class AccumuloDataStoreQueryTest extends Specification with TestWithMultipleSfts
       // compose the query
       val during = ECQL.toFilter("dtg DURING 2014-06-07T11:00:00.000Z/2014-06-07T13:00:00.000Z")
 
-      "with correct result when using a dwithin of degrees" >> {
-        val dwithinUsingDegrees = ff.dwithin(ff.property("geom"),
-          ff.literal(geomFactory.createLineString(lineOfBufferCoords)), 1.0, "degrees")
-        val filterUsingDegrees  = ff.and(during, dwithinUsingDegrees)
-        val queryUsingDegrees   = new Query(sftPoints.getTypeName, filterUsingDegrees)
-        val resultsUsingDegrees = ds.getFeatureSource(sftPoints.getTypeName).getFeatures(queryUsingDegrees)
-        SelfClosingIterator(resultsUsingDegrees.features).toSeq must haveLength(50)
-      }.pendingUntilFixed("Fixed Z3 'During And Dwithin' queries for a buffer created with unit degrees")
-
       "with correct result when using a dwithin of meters" >> {
         val dwithinUsingMeters = ff.dwithin(ff.property("geom"),
           ff.literal(geomFactory.createLineString(lineOfBufferCoords)), 150000, "meters")

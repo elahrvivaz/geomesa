@@ -21,6 +21,7 @@ case object MiniCluster extends LazyLogging {
 
     logger.info("Starting accumulo minicluster")
     val miniClusterTempDir: File = Files.createTempDir();
+    logger.info(miniClusterTempDir.getAbsolutePath())
     val cluster = new MiniAccumuloCluster( miniClusterTempDir, "admin")
 
     cluster.start

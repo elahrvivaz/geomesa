@@ -21,6 +21,7 @@ import org.geotools.referencing.GeodeticCalculator
 import org.geotools.util.Converters
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloDataStoreParams}
+import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
 import org.locationtech.geomesa.features.avro.AvroSimpleFeatureFactory
 import org.locationtech.geomesa.index.conf.QueryProperties
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
@@ -32,7 +33,7 @@ import org.specs2.runner.JUnitRunner
 import scala.collection.JavaConversions._
 
 @RunWith(classOf[JUnitRunner])
-class TubeSelectProcessTest extends Specification {
+class TubeSelectProcessTest extends TestWithMultipleSfts {
 
   import TubeBuilder.DefaultDtgField
 
@@ -40,24 +41,10 @@ class TubeSelectProcessTest extends Specification {
 
   val geotimeAttributes = s"*geom:Point:srid=4326,$DefaultDtgField:Date"
 
-  def createStore: AccumuloDataStore =
-  // the specific parameter values should not matter, as we
-  // are requesting a mock data store connection to Accumulo
-    DataStoreFinder.getDataStore(Map(
-      AccumuloDataStoreParams.InstanceIdParam.key -> "mycloud",
-      AccumuloDataStoreParams.ZookeepersParam.key -> "zoo1:2181,zoo2:2181,zoo3:2181",
-      AccumuloDataStoreParams.UserParam.key       -> "myuser",
-      AccumuloDataStoreParams.PasswordParam.key   -> "mypassword",
-      AccumuloDataStoreParams.AuthsParam.key      -> "A,B,C",
-      AccumuloDataStoreParams.CatalogParam.key    -> "testtube",
-      AccumuloDataStoreParams.MockParam.key       -> "true")).asInstanceOf[AccumuloDataStore]
-
   "TubeSelect" should {
     "work with an empty input collection" in {
       val sftName = "emptyTubeTestType"
       val sft = SimpleFeatureTypes.createType(sftName, s"type:String,$geotimeAttributes")
-
-      val ds = createStore
 
       ds.createSchema(sft)
       val fs = ds.getFeatureSource(sftName)
@@ -96,8 +83,6 @@ class TubeSelectProcessTest extends Specification {
     "should do a simple tube with geo interpolation" in {
       val sftName = "tubeTestType"
       val sft = SimpleFeatureTypes.createType(sftName, s"type:String,$geotimeAttributes")
-
-      val ds = createStore
 
       ds.createSchema(sft)
       val fs = ds.getFeatureSource(sftName)
@@ -141,7 +126,6 @@ class TubeSelectProcessTest extends Specification {
       val sftName = "tubeTestType"
       val sft = SimpleFeatureTypes.createType(sftName, s"type:String,$geotimeAttributes")
 
-      val ds = createStore
       val fs = ds.getFeatureSource(sftName)
 
       val featureCollection = new DefaultFeatureCollection(sftName, sft)
@@ -182,8 +166,6 @@ class TubeSelectProcessTest extends Specification {
     "should properly convert speed/time to distance" in {
       val sftName = "tubetest2"
       val sft = SimpleFeatureTypes.createType(sftName, s"type:String,$geotimeAttributes")
-
-      val ds = createStore
 
       ds.createSchema(sft)
 
@@ -234,7 +216,6 @@ class TubeSelectProcessTest extends Specification {
     "should properly dedup overlapping results based on buffer size " in {
       val sftName = "tubetest2"
 
-      val ds = createStore
 
       val fs = ds.getFeatureSource(sftName)
 
@@ -266,8 +247,6 @@ class TubeSelectProcessTest extends Specification {
     "should properly handle geometries crossing the IDL" in {
       val sftName = "tubeTestType"
       val sft = SimpleFeatureTypes.createType(sftName, s"type:String, $geotimeAttributes")
-
-      val ds = createStore
 
       ds.createSchema(sft)
       val fs = ds.getFeatureSource(sftName)
@@ -319,8 +298,6 @@ class TubeSelectProcessTest extends Specification {
     "properly interpolate times and geometries" in {
       val sftName = "tubeTestType"
       val sft = SimpleFeatureTypes.createType(sftName, s"type:String, $geotimeAttributes")
-
-      val ds = createStore
 
       ds.createSchema(sft)
       val fs = ds.getFeatureSource(sftName)
@@ -397,8 +374,6 @@ class TubeSelectProcessTest extends Specification {
     "should handle all geometries" in {
       val sftName = "tubeline"
       val sft = SimpleFeatureTypes.createType(sftName, "type:String,*geom:Geometry:srid=4326,dtg:Date;geomesa.mixed.geometries=true")
-
-      val ds = createStore
 
       ds.createSchema(sft)
       val fs = ds.getFeatureSource(sftName)
@@ -493,7 +468,6 @@ class TubeSelectProcessTest extends Specification {
       val sftName = "tubeline"
       val sft = SimpleFeatureTypes.createType(sftName, s"type:String,$geotimeAttributes")
       val ts = new TubeSelectProcess
-      val ds = createStore
 
       val fs = ds.getFeatureSource(sftName)
 
@@ -520,8 +494,6 @@ class TubeSelectProcessTest extends Specification {
       val sftName = "tubeTestType-date"
       val geotimeAttributes = s"*geom:Point:srid=4326,$nonDefaultDtgField:Date"
       val sft = SimpleFeatureTypes.createType(sftName, s"type:String,$geotimeAttributes")
-
-      val ds = createStore
 
       ds.createSchema(sft)
       val fs = ds.getFeatureSource(sftName)
