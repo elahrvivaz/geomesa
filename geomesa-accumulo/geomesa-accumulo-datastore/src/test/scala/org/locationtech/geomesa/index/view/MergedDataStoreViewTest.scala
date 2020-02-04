@@ -39,6 +39,7 @@ import org.opengis.filter.sort.SortOrder
 import org.specs2.matcher.MatchResult
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
+import org.locationtech.geomesa.accumulo.data.MiniCluster
 
 @RunWith(classOf[JUnitRunner])
 class MergedDataStoreViewTest extends Specification {
@@ -64,14 +65,9 @@ class MergedDataStoreViewTest extends Specification {
 
   implicit val allocator: BufferAllocator = new DirtyRootAllocator(Long.MaxValue, 6.toByte)
 
-  val accumuloParams = Map(
-    AccumuloDataStoreParams.InstanceIdParam.key -> "mycloud",
-    AccumuloDataStoreParams.ZookeepersParam.key -> "myzoo",
-    AccumuloDataStoreParams.UserParam.key       -> "user",
-    AccumuloDataStoreParams.PasswordParam.key   -> "password",
-    AccumuloDataStoreParams.CatalogParam.key    -> sftName,
-    AccumuloDataStoreParams.MockParam.key       -> "true"
-  ).asJava
+  val accumuloParams: java.util.Map[String,String] = (MiniCluster.getClusterParams ++ Map(AccumuloDataStoreParams.CatalogParam.key -> sftName)).asJava
+System.out.println("accumuloParams");
+  accumuloParams.asScala.map {case (key, value) => (System.out.println(key + ": " + value))}
 
   var h2Params: java.util.Map[String, String] = _
 

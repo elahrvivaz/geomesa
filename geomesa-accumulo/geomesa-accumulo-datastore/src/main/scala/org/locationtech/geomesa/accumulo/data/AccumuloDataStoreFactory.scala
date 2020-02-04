@@ -120,11 +120,11 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
       val timeout = GeoMesaSystemProperties.getProperty(ClientProperty.INSTANCE_ZK_TIMEOUT.getKey)
       val props = new Properties()
       // Build authentication token according to how we are authenticating
-      val authTokenTypeTuple : (String, AuthenticationToken) = if (password != null && keytabPath == null) {
-        ("org.apache.accumulo.core.client.security.tokens.PasswordToken", new PasswordToken(password.getBytes("UTF-8")))
+      val authTokenTypeTuple : (String, String) = if (password != null && keytabPath == null) {
+        ("org.apache.accumulo.core.client.security.tokens.PasswordToken", password)
       } else if (password == null && keytabPath != null) {
           // This API is only in Accumulo >=1.7, but canProcess should ensure this isn't actually invoked on earlier
-          ("kerberos", new KerberosToken(user, new java.io.File(keytabPath)))
+          ("kerberos", (new KerberosToken(user, new java.io.File(keytabPath))).toString)
       } else {
         // Should never reach here thanks to canProcess
         throw new IllegalArgumentException("Neither or both of password & keytabPath are set")
@@ -136,6 +136,10 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
       props.put("auth.type", tokenType)
       props.put("auth.principal", user)
       props.put("auth.token", token)
+
+      System.out.println(params)
+      System.out.println("password: " + password)
+      System.out.println("props:"+  props)
 
 
       

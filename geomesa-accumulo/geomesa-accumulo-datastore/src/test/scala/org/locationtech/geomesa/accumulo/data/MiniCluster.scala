@@ -14,27 +14,36 @@ import org.apache.accumulo.core.client.security.tokens.PasswordToken
 import org.apache.accumulo.minicluster.MiniAccumuloCluster
 import java.io.File
 import com.google.common.io.Files
+import org.locationtech.geomesa.accumulo.data.AccumuloDataStoreParams
 
 case object MiniCluster extends LazyLogging {
+  val username = "root"
+  val password = "admin"
 
   lazy val cluster: MiniAccumuloCluster = {
 
     logger.info("Starting accumulo minicluster")
     val miniClusterTempDir: File = Files.createTempDir();
     logger.info(miniClusterTempDir.getAbsolutePath())
-    val cluster = new MiniAccumuloCluster( miniClusterTempDir, "admin")
+    val cluster = new MiniAccumuloCluster( miniClusterTempDir, password)
 
     cluster.start
     logger.info("Started accumulo minicluster")
     cluster
   }
 
-  lazy val client: AccumuloClient =  cluster.createAccumuloClient("root", new PasswordToken("admin"))
+  lazy val client: AccumuloClient =  cluster.createAccumuloClient(username, new PasswordToken(password))
+
+  lazy val getClusterParams: Map[String, String] = Map(
+    AccumuloDataStoreParams.InstanceIdParam.key -> cluster.getInstanceName,
+    AccumuloDataStoreParams.ZookeepersParam.key -> cluster.getZooKeepers,
+    AccumuloDataStoreParams.UserParam.key       -> username,
+    AccumuloDataStoreParams.PasswordParam.key   -> password,
+    "accumulo.auth.token" -> password
+  )
 
   sys.addShutdownHook({
     logger.info("Stopping accumulo minicluster")
-    // note: HBaseTestingUtility says don't close the connection
-    // connection.close()
     cluster.stop
     logger.info("Accumulo minicluster stopped")
   })

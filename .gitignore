@@ -23,3 +23,5 @@ geomesa-*.*.*-*
 *.ipynb
 *.sc
 .sphinx
+.bloop/
+.metals/
