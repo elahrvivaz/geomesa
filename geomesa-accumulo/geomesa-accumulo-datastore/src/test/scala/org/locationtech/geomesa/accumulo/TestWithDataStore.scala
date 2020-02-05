@@ -54,7 +54,7 @@ lazy val mockUser = "user"
   // assign some default authorizations to this mock user
   lazy val client: AccumuloClient = {
     val miniCluster = MiniCluster.client
-    miniCluster.securityOperations().changeUserAuthorizations(mockUser, MockUserAuthorizations)
+//    miniCluster.securityOperations().changeUserAuthorizations(mockUser, MockUserAuthorizations)
     miniCluster
   }
 

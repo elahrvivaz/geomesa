@@ -12,12 +12,12 @@ package org.locationtech.geomesa.accumulo.data
 
 import java.awt.RenderingHints
 import java.io.Serializable
-import java.util.{Map => JMap, Properties}
+import java.nio.file.Paths
+import java.util.{Map => JMap}
 
 import com.google.common.collect.ImmutableMap
 import org.apache.accumulo.core.client.ClientConfiguration.ClientProperty
-import org.apache.accumulo.core.client.security.tokens.{AuthenticationToken, KerberosToken, PasswordToken}
-import org.apache.accumulo.core.client.{ClientConfiguration, ZooKeeperInstance, Accumulo, AccumuloClient}
+import org.apache.accumulo.core.client.{Accumulo, AccumuloClient}
 import org.geotools.data.DataAccessFactory.Param
 import org.geotools.data.{DataStoreFactorySpi, Parameter}
 import org.locationtech.geomesa.accumulo.AccumuloVersion
@@ -118,36 +118,21 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
       val zookeepers = ZookeepersParam.lookup(params)
       // NB: For those wanting to set this via JAVA_OPTS, this key is "instance.zookeeper.timeout" in Accumulo 1.6.x.
       val timeout = GeoMesaSystemProperties.getProperty(ClientProperty.INSTANCE_ZK_TIMEOUT.getKey)
-      val props = new Properties()
-      // Build authentication token according to how we are authenticating
-      val authTokenTypeTuple : (String, String) = if (password != null && keytabPath == null) {
-        ("org.apache.accumulo.core.client.security.tokens.PasswordToken", password)
+
+      val builder = Accumulo.newClient().to(instance, zookeepers)
+
+      // build authentication token according to how we are authenticating
+      val authenticated = if (password != null && keytabPath == null) {
+        builder.as(user, password)
       } else if (password == null && keytabPath != null) {
-          // This API is only in Accumulo >=1.7, but canProcess should ensure this isn't actually invoked on earlier
-          ("kerberos", (new KerberosToken(user, new java.io.File(keytabPath))).toString)
+        // This API is only in Accumulo >=1.7, but canProcess should ensure this isn't actually invoked on earlier
+        builder.as(password, Paths.get(keytabPath))
       } else {
-        // Should never reach here thanks to canProcess
-        throw new IllegalArgumentException("Neither or both of password & keytabPath are set")
+          throw new IllegalArgumentException("Neither or both of password & keytabPath are set")
       }
 
-
-      val (tokenType, token) = authTokenTypeTuple
-
-      props.put("auth.type", tokenType)
-      props.put("auth.principal", user)
-      props.put("auth.token", token)
-
-      System.out.println(params)
-      System.out.println("password: " + password)
-      System.out.println("props:"+  props)
-
-
-      
-      props.put("instance.name", instance)
-      props.put("instance.zookeepers", zookeepers)
-      if (timeout !=  null) props.put(ClientProperty.INSTANCE_ZK_TIMEOUT, timeout)
-      
-      Accumulo.newClient().from(props).build()
+      val withTimeout = if (timeout == null) { authenticated } else { authenticated.zkTimeout(timeout.toInt) }
+      withTimeout.build()
     }
   }
 
