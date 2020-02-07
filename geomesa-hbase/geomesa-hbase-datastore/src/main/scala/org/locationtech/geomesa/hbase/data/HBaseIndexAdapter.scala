@@ -265,7 +265,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
       }
 
       // if there is a coprocessorConfig it handles filter/transform
-      lazy val Seq(cScan) = configureScans(ranges, colFamily, indexFilter.toSeq.map(_._2), coprocessor = true)
+      lazy val cScans = configureScans(ranges, colFamily, indexFilter.toSeq.map(_._2), coprocessor = true)
 
       val max = hints.getMaxFeatures
       val projection = hints.getProjection
@@ -275,26 +275,26 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
         if (ranges.isEmpty) { EmptyPlan(filter, None) } else {
           val options = HBaseDensityAggregator.configure(schema, index, ecql, hints)
           val results = new HBaseDensityResultsToFeatures()
-          CoprocessorPlan(filter, tables, ranges, cScan, options ++ timeout, results, None, max, projection)
+          CoprocessorPlan(filter, tables, ranges, cScans, options ++ timeout, results, None, max, projection)
         }
       } else if (hints.isArrowQuery) {
         val (options, reducer) = HBaseArrowAggregator.configure(schema, index, ds.stats, filter.filter, ecql, hints)
         if (ranges.isEmpty) { EmptyPlan(filter, Some(reducer)) } else {
           val results = new HBaseArrowResultsToFeatures()
-          CoprocessorPlan(filter, tables, ranges, cScan, options ++ timeout, results, Some(reducer), max, projection)
+          CoprocessorPlan(filter, tables, ranges, cScans, options ++ timeout, results, Some(reducer), max, projection)
         }
       } else if (hints.isStatsQuery) {
         val reducer = Some(StatsScan.StatsReducer(returnSchema, hints))
         if (ranges.isEmpty) { EmptyPlan(filter, reducer) } else {
           val options = HBaseStatsAggregator.configure(schema, index, ecql, hints)
           val results = new HBaseStatsResultsToFeatures()
-          CoprocessorPlan(filter, tables, ranges, cScan, options ++ timeout, results, reducer, max, projection)
+          CoprocessorPlan(filter, tables, ranges, cScans, options ++ timeout, results, reducer, max, projection)
         }
       } else if (hints.isBinQuery) {
         if (ranges.isEmpty) { EmptyPlan(filter,  None) } else {
           val options = HBaseBinAggregator.configure(schema, index, ecql, hints)
           val results = new HBaseBinResultsToFeatures()
-          CoprocessorPlan(filter, tables, ranges, cScan, options ++ timeout, results, None, max, projection)
+          CoprocessorPlan(filter, tables, ranges, cScans, options ++ timeout, results, None, max, projection)
         }
       } else {
         if (ranges.isEmpty) { EmptyPlan(filter, None) } else {
@@ -332,18 +332,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
 
     logger.debug(s"HBase client scanner: block caching: $cacheBlocks, caching: $cacheSize")
 
-    if (coprocessor) {
-      val scan = new Scan()
-      scan.addFamily(colFamily)
-      // note: mrrf first priority
-      val mrrf = new MultiRowRangeFilter(sortAndMerge(originalRanges))
-      // note: our coprocessors always expect a filter list
-      scan.setFilter(new FilterList(filters.+:(mrrf): _*))
-      scan.setCacheBlocks(cacheBlocks)
-      cacheSize.foreach(scan.setCaching)
-      ds.applySecurity(scan)
-      Seq(scan)
-    } else if (originalRanges.headOption.exists(_.isSmall)) {
+    if (!coprocessor && originalRanges.headOption.exists(_.isSmall)) {
       val filter = filters match {
         case Nil    => None
         case Seq(f) => Some(f)
@@ -370,13 +359,14 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
 
       def addGroup(group: java.util.List[RowRange]): Unit = {
         val s = new Scan(group.get(0).getStartRow, group.get(group.size() - 1).getStopRow).addFamily(colFamily)
-        if (group.size() > 1) {
+        // note: coprocessors always expect a filter list
+        if (coprocessor || group.size() > 1) {
           // TODO GEOMESA-1806
           // currently, the MultiRowRangeFilter constructor will call sortAndMerge a second time
           // this is unnecessary as we have already sorted and merged
           val mrrf = new MultiRowRangeFilter(group)
           // note: mrrf first priority
-          s.setFilter(if (filters.isEmpty) { mrrf } else { new FilterList(filters.+:(mrrf): _*) })
+          s.setFilter(if (coprocessor || filters.nonEmpty) { new FilterList(filters.+:(mrrf): _*) } else { mrrf })
         } else {
           filters match {
             case Nil    => // no-op
