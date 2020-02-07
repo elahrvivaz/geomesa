@@ -13,7 +13,7 @@ import org.apache.hadoop.hbase.client._
 import org.apache.hadoop.hbase.filter.{FilterList, Filter => HFilter}
 import org.apache.hadoop.hbase.util.Bytes
 import org.locationtech.geomesa.hbase.coprocessor.CoprocessorConfig
-import org.locationtech.geomesa.hbase.utils.HBaseBatchScan
+import org.locationtech.geomesa.hbase.utils.{CoprocessorBatchScan, HBaseBatchScan}
 import org.locationtech.geomesa.index.PartitionParallelScan
 import org.locationtech.geomesa.index.api.{FilterStrategy, QueryPlan}
 import org.locationtech.geomesa.index.utils.Explainer
@@ -126,12 +126,10 @@ object HBaseQueryPlan {
   case class CoprocessorPlan(filter: FilterStrategy,
                              tables: Seq[TableName],
                              ranges: Seq[Scan],
-                             scan: Scan,
+                             scans: Seq[Scan],
                              config: CoprocessorConfig) extends HBaseQueryPlan  {
 
     import org.locationtech.geomesa.hbase.coprocessor._
-
-    override def scans: Seq[Scan] = Seq(scan)
 
     /**
       * Runs the query plain against the underlying database, returning the raw entries
@@ -159,10 +157,8 @@ object HBaseQueryPlan {
     private def singleTableScan(ds: HBaseDataStore,
                                 table: TableName,
                                 copyScans: Boolean): CloseableIterator[SimpleFeature] = {
-      val s = if (copyScans) { new Scan(scan) } else { scan }
-      GeoMesaCoprocessor.execute(ds.connection.getTable(table), s, config.options).collect {
-        case r if r.size() > 0 => config.bytesToFeatures(r.toByteArray)
-      }
+      val s = if (copyScans) { scans.map(new Scan(_)) } else { scans }
+      CoprocessorBatchScan(ds.connection, table, s, config.options, ds.config.queryThreads).map(config.bytesToFeatures)
     }
   }
 }

@@ -278,8 +278,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
           if (ranges.isEmpty) {
             EmptyPlan(strategy.filter, _ => c.reduce(CloseableIterator.empty))
           } else {
-            val Seq(scan) = scans
-            CoprocessorPlan(filter, tables, ranges, scan, c)
+            CoprocessorPlan(filter, tables, ranges, scans, c)
           }
       }
     }
@@ -310,18 +309,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
 
     logger.debug(s"HBase client scanner: block caching: $cacheBlocks, caching: $cacheSize")
 
-    if (coprocessor) {
-      val scan = new Scan()
-      scan.addFamily(colFamily)
-      // note: mrrf first priority
-      val mrrf = new MultiRowRangeFilter(sortAndMerge(originalRanges))
-      // note: our coprocessors always expect a filter list
-      scan.setFilter(new FilterList(filters.+:(mrrf): _*))
-      scan.setCacheBlocks(cacheBlocks)
-      cacheSize.foreach(scan.setCaching)
-      ds.applySecurity(scan)
-      Seq(scan)
-    } else if (originalRanges.headOption.exists(_.isSmall)) {
+    if (!coprocessor && originalRanges.headOption.exists(_.isSmall)) {
       val filter = filters match {
         case Nil    => None
         case Seq(f) => Some(f)
@@ -348,13 +336,14 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
 
       def addGroup(group: java.util.List[RowRange]): Unit = {
         val s = new Scan(group.get(0).getStartRow, group.get(group.size() - 1).getStopRow).addFamily(colFamily)
-        if (group.size() > 1) {
+        // note: coprocessors always expect a filter list
+        if (coprocessor || group.size() > 1) {
           // TODO GEOMESA-1806
           // currently, the MultiRowRangeFilter constructor will call sortAndMerge a second time
           // this is unnecessary as we have already sorted and merged
           val mrrf = new MultiRowRangeFilter(group)
           // note: mrrf first priority
-          s.setFilter(if (filters.isEmpty) { mrrf } else { new FilterList(filters.+:(mrrf): _*) })
+          s.setFilter(if (coprocessor || filters.nonEmpty) { new FilterList(filters.+:(mrrf): _*) } else { mrrf })
         } else {
           filters match {
             case Nil    => // no-op

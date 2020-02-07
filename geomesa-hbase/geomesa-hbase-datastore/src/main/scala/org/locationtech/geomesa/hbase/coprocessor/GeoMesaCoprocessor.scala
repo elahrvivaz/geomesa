@@ -117,6 +117,8 @@ object GeoMesaCoprocessor extends LazyLogging {
 
   private type Aggregator = HBaseAggregator[_ <: Result]
 
+  private val service = classOf[GeoMesaCoprocessorService]
+
   private val FilterOpt  = "filter"
   private val ScanOpt    = "scan"
   private val TimeoutOpt = "timeout"
@@ -143,7 +145,7 @@ object GeoMesaCoprocessor extends LazyLogging {
   /**
     * Executes a geomesa coprocessor
     *
-    * @param table table to execute against
+    * @param table table to execute against (not closed by this method)
     * @param scan scan to execute
     * @param options configuration options
     * @return serialized results
@@ -162,7 +164,7 @@ object GeoMesaCoprocessor extends LazyLogging {
   /**
    * Closeable iterator implementation for invoking coprocessor rpcs
    *
-   * @param table hbase table
+   * @param table hbase table (not closed by this iterator)
    * @param scan scan
    * @param options coprocessor options
    */
@@ -201,7 +203,7 @@ object GeoMesaCoprocessor extends LazyLogging {
 
     lazy private val result = {
       val callBack = new GeoMesaHBaseCallBack()
-      try { table.coprocessorService(classOf[GeoMesaCoprocessorService], null, null, callable, callBack) } catch {
+      try { table.coprocessorService(service, scan.getStartRow, scan.getStopRow, callable, callBack) } catch {
         case e @ (_ :InterruptedException | _ :InterruptedIOException) =>
           logger.warn("Interrupted executing coprocessor query:", e)
       }
