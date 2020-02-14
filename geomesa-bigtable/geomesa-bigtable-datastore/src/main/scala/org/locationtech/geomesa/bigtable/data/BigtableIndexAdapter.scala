@@ -9,6 +9,7 @@
 package org.locationtech.geomesa.bigtable.data
 
 import com.google.cloud.bigtable.hbase.BigtableExtendedScan
+import org.apache.hadoop.hbase.TableName
 import org.apache.hadoop.hbase.client.Scan
 import org.apache.hadoop.hbase.filter.MultiRowRangeFilter.RowRange
 import org.apache.hadoop.hbase.filter.{Filter => HFilter}
@@ -23,6 +24,7 @@ class BigtableIndexAdapter(ds: BigtableDataStore) extends HBaseIndexAdapter(ds) 
   override val tableNameLimit: Option[Int] = Some(50)
 
   override protected def configureScans(
+      tables: Seq[TableName],
       ranges: java.util.List[RowRange],
       small: Boolean,
       colFamily: Array[Byte],

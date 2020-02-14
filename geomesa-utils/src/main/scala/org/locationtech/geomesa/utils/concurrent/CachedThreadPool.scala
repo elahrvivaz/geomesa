@@ -1,45 +1,50 @@
-/*
- * Copyright (c) 2013-2020 Commonwealth Computer Research, Inc.
+/***********************************************************************
+ * Copyright (c) 2013-2019 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
- * are made available under the terms of the Apache License, Version 2.0 which
- * accompanies this distribution and is available at
+ * are made available under the terms of the Apache License, Version 2.0
+ * which accompanies this distribution and is available at
  * http://www.opensource.org/licenses/apache2.0.php.
- */
+ ***********************************************************************/
 
 package org.locationtech.geomesa.utils.concurrent
 
-import java.util.Collections
-import java.util.concurrent.atomic.{AtomicBoolean, AtomicInteger}
 import java.util.concurrent._
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.locks.ReentrantLock
 
 import com.google.common.util.concurrent.MoreExecutors
 
-class CachedThreadPool private (maxThreads: Int, delegate: ExecutorService)
-    extends AbstractExecutorService {
+class CachedThreadPool(maxThreads: Int) extends AbstractExecutorService {
 
+  @volatile
+  private var available = maxThreads
+  private val queue = new java.util.LinkedList[TrackableFutureTask[_]]()
+  private val tasks = new java.util.HashSet[Future[_]]()
   private val stopped = new AtomicBoolean(false)
-  private val available = new AtomicInteger(maxThreads)
-  private val queue = new LinkedBlockingQueue[TrackableFutureTask[_]]()
-  private val tasks = Collections.newSetFromMap(new ConcurrentHashMap[Future[_], java.lang.Boolean]())
   private val lock = new ReentrantLock()
 
   override def shutdown(): Unit = stopped.set(true)
 
   override def shutdownNow(): java.util.List[Runnable] = {
     stopped.set(true)
-    val waiting = new java.util.ArrayList[Runnable]()
-    queue.drainTo(waiting)
-    val iter = tasks.iterator()
-    while (iter.hasNext) {
-      iter.next.cancel(true)
+    lock.lock()
+    try {
+      val waiting = new java.util.ArrayList[Runnable](queue)
+      queue.clear()
+      // copy the running tasks to prevent concurrent modification errors in the synchronous cancel call
+      val running = new java.util.ArrayList[Future[_]](tasks).iterator()
+      while (running.hasNext) {
+        running.next.cancel(true)
+      }
+      waiting
+    } finally {
+      lock.unlock()
     }
-    waiting
   }
 
   override def isShutdown: Boolean = stopped.get
 
-  override def isTerminated: Boolean = stopped.get && available.get == maxThreads
+  override def isTerminated: Boolean = stopped.get && available == maxThreads // should be safe to read a volatile primitive
 
   override def awaitTermination(timeout: Long, unit: TimeUnit): Boolean = {
     // TODO could probably make a wait instead of a poll
@@ -56,7 +61,7 @@ class CachedThreadPool private (maxThreads: Int, delegate: ExecutorService)
     }
     val task = command match {
       case t: TrackableFutureTask[_] => t
-      case c => newTaskFor[_](c, null)
+      case c => newTaskFor(c, null)
     }
     runOrQueueTask(task)
   }
@@ -64,12 +69,12 @@ class CachedThreadPool private (maxThreads: Int, delegate: ExecutorService)
   private def runOrQueueTask(task: TrackableFutureTask[_]): Unit = {
     lock.lock()
     try {
-      if (available.getAndDecrement() > 0) {
+      if (available > 0) {
+        available -= 1
         tasks.add(task)
-        delegate.execute(task)
+        CachedThreadPool.pool.execute(task)
       } else {
         queue.offer(task) // unbounded queue so should always succeed
-        available.incrementAndGet() // re-increment since we didn't successfully grab a spot
       }
     } finally {
       lock.unlock()
@@ -83,8 +88,7 @@ class CachedThreadPool private (maxThreads: Int, delegate: ExecutorService)
     override def done(): Unit = {
       lock.lock()
       try {
-        tasks.remove(this)
-        available.incrementAndGet()
+        available += 1
         val next = queue.poll()
         if (next != null) {
           runOrQueueTask(next) // note: this may briefly use more than maxThreads as this thread finishes up
@@ -101,6 +105,4 @@ object CachedThreadPool {
   // unlimited size but re-uses cached threads
   private val pool =
     MoreExecutors.getExitingExecutorService(Executors.newCachedThreadPool().asInstanceOf[ThreadPoolExecutor])
-
-  def apply(maxThreads: Int): CachedThreadPool = new CachedThreadPool(maxThreads, pool)
 }

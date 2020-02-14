@@ -216,7 +216,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
         LocalQueryRunner.transform(schema, features, transform, hints, arrowHook)
       }
       if (ranges.isEmpty) { EmptyPlan(strategy.filter, resultsToFeatures) } else {
-        val scans = configureScans(ranges, small, colFamily, Seq.empty, coprocessor = false)
+        val scans = configureScans(tables, ranges, small, colFamily, Seq.empty, coprocessor = false)
         ScanPlan(filter, tables, ranges.asScala, scans, resultsToFeatures)
       }
     } else {
@@ -270,7 +270,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
         case None =>
           val resultsToFeatures = HBaseIndexAdapter.resultsToFeatures(index, returnSchema)
           if (ranges.isEmpty) { EmptyPlan(strategy.filter, resultsToFeatures) } else {
-            val scans = configureScans(ranges, small, colFamily, filters, coprocessor = false)
+            val scans = configureScans(tables, ranges, small, colFamily, filters, coprocessor = false)
             ScanPlan(filter, tables, ranges.asScala, scans, resultsToFeatures)
           }
 
@@ -278,7 +278,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
           if (ranges.isEmpty) {
             EmptyPlan(strategy.filter, _ => c.reduce(CloseableIterator.empty))
           } else {
-            val scans = configureScans(ranges, small, colFamily, filters, coprocessor = true)
+            val scans = configureScans(tables, ranges, small, colFamily, filters, coprocessor = true)
             CoprocessorPlan(filter, tables, ranges.asScala, scans, c)
           }
       }
@@ -301,12 +301,12 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
    * @return
    */
   protected def configureScans(
+      tables: Seq[TableName],
       ranges: java.util.List[RowRange],
       small: Boolean,
       colFamily: Array[Byte],
       filters: Seq[HFilter],
       coprocessor: Boolean): Seq[Scan] = {
-    import scala.collection.JavaConverters._
 
     val cacheBlocks = HBaseSystemProperties.ScannerBlockCaching.toBoolean.get // has a default value so .get is safe
     val cacheSize = HBaseSystemProperties.ScannerCaching.toInt
@@ -333,7 +333,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
 
       // TODO GEOMESA-1806 parameterize this?
       val rangesPerThread = math.min(ds.config.maxRangesPerExtendedScan,
-        math.max(1, math.ceil(ranges.size() / ds.config.queryThreads * 2).toInt))
+        math.max(1, math.ceil(ranges.size() / ds.config.queryThreads * 3).toInt))
 
       // group scans into batches to achieve some client side parallelism
       // we double the initial size to account for extra groupings based on the shard byte

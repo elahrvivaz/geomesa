@@ -16,9 +16,11 @@ import org.locationtech.geomesa.hbase.HBaseSystemProperties
 import org.locationtech.geomesa.hbase.coprocessor.GeoMesaCoprocessor
 import org.locationtech.geomesa.index.utils.AbstractBatchScan
 import org.locationtech.geomesa.utils.collection.CloseableIterator
+import org.locationtech.geomesa.utils.io.WithClose
 
 private class CoprocessorBatchScan(
-    table: Table,
+    connection: Connection,
+    table: TableName,
     ranges: Seq[Scan],
     options: Map[String, String],
     threads: Int,
@@ -26,15 +28,9 @@ private class CoprocessorBatchScan(
   ) extends AbstractBatchScan[Scan, Array[Byte]](ranges, threads, buffer, CoprocessorBatchScan.Sentinel) {
 
   override protected def scan(range: Scan, out: BlockingQueue[Array[Byte]]): Unit = {
-    val scan = GeoMesaCoprocessor.execute(table, range, options)
-    try { scan.foreach(r => if (r.size() > 0) { out.put(r.toByteArray) }) } finally {
-      scan.close()
+    WithClose(GeoMesaCoprocessor.execute(connection, table, range, options, 1)) { results =>
+      results.foreach(r => if (r.size() > 0) { out.put(r.toByteArray) })
     }
-  }
-
-  override def close(): Unit = {
-    super.close()
-    table.close()
   }
 }
 
@@ -49,6 +45,6 @@ object CoprocessorBatchScan {
       ranges: Seq[Scan],
       options: Map[String, String],
       threads: Int): CloseableIterator[Array[Byte]] = {
-    new CoprocessorBatchScan(connection.getTable(table), ranges, options, threads, BufferSize).start()
+    new CoprocessorBatchScan(connection, table, ranges, options, threads, BufferSize).start()
   }
 }
