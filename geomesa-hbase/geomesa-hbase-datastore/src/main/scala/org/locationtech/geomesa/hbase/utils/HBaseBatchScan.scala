@@ -43,6 +43,16 @@ object HBaseBatchScan {
   private val Sentinel = new Result
   private val BufferSize = HBaseSystemProperties.ScanBufferSize.toInt.get
 
+  /**
+   * Creates a batch scan with parallelism across the given scans
+   *
+   * @param connection connection
+   * @param table table to scan
+   * @param ranges ranges
+   * @param threads number of concurrently running scans
+   * @return
+   */
   def apply(connection: Connection, table: TableName, ranges: Seq[Scan], threads: Int): CloseableIterator[Result] =
-    new HBaseBatchScan(connection.getTable(table), ranges, threads, BufferSize).start()
+    // passing in a null thread pool will cause the table to create and manage its own pool
+    new HBaseBatchScan(connection.getTable(table, null), ranges, threads, BufferSize).start()
 }

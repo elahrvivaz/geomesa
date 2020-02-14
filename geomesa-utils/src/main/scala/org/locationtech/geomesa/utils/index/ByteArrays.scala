@@ -21,8 +21,8 @@ object ByteArrays {
   val OneByte: Byte  = 0x01.toByte
   val MaxByte: Byte =  0xff.toByte
 
-  val ZeroByteArray = Array(ByteArrays.ZeroByte)
-  val OneByteArray = Array(ByteArrays.OneByte)
+  val ZeroByteArray: Array[Byte] = Array(ByteArrays.ZeroByte)
+  val OneByteArray : Array[Byte] = Array(ByteArrays.OneByte)
 
   implicit val ByteOrdering: Ordering[Array[Byte]] =
     Ordering.comparatorToOrdering(UnsignedBytes.lexicographicalComparator)
@@ -490,6 +490,14 @@ object ByteArrays {
     }
     sb.toString
   }
+
+  // based on accumulo's byte representation
+  def printable(b: Byte): String = {
+    val c = 0xff & b
+    if (c >= 32 && c <= 126) { c.toChar.toString } else { f"%%$c%02x;" }
+  }
+
+  def printable(bytes: Array[Byte]): String = bytes.map(printable).mkString("")
 
   /**
     * Increment the last byte in the array, if it's not equal to MaxByte. Otherwise,
