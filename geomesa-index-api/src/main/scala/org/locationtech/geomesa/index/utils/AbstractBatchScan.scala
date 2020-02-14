@@ -13,6 +13,7 @@ import java.util.concurrent._
 import java.util.concurrent.atomic.AtomicBoolean
 
 import org.locationtech.geomesa.utils.collection.CloseableIterator
+import org.locationtech.geomesa.utils.concurrent.CachedThreadPool
 
 import scala.annotation.tailrec
 
@@ -42,7 +43,7 @@ abstract class AbstractBatchScan[T, R <: AnyRef](ranges: Seq[T], threads: Int, b
 
   private val latch = new CountDownLatch(threads)
   private val terminator = new Terminator()
-  private val pool = Executors.newFixedThreadPool(threads + 1)
+  private val pool = CachedThreadPool(threads)
 
   private var retrieved: R = _
 
