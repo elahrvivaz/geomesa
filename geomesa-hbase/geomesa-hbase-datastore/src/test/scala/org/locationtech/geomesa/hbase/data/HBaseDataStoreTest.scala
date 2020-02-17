@@ -364,7 +364,7 @@ class HBaseDataStoreTest extends HBaseTest with LazyLogging {
       }
     }
 
-    if (count) {
+    if (!count) { ok } else {
       query.getFilter match {
         case _: Id =>
           // id filters use estimated stats based on the filter itself
@@ -378,13 +378,6 @@ class HBaseDataStoreTest extends HBaseTest with LazyLogging {
 
       query.getHints.put(QueryHints.EXACT_COUNT, true)
       ds.getFeatureSource(query.getTypeName).getFeatures(query).size() mustEqual results.length
-    }
-
-    // verify ranges are grouped appropriately to not cross shard boundaries
-    forall(ds.getQueryPlan(query).flatMap(_.scans)) { scan =>
-      if (scan.getStartRow.isEmpty || scan.getStopRow.isEmpty) { ok } else {
-        scan.getStartRow()(0) mustEqual scan.getStopRow()(0)
-      }
     }
   }
 }

@@ -16,6 +16,9 @@
     <category name="org.mortbay.log">
         <priority value="warn"/>
     </category>
+    <category name="org.apache.curator">
+        <priority value="warn"/>
+    </category>
     <category name="BlockStateChange">
         <priority value="warn"/>
     </category>

@@ -46,6 +46,7 @@ Parameter                              Type    Description
 ``geomesa.query.timeout``              String  The max time a query will be allowed to run before being killed. The
                                                timeout is specified as a duration, e.g. ``1 minute`` or ``60 seconds``
 ``geomesa.query.threads``              Integer The number of threads to use per query
+``hbase.coprocessor.threads``          Integer The number of HBase RPC threads to use per coprocessor query
 ``geomesa.query.loose-bounding-box``   Boolean Use loose bounding boxes - queries will be faster but may return extraneous results
 ``hbase.ranges.max-per-extended-scan`` Integer The max number of ranges used for each extended scan
 ``geomesa.stats.generate``             Boolean Toggle collection of statistics (currently not implemented)
