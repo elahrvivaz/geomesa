@@ -63,17 +63,16 @@ trait CoprocessorScan extends StrictLogging {
       val timeout = options.get(GeoMesaCoprocessor.TimeoutOpt).map(_.toLong)
       if (!controller.isCanceled && timeout.forall(_ > System.currentTimeMillis())) {
         val clas = options(GeoMesaCoprocessor.AggregatorClass)
-        WithClose(Class.forName(clas).newInstance().asInstanceOf[Aggregator]) { aggregator =>
-          logger.debug(s"Initializing aggregator $aggregator with options ${options.mkString(", ")}")
-          aggregator.init(options)
+        val aggregator = Class.forName(clas).newInstance().asInstanceOf[Aggregator]
+        logger.debug(s"Initializing aggregator $aggregator with options ${options.mkString(", ")}")
+        aggregator.init(options)
 
-          val scan: Scan = ProtobufUtil.toScan(ClientProtos.Scan.parseFrom(Base64.getDecoder.decode(options(GeoMesaCoprocessor.ScanOpt))))
-          scan.setFilter(FilterList.parseFrom(Base64.getDecoder.decode(options(GeoMesaCoprocessor.FilterOpt))))
+        val scan = ProtobufUtil.toScan(ClientProtos.Scan.parseFrom(Base64.getDecoder.decode(options(GeoMesaCoprocessor.ScanOpt))))
+        scan.setFilter(FilterList.parseFrom(Base64.getDecoder.decode(options(GeoMesaCoprocessor.FilterOpt))))
 
-          WithClose(getScanner(scan)) { scanner =>
-            aggregator.setScanner(scanner)
-            aggregator.aggregate(new CoprocessorAggregateCallback(controller, aggregator, results, timeout))
-          }
+        WithClose(getScanner(scan)) { scanner =>
+          aggregator.setScanner(scanner)
+          aggregator.aggregate(new CoprocessorAggregateCallback(controller, aggregator, results, timeout))
         }
       }
     } catch {

@@ -12,6 +12,7 @@ import java.nio.charset.StandardCharsets
 
 import org.apache.hadoop.hbase.regionserver.RegionScanner
 import org.locationtech.geomesa.hbase.server.common.HBaseVersionAggregator.VersionAggregator
+import org.locationtech.geomesa.index.iterators.AggregatingScan
 import org.locationtech.geomesa.index.iterators.AggregatingScan.AggregateCallback
 import org.locationtech.geomesa.utils.conf.GeoMesaProperties
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
@@ -32,25 +33,20 @@ class HBaseVersionAggregator extends HBaseAggregator[VersionAggregator] {
     callback
   }
 
-  override protected def initResult(
+  override protected def createResult(
       sft: SimpleFeatureType,
       transform: Option[SimpleFeatureType],
       batchSize: Int,
       options: Map[String, String]): VersionAggregator = throw new NotImplementedError()
 
   override protected def defaultBatchSize: Int = throw new NotImplementedError()
-
-  override protected def aggregateResult(sf: SimpleFeature, result: VersionAggregator): Int =
-    throw new NotImplementedError()
-
-  override protected def encodeResult(result: VersionAggregator): Array[Byte] = throw new NotImplementedError()
-
-  override protected def closeResult(result: VersionAggregator): Unit = {}
 }
 
 object HBaseVersionAggregator {
-  class VersionAggregator {
-    def isEmpty: Boolean = false
-    def clear(): Unit = {}
+  class VersionAggregator extends AggregatingScan.Result {
+    override def init(): Unit = {}
+    override def aggregate(sf: SimpleFeature): Int = 1
+    override def encode(): Array[Byte] = GeoMesaProperties.ProjectVersion.getBytes(StandardCharsets.UTF_8)
+    override def cleanup(): Unit = {}
   }
 }

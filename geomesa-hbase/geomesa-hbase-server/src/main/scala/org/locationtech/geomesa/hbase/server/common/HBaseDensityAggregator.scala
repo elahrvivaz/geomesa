@@ -9,6 +9,6 @@
 package org.locationtech.geomesa.hbase.server.common
 
 import org.locationtech.geomesa.index.iterators.DensityScan
-import org.locationtech.geomesa.utils.geotools.RenderingGrid
+import org.locationtech.geomesa.index.iterators.DensityScan.DensityScanResult
 
-class HBaseDensityAggregator extends DensityScan with HBaseAggregator[RenderingGrid]
+class HBaseDensityAggregator extends DensityScan with HBaseAggregator[DensityScanResult]
