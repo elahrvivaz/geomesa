@@ -13,7 +13,7 @@ import java.nio.charset.StandardCharsets
 
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.commons.io.FilenameUtils
-import org.geotools.data.geojson.GeoJSONWriter
+import org.locationtech.geomesa.features.serialization.GeoJsonSerializer
 import org.locationtech.geomesa.tools.Command
 import org.locationtech.geomesa.tools.export.ExportCommand.ExportParams
 import org.locationtech.geomesa.tools.export.formats.FeatureExporter.{ByteCounter, ByteCounterExporter}
@@ -29,9 +29,10 @@ class LeafletMapExporter(os: OutputStream, counter: ByteCounter)
     extends ByteCounterExporter(counter) with LazyLogging {
 
   private val writer = new OutputStreamWriter(os, StandardCharsets.UTF_8)
+  private val jsonWriter = GeoJsonSerializer.writer(writer)
   private val coordMap = scala.collection.mutable.Map.empty[Coordinate, Int].withDefaultValue(0)
 
-  private var jsonWriter: GeoJSONWriter = _
+  private var jsonSerializer: GeoJsonSerializer = _
 
   private var featureInfo = ""
 
@@ -40,34 +41,31 @@ class LeafletMapExporter(os: OutputStream, counter: ByteCounter)
     writer.write(LeafletMapExporter.IndexHead)
     writer.write("var points = ")
     writer.flush()
-    // TODO hopefully remove this if the geojson writer doesn't close the stream
-    val closeBlocker = new OutputStream {
-      override def write(b: Int): Unit = os.write(b)
-      override def close(): Unit = { /* lol, nope */}
-    }
-    jsonWriter = new GeoJSONWriter(closeBlocker) // starts the feature json
+    jsonSerializer = new GeoJsonSerializer(sft)
+    jsonSerializer.startFeatureCollection(jsonWriter)
   }
 
   override def export(features: Iterator[SimpleFeature]): Option[Long] = {
     var count = 0L
     while (features.hasNext) {
       val feature = features.next
-      jsonWriter.write(feature)
+      jsonSerializer.write(jsonWriter, feature)
       val geom = feature.getDefaultGeometry.asInstanceOf[Geometry]
       if (geom != null) {
         geom.getCoordinates.foreach(c => coordMap(c) += 1)
       }
       count += 1L
     }
-    writer.flush()
+    jsonWriter.flush()
     Some(count)
   }
 
   override def close(): Unit  = {
     try {
       // finish writing GeoJson
-      if (jsonWriter != null) {
-        jsonWriter.close()
+      if (jsonSerializer != null) {
+        jsonSerializer.endFeatureCollection(jsonWriter)
+        jsonWriter.flush()
       }
       writer.write(";\n\n")
       writer.write(featureInfo)
@@ -88,7 +86,7 @@ class LeafletMapExporter(os: OutputStream, counter: ByteCounter)
       writer.write("\n    ], { radius: 25 });\n\n")
       writer.write(LeafletMapExporter.IndexTail)
     } finally {
-      writer.close()
+      jsonWriter.close()
     }
   }
 }

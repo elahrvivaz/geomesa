@@ -8,29 +8,37 @@
 
 package org.locationtech.geomesa.tools.export.formats
 
-import java.io.OutputStream
+import java.io.{OutputStream, OutputStreamWriter}
 
-import org.geotools.data.geojson.GeoJSONWriter
+import org.locationtech.geomesa.features.serialization.GeoJsonSerializer
 import org.locationtech.geomesa.tools.export.formats.FeatureExporter.{ByteCounter, ByteCounterExporter}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 
 class GeoJsonExporter(os: OutputStream, counter: ByteCounter) extends ByteCounterExporter(counter) {
 
-  private var writer: GeoJSONWriter = _
+  private val writer = GeoJsonSerializer.writer(new OutputStreamWriter(os))
+
+  private var serializer: GeoJsonSerializer = _
 
   override def start(sft: SimpleFeatureType): Unit = {
-    writer = new GeoJSONWriter(os)
+    serializer = new GeoJsonSerializer(sft)
+    serializer.startFeatureCollection(writer)
   }
 
   override def export(features: Iterator[SimpleFeature]): Option[Long] = {
     var count = 0L
     while (features.hasNext) {
-      writer.write(features.next)
+      serializer.write(writer, features.next)
       count += 1L
     }
-    // TODO writer.flush()
+    writer.flush()
     Some(count)
   }
 
-  override def close(): Unit = if (writer != null) { writer.close() }
+  override def close(): Unit = {
+    if (serializer != null) {
+      serializer.endFeatureCollection(writer)
+    }
+    writer.close()
+  }
 }
