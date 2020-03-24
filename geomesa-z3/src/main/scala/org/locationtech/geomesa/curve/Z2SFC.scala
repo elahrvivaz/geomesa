@@ -30,14 +30,14 @@ class Z2SFC(precision: Int) extends SpaceFillingCurve {
         s"Value(s) out of bounds ([${lon.min},${lon.max}], [${lat.min},${lat.max}]): $x, $y")
       Z2(lon.normalize(x), lat.normalize(y)).z
     } catch {
-      case _: IllegalArgumentException if lenient => lenientIndex(x, y).z
+      case _: IllegalArgumentException if lenient => lenientIndex(x, y)
     }
   }
 
-  protected def lenientIndex(x: Double, y: Double): Z2 = {
+  protected def lenientIndex(x: Double, y: Double): Long = {
     val bx = if (x < lon.min) { lon.min } else if (x > lon.max) { lon.max } else { x }
     val by = if (y < lat.min) { lat.min } else if (y > lat.max) { lat.max } else { y }
-    Z2(lon.normalize(bx), lat.normalize(by))
+    Z2(lon.normalize(bx), lat.normalize(by)).z
   }
 
   override def invert(z: Long): (Double, Double) = {
