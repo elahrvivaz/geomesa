@@ -16,19 +16,19 @@ import scala.collection.JavaConversions._
 /**
   * S2 space-filling curve
   */
-class S2SFC(minLevel: Int, maxLevel: Int, levelMod: Int, maxCells: Int) extends SpaceFillingCurve[S2CellId] {
+class S2SFC(minLevel: Int, maxLevel: Int, levelMod: Int, maxCells: Int) extends SpaceFillingCurve {
 
   import S2SFC.{LatMax, LatMin, LonMax, LonMin}
 
-  override def index(x: Double, y: Double, lenient: Boolean): S2CellId = {
+  override def index(x: Double, y: Double, lenient: Boolean): Long = {
     if (lenient) {
       val bx = if (x < LonMin) { LonMin } else if (x > LonMax) { LonMax } else { x }
       val by = if (y < LatMin) { LatMin } else if (y > LatMax) { LatMax } else { y }
-      S2CellId.fromLatLng(S2LatLng.fromDegrees(by, bx))
+      S2CellId.fromLatLng(S2LatLng.fromDegrees(by, bx)).id()
     } else {
       require(x >= LonMin && x <= LonMax && y >= LatMin && y <= LatMax,
         s"Value(s) out of bounds ([$LonMin,$LonMax], [$LatMin,$LatMax]): $x, $y")
-      S2CellId.fromLatLng(S2LatLng.fromDegrees(y, x))
+      S2CellId.fromLatLng(S2LatLng.fromDegrees(y, x)).id()
     }
   }
 
@@ -52,8 +52,8 @@ class S2SFC(minLevel: Int, maxLevel: Int, levelMod: Int, maxCells: Int) extends 
     s2CellUnion.cellIds().toSeq.map(c => IndexRange(c.rangeMin().id(), c.rangeMax().id(), contained = true))
   }
 
-  override def invert(i: S2CellId): (Double, Double) = {
-    val latLon = i.toLatLng
+  override def invert(i: Long): (Double, Double) = {
+    val latLon = new S2CellId(i).toLatLng
     (latLon.lngDegrees(), latLon.latDegrees())
   }
 }
