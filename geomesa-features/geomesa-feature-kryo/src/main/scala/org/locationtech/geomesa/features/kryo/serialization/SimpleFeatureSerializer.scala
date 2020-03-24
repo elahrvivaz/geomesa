@@ -32,7 +32,7 @@ class SimpleFeatureSerializer(sft: SimpleFeatureType, opts: Set[SerializationOpt
     output.write(bytes)
   }
 
-  override def read(kryo: Kryo, input: Input, typ: Class[SimpleFeature]): SimpleFeature = {
+  override def read(kryo: Kryo, input: Input, typ: Class[_ <: SimpleFeature]): SimpleFeature = {
     val bytes = Array.ofDim[Byte](input.readInt(true))
     input.read(bytes)
     serializer.deserialize(bytes)

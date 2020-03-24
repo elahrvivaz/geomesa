@@ -52,7 +52,7 @@ object StatSerializer {
 
     override def serialize(stat: Stat): Array[Byte] = {
       val output = KryoStatSerializer.outputs.getOrElseUpdate(new Output(1024, -1))
-      output.clear()
+      output.setOutputStream(null) // resets the buffer
       KryoStatSerializer.write(output, sft, stat)
       output.toBytes
     }

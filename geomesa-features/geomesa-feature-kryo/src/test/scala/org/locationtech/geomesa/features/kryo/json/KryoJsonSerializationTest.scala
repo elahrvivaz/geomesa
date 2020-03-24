@@ -81,7 +81,7 @@ class KryoJsonSerializationTest extends Specification {
         s"""{ "type": "Feature", "geometry": $geom, "properties": { "prop0": "value0", "prop1": { "this": "that" } } }"""
       }
       forall(jsons) { json =>
-        out.clear()
+        out.reset()
         KryoJsonSerialization.serialize(out, json)
         val bytes = out.toBytes
         bytes must not(beEmpty)

@@ -10,8 +10,8 @@ package org.locationtech.geomesa.features.kryo.serialization
 
 import com.esotericsoftware.kryo.io.{Input, Output}
 import com.esotericsoftware.kryo.{Kryo, Serializer}
-import org.locationtech.jts.geom.Geometry
 import org.locationtech.geomesa.features.kryo.KryoFeatureSerializer
+import org.locationtech.jts.geom.Geometry
 
 /**
  * Kryo serializer for geometries.  Not thread safe.
@@ -23,7 +23,7 @@ class GeometrySerializer extends Serializer[Geometry] {
     KryoGeometrySerialization.serialize(output, geom)
   }
 
-  override def read(kryo: Kryo, input: Input, typ: Class[Geometry]): Geometry = {
+  override def read(kryo: Kryo, input: Input, typ: Class[_ <: Geometry]): Geometry = {
     input.readByte() // version - not used
     KryoGeometrySerialization.deserialize(input)
   }
