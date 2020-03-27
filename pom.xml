@@ -77,7 +77,7 @@
         <gdal.version>2.0.0</gdal.version>
         <json4s.version>3.5.4</json4s.version>
         <scalatra.version>2.6.3</scalatra.version>
-        <kryo.version>5.0.0-RC5</kryo.version>
+        <kryo.version>3.0.3</kryo.version>
         <arrow.version>0.16.0</arrow.version>
         <netty.version>4.1.17.Final</netty.version>
         <metrics.version>3.2.6</metrics.version>
@@ -1387,7 +1387,7 @@
             </dependency>
             <dependency>
                 <groupId>com.esotericsoftware</groupId>
-                <artifactId>kryo</artifactId>
+                <artifactId>kryo-shaded</artifactId>
                 <version>${kryo.version}</version>
             </dependency>
             <dependency>

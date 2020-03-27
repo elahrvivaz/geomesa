@@ -23,7 +23,7 @@ class GeometrySerializer extends Serializer[Geometry] {
     KryoGeometrySerialization.serialize(output, geom)
   }
 
-  override def read(kryo: Kryo, input: Input, typ: Class[_ <: Geometry]): Geometry = {
+  override def read(kryo: Kryo, input: Input, typ: Class[Geometry]): Geometry = {
     input.readByte() // version - not used
     KryoGeometrySerialization.deserialize(input)
   }

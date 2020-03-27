@@ -43,7 +43,7 @@ class GeoMesaSparkKryoRegistrator extends KryoRegistrator {
         serializer.write(kryo, out, feature)
       }
 
-      override def read(kryo: Kryo, in: Input, clazz: Class[_ <: SimpleFeature]): SimpleFeature = {
+      override def read(kryo: Kryo, in: Input, clazz: Class[SimpleFeature]): SimpleFeature = {
         val id = in.readInt(true)
         var serializer = cache.get(id)
         if (serializer == null) {

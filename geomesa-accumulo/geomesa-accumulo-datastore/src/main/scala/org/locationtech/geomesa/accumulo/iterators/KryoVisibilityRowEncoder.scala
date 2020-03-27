@@ -181,7 +181,7 @@ class KryoVisibilityRowEncoder extends RowEncodingIterator {
       nullBytesV2 = Array.tabulate(sft.getAttributeCount) { i =>
         val descriptor = sft.getDescriptor(i)
         val bindings = ObjectType.selectType(descriptor)
-        output.reset()
+        output.clear()
         bindings.head match {
           case ObjectType.STRING if bindings.last != ObjectType.JSON => output.writeString(null) // write string supports nulls
           case ObjectType.LIST | ObjectType.MAP | ObjectType.BYTES   => output.writeInt(-1, true)
@@ -220,7 +220,7 @@ object KryoVisibilityRowEncoder {
   }
 
   private def encodeV2(values: Array[Array[Byte]], output: Output, offsets: Array[Int]): Value = {
-    output.reset()
+    output.clear()
     output.writeInt(KryoFeatureSerializer.Version2, true)
     output.setPosition(5) // leave 4 bytes to write the offsets
     // note: we don't write ID - tables are assumed to be using serialization without IDs
