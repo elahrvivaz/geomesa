@@ -177,8 +177,8 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
 
     val authProvider = buildAuthsProvider(connector, params)
     val auditProvider = buildAuditProvider(params)
-    val auditQueries = AuditQueriesParam.lookup(params).booleanValue()
-    
+    val auditWriter = Class.forName(AuditQueriesParam.lookup(params)).newInstance().asInstanceOf[AuditWriter]
+    auditWriter.init(AccumuloAuditService.config(params, connector, auditProvider))
     val auditService = new AccumuloAuditService(connector, authProvider, s"${catalog}_queries", auditQueries)
 
     val queries = AccumuloQueryConfig(

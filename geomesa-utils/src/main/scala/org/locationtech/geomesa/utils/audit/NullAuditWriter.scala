@@ -11,6 +11,7 @@ package org.locationtech.geomesa.utils.audit
 import scala.reflect.ClassTag
 
 class NullAuditWriter extends AuditWriter {
+  override def init(params: java.util.Map[String, _ <: AnyRef]): Unit = {}
   override def writeEvent[T <: AuditedEvent](event: T)(implicit ct: ClassTag[T]): Unit = {}
   override def close(): Unit = {}
 }

@@ -18,6 +18,13 @@ import scala.reflect.ClassTag
 trait AuditWriter extends Closeable {
 
   /**
+   * Initialze the writer
+   *
+   * @param params params
+   */
+  def init(params: java.util.Map[String, _ <: AnyRef]): Unit
+
+  /**
    * Writes an event asynchronously
    *
    * @param event event to write

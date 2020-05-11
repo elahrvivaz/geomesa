@@ -9,9 +9,11 @@
 package org.locationtech.geomesa.accumulo.audit
 
 import java.time.ZonedDateTime
+import java.util
 
 import org.apache.accumulo.core.client.Connector
 import org.apache.accumulo.core.security.Authorizations
+import org.locationtech.geomesa.accumulo.data.AccumuloDataStoreParams.CatalogParam
 import org.locationtech.geomesa.index.audit.QueryEvent
 import org.locationtech.geomesa.security.AuthorizationsProvider
 import org.locationtech.geomesa.utils.audit._
@@ -21,10 +23,19 @@ import scala.reflect.ClassTag
 class AccumuloAuditService(connector: Connector,
                            authProvider: AuthorizationsProvider,
                            val table: String,
-                           write: Boolean) extends AuditWriter with AuditReader with AuditLogger {
+                           write: Boolean) extends AuditWriter with AuditReader {
 
-  private val writer = if (write) { new AccumuloEventWriter(connector, table) } else { null }
+  import AccumuloAuditService.{AccumuloAuditServiceConnectorKey, AccumuloAuditServiceAuditProviderKey}
+
+  private var writer: AccumuloEventWriter = _
   private val reader = new AccumuloEventReader(connector, table)
+
+  override def init(params: java.util.Map[String, _ <: AnyRef]): Unit = {
+    val connector = params.get(AccumuloAuditServiceConnectorKey).asInstanceOf[Connector]
+    val provider = params.get(AccumuloAuditServiceAuditProviderKey).asInstanceOf[AuthorizationsProvider]
+    val catalog = CatalogParam.lookup(params)
+        = if (write) { new AccumuloEventWriter(connector, table) } else { null }
+  }
 
   override def writeEvent[T <: AuditedEvent](event: T)(implicit ct: ClassTag[T]): Unit = {
     if (writer != null) {
@@ -56,6 +67,21 @@ class AccumuloAuditService(connector: Connector,
 }
 
 object AccumuloAuditService {
+
   val StoreType = "accumulo-vector"
+
+  val AccumuloAuditServiceConnectorKey = "geomesa.internal.audit.connector"
+  val AccumuloAuditServiceAuditProviderKey = "geomesa.internal.audit.connector"
+
+  def config(
+      params: java.util.Map[String, _ <: AnyRef],
+      connector: Connector,
+      provider: AuditProvider): java.util.Map[String, AnyRef] = {
+    val map = new java.util.HashMap[String, AnyRef]()
+    map.putAll(params)
+    map.put(AccumuloAuditServiceConnectorKey, connector)
+    map.put(AccumuloAuditServiceAuditProviderKey, provider)
+    map
+  }
 }
 

@@ -16,9 +16,11 @@ import scala.reflect.ClassTag
 /**
  * Implemented AuditWriter by logging events as json
  */
-trait AuditLogger extends AuditWriter with LazyLogging {
+class AuditLogger extends AuditWriter with LazyLogging {
 
   private val gson: Gson = new GsonBuilder().serializeNulls().create()
+
+  override def init(params: java.util.Map[String, _ <: AnyRef]): Unit = {}
 
   override def writeEvent[T <: AuditedEvent](event: T)(implicit ct: ClassTag[T]): Unit =
     logger.debug(gson.toJson(event))
