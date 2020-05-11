@@ -12,7 +12,8 @@ import java.io.Serializable
 import java.util.concurrent.TimeUnit
 
 import org.locationtech.geomesa.index.conf.{QueryProperties, StatsProperties}
-import org.locationtech.geomesa.utils.audit.{AuditProvider, AuditWriter}
+import org.locationtech.geomesa.utils.audit.{AuditLogger, AuditProvider, AuditWriter, NoOpAuditProvider, NullAuditWriter}
+import org.locationtech.geomesa.utils.classpath.ServiceLoader
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam.{ConvertedParam, SystemPropertyBooleanParam, SystemPropertyDurationParam}
 
@@ -58,12 +59,26 @@ object GeoMesaDataStoreFactory {
       default = false,
       deprecatedKeys = Seq("looseBoundingBox"))
 
-  val AuditQueriesParam =
-    new GeoMesaParam[java.lang.Boolean](
+  val AuditQueriesParam: GeoMesaParam[String] =
+    new GeoMesaParam[String](
       "geomesa.query.audit",
-      "Audit queries being run",
-      default = true,
-      deprecatedKeys = Seq("auditQueries", "collectQueryStats"))
+      "Class for auditing queries that are run",
+      default = classOf[AuditLogger].getName,
+      enumerations = ServiceLoader.load[AuditWriter]().map(_.getClass.getName),
+      deprecatedParams = Seq("auditQueries", "collectQueryStats").map(DeprecatedAuditQueries.apply)) {
+
+      override def lookUp(map: java.util.Map[String, _]): AnyRef = {
+        // handle old true/false configs
+        def deprecation(): Unit = deprecationWarning(s"$key: Boolean")
+        map.get(key) match {
+          case java.lang.Boolean.TRUE | true            => deprecation(); classOf[AuditLogger].getName
+          case s: String if s.equalsIgnoreCase("true")  => deprecation(); classOf[AuditLogger].getName
+          case java.lang.Boolean.FALSE | false          => deprecation(); classOf[NullAuditWriter].getName
+          case s: String if s.equalsIgnoreCase("false") => deprecation(); classOf[NullAuditWriter].getName
+          case _ => super.lookUp(map)
+        }
+      }
+    }
 
   val CachingParam =
     new GeoMesaParam[java.lang.Boolean](
@@ -126,4 +141,8 @@ object GeoMesaDataStoreFactory {
     def ParameterInfo: Array[GeoMesaParam[_]]
     def canProcess(params: java.util.Map[String, _ <: Serializable]): Boolean
   }
+
+  private case class DeprecatedAuditQueries(k: String)
+      extends ConvertedParam[String, java.lang.Boolean](k,
+        v => if (v) { classOf[AuditLogger].getName } else { classOf[NoOpAuditProvider].getName })
 }

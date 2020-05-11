@@ -8,16 +8,26 @@
 
 package org.locationtech.geomesa.utils.audit
 
-import java.io.Serializable
-import java.util.Collections
+import java.io.Closeable
+import java.time.ZonedDateTime
 
-class NoOpAuditProvider extends AuditProvider {
+import scala.reflect.ClassTag
 
-  override val getCurrentUserId: String = "unknown"
+/**
+ * Reads an audited event
+ */
+trait AuditReader extends Closeable {
 
-  override val getCurrentUserDetails: java.util.Map[AnyRef, AnyRef] = Collections.emptyMap()
-
-  override def configure(params: java.util.Map[String, _ <: Serializable]): Unit = {}
+  /**
+   * Retrieves stored events
+   *
+   * @param typeName simple feature type name
+   * @param dates dates to retrieve stats for
+   * @tparam T event type
+   * @return iterator of events
+   */
+  def getEvents[T <: AuditedEvent](
+      typeName: String,
+      dates: (ZonedDateTime, ZonedDateTime)
+    )(implicit ct: ClassTag[T]): Iterator[T]
 }
-
-object NoOpAuditProvider extends NoOpAuditProvider

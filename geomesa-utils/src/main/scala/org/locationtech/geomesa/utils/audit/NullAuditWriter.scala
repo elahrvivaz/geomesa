@@ -6,19 +6,11 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  ***********************************************************************/
 
-package org.locationtech.geomesa.index.audit
+package org.locationtech.geomesa.utils.audit
 
-import org.locationtech.geomesa.utils.audit.AuditedEvent
+import scala.reflect.ClassTag
 
-case class QueryEvent(
-    storeType: String,
-    typeName: String,
-    date:     Long,
-    user:     String,
-    filter:   String,
-    hints:    String,
-    planTime: Long,
-    scanTime: Long,
-    hits:     Long,
-    deleted:  Boolean = false
-  ) extends AuditedEvent
+class NullAuditWriter extends AuditWriter {
+  override def writeEvent[T <: AuditedEvent](event: T)(implicit ct: ClassTag[T]): Unit = {}
+  override def close(): Unit = {}
+}

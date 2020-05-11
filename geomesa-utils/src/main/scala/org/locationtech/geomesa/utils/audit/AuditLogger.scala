@@ -8,16 +8,22 @@
 
 package org.locationtech.geomesa.utils.audit
 
-import java.io.Serializable
-import java.util.Collections
+import com.google.gson.{Gson, GsonBuilder}
+import com.typesafe.scalalogging.LazyLogging
 
-class NoOpAuditProvider extends AuditProvider {
+import scala.reflect.ClassTag
 
-  override val getCurrentUserId: String = "unknown"
+/**
+ * Implemented AuditWriter by logging events as json
+ */
+trait AuditLogger extends AuditWriter with LazyLogging {
 
-  override val getCurrentUserDetails: java.util.Map[AnyRef, AnyRef] = Collections.emptyMap()
+  private val gson: Gson = new GsonBuilder().serializeNulls().create()
 
-  override def configure(params: java.util.Map[String, _ <: Serializable]): Unit = {}
+  override def writeEvent[T <: AuditedEvent](event: T)(implicit ct: ClassTag[T]): Unit =
+    logger.debug(gson.toJson(event))
+
+  override def close(): Unit = {}
 }
 
-object NoOpAuditProvider extends NoOpAuditProvider
+object AuditLogger extends AuditLogger

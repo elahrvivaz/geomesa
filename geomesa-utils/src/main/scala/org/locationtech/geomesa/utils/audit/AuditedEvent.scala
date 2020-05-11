@@ -42,64 +42,11 @@ trait AuditedEvent {
     * @return
     */
   def date: Long
-}
-
-/**
-  * An event that can be soft-deleted
-  */
-trait DeletableEvent extends AuditedEvent {
 
   /**
-    * Has the event been marked as deleted?
-    *
-    * @return
-    */
+   * Has the event been marked as deleted?
+   *
+   * @return
+   */
   def deleted: Boolean
 }
-
-/**
-  * Writes an audited event
-  */
-trait AuditWriter extends Closeable {
-
-  /**
-    * Writes an event asynchronously
-    *
-    * @param event event to write
-    * @tparam T event type
-    */
-  def writeEvent[T <: AuditedEvent](event: T)(implicit ct: ClassTag[T]): Unit
-}
-
-/**
-  * Reads an audited event
-  */
-trait AuditReader extends Closeable {
-
-  /**
-    * Retrieves stored events
-    *
-    * @param typeName simple feature type name
-    * @param dates dates to retrieve stats for
-    * @tparam T event type
-    * @return iterator of events
-    */
-  def getEvents[T <: AuditedEvent](typeName: String,
-                                   dates: (ZonedDateTime, ZonedDateTime))
-                                  (implicit ct: ClassTag[T]): Iterator[T]
-}
-
-/**
-  * Implemented AuditWriter by logging events as json
-  */
-trait AuditLogger extends AuditWriter with LazyLogging {
-
-  private val gson: Gson = new GsonBuilder().serializeNulls().create()
-
-  override def writeEvent[T <: AuditedEvent](event: T)(implicit ct: ClassTag[T]): Unit =
-    logger.debug(gson.toJson(event))
-
-  override def close(): Unit = {}
-}
-
-object AuditLogger extends AuditLogger

@@ -6,19 +6,22 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  ***********************************************************************/
 
-package org.locationtech.geomesa.index.audit
+package org.locationtech.geomesa.utils.audit
 
-import org.locationtech.geomesa.utils.audit.AuditedEvent
+import java.io.Closeable
 
-case class QueryEvent(
-    storeType: String,
-    typeName: String,
-    date:     Long,
-    user:     String,
-    filter:   String,
-    hints:    String,
-    planTime: Long,
-    scanTime: Long,
-    hits:     Long,
-    deleted:  Boolean = false
-  ) extends AuditedEvent
+import scala.reflect.ClassTag
+
+/**
+ * Writes an audited event
+ */
+trait AuditWriter extends Closeable {
+
+  /**
+   * Writes an event asynchronously
+   *
+   * @param event event to write
+   * @tparam T event type
+   */
+  def writeEvent[T <: AuditedEvent](event: T)(implicit ct: ClassTag[T]): Unit
+}

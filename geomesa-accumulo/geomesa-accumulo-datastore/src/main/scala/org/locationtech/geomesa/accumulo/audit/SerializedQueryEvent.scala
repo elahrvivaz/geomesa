@@ -13,14 +13,17 @@ import java.util.Map.Entry
 
 import org.apache.accumulo.core.data.{Key, Mutation, Value}
 import org.apache.hadoop.io.Text
-import org.locationtech.geomesa.utils.audit.DeletableEvent
+import org.locationtech.geomesa.utils.audit.AuditedEvent
 
-case class SerializedQueryEvent(storeType: String,
-                                typeName: String,
-                                date:     Long,
-                                deleted:  Boolean,
-                                entries:  Map[(Text, Text), Value]) extends DeletableEvent {
-  lazy val user = entries.find(_._1._2 == AccumuloQueryEventTransform.CQ_USER).map(_._2.toString).getOrElse("unknown")
+case class SerializedQueryEvent(
+    storeType: String,
+    typeName: String,
+    date:     Long,
+    deleted:  Boolean,
+    entries:  Map[(Text, Text), Value]
+  ) extends AuditedEvent {
+  lazy val user: String =
+    entries.find(_._1._2 == AccumuloQueryEventTransform.CQ_USER).map(_._2.toString).getOrElse("unknown")
 }
 
 object SerializedQueryEventTransform extends AccumuloEventTransform[SerializedQueryEvent] {

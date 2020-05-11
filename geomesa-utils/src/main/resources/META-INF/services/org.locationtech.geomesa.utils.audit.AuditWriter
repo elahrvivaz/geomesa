@@ -1,0 +1,2 @@
+org.locationtech.geomesa.utils.audit.AuditLogger
+org.locationtech.geomesa.utils.audit.NullAuditWriter
