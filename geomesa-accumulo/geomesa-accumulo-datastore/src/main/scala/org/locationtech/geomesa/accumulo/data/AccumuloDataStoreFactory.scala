@@ -90,7 +90,7 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
       RemoteDensityParam,
       RemoteStatsParam,
       GenerateStatsParam,
-      AuditQueriesParam,
+      GeoMesaParam.copy(AuditQueriesParam)(default = classOf[AccumuloAuditService].getName),
       LooseBBoxParam,
       CachingParam,
       AuthsParam,
@@ -178,8 +178,7 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
     val authProvider = buildAuthsProvider(connector, params)
     val auditProvider = buildAuditProvider(params)
     val auditWriter = Class.forName(AuditQueriesParam.lookup(params)).newInstance().asInstanceOf[AuditWriter]
-    auditWriter.init(AccumuloAuditService.config(params, connector, auditProvider))
-    val auditService = new AccumuloAuditService(connector, authProvider, s"${catalog}_queries", auditQueries)
+    auditWriter.init(AccumuloAuditService.config(params, connector, authProvider))
 
     val queries = AccumuloQueryConfig(
       threads = QueryThreadsParam.lookup(params),
@@ -200,7 +199,7 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
       catalog = catalog,
       generateStats = GenerateStatsParam.lookup(params),
       authProvider = authProvider,
-      audit = Some(auditService, auditProvider, AccumuloAuditService.StoreType),
+      audit = Some(auditWriter, auditProvider, AccumuloAuditService.StoreType),
       queries = queries,
       remote = remote,
       writeThreads = WriteThreadsParam.lookup(params),

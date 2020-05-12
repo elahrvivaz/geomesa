@@ -163,6 +163,25 @@ object GeoMesaParam {
 
   val SupportsNiFiExpressions = "geomesa.nifi.expressions"
 
+  def copy[T](
+      param: GeoMesaParam[T]
+    )(_key: String = param.key,
+      desc: String = param.description.toString,
+      optional: Boolean = !param.required,
+      default: T = param.default,
+      password: Boolean = param.password,
+      largeText: Boolean = param.largeText,
+      extension: String = param.extension,
+      deprecatedKeys: Seq[String] = param.deprecatedKeys,
+      deprecatedParams: Seq[DeprecatedParam[T]] = param.deprecatedParams,
+      systemProperty: Option[SystemPropertyParam[T]] = param.systemProperty,
+      enumerations: Seq[T] = param.enumerations,
+      supportsNiFiExpressions: Boolean = param.supportsNiFiExpressions
+    )(implicit ct: ClassTag[T]): GeoMesaParam[T] = {
+    new GeoMesaParam[T](_key, desc, optional, default, password, largeText, extension, deprecatedKeys,
+      deprecatedParams, systemProperty, enumerations, supportsNiFiExpressions)
+  }
+
   trait DeprecatedParam[T <: AnyRef] {
     def key: String
     def lookup(params: java.util.Map[String, _], required: Boolean): T
@@ -197,19 +216,19 @@ object GeoMesaParam {
     override def option: Option[Duration] = prop.toDuration
   }
 
-  def binding[T <: AnyRef](ct: ClassTag[T]): Class[_] = ct.runtimeClass match {
+  private def binding[T <: AnyRef](ct: ClassTag[T]): Class[_] = ct.runtimeClass match {
     case c if c == classOf[Duration] | c == classOf[Properties] => classOf[String]
     case c => c
   }
 
-  def sample[T <: AnyRef](value: T): AnyRef = value match {
+  private def sample[T <: AnyRef](value: T): AnyRef = value match {
     case null => null
     case v: Duration => printDuration(v)
     case v: Properties => printProperties(v)
     case v => v
   }
 
-  def metadata(
+  private def metadata(
       password: Boolean,
       largeText: Boolean,
       extension: String,

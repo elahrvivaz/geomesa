@@ -18,6 +18,7 @@ import org.locationtech.geomesa.utils.geotools.GeoMesaParam
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam.{ConvertedParam, SystemPropertyBooleanParam, SystemPropertyDurationParam}
 
 import scala.concurrent.duration.Duration
+import scala.reflect.ClassTag
 
 object GeoMesaDataStoreFactory {
 
@@ -59,13 +60,22 @@ object GeoMesaDataStoreFactory {
       default = false,
       deprecatedKeys = Seq("looseBoundingBox"))
 
-  val AuditQueriesParam: GeoMesaParam[String] =
+  val AuditQueriesParam: GeoMesaParam[String] with ServiceParam[AuditWriter] =
     new GeoMesaParam[String](
       "geomesa.query.audit",
       "Class for auditing queries that are run",
       default = classOf[AuditLogger].getName,
       enumerations = ServiceLoader.load[AuditWriter]().map(_.getClass.getName),
-      deprecatedParams = Seq("auditQueries", "collectQueryStats").map(DeprecatedAuditQueries.apply)) {
+      deprecatedParams = Seq("auditQueries", "collectQueryStats").map(DeprecatedAuditQueries.apply)
+    ) with ServiceParam[AuditWriter] {
+
+      override protected def ct: ClassTag[AuditWriter] = ClassTag(classOf[AuditWriter])
+
+      override def load(params: java.util.Map[String, _]): Option[AuditWriter] = {
+        val opt = super.load(params)
+        opt.foreach(_.init(params))
+        opt
+      }
 
       override def lookUp(map: java.util.Map[String, _]): AnyRef = {
         // handle old true/false configs
@@ -96,6 +106,22 @@ object GeoMesaDataStoreFactory {
       systemProperty = Some(GenerateStatsSysParam))
 
   val NamespaceParam = new GeoMesaParam[String]("namespace", "Namespace")
+
+  trait ServiceParam[T] extends GeoMesaParam[String] {
+
+    protected def ct: ClassTag[T]
+
+    def load(params: java.util.Map[String, _]): Option[T] = {
+      lookupOpt(params).map { name =>
+        val all = ServiceLoader.load[T]()(ct)
+        all.find(_.getClass.getName == name).getOrElse {
+          throw new IllegalArgumentException(
+            s"Could not load service class '$name'. Available providers: " +
+                all.map(_.getClass.getName).mkString("'", "', '", "'"))
+        }
+      }
+    }
+  }
 
   trait NamespaceConfig {
     def namespace: Option[String]

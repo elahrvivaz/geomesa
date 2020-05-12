@@ -97,8 +97,8 @@ class AccumuloDataStore(val connector: Connector, override val config: AccumuloD
   }
 
   override def getAllTableNames(typeName: String): Seq[String] = {
-    val others = Seq(stats.metadata.table) ++ config.audit.map(_._1.asInstanceOf[AccumuloAuditService].table).toSeq
-    super.getAllTableNames(typeName) ++ others
+    val queries = config.audit.collect { case (a: AccumuloAuditService, _, _) => a.table }
+    super.getAllTableNames(typeName) ++ Seq(stats.metadata.table) ++ queries
   }
 
   // data store hooks

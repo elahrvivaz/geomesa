@@ -21,7 +21,7 @@ import org.locationtech.geomesa.index.geotools.GeoMesaDataStoreFactory.{DataStor
 import org.locationtech.geomesa.redis.data.index.RedisAgeOff
 import org.locationtech.geomesa.security
 import org.locationtech.geomesa.security.AuthorizationsProvider
-import org.locationtech.geomesa.utils.audit.{AuditLogger, AuditProvider, AuditWriter, NoOpAuditProvider}
+import org.locationtech.geomesa.utils.audit.{AuditProvider, AuditWriter, NoOpAuditProvider}
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam
 import redis.clients.jedis.JedisPool
 import redis.clients.jedis.util.JedisURIHelper
@@ -120,8 +120,8 @@ object RedisDataStoreFactory extends GeoMesaDataStoreInfo with LazyLogging {
     val generateStats = GenerateStatsParam.lookup(params)
     val pipeline = PipelineParam.lookup(params)
 
-    val audit = if (!AuditQueriesParam.lookup(params)) { None } else {
-      Some((AuditLogger, Option(AuditProvider.Loader.load(params)).getOrElse(NoOpAuditProvider), "redis"))
+    val audit = AuditQueriesParam.load(params).map { service =>
+      (service, Option(AuditProvider.Loader.load(params)).getOrElse(NoOpAuditProvider), "redis")
     }
     // get the auth params passed in as a comma-delimited string
     val authProvider = security.getAuthorizationsProvider(params,

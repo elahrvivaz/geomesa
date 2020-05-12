@@ -9,10 +9,11 @@
 package org.locationtech.geomesa.accumulo.audit
 
 import java.time.ZonedDateTime
-import java.util
+import java.util.Collections
 
 import org.apache.accumulo.core.client.Connector
 import org.apache.accumulo.core.security.Authorizations
+import org.locationtech.geomesa.accumulo.data.AccumuloDataStoreParams
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStoreParams.CatalogParam
 import org.locationtech.geomesa.index.audit.QueryEvent
 import org.locationtech.geomesa.security.AuthorizationsProvider
@@ -20,36 +21,40 @@ import org.locationtech.geomesa.utils.audit._
 
 import scala.reflect.ClassTag
 
-class AccumuloAuditService(connector: Connector,
-                           authProvider: AuthorizationsProvider,
-                           val table: String,
-                           write: Boolean) extends AuditWriter with AuditReader {
+class AccumuloAuditService extends AuditWriter with AuditReader {
 
-  import AccumuloAuditService.{AccumuloAuditServiceConnectorKey, AccumuloAuditServiceAuditProviderKey}
+  import AccumuloAuditService.{AccumuloAuditServiceAuthProviderKey, AccumuloAuditServiceConnectorKey}
+
+  import scala.collection.JavaConverters._
 
   private var writer: AccumuloEventWriter = _
-  private val reader = new AccumuloEventReader(connector, table)
+  private var reader: AccumuloEventReader = _
+  private var auths: AuthorizationsProvider = _
+  private var _table: String = _
+
+  def table: String = _table
 
   override def init(params: java.util.Map[String, _ <: AnyRef]): Unit = {
+    auths = params.get(AccumuloAuditServiceAuthProviderKey).asInstanceOf[AuthorizationsProvider]
+    _table = s"${CatalogParam.lookup(params)}_queries"
     val connector = params.get(AccumuloAuditServiceConnectorKey).asInstanceOf[Connector]
-    val provider = params.get(AccumuloAuditServiceAuditProviderKey).asInstanceOf[AuthorizationsProvider]
-    val catalog = CatalogParam.lookup(params)
-        = if (write) { new AccumuloEventWriter(connector, table) } else { null }
+    writer = new AccumuloEventWriter(connector, _table)
+    reader = new AccumuloEventReader(connector, _table)
   }
 
   override def writeEvent[T <: AuditedEvent](event: T)(implicit ct: ClassTag[T]): Unit = {
     if (writer != null) {
       writer.queueStat(event)(transform(ct.runtimeClass.asInstanceOf[Class[T]]))
     }
-    super.writeEvent(event)
+    AuditLogger.writeEvent(event)
   }
 
-  override def getEvents[T <: AuditedEvent](typeName: String,
-                                            dates: (ZonedDateTime, ZonedDateTime))
-                                           (implicit ct: ClassTag[T]): Iterator[T] = {
-    import scala.collection.JavaConverters._
-    val auths = new Authorizations(authProvider.getAuthorizations.asScala: _*)
-    val iter = reader.query(typeName, dates, auths)(transform(ct.runtimeClass.asInstanceOf[Class[T]]))
+  override def getEvents[T <: AuditedEvent](
+      typeName: String,
+      dates: (ZonedDateTime, ZonedDateTime)
+    )(implicit ct: ClassTag[T]): Iterator[T] = {
+    val authorizations = new Authorizations(auths.getAuthorizations.asScala: _*)
+    val iter = reader.query(typeName, dates, authorizations)(transform(ct.runtimeClass.asInstanceOf[Class[T]]))
     iter.asInstanceOf[Iterator[T]]
   }
 
@@ -70,18 +75,28 @@ object AccumuloAuditService {
 
   val StoreType = "accumulo-vector"
 
-  val AccumuloAuditServiceConnectorKey = "geomesa.internal.audit.connector"
-  val AccumuloAuditServiceAuditProviderKey = "geomesa.internal.audit.connector"
+  val AccumuloAuditServiceConnectorKey     = "geomesa.internal.audit.connector"
+  val AccumuloAuditServiceAuthProviderKey  = "geomesa.internal.audit.auths"
 
   def config(
       params: java.util.Map[String, _ <: AnyRef],
       connector: Connector,
-      provider: AuditProvider): java.util.Map[String, AnyRef] = {
+      auths: AuthorizationsProvider): java.util.Map[String, AnyRef] = {
     val map = new java.util.HashMap[String, AnyRef]()
     map.putAll(params)
     map.put(AccumuloAuditServiceConnectorKey, connector)
-    map.put(AccumuloAuditServiceAuditProviderKey, provider)
+    map.put(AccumuloAuditServiceAuthProviderKey, auths)
     map
+  }
+
+  def apply(
+      connector: Connector,
+      catalog: String,
+      auths: AuthorizationsProvider): AccumuloAuditService = {
+    val service = new AccumuloAuditService()
+    val map = Collections.singletonMap(AccumuloDataStoreParams.CatalogParam.key, catalog)
+    service.init(config(map, connector, auths))
+    service
   }
 }
 

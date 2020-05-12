@@ -19,7 +19,7 @@ import org.geotools.data.DataAccessFactory.Param
 import org.geotools.data.{DataStore, DataStoreFactorySpi, Parameter}
 import org.locationtech.geomesa.cassandra.data.CassandraDataStoreFactory.{CassandraDataStoreConfig, CassandraQueryConfig}
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStoreFactory.{DataStoreQueryConfig, GeoMesaDataStoreConfig, GeoMesaDataStoreInfo, GeoMesaDataStoreParams}
-import org.locationtech.geomesa.utils.audit.{AuditLogger, AuditProvider, AuditWriter, NoOpAuditProvider}
+import org.locationtech.geomesa.utils.audit.{AuditProvider, AuditWriter, NoOpAuditProvider}
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam
 
 import scala.util.control.NonFatal
@@ -45,10 +45,8 @@ class CassandraDataStoreFactory extends DataStoreFactorySpi {
     }
     val ks = KeySpaceParam.lookup(params)
     val generateStats = GenerateStatsParam.lookup(params)
-    val audit = if (AuditQueriesParam.lookup(params)) {
-      Some(AuditLogger, Option(AuditProvider.Loader.load(params)).getOrElse(NoOpAuditProvider), "cassandra")
-    } else {
-      None
+    val audit = AuditQueriesParam.load(params).map { service =>
+      (service, Option(AuditProvider.Loader.load(params)).getOrElse(NoOpAuditProvider), "cassandra")
     }
 
     val clusterBuilder =

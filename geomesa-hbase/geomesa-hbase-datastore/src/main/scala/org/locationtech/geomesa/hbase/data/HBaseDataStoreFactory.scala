@@ -24,7 +24,7 @@ import org.locationtech.geomesa.index.geotools.GeoMesaDataStore
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStoreFactory.{DataStoreQueryConfig, GeoMesaDataStoreConfig, GeoMesaDataStoreInfo}
 import org.locationtech.geomesa.security
 import org.locationtech.geomesa.security.AuthorizationsProvider
-import org.locationtech.geomesa.utils.audit.{AuditLogger, AuditProvider, AuditWriter, NoOpAuditProvider}
+import org.locationtech.geomesa.utils.audit.{AuditProvider, AuditWriter, NoOpAuditProvider}
 import org.locationtech.geomesa.utils.conf.GeoMesaSystemProperties.SystemProperty
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam
 
@@ -41,8 +41,8 @@ class HBaseDataStoreFactory extends DataStoreFactorySpi with LazyLogging {
 
     val remoteFilters = RemoteFilteringParam.lookup(params).booleanValue
 
-    val audit = if (!AuditQueriesParam.lookup(params)) { None } else {
-      Some(AuditLogger, Option(AuditProvider.Loader.load(params)).getOrElse(NoOpAuditProvider), "hbase")
+    val audit = AuditQueriesParam.load(params).map { service =>
+      (service, Option(AuditProvider.Loader.load(params)).getOrElse(NoOpAuditProvider), "hbase")
     }
     val auths = if (!EnableSecurityParam.lookup(params)) { None } else {
       Some(HBaseDataStoreFactory.buildAuthsProvider(connection, params))

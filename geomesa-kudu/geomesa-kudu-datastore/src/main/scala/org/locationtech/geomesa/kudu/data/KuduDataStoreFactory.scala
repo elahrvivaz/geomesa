@@ -21,7 +21,7 @@ import org.locationtech.geomesa.kudu.KuduSystemProperties.{AdminOperationTimeout
 import org.locationtech.geomesa.kudu.data.KuduDataStoreFactory.{KuduDataStoreConfig, KuduQueryConfig}
 import org.locationtech.geomesa.security
 import org.locationtech.geomesa.security.AuthorizationsProvider
-import org.locationtech.geomesa.utils.audit.{AuditLogger, AuditProvider, AuditWriter, NoOpAuditProvider}
+import org.locationtech.geomesa.utils.audit.{AuditProvider, AuditWriter, NoOpAuditProvider}
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam
 
 class KuduDataStoreFactory extends DataStoreFactorySpi {
@@ -36,8 +36,8 @@ class KuduDataStoreFactory extends DataStoreFactorySpi {
     val client = KuduDataStoreFactory.buildClient(params)
 
     val generateStats = GenerateStatsParam.lookup(params)
-    val audit = if (!AuditQueriesParam.lookup(params)) { None } else {
-      Some(AuditLogger, Option(AuditProvider.Loader.load(params)).getOrElse(NoOpAuditProvider), "kudu")
+    val audit = AuditQueriesParam.load(params).map { service =>
+      (service, Option(AuditProvider.Loader.load(params)).getOrElse(NoOpAuditProvider), "kudu")
     }
     val authProvider = {
       // get the auth params passed in as a comma-delimited string
