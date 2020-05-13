@@ -17,7 +17,7 @@ import org.geotools.data.util.NullProgressListener
 import org.geotools.data.{FeatureReader, Query, Transaction}
 import org.geotools.feature.FeatureCollection
 import org.geotools.feature.collection.{DecoratingFeatureCollection, DecoratingSimpleFeatureCollection}
-import org.geotools.feature.visitor.{BoundsVisitor, MaxVisitor, MinVisitor}
+import org.geotools.feature.visitor.{BoundsVisitor, MaxVisitor, MinVisitor, UniqueVisitor}
 import org.geotools.geometry.jts.ReferencedEnvelope
 import org.geotools.util.factory.Hints
 import org.locationtech.geomesa.filter.FilterHelper
@@ -138,6 +138,8 @@ class GeoMesaFeatureCollection(source: GeoMesaFeatureSource, original: Query)
 
 object GeoMesaFeatureCollection extends LazyLogging {
 
+  import scala.collection.JavaConverters._
+
   private val oneUp = new AtomicLong(0)
 
   def nextId: String = s"GeoMesaFeatureCollection-${oneUp.getAndIncrement()}"
@@ -244,6 +246,13 @@ object GeoMesaFeatureCollection extends LazyLogging {
             case None           => super.accepts(visitor, progress)
           }
 
+        case v: UniqueVisitor if v.getExpression.isInstanceOf[PropertyName] =>
+          val attribute = v.getExpression.asInstanceOf[PropertyName].getPropertyName
+          unique(attribute, exact = false).orElse(unique(attribute, exact = true)) match {
+            case Some(e) => v.setValue(e.values.toSet.asJava)
+            case None    => super.accepts(visitor, progress)
+          }
+
         case v: GeoMesaProcessVisitor => v.execute(source, query)
 
         case v =>
@@ -254,5 +263,8 @@ object GeoMesaFeatureCollection extends LazyLogging {
 
     private def minMax(attribute: String, exact: Boolean): Option[(Any, Any)] =
       stats.getMinMax[Any](source.getSchema, attribute, query.getFilter, exact).map(_.bounds)
+
+    private def unique(attribute: String, exact: Boolean) =
+      stats.getEnumeration[Any](source.getSchema, attribute, query.getFilter, exact)
   }
 }
