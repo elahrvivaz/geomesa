@@ -60,36 +60,6 @@ object GeoMesaDataStoreFactory {
       default = false,
       deprecatedKeys = Seq("looseBoundingBox"))
 
-  val AuditQueriesParam: GeoMesaParam[String] with ServiceParam[AuditWriter] =
-    new GeoMesaParam[String](
-      "geomesa.query.audit",
-      "Class for auditing queries that are run",
-      default = classOf[AuditLogger].getName,
-      enumerations = ServiceLoader.load[AuditWriter]().map(_.getClass.getName),
-      deprecatedParams = Seq("auditQueries", "collectQueryStats").map(DeprecatedAuditQueries.apply)
-    ) with ServiceParam[AuditWriter] {
-
-      override protected def ct: ClassTag[AuditWriter] = ClassTag(classOf[AuditWriter])
-
-      override def load(params: java.util.Map[String, _]): Option[AuditWriter] = {
-        val opt = super.load(params)
-        opt.foreach(_.init(params))
-        opt
-      }
-
-      override def lookUp(map: java.util.Map[String, _]): AnyRef = {
-        // handle old true/false configs
-        def deprecation(): Unit = deprecationWarning(s"$key: Boolean")
-        map.get(key) match {
-          case java.lang.Boolean.TRUE | true            => deprecation(); classOf[AuditLogger].getName
-          case s: String if s.equalsIgnoreCase("true")  => deprecation(); classOf[AuditLogger].getName
-          case java.lang.Boolean.FALSE | false          => deprecation(); classOf[NullAuditWriter].getName
-          case s: String if s.equalsIgnoreCase("false") => deprecation(); classOf[NullAuditWriter].getName
-          case _ => super.lookUp(map)
-        }
-      }
-    }
-
   val CachingParam =
     new GeoMesaParam[java.lang.Boolean](
       "geomesa.query.caching",
@@ -106,6 +76,36 @@ object GeoMesaDataStoreFactory {
       systemProperty = Some(GenerateStatsSysParam))
 
   val NamespaceParam = new GeoMesaParam[String]("namespace", "Namespace")
+
+  class AuditQueriesParam(default: String = classOf[AuditLogger].getName)
+      extends GeoMesaParam[String](
+      "geomesa.query.audit",
+      "Class for auditing queries that are run",
+      default = default,
+      enumerations = ServiceLoader.load[AuditWriter]().map(_.getClass.getName),
+      deprecatedParams = Seq("auditQueries", "collectQueryStats").map(new DeprecatedAuditQueries(_))
+    ) with ServiceParam[AuditWriter] {
+
+      override protected def ct: ClassTag[AuditWriter] = ClassTag(classOf[AuditWriter])
+
+      override def load(params: java.util.Map[String, _]): Option[AuditWriter] = {
+        val opt = super.load(params)
+        opt.foreach(_.init(params.asInstanceOf[java.util.Map[String, _ <: AnyRef]]))
+        opt
+      }
+
+      override def lookUp(map: java.util.Map[String, _]): AnyRef = {
+        // handle old true/false configs
+        def deprecation(): Unit = deprecationWarning(s"$key: Boolean")
+        map.get(key) match {
+          case java.lang.Boolean.TRUE | true            => deprecation(); classOf[AuditLogger].getName
+          case s: String if s.equalsIgnoreCase("true")  => deprecation(); classOf[AuditLogger].getName
+          case java.lang.Boolean.FALSE | false          => deprecation(); classOf[NullAuditWriter].getName
+          case s: String if s.equalsIgnoreCase("false") => deprecation(); classOf[NullAuditWriter].getName
+          case _ => super.lookUp(map)
+        }
+      }
+    }
 
   trait ServiceParam[T] extends GeoMesaParam[String] {
 
@@ -151,7 +151,7 @@ object GeoMesaDataStoreFactory {
 
     protected def looseBBoxDefault = true
 
-    val AuditQueriesParam  = GeoMesaDataStoreFactory.AuditQueriesParam
+    val AuditQueriesParam  = new GeoMesaDataStoreFactory.AuditQueriesParam()
     val GenerateStatsParam = GeoMesaDataStoreFactory.GenerateStatsParam
     val QueryThreadsParam  = GeoMesaDataStoreFactory.QueryThreadsParam
     val QueryTimeoutParam  = GeoMesaDataStoreFactory.QueryTimeoutParam
@@ -168,7 +168,7 @@ object GeoMesaDataStoreFactory {
     def canProcess(params: java.util.Map[String, _ <: Serializable]): Boolean
   }
 
-  private case class DeprecatedAuditQueries(k: String)
+  private class DeprecatedAuditQueries(k: String)
       extends ConvertedParam[String, java.lang.Boolean](k,
         v => if (v) { classOf[AuditLogger].getName } else { classOf[NoOpAuditProvider].getName })
 }

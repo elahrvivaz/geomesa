@@ -8,6 +8,7 @@
 
 package org.locationtech.geomesa.accumulo.audit
 
+import java.io.Serializable
 import java.time.ZonedDateTime
 import java.util.Collections
 
@@ -79,11 +80,11 @@ object AccumuloAuditService {
   val AccumuloAuditServiceAuthProviderKey  = "geomesa.internal.audit.auths"
 
   def config(
-      params: java.util.Map[String, _ <: AnyRef],
+      params: java.util.Map[String, _],
       connector: Connector,
-      auths: AuthorizationsProvider): java.util.Map[String, AnyRef] = {
+      auths: AuthorizationsProvider): java.util.Map[String, _ <: AnyRef] = {
     val map = new java.util.HashMap[String, AnyRef]()
-    map.putAll(params)
+    map.putAll(params.asInstanceOf[java.util.Map[String, AnyRef]])
     map.put(AccumuloAuditServiceConnectorKey, connector)
     map.put(AccumuloAuditServiceAuthProviderKey, auths)
     map

@@ -24,7 +24,7 @@ import org.locationtech.geomesa.accumulo.audit.{AccumuloAuditService, ParamsAudi
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStore
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStoreFactory._
 import org.locationtech.geomesa.security.AuthorizationsProvider
-import org.locationtech.geomesa.utils.audit.{AuditProvider, AuditReader, AuditWriter}
+import org.locationtech.geomesa.utils.audit.{AuditProvider, AuditWriter}
 import org.locationtech.geomesa.utils.conf.GeoMesaSystemProperties.SystemProperty
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam
 
@@ -90,7 +90,7 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
       RemoteDensityParam,
       RemoteStatsParam,
       GenerateStatsParam,
-      GeoMesaParam.copy(AuditQueriesParam)(default = classOf[AccumuloAuditService].getName),
+      AuditQueriesParam,
       LooseBBoxParam,
       CachingParam,
       AuthsParam,
@@ -177,8 +177,10 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
 
     val authProvider = buildAuthsProvider(connector, params)
     val auditProvider = buildAuditProvider(params)
-    val auditWriter = Class.forName(AuditQueriesParam.lookup(params)).newInstance().asInstanceOf[AuditWriter]
-    auditWriter.init(AccumuloAuditService.config(params, connector, authProvider))
+    val auditWriter =
+      AuditQueriesParam.load(AccumuloAuditService.config(params, connector, authProvider)).map { service =>
+        (service, auditProvider, AccumuloAuditService.StoreType)
+      }
 
     val queries = AccumuloQueryConfig(
       threads = QueryThreadsParam.lookup(params),
@@ -199,7 +201,7 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
       catalog = catalog,
       generateStats = GenerateStatsParam.lookup(params),
       authProvider = authProvider,
-      audit = Some(auditWriter, auditProvider, AccumuloAuditService.StoreType),
+      audit = auditWriter,
       queries = queries,
       remote = remote,
       writeThreads = WriteThreadsParam.lookup(params),
@@ -259,7 +261,7 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
       catalog: String,
       generateStats: Boolean,
       authProvider: AuthorizationsProvider,
-      audit: Option[(AuditWriter with AuditReader, AuditProvider, String)],
+      audit: Option[(AuditWriter, AuditProvider, String)],
       queries: AccumuloQueryConfig,
       remote: RemoteScansEnabled,
       writeThreads: Int,

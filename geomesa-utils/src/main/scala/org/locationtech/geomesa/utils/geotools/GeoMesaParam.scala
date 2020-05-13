@@ -163,7 +163,7 @@ object GeoMesaParam {
 
   val SupportsNiFiExpressions = "geomesa.nifi.expressions"
 
-  def copy[T](
+  def copy[T <: AnyRef](
       param: GeoMesaParam[T]
     )(_key: String = param.key,
       desc: String = param.description.toString,

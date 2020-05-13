@@ -25,7 +25,7 @@ import org.locationtech.geomesa.kafka.utils.GeoMessageSerializer.GeoMessageSeria
 import org.locationtech.geomesa.memory.cqengine.utils.CQIndexType
 import org.locationtech.geomesa.security
 import org.locationtech.geomesa.security.AuthorizationsProvider
-import org.locationtech.geomesa.utils.audit.{AuditLogger, AuditProvider, NoOpAuditProvider}
+import org.locationtech.geomesa.utils.audit.{AuditProvider, NoOpAuditProvider}
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam.{ConvertedParam, DeprecatedParam}
 import org.locationtech.geomesa.utils.index.SizeSeparatedBucketIndex
@@ -169,8 +169,8 @@ object KafkaDataStoreFactory extends GeoMesaDataStoreInfo with LazyLogging {
 
     val looseBBox = LooseBBox.lookup(params).booleanValue()
 
-    val audit = if (!AuditQueries.lookup(params)) { None } else {
-      Some((AuditLogger, buildAuditProvider(params), "kafka"))
+    val audit = AuditQueries.load(params).map { service =>
+        (service, Option(AuditProvider.Loader.load(params)).getOrElse(NoOpAuditProvider), "kafka")
     }
     val authProvider = buildAuthProvider(params)
 
@@ -193,9 +193,6 @@ object KafkaDataStoreFactory extends GeoMesaDataStoreInfo with LazyLogging {
     val auths = Authorizations.lookupOpt(params).map(_.split(",").filterNot(_.isEmpty)).getOrElse(Array.empty)
     security.getAuthorizationsProvider(params, auths)
   }
-
-  private def buildAuditProvider(params: java.util.Map[String, Serializable]): AuditProvider =
-    Option(AuditProvider.Loader.load(params)).getOrElse(NoOpAuditProvider)
 
   /**
     * Parse SSI tiers from parameters
@@ -412,7 +409,7 @@ object KafkaDataStoreFactory extends GeoMesaDataStoreInfo with LazyLogging {
         default = Boolean.box(true))
 
     val LooseBBox      = GeoMesaDataStoreFactory.LooseBBoxParam
-    val AuditQueries   = GeoMesaDataStoreFactory.AuditQueriesParam
+    val AuditQueries   = new GeoMesaDataStoreFactory.AuditQueriesParam()
     val Authorizations = org.locationtech.geomesa.security.AuthsParam
 
     val ExecutorTicker =
