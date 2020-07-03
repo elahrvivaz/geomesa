@@ -38,6 +38,7 @@ geospatial analytics.
 ## Downloads
 
 **Current release: [${geomesa.release.version}](https://github.com/locationtech/geomesa/releases/tag/geomesa_${scala.binary.version}-${geomesa.release.version})**
+| [![Maven](.github/maven-badge.svg)](https://search.maven.org/search?q=g:org.locationtech.geomesa)
 
   &nbsp;&nbsp;&nbsp;&nbsp;
   [**HBase**](https://github.com/locationtech/geomesa/releases/download/geomesa_${scala.binary.version}-${geomesa.release.version}/geomesa-hbase_${scala.binary.version}-${geomesa.release.version}-bin.tar.gz) |
@@ -46,8 +47,7 @@ geospatial analytics.
   [**Kafka**](https://github.com/locationtech/geomesa/releases/download/geomesa_${scala.binary.version}-${geomesa.release.version}/geomesa-kafka_${scala.binary.version}-${geomesa.release.version}-bin.tar.gz) |
   [**Redis**](https://github.com/locationtech/geomesa/releases/download/geomesa_${scala.binary.version}-${geomesa.release.version}/geomesa-redis_${scala.binary.version}-${geomesa.release.version}-bin.tar.gz) |
   [**FileSystem**](https://github.com/locationtech/geomesa/releases/download/geomesa_${scala.binary.version}-${geomesa.release.version}/geomesa-fs_${scala.binary.version}-${geomesa.release.version}-bin.tar.gz) |
-  [**Bigtable**](https://github.com/locationtech/geomesa/releases/download/geomesa_${scala.binary.version}-${geomesa.release.version}/geomesa-bigtable_${scala.binary.version}-${geomesa.release.version}-bin.tar.gz) |
-  [![Maven](.github/maven-badge.svg)](https://search.maven.org/search?q=g:org.locationtech.geomesa)
+  [**Bigtable**](https://github.com/locationtech/geomesa/releases/download/geomesa_${scala.binary.version}-${geomesa.release.version}/geomesa-bigtable_${scala.binary.version}-${geomesa.release.version}-bin.tar.gz)
 
 **Development version: ${geomesa.devel.version}**
 
