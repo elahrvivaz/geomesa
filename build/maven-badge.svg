@@ -6,6 +6,9 @@
   <clipPath id="r">
     <rect y="10" width="91" height="20" rx="3" fill="#fff"/>
   </clipPath>
+  <g fill="#fff">
+    <rect width="91" height="10" fill="#FFF"/>
+  </g>
   <g clip-path="url(#r)">
     <rect y="10" width="46" height="20" fill="#555"/>
     <rect y="10" x="46" width="45" height="20" fill="#007ec6"/>
