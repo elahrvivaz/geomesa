@@ -25,6 +25,7 @@ geospatial analytics.
 ## Documentation
 
 * [Main documentation](http://www.geomesa.org/documentation/)
+* [Upgrade Guide](http://www.geomesa.org/documentation/user/upgrade.html)
 * Quick Starts:
   [HBase](http://www.geomesa.org/documentation/tutorials/geomesa-quickstart-hbase.html) |
   [Accumulo](http://www.geomesa.org/documentation/tutorials/geomesa-quickstart-accumulo.html) |
@@ -32,7 +33,6 @@ geospatial analytics.
   [Kafka](http://www.geomesa.org/documentation/tutorials/geomesa-quickstart-kafka.html) |
   [Redis](http://www.geomesa.org/documentation/tutorials/geomesa-quickstart-redis.html) |
   [FileSystem](http://www.geomesa.org/documentation/current/tutorials/geomesa-quickstart-fsds.html)
- 
 * [Tutorials](http://www.geomesa.org/tutorials/)
 
 ## Downloads
@@ -74,16 +74,6 @@ The keys currently used for signing are:
 | ------ | ---- |
 | `CD24F317` | Emilio Lahr-Vivaz &lt;elahrvivaz(-at-)ccri.com&gt; |
 | `1E679A56` | James Hughes &lt;jnh5y(-at-)ccri.com&gt; |
-
-### Upgrading
-
-To upgrade between minor releases of GeoMesa, the versions of all GeoMesa components **must** match. 
-
-This means that the version of the `geomesa-accumulo-distributed-runtime` JAR installed on Accumulo
-tablet servers **must** match the version of the `geomesa-accumulo-gs-plugin` JAR installed in the `WEB-INF/lib`
-directory of GeoServer.
-
-See the [Upgrade Guide](http://www.geomesa.org/documentation/user/upgrade.html) for information on specific version updates.
 
 ## Maven Integration
 
