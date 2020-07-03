@@ -48,7 +48,7 @@ geospatial analytics.
   [**FileSystem**](https://github.com/locationtech/geomesa/releases/download/geomesa_${scala.binary.version}-${geomesa.release.version}/geomesa-fs_${scala.binary.version}-${geomesa.release.version}-bin.tar.gz) |
   [**Bigtable**](https://github.com/locationtech/geomesa/releases/download/geomesa_${scala.binary.version}-${geomesa.release.version}/geomesa-bigtable_${scala.binary.version}-${geomesa.release.version}-bin.tar.gz)
 
-[![Maven Central](.github/maven-badge.svg)](https://search.maven.org/search?q=g:org.locationtech.geomesa)
+  [![Maven Central](.github/maven-badge.svg)](https://search.maven.org/search?q=g:org.locationtech.geomesa)
 
 **Development version: ${geomesa.devel.version}**
 
