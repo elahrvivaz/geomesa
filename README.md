@@ -37,7 +37,7 @@ geospatial analytics.
 
 ## Downloads
 
-**Current release: 3.0.0**
+**Current release: [3.0.0](https://github.com/locationtech/geomesa/releases/tag/geomesa_2.11-3.0.0)**
 
   &nbsp;&nbsp;&nbsp;&nbsp;
   [**HBase**](https://github.com/locationtech/geomesa/releases/download/geomesa_2.11-3.0.0/geomesa-hbase_2.11-3.0.0-bin.tar.gz) |
@@ -46,9 +46,9 @@ geospatial analytics.
   [**Kafka**](https://github.com/locationtech/geomesa/releases/download/geomesa_2.11-3.0.0/geomesa-kafka_2.11-3.0.0-bin.tar.gz) |
   [**Redis**](https://github.com/locationtech/geomesa/releases/download/geomesa_2.11-3.0.0/geomesa-redis_2.11-3.0.0-bin.tar.gz) |
   [**FileSystem**](https://github.com/locationtech/geomesa/releases/download/geomesa_2.11-3.0.0/geomesa-fs_2.11-3.0.0-bin.tar.gz) |
-  [**Bigtable**](https://github.com/locationtech/geomesa/releases/download/geomesa_2.11-3.0.0/geomesa-bigtable_2.11-3.0.0-bin.tar.gz) |
-  [**Source**](https://github.com/locationtech/geomesa/archive/geomesa_2.11-3.0.0.tar.gz) |
-  [**CheckSums**](https://github.com/locationtech/geomesa/releases/geomesa_2.11-3.0.0)
+  [**Bigtable**](https://github.com/locationtech/geomesa/releases/download/geomesa_2.11-3.0.0/geomesa-bigtable_2.11-3.0.0-bin.tar.gz)
+
+[![Maven Central](data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%20xmlns%3Axlink%3D%22http%3A%2F%2Fwww.w3.org%2F1999%2Fxlink%22%20width%3D%22136%22%20height%3D%2220%22%3E%0A%20%20%3ClinearGradient%20id%3D%22s%22%20x2%3D%220%22%20y2%3D%22100%25%22%3E%0A%20%20%20%20%3Cstop%20offset%3D%220%22%20stop-color%3D%22%23bbb%22%20stop-opacity%3D%22.1%22%2F%3E%0A%20%20%20%20%3Cstop%20offset%3D%221%22%20stop-opacity%3D%22.1%22%2F%3E%0A%20%20%3C%2FlinearGradient%3E%0A%20%20%3CclipPath%20id%3D%22r%22%3E%0A%20%20%20%20%3Crect%20width%3D%22136%22%20height%3D%2220%22%20rx%3D%223%22%20fill%3D%22%23fff%22%2F%3E%0A%20%20%3C%2FclipPath%3E%0A%20%20%3Cg%20clip-path%3D%22url%28%23r%29%22%3E%0A%20%20%20%20%3Crect%20width%3D%2291%22%20height%3D%2220%22%20fill%3D%22%23555%22%2F%3E%0A%20%20%20%20%3Crect%20x%3D%2291%22%20width%3D%2245%22%20height%3D%2220%22%20fill%3D%22%23007ec6%22%2F%3E%0A%20%20%20%20%3Crect%20width%3D%22136%22%20height%3D%2220%22%20fill%3D%22url%28%23s%29%22%2F%3E%0A%20%20%3C%2Fg%3E%0A%20%20%3Cg%20fill%3D%22%23fff%22%0A%20%20%20%20%20%20text-anchor%3D%22middle%22%0A%20%20%20%20%20%20font-family%3D%22Verdana%2CGeneva%2CDejaVu%20Sans%2Csans-serif%22%0A%20%20%20%20%20%20text-rendering%3D%22geometricPrecision%22%0A%20%20%20%20%20%20font-size%3D%22110%22%3E%0A%20%20%20%20%3Ctext%20x%3D%22465%22%20y%3D%22150%22%20fill%3D%22%23010101%22%20fill-opacity%3D%22.3%22%20transform%3D%22scale%28.1%29%22%20textLength%3D%22810%22%3Emaven-central%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%22465%22%20y%3D%22140%22%20transform%3D%22scale%28.1%29%22%20textLength%3D%22810%22%3Emaven-central%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%221125%22%20y%3D%22150%22%20fill%3D%22%23010101%22%20fill-opacity%3D%22.3%22%20transform%3D%22scale%28.1%29%22%20textLength%3D%22350%22%3Ev3.3.0%3C%2Ftext%3E%0A%20%20%20%20%3Ctext%20x%3D%221125%22%20y%3D%22140%22%20transform%3D%22scale%28.1%29%22%20textLength%3D%22350%22%3Ev3.3.0%3C%2Ftext%3E%0A%20%20%3C%2Fg%3E%0A%3C%2Fsvg%3E%0A)](https://search.maven.org/search?q=g:org.locationtech.geomesa)
 
 **Development version: 3.1.0-SNAPSHOT**
 
