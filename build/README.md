@@ -48,11 +48,6 @@ geospatial analytics.
   [**FileSystem**](https://github.com/locationtech/geomesa/releases/download/geomesa_${scala.binary.version}-${geomesa.release.version}/geomesa-fs_${scala.binary.version}-${geomesa.release.version}-bin.tar.gz) |
   [**Bigtable**](https://github.com/locationtech/geomesa/releases/download/geomesa_${scala.binary.version}-${geomesa.release.version}/geomesa-bigtable_${scala.binary.version}-${geomesa.release.version}-bin.tar.gz)
 
-**Development version: ${geomesa.devel.version}**
-
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  [![Build Status](https://github.com/locationtech/geomesa/workflows/CI/badge.svg?branch=main)](https://github.com/locationtech/geomesa/actions?query=branch%3Amain+workflow%3ACI)
-
 ### Verifying Downloads
 
 Downloads hosted on GitHub include SHA-256 hashes and gpg signatures (.asc files). To verify a download using gpg,
@@ -153,6 +148,11 @@ libraryDependencies ++= Seq(
 
 ## Building from Source
 
+**Development version: ${geomesa.devel.version}**
+
+  &nbsp;&nbsp;&nbsp;&nbsp;
+  [![Build Status](https://github.com/locationtech/geomesa/workflows/CI/badge.svg?branch=main)](https://github.com/locationtech/geomesa/actions?query=branch%3Amain+workflow%3ACI)
+
 Requirements:
 
 * [Git](http://git-scm.com/)
@@ -164,7 +164,7 @@ Use Git to download the source code. Navigate to the destination directory, then
     git clone git@github.com:locationtech/geomesa.git
     cd geomesa
 
-The project is managed by Maven. To build, run:
+The project is built using Maven. To build, run:
 
     mvn clean install
 
