@@ -38,7 +38,6 @@ geospatial analytics.
 ## Downloads
 
 **Current release: [3.0.0](https://github.com/locationtech/geomesa/releases/tag/geomesa_2.11-3.0.0)**
-[![Maven](.github/maven-badge.svg)](https://search.maven.org/search?q=g:org.locationtech.geomesa)
 
   &nbsp;&nbsp;&nbsp;&nbsp;
   [**HBase**](https://github.com/locationtech/geomesa/releases/download/geomesa_2.11-3.0.0/geomesa-hbase_2.11-3.0.0-bin.tar.gz) |
@@ -88,7 +87,9 @@ See the [Upgrade Guide](http://www.geomesa.org/documentation/user/upgrade.html) 
 
 ## Maven Integration
 
-GeoMesa is now hosted on Maven Central. However, it still depends on several third-party libraries only available
+[![Maven](.github/maven-badge.svg)](https://search.maven.org/search?q=g:org.locationtech.geomesa)
+
+GeoMesa is hosted on Maven Central. However, it still depends on several third-party libraries only available
 in other repositories. To include GeoMesa in your project, add the following repositories to your pom:
 
 ```xml
