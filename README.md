@@ -46,10 +46,8 @@ geospatial analytics.
   [**Kafka**](https://github.com/locationtech/geomesa/releases/download/geomesa_2.11-3.0.0/geomesa-kafka_2.11-3.0.0-bin.tar.gz) |
   [**Redis**](https://github.com/locationtech/geomesa/releases/download/geomesa_2.11-3.0.0/geomesa-redis_2.11-3.0.0-bin.tar.gz) |
   [**FileSystem**](https://github.com/locationtech/geomesa/releases/download/geomesa_2.11-3.0.0/geomesa-fs_2.11-3.0.0-bin.tar.gz) |
-  [**Bigtable**](https://github.com/locationtech/geomesa/releases/download/geomesa_2.11-3.0.0/geomesa-bigtable_2.11-3.0.0-bin.tar.gz)
-
-  &nbsp;&nbsp;&nbsp;&nbsp;
-  [![Maven Central](.github/maven-badge.svg)](https://search.maven.org/search?q=g:org.locationtech.geomesa)
+  [**Bigtable**](https://github.com/locationtech/geomesa/releases/download/geomesa_2.11-3.0.0/geomesa-bigtable_2.11-3.0.0-bin.tar.gz) |
+  [![Maven](.github/maven-badge.svg)](https://search.maven.org/search?q=g:org.locationtech.geomesa)
 
 **Development version: 3.1.0-SNAPSHOT**
 
