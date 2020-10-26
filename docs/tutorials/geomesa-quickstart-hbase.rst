@@ -220,14 +220,14 @@ HBase tools distribution directory:
 .. code:: bash
 
     bin/geomesa-hbase export            \
-        --output-format leaflet         \
-        --feature-name gdelt-quickstart \
         --zookeepers <zookeepers>       \
-        --catalog <table>
-
+        --catalog <table>               \
+        --feature-name gdelt-quickstart \
+        --output-format leaflet         \
+        --output gdelt.html
 
 Where the connection parameters are the same you used above during the quickstart. To view the map simply
-open the url provided by the command in your web browser. If you click the menu in the upper right of the
+open the output file in your web browser. If you click the menu in the upper right of the
 map you can enable and disable the heatmap and feature layers as well as the two provided base layers.
 
 .. figure:: _static/geomesa-quickstart-gdelt-data/leaflet-layer-preview.png
