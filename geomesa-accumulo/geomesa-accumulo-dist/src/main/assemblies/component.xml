@@ -165,6 +165,19 @@
             <directoryMode>755</directoryMode>
             <fileMode>0755</fileMode>
             <filtered>true</filtered>
+            <excludes>
+              <exclude>ng</exclude>
+            </excludes>
+        </fileSet>
+        <fileSet>
+            <directory>../../geomesa-tools/bin</directory>
+            <outputDirectory>bin</outputDirectory>
+            <directoryMode>755</directoryMode>
+            <fileMode>0755</fileMode>
+            <filtered>false</filtered>
+            <includes>
+                <include>ng</include>
+            </includes>
         </fileSet>
         <fileSet>
             <directory>../../geomesa-tools/conf</directory>

@@ -81,5 +81,9 @@ else
   fi
 
   # invoke the main java process
-  java ${GEOMESA_OPTS} -cp ${CLASSPATH} $RUNNER "$@"
+  if [[ $1 = ng ]]; then
+    java ${GEOMESA_OPTS} -cp ${CLASSPATH} com.facebook.nailgun.NGServer
+  else
+    ${%%gmtools.dist.name%%_HOME}/bin/ng $RUNNER "$@"
+  fi
 fi
