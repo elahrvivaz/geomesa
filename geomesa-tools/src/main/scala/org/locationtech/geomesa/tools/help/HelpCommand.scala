@@ -6,10 +6,11 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  ***********************************************************************/
 
-package org.locationtech.geomesa.tools.status
+package org.locationtech.geomesa.tools.help
 
 import com.beust.jcommander.{JCommander, Parameter, Parameters}
 import org.locationtech.geomesa.tools.Runner.AutocompleteInfo
+import org.locationtech.geomesa.tools.help.HelpCommand.HelpParameters
 import org.locationtech.geomesa.tools.{Command, Runner}
 
 class HelpCommand(runner: Runner, jc: JCommander) extends Command {
@@ -30,13 +31,15 @@ class HelpCommand(runner: Runner, jc: JCommander) extends Command {
   }
 }
 
-@Parameters(commandDescription = "Show help")
-class HelpParameters {
-  @Parameter(description = "Help for a specific command", required = false)
-  val command: java.util.List[String] = null
+object HelpCommand {
+  @Parameters(commandDescription = "Show help")
+  class HelpParameters {
+    @Parameter(description = "Help for a specific command", required = false)
+    var command: java.util.List[String] = _
 
-  @Parameter(names = Array("--autocomplete-function"), description = "Generates and outputs a bash function for " +
-    "autocompleting GeoMesa commandline commands and their parameters. First value is output path, second is command name",
-    required = false, hidden = true)
-  val autocompleteInfo: java.util.List[String] = null
+    @Parameter(names = Array("--autocomplete-function"), description = "Generates and outputs a bash function for " +
+      "autocompleting GeoMesa commandline commands and their parameters. First value is output path, second is command name",
+      required = false, hidden = true)
+    var autocompleteInfo: java.util.List[String] = _
+  }
 }

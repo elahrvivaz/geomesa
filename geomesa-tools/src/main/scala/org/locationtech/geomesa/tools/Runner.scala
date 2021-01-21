@@ -10,13 +10,17 @@ package org.locationtech.geomesa.tools
 
 import java.io.File
 import java.nio.charset.StandardCharsets
+import java.util.concurrent.atomic.AtomicLong
 
 import com.beust.jcommander.{JCommander, ParameterException}
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.commons.io.FileUtils
 import org.locationtech.geomesa.tools.Command.CommandException
 import org.locationtech.geomesa.tools.Runner.AutocompleteInfo
-import org.locationtech.geomesa.tools.utils.GeoMesaIStringConverterFactory
+import org.locationtech.geomesa.tools.`export`.{ConvertCommand, GenerateAvroSchemaCommand}
+import org.locationtech.geomesa.tools.help.{ClasspathCommand, HelpCommand, ScalaConsoleCommand}
+import org.locationtech.geomesa.tools.status.{ConfigureCommand, EnvironmentCommand, VersionCommand}
+import org.locationtech.geomesa.tools.utils.{GeoMesaIStringConverterFactory, TerminalCallback}
 
 import scala.collection.JavaConversions._
 import scala.util.control.NonFatal
@@ -28,6 +32,7 @@ trait Runner extends LazyLogging {
 
   def main(args: Array[String]): Unit = {
     try {
+      Runner.Timeout.set(System.currentTimeMillis())
       parseCommand(args).execute()
     } catch {
       case e @ (_: ClassNotFoundException | _: NoClassDefFoundError) =>
@@ -35,19 +40,26 @@ trait Runner extends LazyLogging {
         logger.error(msg, e)
         Command.user.error(msg)
         environmentErrorInfo().foreach(Command.user.error)
-        sys.exit(1)
-      case e: ParameterException => Command.user.error(e.getMessage); sys.exit(1)
-      case e: CommandException => Command.user.error(e.getMessage); sys.exit(1)
-      case NonFatal(e) => Command.user.error(e.getMessage, e); sys.exit(1)
+        exit(1)
+      case e: ParameterException => Command.user.error(e.getMessage); exit(1)
+      case e: CommandException => Command.user.error(e.getMessage); exit(1)
+      case NonFatal(e) => Command.user.error(e.getMessage, e); exit(1)
     }
-    sys.exit(0)
+    exit(0)
+  }
+
+  private def exit(code: Int): Unit = {
+    Runner.Timeout.set(System.currentTimeMillis())
+    sys.exit(code)
   }
 
   def parseCommand(args: Array[String]): Command = {
-    val jc = new JCommander()
-    jc.setProgramName(name)
-
-    Runner.addConverterFactories(jc)
+    val jc =
+      JCommander.newBuilder()
+          .programName(name)
+          .addConverterFactory(new GeoMesaIStringConverterFactory)
+          .columnSize(math.max(79, TerminalCallback.terminalWidth().toInt))
+          .build()
 
     val commands = createCommands(jc)
     commands.foreach {
@@ -74,12 +86,12 @@ trait Runner extends LazyLogging {
   def usage(jc: JCommander): String = {
     val out = new StringBuilder()
     out.append(s"Usage: $name [command] [command options]\n")
-    val commands = jc.getCommands.map(_._1).toSeq
+    val commands = jc.getCommands.map(_._1).toSeq.sorted
     out.append("  Commands:\n")
     val maxLen = commands.map(_.length).max + 4
-    commands.sorted.foreach { command =>
-      val spaces = " " * (maxLen - command.length)
-      out.append(s"    $command$spaces${jc.getCommandDescription(command)}\n")
+    commands.foreach { name =>
+      val spaces = " " * (maxLen - name.length)
+      out.append(s"    $name$spaces${jc.getUsageFormatter.getCommandDescription(name)}\n")
     }
     out.toString()
   }
@@ -89,7 +101,7 @@ trait Runner extends LazyLogging {
       case None => usage(jc)
       case Some(command) =>
         val out = new java.lang.StringBuilder()
-        command.usage(out)
+        command.getUsageFormatter.usage(out)
         out.toString
     }
   }
@@ -148,7 +160,26 @@ trait Runner extends LazyLogging {
     FileUtils.writeStringToFile(file, out.toString(), StandardCharsets.UTF_8)
   }
 
-  protected def createCommands(jc: JCommander): Seq[Command]
+  /**
+   * Create commands available to this runner. The default impl handles common commands
+   * and placeholders for script functions
+   *
+   * @param jc jcommander instance
+   * @return
+   */
+  protected def createCommands(jc: JCommander): Seq[Command] = {
+    Seq(
+      new ConvertCommand,
+      new ConfigureCommand,
+      new ClasspathCommand,
+      new EnvironmentCommand,
+      new GenerateAvroSchemaCommand,
+      new HelpCommand(this, jc),
+      new ScalaConsoleCommand,
+      new VersionCommand
+    )
+  }
+
   protected def resolveEnvironment(command: Command): Unit = {}
 
   class DefaultCommand(jc: JCommander) extends Command {
@@ -160,20 +191,7 @@ trait Runner extends LazyLogging {
 
 object Runner {
 
-  private var added = false
-
-  /**
-   * Add jcommander converter factories. Note that the implementation is a static,
-   * shared, non-thread-safe list, so we have to synchronize ourselves.
-   *
-   * TODO revisit this if we upgrade jcommander versions
-   */
-  def addConverterFactories(jc: JCommander): Unit = synchronized {
-    if (!added) {
-      jc.addConverterFactory(new GeoMesaIStringConverterFactory)
-      added = true
-    }
-  }
+  val Timeout = new AtomicLong(System.currentTimeMillis())
 
   case class AutocompleteInfo(path: String, commandName: String)
 }

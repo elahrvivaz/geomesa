@@ -37,6 +37,22 @@ export GEOMESA_LOG_DIR="${GEOMESA_LOG_DIR:-$%%gmtools.dist.name%%_HOME/logs}"
 export GEOMESA_DEBUG_OPTS="-Xmx8192m -XX:-UseGCOverheadLimit -Xdebug -Xnoagent -Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=9898"
 
 # ==================================================================
+# GeoMesa Nailgun Server Variables
+# ==================================================================
+
+# enable or disable a nailgun server for faster commands
+export GEOMESA_NG_ENABLED="${GEOMESA_NG_ENABLED:-true}"
+# host and port used to run nailgun server
+export GEOMESA_NG_SERVER="${GEOMESA_NG_SERVER:-$NAILGUN_SERVER}"
+export GEOMESA_NG_PORT="${GEOMESA_NG_PORT:-$NAILGUN_PORT}"
+# timeout for ng client heartbeats
+export GEOMESA_NG_TIMEOUT="${GEOMESA_NG_TIMEOUT:-}"
+# time before the nailgun server is shut down due to inactivity
+export GEOMESA_NG_IDLE="${GEOMESA_NG_IDLE:-30 minutes}"
+# size of the thread pool used for handling requests
+export GEOMESA_NG_POOL_SIZE="${GEOMESA_NG_POOL_SIZE:-}"
+
+# ==================================================================
 # Java Environment Variables
 # ==================================================================
 
@@ -75,7 +91,35 @@ function get_options() {
     GEOMESA_OPTS="${GEOMESA_OPTS} ${GEOMESA_DEBUG_OPTS}"
   fi
 
+  # used by ng client
+  if [[ -n "${GEOMESA_NG_SERVER}" ]]; then
+    export NAILGUN_SERVER="${GEOMESA_NG_SERVER}"
+  fi
+  if [[ -n "${GEOMESA_NG_PORT}" ]]; then
+    export NAILGUN_PORT="${GEOMESA_NG_PORT}"
+  fi
+
   echo "$CUSTOM_JAVA_OPTS $GEOMESA_OPTS"
+}
+
+# setup opts for invoking the geomesa nailgun server
+function get_nailgun_options() {
+  NG_OPTS=()
+  if [[ -n "$GEOMESA_NG_SERVER" ]]; then
+    NG_OPTS+=("-host" "$GEOMESA_NG_SERVER")
+  fi
+  if [[ -n "$GEOMESA_NG_PORT" ]]; then
+    NG_OPTS+=("--port" "$GEOMESA_NG_PORT")
+  fi
+  if [[ -n "$GEOMESA_NG_TIMEOUT" ]]; then
+    NG_OPTS+=("--timeout" "$GEOMESA_NG_TIMEOUT")
+  fi
+  if [[ -n "$GEOMESA_NG_IDLE" ]]; then
+    NG_OPTS+=("--idle" "$GEOMESA_NG_IDLE")
+  fi
+  if [[ -n "$GEOMESA_NG_POOL_SIZE" ]]; then
+    NG_OPTS+=("--pool-size" "$GEOMESA_NG_POOL_SIZE")
+  fi
 }
 
 # get base classpath (geomesa lib and conf dirs)

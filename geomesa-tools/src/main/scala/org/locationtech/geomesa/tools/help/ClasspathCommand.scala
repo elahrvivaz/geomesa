@@ -6,21 +6,23 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  ***********************************************************************/
 
-package org.locationtech.geomesa.tools.status
+package org.locationtech.geomesa.tools.help
 
 import com.beust.jcommander.Parameters
 import org.locationtech.geomesa.tools.Command
+import org.locationtech.geomesa.tools.help.ClasspathCommand.ClasspathParameters
 
 /**
- * Note: this class is a placeholder for the 'scala-console' function implemented in the 'common-functions'
- * script, to get it to show up in the JCommander help
- */
-class ScalaConsoleCommand extends Command {
-
-  override val name = "scala-console"
-  override val params = new ConsoleParameters
+  * Note: this class is a placeholder for the 'classpath' function implemented in the 'geomesa-*' script, to get it
+  * to show up in the JCommander help
+  */
+class ClasspathCommand extends Command {
+  override val name = "classpath"
+  override val params = new ClasspathParameters
   override def execute(): Unit = {}
 }
 
-@Parameters(commandDescription = "Run a Scala REPL with the GeoMesa classpath and configuration loaded.")
-class ConsoleParameters {}
+object ClasspathCommand {
+  @Parameters(commandDescription = "Display the GeoMesa classpath")
+  class ClasspathParameters {}
+}

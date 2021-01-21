@@ -19,36 +19,28 @@ import org.locationtech.geomesa.lambda.tools.data._
 import org.locationtech.geomesa.lambda.tools.export.LambdaExportCommand
 import org.locationtech.geomesa.lambda.tools.stats._
 import org.locationtech.geomesa.tools._
-import org.locationtech.geomesa.tools.export.{ConvertCommand, GenerateAvroSchemaCommand}
-import org.locationtech.geomesa.tools.status._
 
 object LambdaRunner extends RunnerWithAccumuloEnvironment {
 
   override val name: String = "geomesa-lambda"
 
-  override def createCommands(jc: JCommander): Seq[Command] = Seq(
-    new LambdaCreateSchemaCommand,
-    new LambdaDeleteFeaturesCommand,
-    new AccumuloDescribeSchemaCommand,
-    new EnvironmentCommand,
-    new AccumuloExplainCommand,
-    new LambdaExportCommand,
-    new HelpCommand(this, jc),
-    new AccumuloGetTypeNamesCommand,
-    new LambdaRemoveSchemaCommand,
-    new AccumuloVersionRemoteCommand,
-    new VersionCommand,
-    new AccumuloGetSftConfigCommand,
-    new GenerateAvroSchemaCommand,
-    new AccumuloStatsAnalyzeCommand,
-    new LambdaStatsBoundsCommand,
-    new LambdaStatsCountCommand,
-    new LambdaStatsTopKCommand,
-    new LambdaStatsHistogramCommand,
-    new AddIndexCommand,
-    new ConvertCommand,
-    new ConfigureCommand,
-    new ClasspathCommand,
-    new ScalaConsoleCommand
-  )
+  override def createCommands(jc: JCommander): Seq[Command] = {
+    super.createCommands(jc) ++ Seq(
+      new LambdaCreateSchemaCommand,
+      new LambdaDeleteFeaturesCommand,
+      new AccumuloDescribeSchemaCommand,
+      new AccumuloExplainCommand,
+      new LambdaExportCommand,
+      new AccumuloGetTypeNamesCommand,
+      new LambdaRemoveSchemaCommand,
+      new AccumuloVersionRemoteCommand,
+      new AccumuloGetSftConfigCommand,
+      new AccumuloStatsAnalyzeCommand,
+      new LambdaStatsBoundsCommand,
+      new LambdaStatsCountCommand,
+      new LambdaStatsTopKCommand,
+      new LambdaStatsHistogramCommand,
+      new AddIndexCommand
+    )
+  }
 }

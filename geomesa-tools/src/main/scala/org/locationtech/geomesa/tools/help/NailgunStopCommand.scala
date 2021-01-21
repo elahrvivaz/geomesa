@@ -6,21 +6,24 @@
  * http://www.opensource.org/licenses/apache2.0.php.
  ***********************************************************************/
 
-package org.locationtech.geomesa.tools.status
+package org.locationtech.geomesa.tools.help
 
 import com.beust.jcommander.Parameters
 import org.locationtech.geomesa.tools.Command
+import org.locationtech.geomesa.tools.help.NailgunStopCommand.NailgunStopParameters
 
 /**
-  * Note: this class is a placeholder for the 'classpath' function implemented in the 'geomesa-*' script, to get it
+  * Note: this class is a placeholder for the 'ng-stop' function implemented in the 'geomesa-*' script, to get it
   * to show up in the JCommander help
   */
-class ClasspathCommand extends Command {
-
-  override val name = "classpath"
-  override val params = new ClasspathParameters
+class NailgunStopCommand extends Command {
+  override val name = "ng-stop"
+  override val params = new NailgunStopParameters()
   override def execute(): Unit = {}
 }
 
-@Parameters(commandDescription = "Display the GeoMesa classpath")
-class ClasspathParameters {}
+object NailgunStopCommand {
+  @Parameters(commandDescription = "Stop the Nailgun server used for executing commands")
+  class NailgunStopParameters {}
+}
+

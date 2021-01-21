@@ -10,6 +10,7 @@ package org.locationtech.geomesa.kudu.tools
 
 import com.beust.jcommander.JCommander
 import org.locationtech.geomesa.tools.export.{ConvertCommand, GenerateAvroSchemaCommand}
+import org.locationtech.geomesa.tools.help.{ClasspathCommand, HelpCommand, ScalaConsoleCommand}
 import org.locationtech.geomesa.tools.status._
 import org.locationtech.geomesa.tools.{Command, Runner}
 
