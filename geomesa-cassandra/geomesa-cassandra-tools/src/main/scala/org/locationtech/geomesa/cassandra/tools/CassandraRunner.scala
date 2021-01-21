@@ -8,7 +8,6 @@
 
 package org.locationtech.geomesa.cassandra.tools
 
-import com.beust.jcommander.JCommander
 import org.locationtech.geomesa.cassandra.tools.commands._
 import org.locationtech.geomesa.cassandra.tools.export.{CassandraExportCommand, CassandraPlaybackCommand}
 import org.locationtech.geomesa.tools.{Command, Runner}
@@ -17,8 +16,8 @@ object CassandraRunner extends Runner {
 
   override val name: String = "geomesa-cassandra"
 
-  override def createCommands(jc: JCommander): Seq[Command] = {
-    super.createCommands(jc) ++ Seq(
+  override protected def commands: Seq[Command] = {
+    super.commands ++ Seq(
       new CassandraGetTypeNamesCommand,
       new CassandraDescribeSchemaCommand,
       new CassandraGetSftConfigCommand,

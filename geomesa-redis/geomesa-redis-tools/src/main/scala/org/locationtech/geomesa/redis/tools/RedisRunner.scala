@@ -8,15 +8,14 @@
 
 package org.locationtech.geomesa.redis.tools
 
-import com.beust.jcommander.JCommander
 import org.locationtech.geomesa.tools.{Command, Runner}
 
 object RedisRunner extends Runner {
 
   override val name: String = "geomesa-redis"
 
-  override protected def createCommands(jc: JCommander): Seq[Command] = {
-    super.createCommands(jc) ++ Seq(
+  override protected def commands: Seq[Command] = {
+    super.commands ++ Seq(
       new export.RedisExplainCommand,
       new export.RedisExportCommand,
       new ingest.RedisDeleteFeaturesCommand,
@@ -26,7 +25,7 @@ object RedisRunner extends Runner {
       new schema.RedisDescribeSchemaCommand,
       new schema.RedisGetSftConfigCommand,
       new schema.RedisGetTypeNamesCommand,
-      new schema.RedisManagePartitionsCommand(this, jc),
+      new schema.RedisManagePartitionsCommand,
       new schema.RedisRemoveSchemaCommand,
       new schema.RedisUpdateSchemaCommand,
       new stats.RedisStatsAnalyzeCommand,

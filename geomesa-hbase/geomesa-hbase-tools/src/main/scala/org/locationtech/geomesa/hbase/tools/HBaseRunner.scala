@@ -8,7 +8,6 @@
 
 package org.locationtech.geomesa.hbase.tools
 
-import com.beust.jcommander.JCommander
 import org.locationtech.geomesa.hbase.tools.HBaseDataStoreCommand.HBaseDistributedCommand
 import org.locationtech.geomesa.tools.{Command, Runner}
 
@@ -16,12 +15,12 @@ object HBaseRunner extends Runner {
 
   override val name: String = "geomesa-hbase"
 
-  override def createCommands(jc: JCommander): Seq[Command] = {
-    super.createCommands(jc) ++ Seq(
+  override protected def commands: Seq[Command] = {
+    super.commands ++ Seq(
       new data.HBaseCreateSchemaCommand,
       new data.HBaseDeleteCatalogCommand,
       new data.HBaseDeleteFeaturesCommand,
-      new data.HBaseManagePartitionsCommand(this, jc),
+      new data.HBaseManagePartitionsCommand,
       new data.HBaseRemoveSchemaCommand,
       new data.HBaseUpdateSchemaCommand,
       new export.HBaseExportCommand with HBaseDistributedCommand,

@@ -64,6 +64,20 @@ function get_classpath() {
   fi
 }
 
+function start_nailgun() {
+  load_classpath
+  get_nailgun_options # need to use global state to pass the array for correctly handling quotes
+  coproc ngfd { java $GEOMESA_OPTS -cp $CLASSPATH org.locationtech.geomesa.tools.utils.NailgunServer "${NG_OPTS[@]}"; }
+
+#    IFS= read -r -d '' -u "${ngfd[0]}" ng_output 2>/dev/null
+#    echo $ng_output
+#    if [[ -z $(echo $ng_output | grep started) ]]; then
+#      echo "Error starting Nailgun server" >&2
+#      exit 1
+#    fi
+    sleep 1
+}
+
 RUNNER="org.locationtech.geomesa.accumulo.tools.AccumuloRunner"
 
 # set java process options - do this after set classpath b/c that can modify JAVA_LIBRARY_PATH
@@ -81,23 +95,27 @@ elif [[ $1 = scala-console ]]; then
   # scala console requires options to be passed in through java_opts
   export JAVA_OPTS="${GEOMESA_OPTS}"
   geomesa_scala_console "$(get_classpath)" "$@"
-elif [[ $1 = ng-stop ]]; then
-  ${%%gmtools.dist.name%%_HOME}/bin/ng ng-stop
+elif [[ $1 = ng ]]; then
+  if [[ $2 = start ]]; then
+    start_nailgun
+  elif [[ $2 = stop ]]; then
+    ${%%gmtools.dist.name%%_HOME}/bin/ng ng-stop
+  elif [[ $2 = stats ]]; then
+    ${%%gmtools.dist.name%%_HOME}/bin/ng ng-stats
+  elif [[ $2 = classpath ]]; then
+    ${%%gmtools.dist.name%%_HOME}/bin/ng ng-cp
+  else
+    # print the usage
+    load_classpath
+    java $GEOMESA_OPTS -cp $CLASSPATH $RUNNER ng $2
+  fi
 elif [[ "$GEOMESA_NG_ENABLED" = "true" ]]; then
   # check to see if the nailgun server is up
   ${%%gmtools.dist.name%%_HOME}/bin/ng ng-version >/dev/null 2>&1
   RET=$?
   if [[ $RET -ne 0 ]]; then
     # it's not running, start the nailgun server
-    load_classpath
-    get_nailgun_options # need to use global state to pass the array for correctly handling quotes
-    coproc ngfd { java $GEOMESA_OPTS -cp $CLASSPATH org.locationtech.geomesa.tools.utils.NailgunServer "${NG_OPTS[@]}"; }
-    IFS= read -r -d '' -u "${ngfd[0]}" ng_output 2>/dev/null
-    echo $ng_output
-    if [[ -z $(echo $ng_output | grep started) ]]; then
-      echo "Error starting Nailgun server"
-      exit 1
-    fi
+    start_nailgun
   fi
   # invoke the nailgun client
   ${%%gmtools.dist.name%%_HOME}/bin/ng $RUNNER "$@"

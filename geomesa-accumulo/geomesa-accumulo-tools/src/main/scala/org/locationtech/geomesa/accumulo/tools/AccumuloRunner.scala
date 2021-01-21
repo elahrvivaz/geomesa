@@ -9,7 +9,7 @@
 
 package org.locationtech.geomesa.accumulo.tools
 
-import com.beust.jcommander.{JCommander, ParameterException}
+import com.beust.jcommander.ParameterException
 import org.locationtech.geomesa.accumulo.data.AccumuloClientConfig
 import org.locationtech.geomesa.tools._
 import org.locationtech.geomesa.tools.utils.Prompt
@@ -20,14 +20,14 @@ object AccumuloRunner extends RunnerWithAccumuloEnvironment {
 
   override val name: String = "geomesa-accumulo"
 
-  override def createCommands(jc: JCommander): Seq[Command] = {
-    super.createCommands(jc) ++ Seq(
+  override protected def commands: Seq[Command] = {
+    super.commands ++ Seq(
       new tools.data.AccumuloAgeOffCommand,
       new tools.data.AccumuloCompactCommand,
-      new tools.data.AccumuloManagePartitionsCommand(this, jc),
+      new tools.data.AccumuloManagePartitionsCommand,
       new tools.data.AddAttributeIndexCommand,
       new tools.data.AddIndexCommand,
-      new tools.data.TableConfCommand(this, jc),
+      new tools.data.TableConfCommand,
       new tools.export.AccumuloExplainCommand,
       new tools.export.AccumuloExportCommand,
       new tools.export.AccumuloPlaybackCommand,

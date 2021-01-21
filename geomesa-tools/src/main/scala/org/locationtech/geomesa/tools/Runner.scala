@@ -18,7 +18,7 @@ import org.apache.commons.io.FileUtils
 import org.locationtech.geomesa.tools.Command.CommandException
 import org.locationtech.geomesa.tools.Runner.AutocompleteInfo
 import org.locationtech.geomesa.tools.`export`.{ConvertCommand, GenerateAvroSchemaCommand}
-import org.locationtech.geomesa.tools.help.{ClasspathCommand, HelpCommand, ScalaConsoleCommand}
+import org.locationtech.geomesa.tools.help.{ClasspathCommand, HelpCommand, NailgunCommand, ScalaConsoleCommand}
 import org.locationtech.geomesa.tools.status.{ConfigureCommand, EnvironmentCommand, VersionCommand}
 import org.locationtech.geomesa.tools.utils.{GeoMesaIStringConverterFactory, TerminalCallback}
 
@@ -61,14 +61,10 @@ trait Runner extends LazyLogging {
           .columnSize(math.max(79, TerminalCallback.terminalWidth().toInt))
           .build()
 
-    val commands = createCommands(jc)
-    commands.foreach {
-      case command: CommandWithSubCommands =>
-        jc.addCommand(command.name, command.params)
-        val registered = jc.getCommands.get(command.name)
-        command.subCommands.foreach(sub => registered.addCommand(sub.name, sub.params))
-
-      case command => jc.addCommand(command.name, command.params)
+    val commands = this.commands :+ new HelpCommand(this, jc)
+    commands.foreach { command =>
+      jc.addCommand(command.name, command.params)
+      command.subCommands.foreach(sub => jc.getCommands.get(command.name).addCommand(sub.name, sub.params))
     }
     try {
       jc.parse(args: _*)
@@ -80,7 +76,12 @@ trait Runner extends LazyLogging {
     }
     val parsed = commands.find(_.name == jc.getParsedCommand).getOrElse(new DefaultCommand(jc))
     resolveEnvironment(parsed)
-    parsed
+    if (parsed.subCommands.isEmpty) { parsed } else {
+      val sub = Option(jc.getCommands.get(parsed.name).getParsedCommand).orNull
+      parsed.subCommands.find(_.name == sub).getOrElse {
+        throw new ParameterException(s"No sub-command listed...run as: $name ${parsed.name} <sub-command>")
+      }
+    }
   }
 
   def usage(jc: JCommander): String = {
@@ -161,22 +162,21 @@ trait Runner extends LazyLogging {
   }
 
   /**
-   * Create commands available to this runner. The default impl handles common commands
+   * Commands available to this runner. The default impl handles common commands
    * and placeholders for script functions
    *
-   * @param jc jcommander instance
    * @return
    */
-  protected def createCommands(jc: JCommander): Seq[Command] = {
+  protected def commands: Seq[Command] = {
     Seq(
       new ConvertCommand,
       new ConfigureCommand,
       new ClasspathCommand,
       new EnvironmentCommand,
       new GenerateAvroSchemaCommand,
-      new HelpCommand(this, jc),
       new ScalaConsoleCommand,
-      new VersionCommand
+      new VersionCommand,
+      new NailgunCommand
     )
   }
 

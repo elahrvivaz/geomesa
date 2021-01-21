@@ -9,7 +9,6 @@
 
 package org.locationtech.geomesa.lambda.tools
 
-import com.beust.jcommander.JCommander
 import org.locationtech.geomesa.accumulo.tools.RunnerWithAccumuloEnvironment
 import org.locationtech.geomesa.accumulo.tools.data._
 import org.locationtech.geomesa.accumulo.tools.export.AccumuloExplainCommand
@@ -24,8 +23,8 @@ object LambdaRunner extends RunnerWithAccumuloEnvironment {
 
   override val name: String = "geomesa-lambda"
 
-  override def createCommands(jc: JCommander): Seq[Command] = {
-    super.createCommands(jc) ++ Seq(
+  override protected def commands: Seq[Command] = {
+    super.commands ++ Seq(
       new LambdaCreateSchemaCommand,
       new LambdaDeleteFeaturesCommand,
       new AccumuloDescribeSchemaCommand,

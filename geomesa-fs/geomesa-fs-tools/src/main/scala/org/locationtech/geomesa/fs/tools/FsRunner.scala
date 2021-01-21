@@ -8,7 +8,6 @@
 
 package org.locationtech.geomesa.fs.tools
 
-import com.beust.jcommander.JCommander
 import org.locationtech.geomesa.fs.tools.compact.FsCompactCommand
 import org.locationtech.geomesa.fs.tools.data.FsCreateSchemaCommand
 import org.locationtech.geomesa.fs.tools.export.{FsExportCommand, FsPlaybackCommand}
@@ -22,8 +21,8 @@ object FsRunner extends Runner {
 
   override val name: String = "geomesa-fs"
 
-  override def createCommands(jc: JCommander): Seq[Command] = {
-    super.createCommands(jc) ++ Seq(
+  override protected def commands: Seq[Command] = {
+    super.commands ++ Seq(
       new FsCreateSchemaCommand,
       new FsDescribeSchemaCommand,
       new FsExportCommand,
@@ -31,7 +30,7 @@ object FsRunner extends Runner {
       new FsIngestCommand,
       new FsGetTypeNamesCommand,
       new FsGetSftConfigCommand,
-      new ManageMetadataCommand(this, jc),
+      new ManageMetadataCommand,
       new ScalaConsoleCommand,
       new FsCompactCommand,
       new FsGetPartitionsCommand,

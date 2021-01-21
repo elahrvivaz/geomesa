@@ -8,15 +8,14 @@
 
 package org.locationtech.geomesa.kafka.tools
 
-import com.beust.jcommander.JCommander
 import org.locationtech.geomesa.tools.{Command, Runner}
 
 object KafkaRunner extends Runner {
 
   override val name: String = "geomesa-kafka"
 
-  override protected def createCommands(jc: JCommander): Seq[Command] = {
-    super.createCommands(jc) ++ Seq(
+  override protected def commands: Seq[Command] = {
+    super.commands ++ Seq(
       new data.KafkaCreateSchemaCommand,
       new data.KafkaRemoveSchemaCommand,
       new data.KafkaUpdateSchemaCommand,

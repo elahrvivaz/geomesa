@@ -8,15 +8,14 @@
 
 package org.locationtech.geomesa.geotools.tools
 
-import com.beust.jcommander.JCommander
 import org.locationtech.geomesa.tools._
 
 object GeoToolsRunner extends Runner {
 
   override val name: String = "geomesa-gt"
 
-  override def createCommands(jc: JCommander): Seq[Command] = {
-    super.createCommands(jc) ++ Seq(
+  override protected def commands: Seq[Command] = {
+    super.commands ++ Seq(
       new data.GeoToolsCreateSchemaCommand,
       new data.GeoToolsDeleteFeaturesCommand,
       new data.GeoToolsDescribeSchemaCommand,

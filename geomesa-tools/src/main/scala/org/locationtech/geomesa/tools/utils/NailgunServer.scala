@@ -9,13 +9,14 @@
 package org.locationtech.geomesa.tools.utils
 
 import java.net.InetAddress
-import java.util.concurrent.{Executors, ScheduledExecutorService, TimeUnit}
+import java.util.concurrent.{ScheduledExecutorService, ScheduledThreadPoolExecutor, TimeUnit}
 
 import com.beust.jcommander.validators.PositiveInteger
 import com.beust.jcommander.{JCommander, Parameter}
 import com.facebook.nailgun.{NGConstants, NGServer}
 import org.locationtech.geomesa.tools.Runner
 import org.locationtech.geomesa.tools.utils.ParameterConverters.DurationConverter
+import org.locationtech.geomesa.utils.concurrent.ExitingExecutor
 
 import scala.concurrent.duration.Duration
 
@@ -31,7 +32,7 @@ object NailgunServer {
 
     val host = Option(params.host).map(InetAddress.getByName).orNull
     val server = new NGServer(host, params.port, params.poolSize, params.timeout.toMillis.toInt)
-    val es = Executors.newSingleThreadScheduledExecutor()
+    val es = ExitingExecutor(new ScheduledThreadPoolExecutor(1))
 
     val thread = new Thread(server)
     thread.setName(s"Nailgun(${params.port})")
@@ -39,7 +40,7 @@ object NailgunServer {
 
     es.schedule(new Timer(server, es, params.idle.toMillis), params.idle.toMillis, TimeUnit.MILLISECONDS)
 
-    sys.addShutdownHook({es.shutdown(); server.shutdown()})
+    sys.addShutdownHook(server.shutdown())
   }
 
   class Timer(ng: NGServer, es: ScheduledExecutorService, timeout: Long) extends Runnable {
