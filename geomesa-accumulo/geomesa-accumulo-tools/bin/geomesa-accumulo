@@ -95,20 +95,12 @@ elif [[ $1 = scala-console ]]; then
   # scala console requires options to be passed in through java_opts
   export JAVA_OPTS="${GEOMESA_OPTS}"
   geomesa_scala_console "$(get_classpath)" "$@"
-elif [[ $1 = ng ]]; then
-  if [[ $2 = start ]]; then
-    start_nailgun
-  elif [[ $2 = stop ]]; then
-    ${%%gmtools.dist.name%%_HOME}/bin/ng ng-stop
-  elif [[ $2 = stats ]]; then
-    ${%%gmtools.dist.name%%_HOME}/bin/ng ng-stats
-  elif [[ $2 = classpath ]]; then
-    ${%%gmtools.dist.name%%_HOME}/bin/ng ng-cp
-  else
-    # print the usage
-    load_classpath
-    java $GEOMESA_OPTS -cp $CLASSPATH $RUNNER ng $2
-  fi
+elif [[ $1 = ng && $2 = start ]]; then
+  start_nailgun
+elif [[ $1 = ng && $2 = stop ]]; then
+  ${%%gmtools.dist.name%%_HOME}/bin/ng ng-stop
+elif [[ $1 = ng && $2 = classpath ]]; then
+  ${%%gmtools.dist.name%%_HOME}/bin/ng ng-cp
 elif [[ "$GEOMESA_NG_ENABLED" = "true" ]]; then
   # check to see if the nailgun server is up
   ${%%gmtools.dist.name%%_HOME}/bin/ng ng-version >/dev/null 2>&1

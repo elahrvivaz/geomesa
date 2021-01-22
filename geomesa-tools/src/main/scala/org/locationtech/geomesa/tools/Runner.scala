@@ -10,9 +10,11 @@ package org.locationtech.geomesa.tools
 
 import java.io.File
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.{AtomicInteger, AtomicLong}
 
 import com.beust.jcommander.{JCommander, ParameterException}
+import com.codahale.metrics.{MetricRegistry, Timer}
+import com.github.benmanes.caffeine.cache.{CacheLoader, Caffeine, LoadingCache}
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.commons.io.FileUtils
 import org.locationtech.geomesa.tools.Command.CommandException
@@ -21,36 +23,31 @@ import org.locationtech.geomesa.tools.`export`.{ConvertCommand, GenerateAvroSche
 import org.locationtech.geomesa.tools.help.{ClasspathCommand, HelpCommand, NailgunCommand, ScalaConsoleCommand}
 import org.locationtech.geomesa.tools.status.{ConfigureCommand, EnvironmentCommand, VersionCommand}
 import org.locationtech.geomesa.tools.utils.{GeoMesaIStringConverterFactory, TerminalCallback}
+import org.locationtech.geomesa.utils.stats.MethodProfiling
 
 import scala.collection.JavaConversions._
 import scala.util.control.NonFatal
 
-trait Runner extends LazyLogging {
+trait Runner extends MethodProfiling with LazyLogging {
 
   def name: String
   def environmentErrorInfo(): Option[String] = None
 
   def main(args: Array[String]): Unit = {
     try {
-      Runner.Timeout.set(System.currentTimeMillis())
-      parseCommand(args).execute()
+      Runner.execute(parseCommand(args))
     } catch {
       case e @ (_: ClassNotFoundException | _: NoClassDefFoundError) =>
         val msg = s"Warning: Missing dependency for command execution: ${e.getMessage}"
         logger.error(msg, e)
         Command.user.error(msg)
         environmentErrorInfo().foreach(Command.user.error)
-        exit(1)
-      case e: ParameterException => Command.user.error(e.getMessage); exit(1)
-      case e: CommandException => Command.user.error(e.getMessage); exit(1)
-      case NonFatal(e) => Command.user.error(e.getMessage, e); exit(1)
+        sys.exit(1)
+      case e: ParameterException => Command.user.error(e.getMessage); sys.exit(1)
+      case e: CommandException => Command.user.error(e.getMessage); sys.exit(1)
+      case NonFatal(e) => Command.user.error(e.getMessage, e); sys.exit(1)
     }
-    exit(0)
-  }
-
-  private def exit(code: Int): Unit = {
-    Runner.Timeout.set(System.currentTimeMillis())
-    sys.exit(code)
+    sys.exit(0)
   }
 
   def parseCommand(args: Array[String]): Command = {
@@ -174,9 +171,9 @@ trait Runner extends LazyLogging {
       new ClasspathCommand,
       new EnvironmentCommand,
       new GenerateAvroSchemaCommand,
+      new NailgunCommand,
       new ScalaConsoleCommand,
-      new VersionCommand,
-      new NailgunCommand
+      new VersionCommand
     )
   }
 
@@ -191,7 +188,24 @@ trait Runner extends LazyLogging {
 
 object Runner {
 
-  val Timeout = new AtomicLong(System.currentTimeMillis())
+  private val registry = new MetricRegistry()
+
+  val LastRequest = new AtomicLong(System.currentTimeMillis())
+
+  val Timers: LoadingCache[String, (AtomicInteger, Timer)] = Caffeine.newBuilder().build(
+    new CacheLoader[String, (AtomicInteger, Timer)]() {
+      override def load(k: String): (AtomicInteger, Timer) = (new AtomicInteger(0), registry.timer(k))
+    }
+  )
+
+  def execute(command: Command): Unit = {
+    LastRequest.set(System.currentTimeMillis())
+    val (active, timer) = Timers.get(command.name)
+    active.incrementAndGet()
+    try { timer.time(command) } finally {
+      active.decrementAndGet()
+    }
+  }
 
   case class AutocompleteInfo(path: String, commandName: String)
 }

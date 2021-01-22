@@ -23,11 +23,13 @@ package object tools {
   /**
    * Abstract superclass for all top-level GeoMesa JCommander commands
    */
-  trait Command {
+  trait Command extends Runnable {
     val name: String
     def params: Any
     def execute(): Unit
     def subCommands: Seq[Command] = Seq.empty
+
+    override def run(): Unit = execute()
   }
 
   object Command {

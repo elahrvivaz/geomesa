@@ -23,7 +23,6 @@ import scala.concurrent.duration.Duration
 object NailgunServer {
 
   def main(args: Array[String]): Unit = {
-
     val params = new NailgunParams()
     JCommander.newBuilder()
         .addObject(params)
@@ -45,7 +44,7 @@ object NailgunServer {
 
   class Timer(ng: NGServer, es: ScheduledExecutorService, timeout: Long) extends Runnable {
     override def run(): Unit = {
-      val remaining = timeout - (System.currentTimeMillis() - Runner.Timeout.get)
+      val remaining = timeout - (System.currentTimeMillis() - Runner.LastRequest.get)
       if (remaining <= 0) {
         ng.shutdown()
       } else {
