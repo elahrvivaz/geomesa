@@ -12,9 +12,10 @@
     <name>GeoMesa FileSystem Distribution</name>
 
     <properties>
+        <tools.module>fs</tools.module>
+        <tools.dist.name>GEOMESA_FS</tools.dist.name>
+        <tools.runner>org.locationtech.geomesa.fs.tools.FsRunner</tools.runner>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <gmtools.dist.name>GEOMESA_FS</gmtools.dist.name>
-        <gmtools.runner>org.locationtech.geomesa.fs.tools.FsRunner</gmtools.runner>
     </properties>
 
     <dependencies>

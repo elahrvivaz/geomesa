@@ -52,6 +52,7 @@
             </includes>
         </dependencySet>
     </dependencySets>
+
     <fileSets>
         <fileSet>
             <directory>../../</directory>
@@ -62,34 +63,34 @@
             </includes>
         </fileSet>
 
-        <!-- tools filesets -->
+        <!-- module specific filesets -->
         <fileSet>
-            <directory>../geomesa-gt-tools/bin</directory>
+            <directory>../geomesa-${tools.module}-tools/bin</directory>
             <outputDirectory>bin</outputDirectory>
             <directoryMode>755</directoryMode>
             <fileMode>0755</fileMode>
             <filtered>true</filtered>
         </fileSet>
         <fileSet>
-            <directory>../geomesa-gt-tools/conf</directory>
+            <directory>../geomesa-${tools.module}-tools/conf</directory>
             <outputDirectory>conf</outputDirectory>
+            <directoryMode>755</directoryMode>
             <fileMode>0644</fileMode>
             <filtered>false</filtered>
-            <directoryMode>755</directoryMode>
         </fileSet>
         <fileSet>
-            <directory>../geomesa-gt-tools/conf-filtered</directory>
+            <directory>../geomesa-${tools.module}-tools/conf-filtered</directory>
             <outputDirectory>conf</outputDirectory>
             <directoryMode>755</directoryMode>
             <fileMode>0644</fileMode>
             <filtered>true</filtered>
         </fileSet>
         <fileSet>
-            <directory>../geomesa-gt-tools/examples</directory>
+            <directory>../geomesa-${tools.module}-tools/examples</directory>
             <outputDirectory>examples</outputDirectory>
+            <directoryMode>755</directoryMode>
             <fileMode>0644</fileMode>
             <filtered>false</filtered>
-            <directoryMode>755</directoryMode>
         </fileSet>
 
         <!-- common tools filesets -->
@@ -99,20 +100,24 @@
             <directoryMode>755</directoryMode>
             <fileMode>0755</fileMode>
             <filtered>true</filtered>
+            <excludes>
+                <exclude>geomesa-tools</exclude>
+                <exclude>ng</exclude>
+            </excludes>
         </fileSet>
         <fileSet>
             <directory>../../geomesa-tools/conf</directory>
             <outputDirectory>conf</outputDirectory>
+            <directoryMode>755</directoryMode>
             <fileMode>0644</fileMode>
             <filtered>false</filtered>
-            <directoryMode>755</directoryMode>
         </fileSet>
         <fileSet>
             <directory>../../geomesa-tools/conf-filtered</directory>
             <outputDirectory>conf</outputDirectory>
+            <directoryMode>755</directoryMode>
             <fileMode>0644</fileMode>
             <filtered>true</filtered>
-            <directoryMode>755</directoryMode>
         </fileSet>
         <fileSet>
             <directory>../../geomesa-tools/common-env</directory>
@@ -127,11 +132,10 @@
         <fileSet>
             <directory>../../geomesa-tools/examples</directory>
             <outputDirectory>examples</outputDirectory>
+            <directoryMode>755</directoryMode>
             <fileMode>0644</fileMode>
             <filtered>false</filtered>
-            <directoryMode>755</directoryMode>
         </fileSet>
-
         <fileSet>
             <directory>./</directory>
             <outputDirectory>logs</outputDirectory>
@@ -140,9 +144,23 @@
                 <exclude>*/**</exclude>
             </excludes>
         </fileSet>
-
     </fileSets>
+
     <files>
+        <!-- main script -->
+        <file>
+            <source>../../geomesa-tools/bin/geomesa-tools</source>
+            <destName>geomesa-${tools.module}</destName>
+            <outputDirectory>bin</outputDirectory>
+            <fileMode>0755</fileMode>
+            <filtered>true</filtered>
+        </file>
+        <!-- nailgun client -->
+        <file>
+            <source>../../geomesa-tools/bin/ng</source>
+            <outputDirectory>bin</outputDirectory>
+            <fileMode>0755</fileMode>
+        </file>
         <!-- geomesa-site.xml.template -->
         <file>
             <source>../../geomesa-utils/src/main/resources/org/locationtech/geomesa/geomesa-site.xml.template</source>
@@ -151,7 +169,7 @@
         </file>
         <!-- autocomplete -->
         <file>
-            <source>../geomesa-gt-tools/target/autocomplete.sh</source>
+            <source>../geomesa-${tools.module}-tools/target/autocomplete.sh</source>
             <destName>autocomplete.sh</destName>
             <outputDirectory>conf</outputDirectory>
         </file>

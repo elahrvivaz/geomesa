@@ -13,9 +13,10 @@
     <name>GeoMesa Redis Distribution</name>
 
     <properties>
+        <tools.module>redis</tools.module>
+        <tools.dist.name>GEOMESA_REDIS</tools.dist.name>
+        <tools.runner>org.locationtech.geomesa.redis.tools.RedisRunner</tools.runner>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <gmtools.dist.name>GEOMESA_REDIS</gmtools.dist.name>
-        <gmtools.runner>org.locationtech.geomesa.redis.tools.RedisRunner</gmtools.runner>
     </properties>
 
     <dependencies>

@@ -53,7 +53,6 @@
     </dependencySets>
 
     <fileSets>
-        <!-- license file -->
         <fileSet>
             <directory>../../</directory>
             <fileMode>0644</fileMode>
@@ -63,38 +62,45 @@
             </includes>
         </fileSet>
 
-        <!-- kudu tools filesets -->
-        <fileSet>
-            <directory>../geomesa-kudu-tools/bin</directory>
-            <outputDirectory>bin</outputDirectory>
-            <directoryMode>755</directoryMode>
-            <fileMode>0755</fileMode>
-            <filtered>true</filtered>
-        </fileSet>
-        <fileSet>
-            <directory>../geomesa-kudu-tools/conf</directory>
-            <outputDirectory>conf</outputDirectory>
-            <fileMode>0644</fileMode>
-            <filtered>false</filtered>
-            <directoryMode>755</directoryMode>
-        </fileSet>
-        <fileSet>
-            <directory>../geomesa-kudu-tools/examples</directory>
-            <outputDirectory>examples</outputDirectory>
-            <fileMode>0644</fileMode>
-            <filtered>false</filtered>
-            <directoryMode>755</directoryMode>
-        </fileSet>
-
         <!-- gs-plugin - have to specify as a file since it's not attached -->
         <fileSet>
-            <directory>../geomesa-kudu-gs-plugin/target</directory>
+            <directory>../geomesa-${tools.module}-gs-plugin/target</directory>
             <outputDirectory>dist/gs-plugins</outputDirectory>
             <directoryMode>755</directoryMode>
             <fileMode>0755</fileMode>
             <includes>
                 <include>*-install.tar.gz</include>
             </includes>
+        </fileSet>
+
+        <!-- module specific filesets -->
+        <fileSet>
+            <directory>../geomesa-${tools.module}-tools/bin</directory>
+            <outputDirectory>bin</outputDirectory>
+            <directoryMode>755</directoryMode>
+            <fileMode>0755</fileMode>
+            <filtered>true</filtered>
+        </fileSet>
+        <fileSet>
+            <directory>../geomesa-${tools.module}-tools/conf</directory>
+            <outputDirectory>conf</outputDirectory>
+            <directoryMode>755</directoryMode>
+            <fileMode>0644</fileMode>
+            <filtered>false</filtered>
+        </fileSet>
+        <fileSet>
+            <directory>../geomesa-${tools.module}-tools/conf-filtered</directory>
+            <outputDirectory>conf</outputDirectory>
+            <directoryMode>755</directoryMode>
+            <fileMode>0644</fileMode>
+            <filtered>true</filtered>
+        </fileSet>
+        <fileSet>
+            <directory>../geomesa-${tools.module}-tools/examples</directory>
+            <outputDirectory>examples</outputDirectory>
+            <directoryMode>755</directoryMode>
+            <fileMode>0644</fileMode>
+            <filtered>false</filtered>
         </fileSet>
 
         <!-- common tools filesets -->
@@ -105,6 +111,8 @@
             <fileMode>0755</fileMode>
             <filtered>true</filtered>
             <excludes>
+                <exclude>geomesa-tools</exclude>
+                <exclude>ng</exclude>
                 <!-- kudu has no external dependencies -->
                 <exclude>install-dependencies.sh</exclude>
             </excludes>
@@ -112,16 +120,16 @@
         <fileSet>
             <directory>../../geomesa-tools/conf</directory>
             <outputDirectory>conf</outputDirectory>
+            <directoryMode>755</directoryMode>
             <fileMode>0644</fileMode>
             <filtered>false</filtered>
-            <directoryMode>755</directoryMode>
         </fileSet>
         <fileSet>
             <directory>../../geomesa-tools/conf-filtered</directory>
             <outputDirectory>conf</outputDirectory>
+            <directoryMode>755</directoryMode>
             <fileMode>0644</fileMode>
             <filtered>true</filtered>
-            <directoryMode>755</directoryMode>
         </fileSet>
         <fileSet>
             <directory>../../geomesa-tools/common-env</directory>
@@ -136,9 +144,9 @@
         <fileSet>
             <directory>../../geomesa-tools/examples</directory>
             <outputDirectory>examples</outputDirectory>
+            <directoryMode>755</directoryMode>
             <fileMode>0644</fileMode>
             <filtered>false</filtered>
-            <directoryMode>755</directoryMode>
         </fileSet>
         <fileSet>
             <directory>./</directory>
@@ -151,6 +159,20 @@
     </fileSets>
 
     <files>
+        <!-- main script -->
+        <file>
+            <source>../../geomesa-tools/bin/geomesa-tools</source>
+            <destName>geomesa-${tools.module}</destName>
+            <outputDirectory>bin</outputDirectory>
+            <fileMode>0755</fileMode>
+            <filtered>true</filtered>
+        </file>
+        <!-- nailgun client -->
+        <file>
+            <source>../../geomesa-tools/bin/ng</source>
+            <outputDirectory>bin</outputDirectory>
+            <fileMode>0755</fileMode>
+        </file>
         <!-- geomesa-site.xml.template -->
         <file>
             <source>../../geomesa-utils/src/main/resources/org/locationtech/geomesa/geomesa-site.xml.template</source>
@@ -159,10 +181,9 @@
         </file>
         <!-- autocomplete -->
         <file>
-            <source>../geomesa-kudu-tools/target/autocomplete.sh</source>
+            <source>../geomesa-${tools.module}-tools/target/autocomplete.sh</source>
             <destName>autocomplete.sh</destName>
             <outputDirectory>conf</outputDirectory>
         </file>
     </files>
-
 </component>

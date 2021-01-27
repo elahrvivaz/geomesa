@@ -12,9 +12,10 @@
     <name>GeoMesa Cassandra Distribution</name>
 
     <properties>
+        <tools.module>cassandra</tools.module>
+        <tools.dist.name>GEOMESA_CASSANDRA</tools.dist.name>
+        <tools.runner>org.locationtech.geomesa.cassandra.tools.CassandraRunner</tools.runner>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <gmtools.dist.name>GEOMESA_CASSANDRA</gmtools.dist.name>
-        <gmtools.runner>org.locationtech.geomesa.cassandra.tools.CassandraRunner</gmtools.runner>
     </properties>
 
     <dependencies>

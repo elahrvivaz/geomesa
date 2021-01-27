@@ -12,9 +12,10 @@
     <name>GeoMesa BigTable Distribution</name>
 
     <properties>
+        <tools.module>bigtable</tools.module>
+        <tools.dist.name>GEOMESA_BIGTABLE</tools.dist.name>
+        <tools.runner>org.locationtech.geomesa.bigtable.tools.BigtableRunner</tools.runner>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <gmtools.dist.name>GEOMESA_BIGTABLE</gmtools.dist.name>
-        <gmtools.runner>org.locationtech.geomesa.bigtable.tools.BigtableRunner</gmtools.runner>
     </properties>
 
     <dependencies>

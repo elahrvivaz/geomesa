@@ -10,10 +10,10 @@
 # set environment variables in conf/geomesa-env.sh, dependencies in .dependencies
 
 # configure HOME and CONF_DIR, then load geomesa-env.sh
-export %%gmtools.dist.name%%_HOME="${%%gmtools.dist.name%%_HOME:-$(cd "`dirname "$0"`"/..; pwd)}"
-export GEOMESA_CONF_DIR="${GEOMESA_CONF_DIR:-$%%gmtools.dist.name%%_HOME/conf}"
+export %%tools.dist.name%%_HOME="${%%tools.dist.name%%_HOME:-$(cd "`dirname "$0"`"/..; pwd)}"
+export GEOMESA_CONF_DIR="${GEOMESA_CONF_DIR:-$%%tools.dist.name%%_HOME/conf}"
 
-RUNNER="%%gmtools.runner%%"
+RUNNER="%%tools.runner%%"
 
 if [[ -f "${GEOMESA_CONF_DIR}/geomesa-env.sh" ]]; then
   . "${GEOMESA_CONF_DIR}/geomesa-env.sh"
@@ -52,16 +52,10 @@ function get_classpath() {
     echo "$GEOMESA_CLASSPATH"
   else
     local classpath="$(get_base_classpath)"
-    if [[ -f "${GEOMESA_CONF_DIR}/accumulo-env.sh" ]]; then
-      . "${GEOMESA_CONF_DIR}/accumulo-env.sh"
-      local accumulo_cp_with_logging="$(get_accumulo_classpath)"
-      classpath="$classpath:$(remove_slf4j_from_classpath $accumulo_cp_with_logging)"
-    fi
-    if [[ -f "${GEOMESA_CONF_DIR}/hadoop-env.sh" ]]; then
-      . "${GEOMESA_CONF_DIR}/hadoop-env.sh"
-      local hadoop_cp_with_logging="$(get_hadoop_classpath)"
-      classpath="$classpath:$(remove_slf4j_from_classpath $hadoop_cp_with_logging)"
-    fi
+    for file in $(ls ${GEOMESA_CONF_DIR}/*-env.sh | grep -v geomesa-env.sh); do
+      local env_cp="$(. "$file")"
+      classpath="$classpath:$(remove_slf4j_from_classpath $env_cp)"
+    done
     classpath="$(fix_classpath_format $classpath)"
     echo "$classpath"
   fi
@@ -97,19 +91,19 @@ elif [[ $1 = scala-console ]]; then
 elif [[ $1 = ng && $2 = start ]]; then
   start_nailgun
 elif [[ $1 = ng && $2 = stop ]]; then
-  ${%%gmtools.dist.name%%_HOME}/bin/ng ng-stop
+  ${%%tools.dist.name%%_HOME}/bin/ng ng-stop
 elif [[ $1 = ng && $2 = classpath ]]; then
-  ${%%gmtools.dist.name%%_HOME}/bin/ng ng-cp
+  ${%%tools.dist.name%%_HOME}/bin/ng ng-cp
 elif [[ "$GEOMESA_NG_ENABLED" = "true" ]]; then
   # check to see if the nailgun server is up
-  ${%%gmtools.dist.name%%_HOME}/bin/ng ng-version >/dev/null 2>&1
+  ${%%tools.dist.name%%_HOME}/bin/ng ng-version >/dev/null 2>&1
   RET=$?
   if [[ $RET -ne 0 ]]; then
     # it's not running, start the nailgun server
     start_nailgun
   fi
   # invoke the nailgun client
-  ${%%gmtools.dist.name%%_HOME}/bin/ng $RUNNER "$@"
+  ${%%tools.dist.name%%_HOME}/bin/ng $RUNNER "$@"
 else
   load_classpath
   java $GEOMESA_OPTS -cp $CLASSPATH $RUNNER "$@"

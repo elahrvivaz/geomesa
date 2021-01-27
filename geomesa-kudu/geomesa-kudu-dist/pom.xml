@@ -12,9 +12,10 @@
     <name>GeoMesa Kudu Distribution</name>
 
     <properties>
+        <tools.module>kudu</tools.module>
+        <tools.dist.name>GEOMESA_KUDU</tools.dist.name>
+        <tools.runner>org.locationtech.geomesa.kudu.tools.KuduRunner</tools.runner>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <gmtools.dist.name>GEOMESA_KUDU</gmtools.dist.name>
-        <gmtools.runner>org.locationtech.geomesa.kudu.tools.KuduRunner</gmtools.runner>
     </properties>
 
     <dependencies>

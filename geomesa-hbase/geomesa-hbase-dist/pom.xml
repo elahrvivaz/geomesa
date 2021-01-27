@@ -13,9 +13,10 @@
     <name>GeoMesa HBase Distribution</name>
 
     <properties>
+        <tools.module>hbase</tools.module>
+        <tools.dist.name>GEOMESA_HBASE</tools.dist.name>
+        <tools.runner>org.locationtech.geomesa.hbase.tools.HBaseRunner</tools.runner>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <gmtools.dist.name>GEOMESA_HBASE</gmtools.dist.name>
-        <gmtools.runner>org.locationtech.geomesa.hbase.tools.HBaseRunner</gmtools.runner>
     </properties>
 
     <dependencies>

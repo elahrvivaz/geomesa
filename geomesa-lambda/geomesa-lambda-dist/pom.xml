@@ -12,9 +12,10 @@
     <name>GeoMesa Lambda Distribution</name>
 
     <properties>
+        <tools.module>lambda</tools.module>
+        <tools.dist.name>GEOMESA_LAMBDA</tools.dist.name>
+        <tools.runner>org.locationtech.geomesa.lambda.tools.LambdaRunner</tools.runner>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <gmtools.dist.name>GEOMESA_LAMBDA</gmtools.dist.name>
-        <gmtools.runner>org.locationtech.geomesa.lambda.tools.LambdaRunner</gmtools.runner>
     </properties>
 
     <dependencies>

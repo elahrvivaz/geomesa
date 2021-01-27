@@ -26,12 +26,12 @@ export GEOMESA_CHECK_DEPENDENCIES="${GEOMESA_CHECK_DEPENDENCIES:-true}"
 # set the classpath explicitly - no other checks or variables will be used
 # export GEOMESA_CLASSPATH="/path/to/jar1.jar:/path/to/jar2.jar:/path/to/conf"
 
-# lib directory, by default $%%gmtools.dist.name%%_HOME/lib
-export GEOMESA_LIB="${GEOMESA_LIB:-$%%gmtools.dist.name%%_HOME/lib}"
+# lib directory, by default $%%tools.dist.name%%_HOME/lib
+export GEOMESA_LIB="${GEOMESA_LIB:-$%%tools.dist.name%%_HOME/lib}"
 
-# logs directory, by default $%%gmtools.dist.name%%_HOME/logs
+# logs directory, by default $%%tools.dist.name%%_HOME/logs
 # this directory needs to be writable - in multi-tenant environments, each user should specify this differently
-export GEOMESA_LOG_DIR="${GEOMESA_LOG_DIR:-$%%gmtools.dist.name%%_HOME/logs}"
+export GEOMESA_LOG_DIR="${GEOMESA_LOG_DIR:-$%%tools.dist.name%%_HOME/logs}"
 
 # debug options passed to the java process when invoked with 'debug'
 export GEOMESA_DEBUG_OPTS="-Xmx8192m -XX:-UseGCOverheadLimit -Xdebug -Xnoagent -Xrunjdwp:transport=dt_socket,server=y,suspend=y,address=9898"
@@ -78,8 +78,13 @@ function get_options() {
   local GEOMESA_OPTS="-Duser.timezone=UTC -DEPSG-HSQL.directory=/tmp/$(whoami)"
   GEOMESA_OPTS="${GEOMESA_OPTS} -Djava.awt.headless=true"
   GEOMESA_OPTS="${GEOMESA_OPTS} -Dlog4j.configuration=file://${GEOMESA_CONF_DIR}/log4j.properties"
-  GEOMESA_OPTS="${GEOMESA_OPTS} -Dgeomesa.home=${%%gmtools.dist.name%%_HOME}"
+  GEOMESA_OPTS="${GEOMESA_OPTS} -Dgeomesa.home=${%%tools.dist.name%%_HOME}"
   GEOMESA_OPTS="${GEOMESA_OPTS} -Dgeomesa.log.dir=${GEOMESA_LOG_DIR}"
+
+  if [[ -f "${GEOMESA_CONF_DIR}/java-logging.properties" ]]; then
+    # we have to include java.util.logging override file, slf4j can't handle it automatically
+    GEOMESA_OPTS="${GEOMESA_OPTS} -Djava.util.logging.config.file=${GEOMESA_CONF_DIR}/java-logging.properties"
+  fi
 
   # configure java library path
   if [[ -n "$JAVA_LIBRARY_PATH" ]]; then
@@ -344,8 +349,8 @@ function geomesa_scala_console() {
   OPTS=${@}
 
   # Check if we already downloaded scala
-  if [[ -d "${%%gmtools.dist.name%%_HOME}/dist/scala-%%scala.version%%/" ]]; then
-    scalaCMD="${%%gmtools.dist.name%%_HOME}/dist/scala-%%scala.version%%/bin/scala"
+  if [[ -d "${%%tools.dist.name%%_HOME}/dist/scala-%%scala.version%%/" ]]; then
+    scalaCMD="${%%tools.dist.name%%_HOME}/dist/scala-%%scala.version%%/bin/scala"
   elif [[ $(which scala > /dev/null) -eq 0 && -n "$(scala -version 2>&1 | grep %%scala.binary.version%%)" ]]; then
     scalaCMD="scala"
   else
@@ -353,14 +358,14 @@ function geomesa_scala_console() {
     confirm=${confirm,,} # lower-casing
     if [[ $confirm =~ ^(yes|y) || $confirm == "" ]]; then
       sourceURL=("https://downloads.lightbend.com/scala/%%scala.version%%/scala-%%scala.version%%.tgz")
-      outputDir="${%%gmtools.dist.name%%_HOME}/dist/"
+      outputDir="${%%tools.dist.name%%_HOME}/dist/"
       outputFile="${outputDir}/scala-%%scala.version%%.tgz"
       download_urls ${outputDir} sourceURL[@]
       if [[ $? -ne 0 ]]; then
         exit 1
       fi
-      tar xf $outputFile -C "${%%gmtools.dist.name%%_HOME}/dist/"
-      scalaCMD="${%%gmtools.dist.name%%_HOME}/dist/scala-%%scala.version%%/bin/scala"
+      tar xf $outputFile -C "${%%tools.dist.name%%_HOME}/dist/"
+      scalaCMD="${%%tools.dist.name%%_HOME}/dist/scala-%%scala.version%%/bin/scala"
     else
       echo >&2 "Please install Scala version %%scala.binary.version%% and re-run this script"
       exit 1
@@ -372,7 +377,7 @@ function geomesa_scala_console() {
 
 function geomesa_configure() {
   echo >&2 "Current configuration:"
-  echo >&2 "  %%gmtools.dist.name%%_HOME=${%%gmtools.dist.name%%_HOME}"
+  echo >&2 "  %%tools.dist.name%%_HOME=${%%tools.dist.name%%_HOME}"
   echo >&2 "  GEOMESA_LIB=${GEOMESA_LIB}"
   echo >&2 "  GEOMESA_LOG_DIR=${GEOMESA_LOG_DIR}"
   echo >&2 " "
@@ -381,7 +386,7 @@ function geomesa_configure() {
   if [[ $confirm =~ ^(yes|y) || $confirm == "" ]]; then
     :
   else
-    read -r -p "Enter new value for %%gmtools.dist.name%%_HOME: " newHome
+    read -r -p "Enter new value for %%tools.dist.name%%_HOME: " newHome
     read -r -p "Enter new value for GEOMESA_LIB (default $newHome/lib): " newLib
     if [[ $newLib = "" ]]; then
       newLib="$newHome/lib"
@@ -390,7 +395,7 @@ function geomesa_configure() {
     if [[ $newLog = "" ]]; then
       $newLog="$newHome/logs"
     fi
-    %%gmtools.dist.name%%_HOME="${newHome}"
+    %%tools.dist.name%%_HOME="${newHome}"
     GEOMESA_LIB="${newLib}"
     GEOMESA_LOG_DIR="${newLog}"
   fi
@@ -401,16 +406,16 @@ function geomesa_configure() {
     confirm=${confirm,,} # lower-casing
   fi
   if [[ $confirm =~ ^(yes|y) || $confirm == "" ]]; then
-    echo "export %%gmtools.dist.name%%_HOME=\"$%%gmtools.dist.name%%_HOME\"" >> ~/.bashrc
+    echo "export %%tools.dist.name%%_HOME=\"$%%tools.dist.name%%_HOME\"" >> ~/.bashrc
     echo "export GEOMESA_LIB=\"${GEOMESA_LIB}\"" >> ~/.bashrc
     echo "export GEOMESA_LOG_DIR=\"${GEOMESA_LOG_DIR}\"" >> ~/.bashrc
-    echo "export PATH=\${%%gmtools.dist.name%%_HOME}/bin:\$PATH" >> ~/.bashrc
+    echo "export PATH=\${%%tools.dist.name%%_HOME}/bin:\$PATH" >> ~/.bashrc
   else
     echo >&2 "To put $(basename $0) on the executable path, add the following line to your environment:"
-    echo >&2 "export %%gmtools.dist.name%%_HOME=\"$%%gmtools.dist.name%%_HOME\""
+    echo >&2 "export %%tools.dist.name%%_HOME=\"$%%tools.dist.name%%_HOME\""
     echo >&2 "export GEOMESA_LIB=\"${GEOMESA_LIB}\""
     echo >&2 "export GEOMESA_LOG_DIR=\"${GEOMESA_LOG_DIR}\""
-    echo >&2 "export PATH=\${%%gmtools.dist.name%%_HOME}/bin:\$PATH"
+    echo >&2 "export PATH=\${%%tools.dist.name%%_HOME}/bin:\$PATH"
   fi
 
   read -r -p "Register auto-complete for GeoMesa CLI commands (y/n)? " confirm
