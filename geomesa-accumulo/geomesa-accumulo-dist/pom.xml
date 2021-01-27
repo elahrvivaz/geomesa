@@ -13,7 +13,8 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <gmtools.dist.name>GEOMESA_ACCUMULO</gmtools.dist.name> <!-- used in tools filtering -->
+        <gmtools.dist.name>GEOMESA_ACCUMULO</gmtools.dist.name>
+        <gmtools.runner>org.locationtech.geomesa.accumulo.tools.AccumuloRunner</gmtools.runner>
     </properties>
 
     <dependencies>

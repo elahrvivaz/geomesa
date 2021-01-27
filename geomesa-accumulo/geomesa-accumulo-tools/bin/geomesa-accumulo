@@ -13,6 +13,8 @@
 export %%gmtools.dist.name%%_HOME="${%%gmtools.dist.name%%_HOME:-$(cd "`dirname "$0"`"/..; pwd)}"
 export GEOMESA_CONF_DIR="${GEOMESA_CONF_DIR:-$%%gmtools.dist.name%%_HOME/conf}"
 
+RUNNER="%%gmtools.runner%%"
+
 if [[ -f "${GEOMESA_CONF_DIR}/geomesa-env.sh" ]]; then
   . "${GEOMESA_CONF_DIR}/geomesa-env.sh"
 else
@@ -31,6 +33,7 @@ function load_classpath() {
   if [[ -z "$GEOMESA_CLASSPATH" && "$GEOMESA_CHECK_DEPENDENCIES" = "true" && -f "${GEOMESA_CONF_DIR}/dependencies.sh" ]]; then
     . "${GEOMESA_CONF_DIR}/dependencies.sh"
     includes="$(dependencies $CLASSPATH)"
+    # TODO check for --no-prompt and pass it along
     check_classpath "$GEOMESA_LIB" "$CLASSPATH" "$includes"
     RET=$?
     if [[ $RET -eq 1 ]]; then
@@ -75,8 +78,6 @@ function start_nailgun() {
       exit 1
     fi
 }
-
-RUNNER="org.locationtech.geomesa.accumulo.tools.AccumuloRunner"
 
 # set java process options - do this after set classpath b/c that can modify JAVA_LIBRARY_PATH
 if [[ $1 = debug ]]; then

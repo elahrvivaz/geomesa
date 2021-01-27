@@ -13,7 +13,8 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <gmtools.dist.name>GEOMESA_ARROW</gmtools.dist.name> <!-- used in tools filtering -->
+        <gmtools.dist.name>GEOMESA_ARROW</gmtools.dist.name>
+        <gmtools.runner>org.locationtech.geomesa.arrow.tools.ArrowRunner</gmtools.runner>
     </properties>
 
     <dependencies>

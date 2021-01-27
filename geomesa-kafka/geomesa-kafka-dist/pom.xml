@@ -14,7 +14,8 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <gmtools.dist.name>GEOMESA_KAKFA</gmtools.dist.name> <!-- used in tools filtering -->
+        <gmtools.dist.name>GEOMESA_KAKFA</gmtools.dist.name>
+        <gmtools.runner>org.locationtech.geomesa.kafka.tools.KafkaRunner</gmtools.runner>
     </properties>
 
     <dependencies>

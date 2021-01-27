@@ -14,6 +14,7 @@
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <gmtools.dist.name>GEOMESA_KUDU</gmtools.dist.name>
+        <gmtools.runner>org.locationtech.geomesa.kudu.tools.KuduRunner</gmtools.runner>
     </properties>
 
     <dependencies>
