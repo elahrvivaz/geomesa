@@ -68,14 +68,12 @@ function start_nailgun() {
   load_classpath
   get_nailgun_options # need to use global state to pass the array for correctly handling quotes
   coproc ngfd { java $GEOMESA_OPTS -cp $CLASSPATH org.locationtech.geomesa.tools.utils.NailgunServer "${NG_OPTS[@]}"; }
-
-#    IFS= read -r -d '' -u "${ngfd[0]}" ng_output 2>/dev/null
-#    echo $ng_output
-#    if [[ -z $(echo $ng_output | grep started) ]]; then
-#      echo "Error starting Nailgun server" >&2
-#      exit 1
-#    fi
-    sleep 1
+    read -r ng_output <&"${ngfd[0]}"
+    echo $ng_output
+    if [[ -z $(echo $ng_output | grep started) ]]; then
+      echo "Error starting Nailgun server" >&2
+      exit 1
+    fi
 }
 
 RUNNER="org.locationtech.geomesa.accumulo.tools.AccumuloRunner"

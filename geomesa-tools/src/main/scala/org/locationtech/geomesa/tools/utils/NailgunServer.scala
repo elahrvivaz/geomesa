@@ -29,19 +29,35 @@ object NailgunServer {
         .build()
         .parse(args: _*)
 
-    val host = Option(params.host).map(InetAddress.getByName).orNull
-    val server = new NGServer(host, params.port, params.poolSize, params.timeout.toMillis.toInt)
     val es = ExitingExecutor(new ScheduledThreadPoolExecutor(1))
+    es.setExecuteExistingDelayedTasksAfterShutdownPolicy(false)
+    es.setContinueExistingPeriodicTasksAfterShutdownPolicy(false)
 
-    val thread = new Thread(server)
+    val host = Option(params.host).map(InetAddress.getByName).orNull
+    val ng = new NGServer(host, params.port, params.poolSize, params.timeout.toMillis.toInt) {
+      override def shutdown(): Unit = {
+        es.shutdown()
+        super.shutdown()
+      }
+    }
+
+    val thread = new Thread(ng)
     thread.setName(s"Nailgun(${params.port})")
     thread.start()
 
-    es.schedule(new Timer(server, es, params.idle.toMillis), params.idle.toMillis, TimeUnit.MILLISECONDS)
+    val idle = params.idle.toMillis
+    es.schedule(new Timer(ng, es, idle), idle + 1000, TimeUnit.MILLISECONDS)
 
-    sys.addShutdownHook(server.shutdown())
+    sys.addShutdownHook(new Shutdown(ng).run())
   }
 
+  /**
+   * Shuts down the nailgun server if it's idle
+   *
+   * @param ng nailgun server
+   * @param es executor for scheduling itself
+   * @param timeout timeout in millis
+   */
   class Timer(ng: NGServer, es: ScheduledExecutorService, timeout: Long) extends Runnable {
     override def run(): Unit = {
       val remaining = timeout - (System.currentTimeMillis() - Runner.LastRequest.get)
@@ -49,6 +65,31 @@ object NailgunServer {
         ng.shutdown()
       } else {
         es.schedule(this, remaining + 1000, TimeUnit.MILLISECONDS)
+      }
+    }
+  }
+
+  /**
+   * Shutdown hook
+   *
+   * @param ng nailgun server
+   */
+  class Shutdown(ng: NGServer) extends Runnable {
+    override def run(): Unit = {
+      ng.shutdown()
+
+      var count = 0
+      while (ng.isRunning && count < 50) {
+        try { Thread.sleep(100) } catch {
+          case _: InterruptedException => // ignore
+        }
+        count += 1
+      }
+
+      if (ng.isRunning) {
+        System.err.println("Unable to cleanly shutdown server.  Exiting JVM Anyway.")
+      } else {
+        System.out.println("NGServer shut down.")
       }
     }
   }

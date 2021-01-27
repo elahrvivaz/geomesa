@@ -41,7 +41,7 @@ export GEOMESA_DEBUG_OPTS="-Xmx8192m -XX:-UseGCOverheadLimit -Xdebug -Xnoagent -
 # ==================================================================
 
 # enable or disable a nailgun server for faster commands
-export GEOMESA_NG_ENABLED="${GEOMESA_NG_ENABLED:-true}"
+export GEOMESA_NG_ENABLED="${GEOMESA_NG_ENABLED:-false}"
 # host and port used to run nailgun server
 export GEOMESA_NG_SERVER="${GEOMESA_NG_SERVER:-$NAILGUN_SERVER}"
 export GEOMESA_NG_PORT="${GEOMESA_NG_PORT:-$NAILGUN_PORT}"
