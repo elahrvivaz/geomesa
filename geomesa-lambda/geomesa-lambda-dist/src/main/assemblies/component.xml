@@ -11,8 +11,11 @@
             <useTransitiveDependencies>true</useTransitiveDependencies>
             <useTransitiveFiltering>true</useTransitiveFiltering>
             <excludes>
-                <exclude>org.locationtech.geomesa:geomesa-accumulo-distributed-runtime*</exclude>
-                <exclude>org.locationtech.geomesa:geomesa-lambda-gs-plugin*</exclude>
+                <exclude>org.locationtech.geomesa:*:tar.gz:*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-*-gs-plugin*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-*-distributed-runtime*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-*-spark-runtime*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-spark*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-process-wps*</exclude>
                 <exclude>com.google.guava:guava</exclude> <!-- Guava conflicts with Hadoop 2.x which provides guava 11.0.2-->
             </excludes>
@@ -23,7 +26,6 @@
             <fileMode>0644</fileMode>
             <useProjectArtifact>false</useProjectArtifact>
             <useTransitiveDependencies>false</useTransitiveDependencies>
-            <useStrictFiltering>true</useStrictFiltering>
             <includes>
                 <include>org.locationtech.geomesa:geomesa-process-wps*</include>
             </includes>
@@ -45,7 +47,6 @@
             <fileMode>0644</fileMode>
             <useProjectArtifact>false</useProjectArtifact>
             <useTransitiveDependencies>false</useTransitiveDependencies>
-            <useStrictFiltering>true</useStrictFiltering>
             <includes>
                 <include>org.locationtech.geomesa:geomesa-accumulo-distributed-runtime*</include>
             </includes>
@@ -218,5 +219,4 @@
             <outputDirectory>conf</outputDirectory>
         </file>
     </files>
-
 </component>

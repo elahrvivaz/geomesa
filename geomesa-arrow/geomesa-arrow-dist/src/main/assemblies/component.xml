@@ -20,7 +20,6 @@
             <fileMode>0644</fileMode>
             <useProjectArtifact>false</useProjectArtifact>
             <useTransitiveDependencies>false</useTransitiveDependencies>
-            <useStrictFiltering>true</useStrictFiltering>
             <includes>
                 <include>org.locationtech.geomesa:geomesa-process-wps*</include>
             </includes>

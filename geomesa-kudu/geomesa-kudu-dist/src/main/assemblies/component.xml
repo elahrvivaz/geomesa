@@ -10,10 +10,11 @@
             <useProjectArtifact>false</useProjectArtifact>
             <useTransitiveDependencies>true</useTransitiveDependencies>
             <useTransitiveFiltering>true</useTransitiveFiltering>
-            <useStrictFiltering>true</useStrictFiltering>
             <excludes>
-                <exclude>org.locationtech.geomesa:geomesa-kudu-gs-plugin*</exclude>
-                <exclude>org.locationtech.geomesa:geomesa-kudu-spark*</exclude>
+                <exclude>org.locationtech.geomesa:*:tar.gz:*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-*-gs-plugin*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-*-distributed-runtime*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-*-spark-runtime*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-spark*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-process-wps*</exclude>
             </excludes>
@@ -34,9 +35,10 @@
             <fileMode>0644</fileMode>
             <useProjectArtifact>false</useProjectArtifact>
             <useTransitiveDependencies>false</useTransitiveDependencies>
-            <useStrictFiltering>true</useStrictFiltering>
             <includes>
-                <include>org.locationtech.geomesa:geomesa-kudu-spark*</include>
+                <include>org.locationtech.geomesa:geomesa-${tools.module}-spark*</include>
+                <include>org.locationtech.geomesa:geomesa-spark*</include>
+                <include>org.locationtech.geomesa:geomesa_pyspark*</include>
             </includes>
         </dependencySet>
         <dependencySet>

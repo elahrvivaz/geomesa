@@ -10,10 +10,11 @@
             <useProjectArtifact>false</useProjectArtifact>
             <useTransitiveDependencies>true</useTransitiveDependencies>
             <useTransitiveFiltering>true</useTransitiveFiltering>
-            <useStrictFiltering>true</useStrictFiltering>
             <excludes>
-                <exclude>org.locationtech.geomesa:geomesa-bigtable-gs-plugin*</exclude>
-                <exclude>org.locationtech.geomesa:geomesa-bigtable-spark-runtime*</exclude>
+                <exclude>org.locationtech.geomesa:*:tar.gz:*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-*-gs-plugin*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-*-distributed-runtime*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-*-spark-runtime*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-spark*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-process-wps*</exclude>
             </excludes>
@@ -35,7 +36,7 @@
             <useProjectArtifact>false</useProjectArtifact>
             <useTransitiveDependencies>false</useTransitiveDependencies>
             <includes>
-                <include>org.locationtech.geomesa:geomesa-bigtable-spark*</include>
+                <include>org.locationtech.geomesa:geomesa-${tools.module}-spark*</include>
                 <include>org.locationtech.geomesa:geomesa-spark*</include>
             </includes>
         </dependencySet>

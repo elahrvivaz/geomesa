@@ -12,27 +12,16 @@
             <useTransitiveFiltering>false</useTransitiveFiltering> <!-- transitive filtering applies to excludes too so disable it -->
             <excludes>
                 <exclude>org.locationtech.geomesa:*:tar.gz:*</exclude>
-                <exclude>org.locationtech.geomesa:geomesa-accumulo-gs-plugin*</exclude>
-                <exclude>org.locationtech.geomesa:geomesa-web-core*</exclude>
-                <exclude>org.locationtech.geomesa:geomesa-process-wps*</exclude>
-                <exclude>org.locationtech.geomesa:geomesa-accumulo-distributed-runtime*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-*-gs-plugin*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-*-distributed-runtime*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-*-spark-runtime*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-spark*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-process-wps*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-stream*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-geojson*</exclude>
-                <exclude>org.locationtech.geomesa:geomesa-accumulo-compute*</exclude>
-                <exclude>org.locationtech.geomesa:geomesa-accumulo-spark-runtime*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-web-core*</exclude>
                 <exclude>com.google.guava:guava</exclude> <!-- Guava conflicts with Hadoop 2.x which provides guava 11.0.2-->
             </excludes>
-        </dependencySet>
-        <dependencySet>
-            <outputDirectory>dist/accumulo</outputDirectory>
-            <directoryMode>0755</directoryMode>
-            <fileMode>0644</fileMode>
-            <useProjectArtifact>false</useProjectArtifact>
-            <useTransitiveDependencies>false</useTransitiveDependencies>
-            <includes>
-                <include>org.locationtech.geomesa:geomesa-accumulo-distributed-runtime*</include>
-            </includes>
         </dependencySet>
         <dependencySet>
             <outputDirectory>dist/gs-plugins</outputDirectory>
@@ -45,35 +34,15 @@
             </includes>
         </dependencySet>
         <dependencySet>
-            <outputDirectory>dist/webservices</outputDirectory>
-            <directoryMode>0755</directoryMode>
-            <fileMode>0644</fileMode>
-            <useProjectArtifact>false</useProjectArtifact>
-            <useTransitiveDependencies>false</useTransitiveDependencies>
-            <includes>
-                <include>org.locationtech.geomesa:geomesa-web*</include>
-            </includes>
-        </dependencySet>
-        <dependencySet>
             <outputDirectory>dist/spark</outputDirectory>
             <directoryMode>0755</directoryMode>
             <fileMode>0644</fileMode>
             <useProjectArtifact>false</useProjectArtifact>
             <useTransitiveDependencies>false</useTransitiveDependencies>
             <includes>
-                <include>org.locationtech.geomesa:geomesa-accumulo-spark*</include>
+                <include>org.locationtech.geomesa:geomesa-${tools.module}-spark*</include>
                 <include>org.locationtech.geomesa:geomesa-spark*</include>
                 <include>org.locationtech.geomesa:geomesa_pyspark*</include>
-            </includes>
-        </dependencySet>
-        <dependencySet>
-            <outputDirectory>dist/hadoop</outputDirectory>
-            <directoryMode>0755</directoryMode>
-            <fileMode>0644</fileMode>
-            <useProjectArtifact>false</useProjectArtifact>
-            <useTransitiveDependencies>false</useTransitiveDependencies>
-            <includes>
-                <include>org.locationtech.geomesa:geomesa-accumulo-jobs*</include>
             </includes>
         </dependencySet>
         <dependencySet>
@@ -85,6 +54,26 @@
             <useStrictFiltering>true</useStrictFiltering>
             <includes>
                 <include>org.locationtech.geomesa:geomesa-tools*:jar:data</include>
+            </includes>
+        </dependencySet>
+        <dependencySet>
+            <outputDirectory>dist/${tools.module}</outputDirectory>
+            <directoryMode>0755</directoryMode>
+            <fileMode>0644</fileMode>
+            <useProjectArtifact>false</useProjectArtifact>
+            <useTransitiveDependencies>false</useTransitiveDependencies>
+            <includes>
+                <include>org.locationtech.geomesa:geomesa-${tools.module}-distributed-runtime*</include>
+            </includes>
+        </dependencySet>
+        <dependencySet>
+            <outputDirectory>dist/hadoop</outputDirectory>
+            <directoryMode>0755</directoryMode>
+            <fileMode>0644</fileMode>
+            <useProjectArtifact>false</useProjectArtifact>
+            <useTransitiveDependencies>false</useTransitiveDependencies>
+            <includes>
+                <include>org.locationtech.geomesa:geomesa-accumulo-jobs*</include>
             </includes>
         </dependencySet>
     </dependencySets>
