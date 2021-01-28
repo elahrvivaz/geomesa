@@ -14,7 +14,7 @@
                 <exclude>org.locationtech.geomesa:*:tar.gz:*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-${tools.module}-gs-plugin*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-${tools.module}-distributed-runtime*</exclude>
-                <exclude>org.locationtech.geomesa:geomesa-${tools.module}-spark-runtime*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-${tools.module}-spark*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-spark*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-process-wps*</exclude>
                 <exclude>com.google.guava:guava</exclude> <!-- Guava conflicts with HBase 1.2.3 which provides guava 12 -->

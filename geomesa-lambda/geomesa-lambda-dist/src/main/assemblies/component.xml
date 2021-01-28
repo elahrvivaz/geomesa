@@ -14,7 +14,7 @@
                 <exclude>org.locationtech.geomesa:*:tar.gz:*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-${tools.module}-gs-plugin*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-accumulo-distributed-runtime*</exclude>
-                <exclude>org.locationtech.geomesa:geomesa-accumulo-spark-runtime*</exclude>
+                <exclude>org.locationtech.geomesa:geomesa-accumulo-spark*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-spark*</exclude>
                 <exclude>org.locationtech.geomesa:geomesa-process-wps*</exclude>
                 <exclude>com.google.guava:guava</exclude> <!-- Guava conflicts with Hadoop 2.x which provides guava 11.0.2-->
