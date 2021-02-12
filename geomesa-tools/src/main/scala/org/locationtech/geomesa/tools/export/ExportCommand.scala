@@ -122,7 +122,7 @@ trait ExportCommand[DS <: DataStore] extends DataStoreCommand[DS]
           case None    => new Exporter(options, query.getHints, dictionaries)
           case Some(c) => new ChunkedExporter(options, query.getHints, dictionaries, c)
         }
-        val count = try { export(ds, query, exporter) } finally { exporter.close() }
+        val count = try { export(ds, query, exporter, !params.nonEmpty) } finally { exporter.close() }
         val outFile = options.file match {
           case None => "standard out"
           case Some(f) if chunks.isDefined => PathUtils.getBaseNameAndExtension(f).productIterator.mkString("_*")
@@ -187,12 +187,16 @@ trait ExportCommand[DS <: DataStore] extends DataStoreCommand[DS]
     }
   }
 
-  protected def export(ds: DS, query: Query, exporter: FeatureExporter): Option[Long] = {
+  protected def export(ds: DS, query: Query, exporter: FeatureExporter, empty: Boolean): Option[Long] = {
     try {
       Command.user.info("Running export - please wait...")
       val features = ds.getFeatureSource(query.getTypeName).getFeatures(query)
-      exporter.start(features.getSchema)
-      WithClose(CloseableIterator(features.features()))(exporter.export)
+      WithClose(CloseableIterator(features.features())) { iter =>
+        if (empty || iter.hasNext) {
+          exporter.start(features.getSchema)
+        }
+        exporter.export(iter)
+      }
     } catch {
       case NonFatal(e) =>
         throw new RuntimeException("Could not execute export query. Please ensure " +
@@ -514,6 +518,11 @@ object ExportCommand extends LazyLogging {
       names = Array("--no-header"),
       description = "Export as a delimited text format (csv|tsv) without a type header")
     var noHeader: Boolean = false
+
+    @Parameter(
+      names = Array("--non-empty"),
+      description = "Don't write any output if there are no features exported")
+    var nonEmpty: Boolean = false
 
     @Parameter(
       names = Array("-m", "--max-features"),
