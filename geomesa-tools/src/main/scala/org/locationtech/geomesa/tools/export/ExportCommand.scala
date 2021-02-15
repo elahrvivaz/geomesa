@@ -194,8 +194,10 @@ trait ExportCommand[DS <: DataStore] extends DataStoreCommand[DS]
       WithClose(CloseableIterator(features.features())) { iter =>
         if (empty || iter.hasNext) {
           exporter.start(features.getSchema)
+          exporter.export(iter)
+        } else {
+          Some(0L)
         }
-        exporter.export(iter)
       }
     } catch {
       case NonFatal(e) =>
