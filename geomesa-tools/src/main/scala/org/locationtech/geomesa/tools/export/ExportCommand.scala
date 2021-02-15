@@ -10,7 +10,6 @@ package org.locationtech.geomesa.tools.export
 
 import java.io._
 import java.util.Collections
-import java.util.zip.GZIPOutputStream
 
 import com.beust.jcommander.validators.PositiveInteger
 import com.beust.jcommander.{Parameter, ParameterException}
@@ -31,14 +30,13 @@ import org.locationtech.geomesa.jobs.{GeoMesaConfigurator, JobResult}
 import org.locationtech.geomesa.tools.Command.CommandException
 import org.locationtech.geomesa.tools.DistributedRunParam.RunModes
 import org.locationtech.geomesa.tools._
+import org.locationtech.geomesa.tools.`export`.formats.FeatureExporter.LazyExportStream
 import org.locationtech.geomesa.tools.export.ExportCommand.{ChunkedExporter, ExportOptions, ExportParams, Exporter}
-import org.locationtech.geomesa.tools.export.formats.FeatureExporter.OutputStreamCounter
 import org.locationtech.geomesa.tools.export.formats.FileSystemExporter.{OrcFileSystemExporter, ParquetFileSystemExporter}
 import org.locationtech.geomesa.tools.export.formats._
 import org.locationtech.geomesa.tools.utils.ParameterConverters.{BytesConverter, ExportFormatConverter}
 import org.locationtech.geomesa.tools.utils.{JobRunner, NoopParameterSplitter, Prompt, TerminalCallback}
 import org.locationtech.geomesa.utils.collection.CloseableIterator
-import org.locationtech.geomesa.utils.io.fs.FileSystemDelegate.CreateMode
 import org.locationtech.geomesa.utils.io.{FileSizeEstimator, IncrementingFileName, PathUtils, WithClose}
 import org.locationtech.geomesa.utils.stats.MethodProfiling
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
@@ -380,44 +378,30 @@ object ExportCommand extends LazyLogging {
   class Exporter(options: ExportOptions, hints: Hints, dictionaries: => Map[String, Array[AnyRef]])
       extends FeatureExporter {
 
-    private val name = options.file.orNull
+    private lazy val stream =
+      new LazyExportStream(options.file, options.gzip.filter(_ => options.format != ExportFormat.Avro))
 
-    // lowest level - keep track of the bytes we write
-    // do this before any compression, buffering, etc so we get an accurate count
-    private lazy val counter = {
-      val base = if (name == null) { System.out } else {
-        PathUtils.getHandle(name).write(CreateMode.Create, createParents = true)
-      }
-      new OutputStreamCounter(base)
-    }
-
-    private lazy val stream = {
-      val base = counter.stream
-      // disable compressing the output stream for avro, as it's handled by the avro writer
-      val compressed = options.gzip.filter(_ => options.format != ExportFormat.Avro) match {
-        case None => base
-        case Some(c) => new GZIPOutputStream(base) { `def`.setLevel(c) } // hack to access the protected deflate level
-      }
-      new BufferedOutputStream(compressed)
-    }
+    // this should have been validated already
+    private lazy val name =
+      options.file.getOrElse(throw new IllegalStateException("Export format requires a file but none was specified"))
 
     // noinspection ComparingUnrelatedTypes
     private lazy val fids = !Option(hints.get(QueryHints.ARROW_INCLUDE_FID)).contains(java.lang.Boolean.FALSE)
 
     private val exporter = options.format match {
-      case ExportFormat.Arrow   => new ArrowExporter(stream, counter, hints, dictionaries)
-      case ExportFormat.Avro    => new AvroExporter(stream, counter, options.gzip)
-      case ExportFormat.Bin     => new BinExporter(stream, counter, hints)
-      case ExportFormat.Csv     => DelimitedExporter.csv(stream, counter, options.headers, fids)
-      case ExportFormat.Gml2    => GmlExporter.gml2(stream, counter)
-      case ExportFormat.Gml3    => GmlExporter(stream, counter)
-      case ExportFormat.Json    => new GeoJsonExporter(stream, counter)
-      case ExportFormat.Leaflet => new LeafletMapExporter(stream, counter)
+      case ExportFormat.Arrow   => new ArrowExporter(stream, hints, dictionaries)
+      case ExportFormat.Avro    => new AvroExporter(stream, options.gzip)
+      case ExportFormat.Bin     => new BinExporter(stream, hints)
+      case ExportFormat.Csv     => DelimitedExporter.csv(stream, options.headers, fids)
+      case ExportFormat.Gml2    => GmlExporter.gml2(stream)
+      case ExportFormat.Gml3    => GmlExporter(stream)
+      case ExportFormat.Json    => new GeoJsonExporter(stream)
+      case ExportFormat.Leaflet => new LeafletMapExporter(stream)
       case ExportFormat.Null    => NullExporter
       case ExportFormat.Orc     => new OrcFileSystemExporter(name)
       case ExportFormat.Parquet => new ParquetFileSystemExporter(name)
       case ExportFormat.Shp     => new ShapefileExporter(new File(name))
-      case ExportFormat.Tsv     => DelimitedExporter.tsv(stream, counter, options.headers, fids)
+      case ExportFormat.Tsv     => DelimitedExporter.tsv(stream, options.headers, fids)
       // shouldn't happen unless someone adds a new format and doesn't implement it here
       case _ => throw new NotImplementedError(s"Export for '${options.format}' is not implemented")
     }
