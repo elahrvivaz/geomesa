@@ -98,8 +98,10 @@ trait PlaybackCommand[DS <: DataStore] extends ExportCommand[DS] {
       WithClose(CloseableIterator(features.features())) { iter =>
         if (empty || iter.hasNext) {
           exporter.start(features.getSchema)
+          exporter.export(iter)
+        } else {
+          Some(0L)
         }
-        exporter.export(iter)
       }
     } catch {
       case NonFatal(e) =>
