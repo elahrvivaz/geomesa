@@ -10,11 +10,11 @@ package org.locationtech.geomesa.memory.cqengine.datastore
 
 import java.time.{ZoneOffset, ZonedDateTime}
 import java.util.Date
-
 import org.locationtech.jts.geom.Point
 import org.geotools.factory.CommonFactoryFinder
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.text.ecql.ECQL
+import org.geotools.util.factory.Hints
 import org.locationtech.geomesa.memory.cqengine.utils.SFTAttributes
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes
 import org.locationtech.geomesa.utils.text.WKTUtils
@@ -25,6 +25,9 @@ import scala.language._
 import scala.util.Random
 
 object SampleFeatures {
+
+  private val random = new Random(-11) // use specific seed so that results are repeatable
+
   val spec = List(
     "Who:String:index=full",
     "What:Integer",
@@ -36,6 +39,7 @@ object SampleFeatures {
     "*Where:Point:srid=4326",
     "Why:String"
   ).mkString(",")
+
   val sft = SimpleFeatureTypes.createType("test", spec)
 
   val specIndexes = List(
@@ -49,6 +53,7 @@ object SampleFeatures {
     "*Where:Point:srid=4326",
     "Why:String" // Why can have nulls
   ).mkString(",")
+
   val sftWithIndexes = SimpleFeatureTypes.createType("test2", specIndexes)
 
   val cq = SFTAttributes(sft)
@@ -58,17 +63,23 @@ object SampleFeatures {
   val seconds_per_year = 365L * 24L * 60L * 60L
   val string = "foo"
 
-  def randDate = Date.from(MIN_DATE.plusSeconds(scala.math.round(scala.util.Random.nextFloat * seconds_per_year)).toInstant)
-
   val builder = new SimpleFeatureBuilder(sft)
 
   val names = Array("Addams", "Bierce", "Clemens", "Damon", "Evan", "Fred", "Goliath", "Harry")
 
-  def getName: String = names(Random.nextInt(names.length))
+  val feats = Seq.tabulate[SimpleFeature](1000) { i =>
+    val f = SampleFeatures.buildFeature(i)
+    f.getUserData.put(Hints.USE_PROVIDED_FID, java.lang.Boolean.TRUE)
+    f
+  }
+
+  def getName: String = names(random.nextInt(names.length))
+
+  def randDate = Date.from(MIN_DATE.plusSeconds(scala.math.round(random.nextFloat * seconds_per_year)).toInstant)
 
   /* get non-uniformly distributed booleans */
   def randomBoolean(fracTrue: Double): java.lang.Boolean =
-    Random.nextDouble() < fracTrue
+    random.nextDouble() < fracTrue
 
   def getPoint: Point = {
     val minx = -180
@@ -76,17 +87,17 @@ object SampleFeatures {
     val dx = 360
     val dy = 180
 
-    val x = minx + Random.nextDouble * dx
-    val y = miny + Random.nextDouble * dy
+    val x = minx + random.nextDouble * dx
+    val y = miny + random.nextDouble * dy
     WKTUtils.read(s"POINT($x $y)").asInstanceOf[Point]
   }
 
   def buildFeature(i: Int): SimpleFeature = {
     builder.set("Who", getName)
-    builder.set("What", Random.nextInt(10))
-    builder.set("WhatLong", Random.nextInt(10).toLong)
-    builder.set("WhatFloat", Random.nextFloat * 10.0F)
-    builder.set("WhatDouble", Random.nextDouble() * 10.0)
+    builder.set("What", random.nextInt(10))
+    builder.set("WhatLong", random.nextInt(10).toLong)
+    builder.set("WhatFloat", random.nextFloat * 10.0F)
+    builder.set("WhatDouble", random.nextDouble() * 10.0)
     builder.set("WhatBool", randomBoolean(0.4))
     builder.set("When", randDate)
     builder.set("Where", getPoint)
