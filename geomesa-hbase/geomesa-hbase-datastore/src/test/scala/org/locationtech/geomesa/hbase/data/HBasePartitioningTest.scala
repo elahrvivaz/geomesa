@@ -10,16 +10,17 @@ package org.locationtech.geomesa.hbase.data
 
 import java.time.{ZoneOffset, ZonedDateTime}
 import java.util.Date
-
 import com.typesafe.scalalogging.LazyLogging
 import org.geotools.data._
 import org.geotools.data.collection.ListFeatureCollection
 import org.geotools.data.simple.SimpleFeatureStore
 import org.geotools.filter.text.ecql.ECQL
+import org.geotools.util.Converters
 import org.geotools.util.factory.Hints
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.hbase.data.HBaseDataStoreParams._
+import org.locationtech.geomesa.hbase.data.HBaseQueryPlan.EmptyPlan
 import org.locationtech.geomesa.index.conf.QueryProperties
 import org.locationtech.geomesa.index.conf.partition.{TablePartition, TimePartition}
 import org.locationtech.geomesa.index.index.attribute.AttributeIndex
@@ -117,6 +118,14 @@ class HBasePartitioningTest extends Specification with LazyLogging {
           testQuery(ds, typeName, "attr = 'name5' and bbox(geom,38,48,52,62) and dtg DURING 2018-01-01T00:00:00.000Z/2018-01-08T12:00:00.000Z", transforms, Seq(toAdd(5)))
           testQuery(ds, typeName, "name < 'name5'", transforms, toAdd.take(5))
           testQuery(ds, typeName, "name = 'name5'", transforms, Seq(toAdd(5)))
+        }
+
+        {
+          val filter = ECQL.toFilter("(bbox(geom,0,0,10,10) AND dtg BETWEEN 2021-05-05T00:00:00+00:00 AND 2021-05-10T00:00:00+00:00) OR (bbox(geom, 20,20,30,30) AND dtg BETWEEN 2021-05-01T00:00:00+00:00 AND 2021-05-04T00:00:00+00:00)")
+          val plans = ds.getQueryPlan(new Query(sft.getTypeName, filter))
+          println(plans)
+          plans must not(beEmpty)
+          plans.head must not(beAnInstanceOf[EmptyPlan])
         }
 
         ds.getFeatureSource(typeName).removeFeatures(ECQL.toFilter("INCLUDE"))

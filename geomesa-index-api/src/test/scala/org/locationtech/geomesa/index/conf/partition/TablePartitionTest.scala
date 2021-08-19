@@ -73,6 +73,19 @@ class TablePartitionTest extends Specification {
       partitionsOption.get.map(_.toShort) must containTheSameElementsAs(Seq.range(min, max + 1).map(_.toShort))
     }
 
+    "extract partitions from filters" in {
+      val filter = ECQL.toFilter("(bbox(geom,0,0,10,10) AND dtg BETWEEN 2021-05-05T00:00:00+00:00 AND 2021-05-10T00:00:00+00:00) OR (bbox(geom, 20,20,30,30) AND dtg BETWEEN 2021-05-01T00:00:00+00:00 AND 2021-05-04T00:00:00+00:00)")
+      val min = timeToBin(Converters.convert("2021-05-01T00:00:00.000Z", classOf[Date]).getTime)
+      val max = timeToBin(Converters.convert("2021-05-10T00:00:00.000Z", classOf[Date]).getTime)
+      val partitionOption = TablePartition(ds, sft)
+      partitionOption must beSome
+      val partition = partitionOption.get
+      val partitionsOption = partition.partitions(filter)
+      partitionsOption must beSome
+      println(partitionsOption.get)
+      partitionsOption.get.map(_.toShort) must containTheSameElementsAs(Seq.range(min, max + 1).map(_.toShort))
+    }
+
     "extract partitions from disjoint filters" in {
       val filter = ECQL.toFilter("dtg < '2018-01-01T00:00:00.000Z' AND dtg > '2018-02-01T00:00:00.000Z'")
       val partitionOption = TablePartition(ds, sft)
