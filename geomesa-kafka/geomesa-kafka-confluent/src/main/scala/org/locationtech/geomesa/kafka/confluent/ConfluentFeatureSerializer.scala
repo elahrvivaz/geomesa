@@ -10,12 +10,15 @@ package org.locationtech.geomesa.kafka.confluent
 
 import com.typesafe.scalalogging.LazyLogging
 import io.confluent.kafka.schemaregistry.client.{CachedSchemaRegistryClient, SchemaRegistryClient}
-import io.confluent.kafka.serializers.KafkaAvroDeserializer
-import org.apache.avro.Schema
-import org.apache.avro.generic.GenericRecord
+import io.confluent.kafka.serializers.{KafkaAvroDeserializer, KafkaAvroSerializer}
+import org.apache.avro.Schema.Field
+import org.apache.avro.generic.{GenericData, GenericRecord}
+import org.apache.avro.{JsonProperties, Schema}
 import org.locationtech.geomesa.features.SerializationOption.SerializationOption
-import org.locationtech.geomesa.features.avro.AvroSimpleFeatureTypeParser.{GeoMesaAvroDateFormat, GeoMesaAvroGeomFormat, GeoMesaAvroVisibilityField}
+import org.locationtech.geomesa.features.avro.AvroSimpleFeatureTypeParser.{GeoMesaAvroDateFormat, GeoMesaAvroDeserializableEnumProperty, GeoMesaAvroGeomFormat, GeoMesaAvroVisibilityField}
 import org.locationtech.geomesa.features.{ScalaSimpleFeature, SimpleFeatureSerializer}
+import org.locationtech.geomesa.kafka.confluent.ConfluentFeatureSerializer.ConfluentFeatureMapper
+import org.locationtech.geomesa.kafka.data.KafkaDataStore
 import org.locationtech.geomesa.security.SecurityUtils
 import org.locationtech.jts.geom.Geometry
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
@@ -25,6 +28,58 @@ import java.net.URL
 import java.util.Date
 import scala.collection.JavaConverters._
 import scala.util.control.NonFatal
+
+class ConfluentFeatureSerializer(
+    sft: SimpleFeatureType,
+    schemaRegistryClient: SchemaRegistryClient,
+    schemaOverride: Option[Schema] = None,
+    val options: Set[SerializationOption] = Set.empty
+  ) extends SimpleFeatureSerializer with LazyLogging {
+
+  private val schema = schemaOverride.getOrElse {
+    val schemaId =
+      Option(sft.getUserData.get(ConfluentMetadata.SchemaIdKey))
+          .map(_.toString.toInt)
+          .getOrElse {
+            throw new IllegalStateException(s"Cannot create ConfluentFeatureSerializer because SimpleFeatureType " +
+                s"'${sft.getTypeName}' does not have schema id at key '${ConfluentMetadata.SchemaIdKey}'")
+          }
+    schemaRegistryClient.getById(schemaId)
+  }
+
+  private val serializers = new ThreadLocal[ConfluentFeatureMapper]() {
+    override def initialValue(): ConfluentFeatureMapper =
+      new ConfluentFeatureMapper(sft, schema, schemaRegistryClient)
+  }
+
+  override def deserialize(id: String, bytes: Array[Byte]): SimpleFeature =
+    serializers.get.read(id, bytes)
+
+  override def deserialize(bytes: Array[Byte]): SimpleFeature = deserialize("", bytes)
+
+  override def deserialize(bytes: Array[Byte], offset: Int, length: Int): SimpleFeature =
+    deserialize("", bytes, offset, length)
+
+  override def deserialize(id: String, bytes: Array[Byte], offset: Int, length: Int): SimpleFeature = {
+    val buf = if (offset == 0 && length == bytes.length) { bytes } else {
+      val buf = Array.ofDim[Byte](length)
+      System.arraycopy(bytes, offset, buf, 0, length)
+      buf
+    }
+    deserialize(id, buf)
+  }
+
+  override def serialize(feature: SimpleFeature): Array[Byte] = serializers.get.write(feature)
+
+  override def serialize(feature: SimpleFeature, out: OutputStream): Unit = out.write(serialize(feature))
+
+  // implement the following if we need them
+
+  override def deserialize(in: InputStream): SimpleFeature = throw new NotImplementedError()
+
+  override def deserialize(id: String, in: InputStream): SimpleFeature =
+    throw new NotImplementedError()
+}
 
 object ConfluentFeatureSerializer {
 
@@ -41,119 +96,131 @@ object ConfluentFeatureSerializer {
       new ConfluentFeatureSerializer(sft, client, schemaOverride, options.toSet)
     }
   }
-}
 
-class ConfluentFeatureSerializer(
-    sft: SimpleFeatureType,
-    schemaRegistryClient: SchemaRegistryClient,
-    schemaOverride: Option[Schema] = None,
-    val options: Set[SerializationOption] = Set.empty
-  ) extends SimpleFeatureSerializer with LazyLogging {
+  /**
+   * Mapping between Avro schema and SimpleFeatureType
+   *
+   * @param sftIndex index of the field in the sft
+   * @param schemaIndex index of the field in the avro schema
+   * @param default default value defined in the avro schema
+   * @param conversionToFeature convert from an avro value to a simple feature type attribute
+   * @param conversionToAvro convert from a simple feature type attribute to an avro value
+   */
+  private case class FieldMapping(
+      sftIndex: Int,
+      schemaIndex: Int,
+      default: Option[AnyRef],
+      conversionToFeature: Option[AnyRef => AnyRef],
+      conversionToAvro: Option[AnyRef => AnyRef]
+    )
 
-  private val kafkaAvroDeserializers = new ThreadLocal[KafkaAvroDeserializer]() {
-    override def initialValue(): KafkaAvroDeserializer = new KafkaAvroDeserializer(schemaRegistryClient)
-  }
+  /**
+   * Converts between serialized Avro records and simple features
+   *
+   * @param sft simple feature type
+   * @param schema avro schema
+   * @param registry schema registry client
+   */
+  private class ConfluentFeatureMapper(sft: SimpleFeatureType, schema: Schema, registry: SchemaRegistryClient) {
 
-  private val featureReaders = new ThreadLocal[ConfluentFeatureReader]() {
-    override def initialValue(): ConfluentFeatureReader = {
-      val schema = schemaOverride.getOrElse {
-        val schemaId = Option(sft.getUserData.get(ConfluentMetadata.SchemaIdKey))
-          .map(_.asInstanceOf[String].toInt).getOrElse {
-          throw new IllegalStateException(s"Cannot create ConfluentFeatureSerializer because SimpleFeatureType " +
-            s"'${sft.getTypeName}' does not have schema id at key '${ConfluentMetadata.SchemaIdKey}'")
+    private val topic = KafkaDataStore.topic(sft)
+    private val kafkaSerializer = new KafkaAvroSerializer(registry)
+    private val kafkaDeserializer = new KafkaAvroDeserializer(registry)
+
+    // feature type field index, schema field index and default value, any conversions necessary
+    private val fieldMappings = sft.getAttributeDescriptors.asScala.map { d =>
+      val conversion =
+        if (classOf[Geometry].isAssignableFrom(d.getType.getBinding)) {
+          Some(GeoMesaAvroGeomFormat.asInstanceOf[GeoMesaAvroDeserializableEnumProperty[AnyRef, AnyRef]])
+        } else if (classOf[Date].isAssignableFrom(d.getType.getBinding)) {
+          Some(GeoMesaAvroDateFormat.asInstanceOf[GeoMesaAvroDeserializableEnumProperty[AnyRef, AnyRef]])
+        } else {
+          None
         }
-        schemaRegistryClient.getById(schemaId)
-      }
 
-      new ConfluentFeatureReader(sft, schema)
-    }
-  }
+      val field = schema.getField(d.getLocalName)
+      val conversionToFeature = conversion.map(_.getFieldReader(schema, field.name()))
+      val conversionToAvro = conversion.map(_.getFieldWriter(schema, field.name()))
 
-  override def deserialize(id: String, bytes: Array[Byte]): SimpleFeature = {
-    val record = kafkaAvroDeserializers.get.deserialize("", bytes).asInstanceOf[GenericRecord]
-
-    val feature = featureReaders.get.read(id, record)
-
-    // set the feature visibility if it exists
-    sft.getUserData.get(GeoMesaAvroVisibilityField.KEY) match {
-      case null => // no-op
-      case fieldName =>
-        record.get(fieldName.toString) match {
-          case null => // no-op
-          case vis => SecurityUtils.setFeatureVisibility(feature, vis.toString)
-        }
-
+      FieldMapping(sft.indexOf(d.getLocalName), field.pos(), defaultValue(field), conversionToFeature, conversionToAvro)
     }
 
-    feature
-  }
-
-  override def deserialize(bytes: Array[Byte]): SimpleFeature = deserialize("", bytes)
-
-  override def deserialize(bytes: Array[Byte], offset: Int, length: Int): SimpleFeature =
-    deserialize("", bytes, offset, length)
-
-  override def deserialize(id: String, bytes: Array[Byte], offset: Int, length: Int): SimpleFeature = {
-    val buf = if (offset == 0 && length == bytes.length) { bytes } else {
-      val buf = Array.ofDim[Byte](length)
-      System.arraycopy(bytes, offset, buf, 0, length)
-      buf
+    // visibility field index in the avro schema
+    private val visibilityField = schema.getFields.asScala.collectFirst {
+      case f if Option(f.getProp(GeoMesaAvroVisibilityField.KEY)).exists(_.toBoolean) => f.pos()
     }
-    deserialize(id, buf)
-  }
 
-  // implement the following if we need them
+    // avro fields with default values that aren't part of the feature type
+    private val defaultFields = schema.getFields.asScala.flatMap(f => defaultValue(f).map(v => f.pos() -> v)).filter {
+      case (pos, _) => !fieldMappings.exists(_.schemaIndex == pos) && !visibilityField.contains(pos)
+    }
 
-  override def deserialize(in: InputStream): SimpleFeature = throw new NotImplementedError()
-
-  override def deserialize(id: String, in: InputStream): SimpleFeature =
-    throw new NotImplementedError()
-
-  override def serialize(feature: SimpleFeature): Array[Byte] =
-    throw new NotImplementedError("ConfluentSerializer is read-only")
-
-  override def serialize(feature: SimpleFeature, out: OutputStream): Unit =
-    throw new NotImplementedError("ConfluentSerializer is read-only")
-
-  // precompute the deserializer for each field in the SFT to simplify the actual deserialization
-  private class ConfluentFeatureReader(sft: SimpleFeatureType, schema: Schema) {
-
-    def read(id: String, record: GenericRecord): SimpleFeature = {
-      val attributes = fieldReaders.map { fieldReader =>
+    /**
+     * Serialize a feature as Avro
+     *
+     * @param feature feature to serialize
+     * @return
+     */
+    def write(feature: SimpleFeature): Array[Byte] = {
+      val record = new GenericData.Record(schema)
+      defaultFields.foreach { case (i, v) => record.put(i, v) }
+      visibilityField.foreach { pos => record.put(pos, SecurityUtils.getVisibility(feature)) }
+      fieldMappings.foreach { m =>
         try {
-          Option(record.get(fieldReader.fieldName)).map(fieldReader.reader.apply).orNull
+          feature.getAttribute(m.sftIndex) match {
+            case null => m.default.foreach(d => record.put(m.schemaIndex, d))
+            case v => record.put(m.schemaIndex, m.conversionToAvro.fold(v)(_.apply(v)))
+          }
         } catch {
-          case NonFatal(ex) =>
-            throw ConfluentFeatureReader.DeserializationException(fieldReader.fieldName, fieldReader.clazz, ex)
+          case NonFatal(e) =>
+            val d = sft.getDescriptor(m.sftIndex)
+            throw new RuntimeException(
+              s"Cannot serialize field '${d.getLocalName}' into a '${schema.getField(d.getLocalName).schema()}':", e)
         }
       }
 
-      ScalaSimpleFeature.create(sft, id, attributes: _*)
+      kafkaSerializer.serialize(topic, record)
     }
 
-    private val fieldReaders: Seq[ConfluentFeatureReader.FieldReader[_]] = {
-      sft.getAttributeDescriptors.asScala.map { descriptor =>
-        val fieldName = descriptor.getLocalName
-
-        val reader =
-          if (classOf[Geometry].isAssignableFrom(descriptor.getType.getBinding)) {
-            GeoMesaAvroGeomFormat.getFieldReader(schema, fieldName)
-          } else if (classOf[Date].isAssignableFrom(descriptor.getType.getBinding)) {
-            GeoMesaAvroDateFormat.getFieldReader(schema, fieldName)
-          } else {
-            value: AnyRef => value
+    /**
+     * Deserialize an Avro record into a feature
+     *
+     * @param id feature id
+     * @param bytes serialized avro bytes
+     * @return
+     */
+    def read(id: String, bytes: Array[Byte]): SimpleFeature = {
+      val record = kafkaDeserializer.deserialize(topic, bytes).asInstanceOf[GenericRecord]
+      val attributes = fieldMappings.map { m =>
+        try {
+          val value = record.get(m.schemaIndex)
+          m.conversionToFeature match {
+            case Some(c) if value != null => c.apply(value)
+            case _ => value
           }
-
-        ConfluentFeatureReader.FieldReader(fieldName, reader, descriptor.getType.getBinding)
+        } catch {
+          case NonFatal(e) =>
+            val d = sft.getDescriptor(m.sftIndex)
+            throw new RuntimeException(
+              s"Cannot deserialize field '${d.getLocalName}' into a '${d.getType.getBinding.getName}':", e)
+        }
       }
+
+      val feature = ScalaSimpleFeature.create(sft, id, attributes: _*)
+
+      // set the feature visibility if it exists
+      visibilityField.foreach { field =>
+        val vis = record.get(field)
+        if (vis != null) {
+          SecurityUtils.setFeatureVisibility(feature, vis.toString)
+        }
+      }
+
+      feature
     }
-  }
 
-  private object ConfluentFeatureReader {
-
-    private case class FieldReader[T](fieldName: String, reader: AnyRef => T, clazz: Class[_])
-
-    final case class DeserializationException(fieldName: String, clazz: Class[_], t: Throwable)
-      extends RuntimeException(s"Cannot deserialize field '$fieldName' into a '${clazz.getName}': ${t.getMessage}")
+    // filter out JNull - bug in kafka avro deserialization https://issues.apache.org/jira/browse/AVRO-1954
+    private def defaultValue(f: Field): Option[AnyRef] =
+      Option(f.defaultVal()).filterNot(_.isInstanceOf[JsonProperties.Null])
   }
 }
