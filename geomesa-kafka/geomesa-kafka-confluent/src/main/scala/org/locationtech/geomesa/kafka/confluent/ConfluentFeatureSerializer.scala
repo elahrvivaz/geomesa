@@ -27,6 +27,7 @@ import java.io.{InputStream, OutputStream}
 import java.net.URL
 import java.util.Date
 import scala.collection.JavaConverters._
+import scala.util.Try
 import scala.util.control.NonFatal
 
 class ConfluentFeatureSerializer(
@@ -174,8 +175,10 @@ object ConfluentFeatureSerializer {
         } catch {
           case NonFatal(e) =>
             val d = sft.getDescriptor(m.sftIndex)
+            val v = Try(feature.getAttribute(m.sftIndex))
+            val s = schema.getField(d.getLocalName).schema()
             throw new RuntimeException(
-              s"Cannot serialize field '${d.getLocalName}' into a '${schema.getField(d.getLocalName).schema()}':", e)
+              s"Cannot serialize field '${d.getLocalName}' with try-value '$v' into schema '$s':", e)
         }
       }
 
