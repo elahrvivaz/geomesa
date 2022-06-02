@@ -9,11 +9,13 @@
 package org.locationtech.geomesa.kafka.confluent
 
 import io.confluent.kafka.schemaregistry.client.CachedSchemaRegistryClient
-import io.confluent.kafka.serializers.KafkaAvroSerializer
+import io.confluent.kafka.serializers.{KafkaAvroDeserializer, KafkaAvroSerializer}
 import org.apache.avro.Schema
 import org.apache.avro.generic.{GenericData, GenericRecord}
+import org.apache.avro.util.Utf8
+import org.apache.kafka.clients.consumer.{ConsumerConfig, KafkaConsumer}
 import org.apache.kafka.clients.producer.{KafkaProducer, ProducerConfig, ProducerRecord}
-import org.apache.kafka.common.serialization.StringSerializer
+import org.apache.kafka.common.serialization.{StringDeserializer, StringSerializer}
 import org.geotools.data.{DataStoreFinder, Transaction}
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.features.ScalaSimpleFeature
@@ -31,7 +33,7 @@ import org.specs2.runner.JUnitRunner
 
 import java.nio.ByteBuffer
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.{Date, Properties}
+import java.util.{Collections, Date, Properties}
 import scala.collection.JavaConverters._
 import scala.concurrent.duration._
 
@@ -171,6 +173,37 @@ class ConfluentKafkaDataStoreTest extends Specification {
         feature2.getAttribute("date") mustEqual new Date(1638915805372L)
 
         foreach(features)(f => SecurityUtils.getVisibility(f) mustEqual "")
+      }
+
+      // verify raw avro reads
+      val consumer = {
+        val props = new Properties()
+        props.put(ConsumerConfig.BOOTSTRAP_SERVERS_CONFIG, confluentKafka.brokers)
+        props.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, classOf[StringDeserializer].getName)
+        props.put(ConsumerConfig.VALUE_DESERIALIZER_CLASS_CONFIG, classOf[KafkaAvroDeserializer].getName)
+        props.put(ConsumerConfig.AUTO_OFFSET_RESET_CONFIG, "earliest")
+        props.put(ConsumerConfig.GROUP_ID_CONFIG, "test")
+        props.put("schema.registry.url", confluentKafka.schemaRegistryUrl)
+        new KafkaConsumer[String, GenericRecord](props)
+      }
+      try {
+        consumer.subscribe(Collections.singletonList(topic))
+
+        val records = scala.collection.mutable.Set.empty[(String, GenericRecord)]
+        eventually(20, 100.millis) {
+          consumer.poll(java.time.Duration.ofMillis(10)).asScala.foreach(r => records += r.key() -> r.value())
+          records must haveLength(2)
+        }
+        records.map(_._1) mustEqual Set(id1, id2)
+
+        val avro = records.toSeq.sortBy(_._1).map(_._2)
+        avro.map(_.get("id")) mustEqual Seq(id1, id2).map(new Utf8(_))
+        avro.map(_.get("date")) mustEqual Seq("2021-12-07T22:22:24.897Z", "2021-12-07T22:23:25.372Z").map(new Utf8(_))
+        avro.map(_.get("speed")) mustEqual Seq(12.325d, 0d)
+        avro.map(_.get("position")) mustEqual Seq("POINT (10 20)", "POINT (15 35)").map(new Utf8(_))
+        avro.map(_.get("visibility")) mustEqual Seq("", "").map(new Utf8(_))
+      } finally {
+        consumer.close()
       }
     }
 

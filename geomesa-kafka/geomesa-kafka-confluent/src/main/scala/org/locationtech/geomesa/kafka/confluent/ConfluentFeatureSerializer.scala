@@ -11,7 +11,7 @@ package org.locationtech.geomesa.kafka.confluent
 import com.typesafe.scalalogging.LazyLogging
 import io.confluent.kafka.schemaregistry.client.{CachedSchemaRegistryClient, SchemaRegistryClient}
 import io.confluent.kafka.serializers.{KafkaAvroDeserializer, KafkaAvroSerializer}
-import org.apache.avro.Schema.Field
+import org.apache.avro.Schema.{Field, Type}
 import org.apache.avro.generic.{GenericData, GenericRecord}
 import org.apache.avro.{JsonProperties, Schema}
 import org.locationtech.geomesa.features.SerializationOption.SerializationOption
@@ -26,6 +26,7 @@ import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import java.io.{InputStream, OutputStream}
 import java.net.URL
 import java.util.Date
+import java.util.concurrent.atomic.AtomicBoolean
 import scala.collection.JavaConverters._
 import scala.util.Try
 import scala.util.control.NonFatal
@@ -48,9 +49,21 @@ class ConfluentFeatureSerializer(
     schemaRegistryClient.getById(schemaId)
   }
 
+  private val schemaValidationCheck = new AtomicBoolean(false)
+
   private val serializers = new ThreadLocal[ConfluentFeatureMapper]() {
-    override def initialValue(): ConfluentFeatureMapper =
-      new ConfluentFeatureMapper(sft, schema, schemaRegistryClient)
+    override def initialValue(): ConfluentFeatureMapper = {
+      val mapper = new ConfluentFeatureMapper(sft, schema, schemaRegistryClient)
+      if (schemaValidationCheck.compareAndSet(false, true)) {
+        val violations = mapper.checkSchemaViolations()
+        if (violations.nonEmpty) {
+          logger.warn(
+            "The following required schema fields are not mapped to any feature type attributes, " +
+                s"and may cause errors during serialization: ${violations.mkString(", ")}")
+        }
+      }
+      mapper
+    }
   }
 
   override def deserialize(id: String, bytes: Array[Byte]): SimpleFeature =
@@ -157,6 +170,19 @@ object ConfluentFeatureSerializer {
     }
 
     /**
+     * Checks for required fields in the avro schema that are not part of the feature type
+     * (i.e. will never be written)
+     *
+     * @return list of fields that will cause schema validation errors during serialization
+     */
+    def checkSchemaViolations(): Seq[String] = {
+      val mappedPositions = fieldMappings.map(_.schemaIndex) ++ visibilityField.toSeq
+      schema.getFields.asScala.collect {
+        case f if requiredField(f) && !mappedPositions.contains(f.pos()) => f.name()
+      }
+    }
+
+    /**
      * Serialize a feature as Avro
      *
      * @param feature feature to serialize
@@ -225,5 +251,15 @@ object ConfluentFeatureSerializer {
     // filter out JNull - bug in kafka avro deserialization https://issues.apache.org/jira/browse/AVRO-1954
     private def defaultValue(f: Field): Option[AnyRef] =
       Option(f.defaultVal()).filterNot(_.isInstanceOf[JsonProperties.Null])
+
+    private def requiredField(f: Field): Boolean = {
+      defaultValue(f).isEmpty && {
+        f.schema().getType match {
+          case Type.NULL => false
+          case Type.UNION => !f.schema().getTypes.contains(Type.NULL)
+          case _ => true
+        }
+      }
+    }
   }
 }
