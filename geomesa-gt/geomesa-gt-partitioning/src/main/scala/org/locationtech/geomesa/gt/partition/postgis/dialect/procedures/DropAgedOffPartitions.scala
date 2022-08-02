@@ -23,6 +23,7 @@ object DropAgedOffPartitions extends SqlProcedure {
   private def proc(info: TypeInfo): String = {
     val hours = info.partitions.hoursPerPartition
     val mainPartitions = info.tables.mainPartitions
+    // TODO drop spill partitions
     s"""CREATE OR REPLACE PROCEDURE ${name(info).quoted}(cur_time timestamp without time zone) LANGUAGE plpgsql AS
        |  $$BODY$$
        |    DECLARE

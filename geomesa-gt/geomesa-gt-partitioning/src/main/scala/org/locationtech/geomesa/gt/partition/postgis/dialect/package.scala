@@ -34,6 +34,7 @@ package object dialect {
   private[dialect] val WriteAheadTableSuffix            = SqlLiteral("_wa")
   private[dialect] val PartitionedWriteAheadTableSuffix = SqlLiteral("_wa_partition")
   private[dialect] val PartitionedTableSuffix           = SqlLiteral("_partition")
+  private[dialect] val SpillTableSuffix                 = SqlLiteral("_spill")
   private[dialect] val AnalyzeTableSuffix               = SqlLiteral("_analyze_queue")
   private[dialect] val SortTableSuffix                  = SqlLiteral("_sort_queue")
 
@@ -182,6 +183,7 @@ package object dialect {
       writeAhead: TableConfig,
       writeAheadPartitions: TableConfig,
       mainPartitions: TableConfig,
+      spillPartitions: TableConfig,
       analyzeQueue: TableConfig,
       sortQueue: TableConfig)
 
@@ -195,9 +197,10 @@ package object dialect {
       val writeAhead = TableConfig(schema, view.name.raw + WriteAheadTableSuffix.raw, sft.getWriteAheadTableSpace, vacuum = false)
       val writeAheadPartitions = TableConfig(schema, view.name.raw + PartitionedWriteAheadTableSuffix.raw, sft.getWriteAheadPartitionsTableSpace, vacuum = false)
       val mainPartitions = TableConfig(schema, view.name.raw + PartitionedTableSuffix.raw, sft.getMainTableSpace)
+      val spillPartitions = TableConfig(schema, view.name.raw + SpillTableSuffix.raw, sft.getMainTableSpace)
       val analyzeQueue = TableConfig(schema, view.name.raw + AnalyzeTableSuffix.raw, sft.getMainTableSpace)
       val sortQueue = TableConfig(schema, view.name.raw + SortTableSuffix.raw, sft.getMainTableSpace)
-      Tables(view, writeAhead, writeAheadPartitions, mainPartitions, analyzeQueue, sortQueue)
+      Tables(view, writeAhead, writeAheadPartitions, mainPartitions, spillPartitions, analyzeQueue, sortQueue)
     }
   }
 

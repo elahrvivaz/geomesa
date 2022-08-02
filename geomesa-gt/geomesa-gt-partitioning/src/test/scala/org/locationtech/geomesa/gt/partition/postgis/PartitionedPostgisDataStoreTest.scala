@@ -48,7 +48,7 @@ class PartitionedPostgisDataStoreTest extends Specification with LazyLogging {
   val methods =
     Methods(
       create = false,
-      recreate = false,
+      recreate = true,
       write = false,
       update = false,
       query = false,
@@ -60,7 +60,9 @@ class PartitionedPostgisDataStoreTest extends Specification with LazyLogging {
 
   "PartitionedPostgisDataStore" should {
     "work" in {
-      skipped("requires postgis instance")
+      if (!methods.any) {
+        skipped("requires postgis instance")
+      }
       val params =
         Map(
           "dbtype"   -> PartitionedPostgisDataStoreParams.DbType.sample,
@@ -184,5 +186,7 @@ class PartitionedPostgisDataStoreTest extends Specification with LazyLogging {
       query: Boolean,
       delete: Boolean,
       remove: Boolean
-    )
+    ) {
+    def any: Boolean = create || recreate || write || update || query || delete || remove
+  }
 }

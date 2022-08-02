@@ -256,6 +256,7 @@ object PartitionedPostgisDialect {
     DropAgedOffPartitions,
     PartitionMaintenance,
     AnalyzePartitions,
+    CompactPartitions,
     PartitionSort,
     LogCleaner
   )
