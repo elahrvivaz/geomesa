@@ -31,7 +31,7 @@ object WriteAheadTable extends SqlStatements {
          |BEGIN
          |  IF NOT EXISTS (SELECT FROM pg_tables WHERE schemaname = ${info.schema.asLiteral} AND tablename = ${table.name.asLiteral}) THEN
          |    ALTER TABLE ${info.tables.view.name.qualified} RENAME TO ${table.name.quoted};
-         |  ELSE
+         |  ELSIF EXISTS (SELECT FROM pg_tables WHERE schemaname = ${info.schema.asLiteral} AND tablename = ${info.tables.view.name.asLiteral}) THEN
          |    DROP TABLE ${info.tables.view.name.qualified};
          |  END IF;
          |END$$$$;""".stripMargin

@@ -91,16 +91,12 @@ class PartitionedPostgisDialect(store: JDBCDataStore) extends PostGISDialect(sto
    * @param sft feature type
    * @param cx connection
    */
-  def recreateFunctions(schemaName: String, sft: SimpleFeatureType, cx: Connection): Unit = {
+  def upgrade(schemaName: String, sft: SimpleFeatureType, cx: Connection): Unit = {
     val info = TypeInfo(schemaName, sft)
     implicit val ex: ExecutionContext = new ExecutionContext(cx)
     try {
-      val commands = PartitionedPostgisDialect.Commands.filter {
-        case _: SqlProcedure => true
-        case _               => false
-      }
-      commands.reverse.foreach(_.drop(info))
-      commands.foreach(_.create(info))
+      PartitionedPostgisDialect.Commands.reverse.collect { case p: SqlProcedure => p.drop(info) }
+      PartitionedPostgisDialect.Commands.foreach(_.create(info))
     } finally {
       ex.close()
     }

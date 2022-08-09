@@ -546,12 +546,18 @@ package object dialect {
     protected def action: String
 
     override protected def createStatements(info: TypeInfo): Seq[String] = {
-      // there is no "create or replace" for triggers so we have to drop it first
+      // there is no "create or replace" for triggers so we have to wrap it in a check
+      val tgName = triggerName(info)
       val create =
-        s"""CREATE TRIGGER ${triggerName(info).quoted}
-           |  $action ON ${table(info).qualified}
-           |  FOR EACH ROW EXECUTE PROCEDURE ${name(info).quoted}();""".stripMargin
-      Seq(dropTrigger(info), create)
+        s"""DO $$$$
+           |BEGIN
+           |  IF NOT EXISTS (SELECT FROM pg_trigger WHERE tgname = ${tgName.asLiteral}) THEN
+           |    CREATE TRIGGER ${tgName.quoted}
+           |      $action ON ${table(info).qualified}
+           |      FOR EACH ROW EXECUTE PROCEDURE ${name(info).quoted}();
+           |  END IF;
+           |END$$$$;""".stripMargin
+      Seq(create)
     }
 
     override protected def dropStatements(info: TypeInfo): Seq[String] =
@@ -590,11 +596,29 @@ package object dialect {
      */
     protected def invocation(info: TypeInfo): SqlLiteral
 
-    override protected def createStatements(info: TypeInfo): Seq[String] =
-      Seq(s"SELECT cron.schedule(${jobName(info).quoted}, ${schedule(info).quoted}, ${invocation(info).quoted});")
+    override protected def createStatements(info: TypeInfo): Seq[String] = {
+      val jName = jobName(info).quoted
+      val create =
+        s"""DO $$$$
+           |BEGIN
+           |  IF NOT EXISTS (SELECT FROM cron.job WHERE jobname = $jName) THEN
+           |    PERFORM cron.schedule($jName, ${schedule(info).quoted}, ${invocation(info).quoted});
+           |  END IF;
+           |END$$$$;""".stripMargin
+      Seq(create)
+    }
 
-    abstract override protected def dropStatements(info: TypeInfo): Seq[String] =
-      Seq(s"SELECT cron.unschedule(${jobName(info).quoted});") ++ super.dropStatements(info)
+    abstract override protected def dropStatements(info: TypeInfo): Seq[String] = {
+      val jName = jobName(info).quoted
+      val drop =
+        s"""DO $$$$
+           |BEGIN
+           |  IF EXISTS (SELECT FROM cron.job WHERE jobname = $jName) THEN
+           |    PERFORM cron.unschedule($jName);
+           |  END IF;
+           |END$$$$;""".stripMargin
+      Seq(drop) ++ super.dropStatements(info)
+    }
   }
 
   /**

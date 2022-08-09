@@ -30,11 +30,14 @@ class UserDataTable extends Sql {
       s"""CREATE TABLE IF NOT EXISTS $table (
          |  type_name text not null,
          |  key text not null,
-         |  value text not null
+         |  value text not null,
+         |  CONSTRAINT ${escape(Name.raw, "pkey")} PRIMARY KEY (type_name, key)
          |);""".stripMargin
     ex.execute(create)
 
-    val insertSql = s"INSERT INTO $table (type_name, key, value) VALUES (?, ?, ?);"
+    val insertSql =
+      s"INSERT INTO $table (type_name, key, value) VALUES (?, ?, ?) " +
+          s"ON CONFLICT (type_name, key) DO UPDATE SET value = EXCLUDED.value;"
 
     def insert(config: String, value: Option[String]): Unit =
       value.foreach(v => ex.executeUpdate(insertSql, Seq(info.typeName, config, v)))
