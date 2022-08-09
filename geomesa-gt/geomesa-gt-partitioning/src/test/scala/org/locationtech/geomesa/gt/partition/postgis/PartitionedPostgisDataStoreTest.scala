@@ -48,7 +48,7 @@ class PartitionedPostgisDataStoreTest extends Specification with LazyLogging {
   val methods =
     Methods(
       create = false,
-      upgrade = true,
+      upgrade = false,
       write = false,
       update = false,
       query = false,

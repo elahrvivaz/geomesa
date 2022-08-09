@@ -26,14 +26,22 @@ class UserDataTable extends Sql {
 
   override def create(info: TypeInfo)(implicit ex: ExecutionContext): Unit = {
     val table = s"${info.schema.quoted}.${Name.quoted}"
+    val cName = TableName(Name.raw + "_pkey")
     val create =
       s"""CREATE TABLE IF NOT EXISTS $table (
          |  type_name text not null,
          |  key text not null,
-         |  value text not null,
-         |  CONSTRAINT ${escape(Name.raw, "pkey")} PRIMARY KEY (type_name, key)
+         |  value text not null
          |);""".stripMargin
-    ex.execute(create)
+    val constraint =
+      s"""DO $$$$
+         |BEGIN
+         |  IF NOT EXISTS (SELECT FROM pg_constraint WHERE conname = ${cName.asLiteral} AND conrelid = ${Name.asLiteral}::regclass) THEN
+         |    ALTER TABLE $table ADD CONSTRAINT ${cName.quoted} PRIMARY KEY (type_name, key);
+         |  END IF;
+         |END$$$$;""".stripMargin
+
+    Seq(create, constraint).foreach(ex.execute)
 
     val insertSql =
       s"INSERT INTO $table (type_name, key, value) VALUES (?, ?, ?) " +
