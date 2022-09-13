@@ -105,8 +105,9 @@ class CloseableIteratorTest extends Specification {
       val result = CloseableIterator(Iterator(0, 1), closed0.close()) ++
           CloseableIterator(Iterator(2, 3), closed1.close()) ++
           CloseableIterator(Iterator(4, 5), closed2.close())
+      result must beAnInstanceOf[CloseableIterator[Int]]
       result.toSeq mustEqual Seq(0, 1, 2, 3, 4, 5)
-      result.close()
+      result.asInstanceOf[CloseableIterator[Int]].close()
       foreach(Seq(closed0, closed1, closed2))(_.count mustEqual 1)
     }
     "provide an empty iterator that has no next element" >> {

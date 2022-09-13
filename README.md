@@ -40,13 +40,13 @@ geospatial analytics.
 **Current release: [3.4.1](https://github.com/locationtech/geomesa/releases/tag/geomesa-3.4.1)**
 
   &nbsp;&nbsp;&nbsp;&nbsp;
-  [**HBase**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-hbase_2.12-3.4.1-bin.tar.gz) |
-  [**Accumulo**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-accumulo_2.12-3.4.1-bin.tar.gz) |
-  [**Cassandra**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-cassandra_2.12-3.4.1-bin.tar.gz) |
-  [**Kafka**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-kafka_2.12-3.4.1-bin.tar.gz) |
-  [**Redis**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-redis_2.12-3.4.1-bin.tar.gz) |
-  [**FileSystem**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-fs_2.12-3.4.1-bin.tar.gz) |
-  [**Bigtable**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-bigtable_2.12-3.4.1-bin.tar.gz)
+  [**HBase**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-hbase_2.13-3.4.1-bin.tar.gz) |
+  [**Accumulo**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-accumulo_2.13-3.4.1-bin.tar.gz) |
+  [**Cassandra**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-cassandra_2.13-3.4.1-bin.tar.gz) |
+  [**Kafka**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-kafka_2.13-3.4.1-bin.tar.gz) |
+  [**Redis**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-redis_2.13-3.4.1-bin.tar.gz) |
+  [**FileSystem**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-fs_2.13-3.4.1-bin.tar.gz) |
+  [**Bigtable**](https://github.com/locationtech/geomesa/releases/download/geomesa-3.4.1/geomesa-bigtable_2.13-3.4.1-bin.tar.gz)
 
 ### Verifying Downloads
 
@@ -60,7 +60,7 @@ $ gpg2 --keyserver hkp://pool.sks-keyservers.net --recv-keys CD24F317
 Then verify the file:
 
 ```bash
-$ gpg2 --verify geomesa-accumulo_2.12-3.4.1-bin.tar.gz.asc geomesa-accumulo_2.12-3.4.1-bin.tar.gz
+$ gpg2 --verify geomesa-accumulo_2.13-3.4.1-bin.tar.gz.asc geomesa-accumulo_2.13-3.4.1-bin.tar.gz
 ```
 
 The keys currently used for signing are:
@@ -79,7 +79,7 @@ GeoMesa is hosted on Maven Central. To include it as a dependency, add the desir
 ```xml
 <dependency>
   <groupId>org.locationtech.geomesa</groupId>
-  <artifactId>geomesa-hbase-datastore_2.12</artifactId>
+  <artifactId>geomesa-hbase-datastore_2.13</artifactId>
   <version>3.4.1</version>
 </dependency>
 ```
@@ -129,7 +129,7 @@ DataStore implementations:
 ```xml
 <dependency>
   <groupId>org.locationtech.geomesa</groupId>
-  <artifactId>geomesa-gt-spark-runtime_2.12</artifactId>
+  <artifactId>geomesa-gt-spark-runtime_2.13</artifactId>
   <version>3.4.1</version>
   <exclusions>
     <exclusion>

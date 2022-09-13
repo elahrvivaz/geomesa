@@ -25,7 +25,7 @@ import java.nio.charset.StandardCharsets.UTF_8
 import java.text.SimpleDateFormat
 import java.util.UUID
 import scala.collection.mutable
-import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.{ArrayBuffer, ListBuffer}
 import scala.io.Codec.UTF8
 import scala.io.Source
 import scala.util.Random
@@ -110,12 +110,12 @@ class FeatureSpecificReaderTest extends LazyLogging {
     val r = new Random()
     r.setSeed(0)
 
-    var lst = new mutable.MutableList[String]
+    val lst = ArrayBuffer.empty[String]
     for(i <- 0 until size)
       lst += randomString(i, 8, r)
 
     val sf = new AvroSimpleFeature(new FeatureIdImpl(id), sft)
-    for(i <- 0 until lst.size) {
+    for(i <- lst.indices) {
       sf.setAttribute(i, lst(i))
     }
     sf

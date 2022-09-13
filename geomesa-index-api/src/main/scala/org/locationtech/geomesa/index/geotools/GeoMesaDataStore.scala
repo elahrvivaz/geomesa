@@ -21,6 +21,7 @@ import org.locationtech.geomesa.index.index.id.IdIndex
 import org.locationtech.geomesa.index.planning.QueryPlanner
 import org.locationtech.geomesa.index.stats.HasGeoMesaStats
 import org.locationtech.geomesa.index.utils.{ExplainLogging, Explainer}
+import org.locationtech.geomesa.utils.concurrent.CachedThreadPool
 import org.locationtech.geomesa.utils.conf.SemanticVersion.MinorOrdering
 import org.locationtech.geomesa.utils.conf.{GeoMesaProperties, IndexId, SemanticVersion}
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -262,15 +263,17 @@ abstract class GeoMesaDataStore[DS <: GeoMesaDataStore[DS]](val config: GeoMesaD
   override protected def onSchemaDeleted(sft: SimpleFeatureType): Unit = {
     // noinspection ScalaDeprecation
     if (sft.isTableSharing && getTypeNames.exists(t => t != sft.getTypeName && getSchema(t).isTableSharing)) {
-      manager.indices(sft).par.foreach { index =>
+      manager.indices(sft).foreach { index =>
         if (index.keySpace.sharing.isEmpty) {
-          adapter.deleteTables(index.deleteTableNames(None))
+          CachedThreadPool.submit(() => adapter.deleteTables(index.deleteTableNames(None)))
         } else {
-          adapter.clearTables(index.deleteTableNames(None), Some(index.keySpace.sharing))
+          CachedThreadPool.submit(() => adapter.clearTables(index.deleteTableNames(None), Some(index.keySpace.sharing)))
         }
       }
     } else {
-      manager.indices(sft).par.foreach(index => adapter.deleteTables(index.deleteTableNames(None)))
+      manager.indices(sft).foreach { index =>
+        CachedThreadPool.submit(() => adapter.deleteTables(index.deleteTableNames(None)))
+      }
     }
     if (sft.statsEnabled) {
       stats.writer.clear(sft)
