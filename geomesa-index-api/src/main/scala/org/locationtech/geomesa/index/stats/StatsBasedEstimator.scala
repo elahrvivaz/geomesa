@@ -14,7 +14,7 @@ import org.locationtech.geomesa.filter._
 import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 import org.locationtech.geomesa.utils.geotools._
 import org.locationtech.jts.geom.Geometry
-import org.locationtech.sfcurve.IndexRange
+import org.locationtech.geomesa.zorder.sfcurve.IndexRange
 import org.opengis.feature.simple.SimpleFeatureType
 import org.opengis.filter._
 import org.opengis.filter.expression.PropertyName
