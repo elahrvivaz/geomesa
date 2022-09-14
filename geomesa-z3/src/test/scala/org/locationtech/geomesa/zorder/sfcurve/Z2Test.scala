@@ -36,8 +36,8 @@ class Z2Test extends Specification {
 
     "unapply" in {
       val Z2(x,y) = Z2(3,5)
-      x should be (3)
-      y should be (5)
+      x mustEqual 3
+      y mustEqual 5
     }
 
     "replaces example in Tropf, Herzog paper" in {
