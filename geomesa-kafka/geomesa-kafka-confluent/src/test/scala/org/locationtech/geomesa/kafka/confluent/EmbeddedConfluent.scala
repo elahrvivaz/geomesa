@@ -9,12 +9,15 @@
 package org.locationtech.geomesa.kafka.confluent
 
 import io.confluent.kafka.schemaregistry.RestApp
+import io.confluent.kafka.schemaregistry.avro.AvroCompatibilityLevel
 import org.apache.curator.test.InstanceSpec
 import org.locationtech.geomesa.kafka.EmbeddedKafka
 
 class EmbeddedConfluent extends EmbeddedKafka {
 
-  private val schemaRegistryApp = new RestApp(InstanceSpec.getRandomPort, zookeepers, "_schemas")
+  private val schemaRegistryApp =
+    new RestApp(InstanceSpec.getRandomPort, null, s"PLAINTEXT://$brokers", "_schemas", AvroCompatibilityLevel.NONE.name, true, null)
+
   schemaRegistryApp.start()
 
   val schemaRegistryUrl: String = schemaRegistryApp.restConnect

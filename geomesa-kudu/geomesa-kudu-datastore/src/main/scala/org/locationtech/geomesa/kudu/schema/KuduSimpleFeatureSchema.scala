@@ -83,10 +83,13 @@ class KuduSimpleFeatureSchema private (sft: SimpleFeatureType) {
     * @return
     */
   def serialize(feature: SimpleFeature): Seq[KuduValue[_]] = {
-    import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichTraversableOnce
     val builder = Seq.newBuilder[KuduValue[_]]
     builder.sizeHint(adapters.length)
-    adapters.foreachIndex { case (adapter, i) => builder += KuduValue(feature.getAttribute(i), adapter) }
+    var i = 0
+    adapters.foreach { adapter =>
+      builder += KuduValue(feature.getAttribute(i), adapter)
+      i += 1
+    }
     builder.result
   }
 }

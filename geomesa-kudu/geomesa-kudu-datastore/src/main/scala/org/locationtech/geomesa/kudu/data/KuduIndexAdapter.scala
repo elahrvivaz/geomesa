@@ -63,7 +63,7 @@ class KuduIndexAdapter(ds: KuduDataStore) extends IndexAdapter[KuduDataStore] {
   }
 
   override def deleteTables(tables: Seq[String]): Unit = {
-    tables.par.foreach { table =>
+    tables.foreach { table =>
       if (ds.client.tableExists(table)) {
         ds.client.deleteTable(table)
       }
@@ -75,7 +75,7 @@ class KuduIndexAdapter(ds: KuduDataStore) extends IndexAdapter[KuduDataStore] {
 
     val indices = ds.getTypeNames.map(ds.getSchema).flatMap(ds.manager.indices(_))
 
-    tables.par.foreach { name =>
+    tables.foreach { name =>
       val index = indices.find(_.getTableNames().contains(name)).getOrElse {
         throw new IllegalArgumentException(s"Couldn't find index corresponding to table '$name'")
       }
@@ -111,7 +111,7 @@ class KuduIndexAdapter(ds: KuduDataStore) extends IndexAdapter[KuduDataStore] {
     // create push-down predicates and remove from the ecql where possible
     val KuduFilter(predicates, ecql) = strategy.ecql.map(mapper.schema.predicate).getOrElse(KuduFilter(Seq.empty, None))
 
-    val adapter = KuduResultAdapter(index.sft, auths, ecql, hints)
+    val adapter = KuduResultAdapter(index.sft, auths.toSeq, ecql, hints)
 
     if (keyRanges.isEmpty) { EmptyPlan(filter, adapter) } else {
       val tables = index.getTablesForQuery(filter.filter)

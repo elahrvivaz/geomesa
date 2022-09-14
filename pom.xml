@@ -108,7 +108,7 @@
         <kafka.version>2.4.1</kafka.version> <!-- 2.4.1 is the only release with scala 2.11-2.13 -->
         <!--<zkclient.version>0.10</zkclient.version> &lt;!&ndash; corresponding versions: 0.10, 0.10, 0.10, 0.7 &ndash;&gt;-->
         <!--<kafka.jopt.version>5.0.4</kafka.jopt.version> &lt;!&ndash; corresponding versions: 5.0.4, 5.0.4, 4.9, 3.2 &ndash;&gt;-->
-        <confluent.version>5.1.0</confluent.version>
+        <confluent.version>5.4.9</confluent.version>
         <confluent.recommended.version>5.5.8</confluent.recommended.version>
         <confluent.avro.version>1.8.2</confluent.avro.version>
 

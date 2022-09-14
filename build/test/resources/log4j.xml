@@ -23,7 +23,7 @@
         <priority value="error"/>
     </category>
     <category name="io.confluent">
-        <priority value="error"/>
+        <priority value="warn"/>
     </category>
     <category name="org.apache.zookeeper">
         <priority value="error"/>

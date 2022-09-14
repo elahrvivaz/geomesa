@@ -51,7 +51,7 @@ class GeoMesaStatsEndpoint(val swagger: Swagger, rootPath: String = GeoMesaScala
   val getCount = (
         apiOperation[Integer]("getCount")
         summary "Gets an estimated count of simple features"
-        notes "Gets an estimated count of simple features from the stats table in Accumulo."
+        description "Gets an estimated count of simple features from the stats table in Accumulo."
         parameters (
         pathParam[String](GeoMesaStatsEndpoint.WorkspaceParam).description("GeoServer workspace."),
         pathParam[String](GeoMesaStatsEndpoint.LayerParam).description("GeoServer layer."),
@@ -91,7 +91,7 @@ class GeoMesaStatsEndpoint(val swagger: Swagger, rootPath: String = GeoMesaScala
   val getBounds = (
         apiOperation[String]("getBounds")
         summary "Gets the bounds of attributes"
-        notes "Gets the bounds of attributes from the stats table in Accumulo."
+        description "Gets the bounds of attributes from the stats table in Accumulo."
         parameters (
         pathParam[String](GeoMesaStatsEndpoint.WorkspaceParam).description("GeoServer workspace."),
         pathParam[String](GeoMesaStatsEndpoint.LayerParam).description("GeoServer layer."),
@@ -142,7 +142,7 @@ class GeoMesaStatsEndpoint(val swagger: Swagger, rootPath: String = GeoMesaScala
   val getHistograms = (
         apiOperation[String]("getHistogram")
         summary "Gets histograms of attributes"
-        notes "Gets histograms of attributes from the stats table in Accumulo."
+        description "Gets histograms of attributes from the stats table in Accumulo."
         parameters (
         pathParam[String](GeoMesaStatsEndpoint.WorkspaceParam).description("GeoServer workspace."),
         pathParam[String](GeoMesaStatsEndpoint.LayerParam).description("GeoServer layer."),
