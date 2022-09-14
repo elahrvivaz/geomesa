@@ -125,7 +125,7 @@ trait GeoMesaDataStoreServlet extends PersistentDataStoreServlet {
    */
   get("/ds/?") {
     try {
-      getPersistedDataStores.mapValues(filterPasswords)
+      getPersistedDataStores.map { case (k, v) => k -> filterPasswords(v) }
     } catch {
       case e: Exception => handleError(s"Error reading data stores:", e)
     }

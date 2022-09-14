@@ -9,16 +9,15 @@
 package org.locationtech.geomesa.web.core
 
 import org.scalatra.ScalatraServlet
-import org.scalatra.swagger.{ApiInfo, NativeSwaggerBase, Swagger}
+import org.scalatra.swagger.{ApiInfo, ContactInfo, LicenseInfo, NativeSwaggerBase, Swagger}
 
 class ResourcesApp(val swagger: Swagger) extends ScalatraServlet with NativeSwaggerBase
 
 object GeoMesaApiInfo extends ApiInfo(
   "The GeoMesa REST API",
   "Docs for the GeoMesa REST API",
-  "http://geomesa.org",
-  "geomesa-users@locationtech.org",
-  "Apache License, Version 2.0",
-  "http://www.apache.org/licenses")
+  "https://geomesa.org/",
+  ContactInfo("geomesa-users", "https://geomesa.org/", "geomesa-users@locationtech.org"),
+  LicenseInfo("Apache License, Version 2.0", "https://www.apache.org/licenses/LICENSE-2.0"))
 
 class GeoMesaSwagger extends Swagger(Swagger.SpecVersion, "1.0.0", GeoMesaApiInfo)

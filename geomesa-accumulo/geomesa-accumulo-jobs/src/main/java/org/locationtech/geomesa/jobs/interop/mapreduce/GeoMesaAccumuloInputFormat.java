@@ -16,8 +16,11 @@ import org.apache.hadoop.mapreduce.JobContext;
 import org.apache.hadoop.mapreduce.RecordReader;
 import org.apache.hadoop.mapreduce.TaskAttemptContext;
 import org.geotools.data.Query;
+import org.geotools.filter.text.cql2.CQLException;
+import org.geotools.filter.text.ecql.ECQL;
 import org.locationtech.geomesa.jobs.mapreduce.GeoMesaAccumuloInputFormat$;
 import org.opengis.feature.simple.SimpleFeature;
+import org.opengis.filter.Filter;
 import scala.Option;
 import scala.Predef;
 import scala.Tuple2;
@@ -50,10 +53,7 @@ public class GeoMesaAccumuloInputFormat extends InputFormat<Text, SimpleFeature>
 
     @SuppressWarnings("unchecked")
     public static void configure(Job job, Map<String, String> dataStoreParams, Query query) {
-        Object m = JavaConverters.mapAsScalaMapConverter(dataStoreParams).asScala();
-        scala.collection.immutable.Map<String, String> scalaParams =
-                ((scala.collection.mutable.Map<String, String>) m).toMap(Predef.<Tuple2<String, String>>conforms());
-        GeoMesaAccumuloInputFormat$.MODULE$.configure(job, scalaParams, query);
+        GeoMesaAccumuloInputFormat$.MODULE$.configure(job.getConfiguration(), dataStoreParams, query);
     }
 
     @Deprecated
@@ -63,11 +63,13 @@ public class GeoMesaAccumuloInputFormat extends InputFormat<Text, SimpleFeature>
                                  String featureTypeName,
                                  String filter,
                                  String[] transform) {
-        Object m = JavaConverters.mapAsScalaMapConverter(dataStoreParams).asScala();
-        scala.collection.immutable.Map<String, String> scalaParams =
-                ((scala.collection.mutable.Map<String, String>) m).toMap(Predef.<Tuple2<String, String>>conforms());
-        Option<String> f = Option.apply(filter);
-        Option<String[]> t = Option.apply(transform);
-        GeoMesaAccumuloInputFormat$.MODULE$.configure(job, scalaParams, featureTypeName, f, t);
+        Filter f;
+        try {
+            f = filter == null ? Filter.INCLUDE : ECQL.toFilter(filter);
+        } catch (CQLException e) {
+            throw new RuntimeException(e);
+        }
+        String[] t = transform == null ? Query.ALL_NAMES : transform;
+        GeoMesaAccumuloInputFormat$.MODULE$.configure(job.getConfiguration(), dataStoreParams, new Query(featureTypeName, f, t));
     }
 }

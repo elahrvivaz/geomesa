@@ -75,8 +75,9 @@ class JsonConverterFactory extends AbstractConverterFactory[JsonConverter, JsonC
         }
 
         // track the 'properties', geometry type and 'id' in each feature
-        val props = scala.collection.mutable.Map.empty[String, ListBuffer[String]]
-        val geoms = scala.collection.mutable.Set.empty[ObjectType]
+        // use linkedHashSet/Map to retain insertion order
+        val props = scala.collection.mutable.LinkedHashMap.empty[String, ListBuffer[String]]
+        val geoms = scala.collection.mutable.LinkedHashSet.empty[ObjectType]
         var hasId = true
 
         features.take(AbstractConverterFactory.inferSampleSize).foreach { feature =>
@@ -85,7 +86,7 @@ class JsonConverterFactory extends AbstractConverterFactory[JsonConverter, JsonC
           hasId = hasId && feature.id.isDefined
         }
 
-        val idJsonField = if (hasId) { Some(new StringJsonField("id", "$.id", false, None)) } else { None }
+        val idJsonField = if (hasId) { Some(StringJsonField("id", "$.id", pathIsRoot = false, None)) } else { None }
         val idField = idJsonField match {
           case None    => Some(Expression("md5(string2bytes(json2string($0)))"))
           case Some(f) => Some(Expression(s"$$${f.name}"))
@@ -118,12 +119,12 @@ class JsonConverterFactory extends AbstractConverterFactory[JsonConverter, JsonC
           inferredTypes += inferred.copy(name = attr) // note: side-effect in map
           // account for optional nodes by wrapping transform with a try/null
           val transform = Some(Expression(s"try(${inferred.transform.apply(0)},null)"))
-          new StringJsonField(attr, path, false, transform)
+          StringJsonField(attr, path, pathIsRoot = false, transform)
         }
 
         // the geometry field
         val geomType = if (geoms.size > 1) { ObjectType.GEOMETRY } else { geoms.head }
-        val geomField = new GeometryJsonField(name("geom"), "$.geometry", false, None)
+        val geomField = GeometryJsonField(name("geom"), "$.geometry", pathIsRoot = false, None)
         inferredTypes += InferredType(geomField.name, geomType, IdentityTransform)
 
         // validate the existing schema, if any
@@ -187,9 +188,9 @@ object JsonConverterFactory {
       }
       config.right.flatMap { case (jType, path, rootPath) =>
         if (path.isDefined && rootPath.isDefined) {
-          cur.failed(CannotConvert(cur.value.toString, "JsonField", "Json fields must define only one of 'path' or 'root-path'"))
+          cur.failed(CannotConvert(cur.valueOpt.map(_.toString).orNull, "JsonField", "Json fields must define only one of 'path' or 'root-path'"))
         } else if (jType.isDefined && path.isEmpty && rootPath.isEmpty) {
-          cur.failed(CannotConvert(cur.value.toString, "JsonField", "Json fields must define a 'path' or 'root-path'"))
+          cur.failed(CannotConvert(cur.valueOpt.map(_.toString).orNull, "JsonField", "Json fields must define a 'path' or 'root-path'"))
         } else if (jType.isEmpty) {
           Right(DerivedField(name, transform))
         } else {
@@ -198,16 +199,16 @@ object JsonConverterFactory {
             case (None, Some(p)) => (p, true)
           }
           jType.get.toLowerCase(Locale.US) match {
-            case "string"           => Right(new StringJsonField(name, jsonPath, pathIsRoot, transform))
-            case "float"            => Right(new FloatJsonField(name, jsonPath, pathIsRoot, transform))
-            case "double"           => Right(new DoubleJsonField(name, jsonPath, pathIsRoot, transform))
-            case "integer" | "int"  => Right(new IntJsonField(name, jsonPath, pathIsRoot, transform))
-            case "boolean" | "bool" => Right(new BooleanJsonField(name, jsonPath, pathIsRoot, transform))
-            case "long"             => Right(new LongJsonField(name, jsonPath, pathIsRoot, transform))
-            case "geometry"         => Right(new GeometryJsonField(name, jsonPath, pathIsRoot, transform))
-            case "array" | "list"   => Right(new ArrayJsonField(name, jsonPath, pathIsRoot, transform))
-            case "object" | "map"   => Right(new ObjectJsonField(name, jsonPath, pathIsRoot, transform))
-            case t => cur.failed(CannotConvert(cur.value.toString, "JsonField", s"Invalid json-type '$t'"))
+            case "string"           => Right(StringJsonField(name, jsonPath, pathIsRoot, transform))
+            case "float"            => Right(FloatJsonField(name, jsonPath, pathIsRoot, transform))
+            case "double"           => Right(DoubleJsonField(name, jsonPath, pathIsRoot, transform))
+            case "integer" | "int"  => Right(IntJsonField(name, jsonPath, pathIsRoot, transform))
+            case "boolean" | "bool" => Right(BooleanJsonField(name, jsonPath, pathIsRoot, transform))
+            case "long"             => Right(LongJsonField(name, jsonPath, pathIsRoot, transform))
+            case "geometry"         => Right(GeometryJsonField(name, jsonPath, pathIsRoot, transform))
+            case "array" | "list"   => Right(ArrayJsonField(name, jsonPath, pathIsRoot, transform))
+            case "object" | "map"   => Right(ObjectJsonField(name, jsonPath, pathIsRoot, transform))
+            case t => cur.failed(CannotConvert(cur.valueOpt.map(_.toString).orNull, "JsonField", s"Invalid json-type '$t'"))
           }
         }
       }
