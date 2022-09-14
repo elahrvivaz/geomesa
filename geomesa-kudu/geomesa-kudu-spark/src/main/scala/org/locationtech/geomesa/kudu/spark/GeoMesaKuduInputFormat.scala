@@ -75,7 +75,7 @@ class GeoMesaKuduInputFormat extends InputFormat[NullWritable, SimpleFeature] wi
 
       val plans = ds.getQueryPlan(query).filter(_.ranges.nonEmpty)
 
-      val splits = new java.util.ArrayList[InputSplit](plans.map(_.ranges.length).sumOption.getOrElse(0))
+      val splits = new java.util.ArrayList[InputSplit](if (plans.isEmpty) 0 else plans.map(_.ranges.length).sum)
 
       val tables = scala.collection.mutable.Map.empty[String, KuduTable]
 
