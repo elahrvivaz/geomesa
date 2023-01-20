@@ -2624,6 +2624,11 @@
                         <groupId>org.apache.hadoop</groupId>
                         <artifactId>hadoop-client-runtime</artifactId>
                     </exclusion>
+                    <!-- this is published to maven as a "bundle" and doesn't seem to resolve correctly -->
+                    <exclusion>
+                        <groupId>org.apache.directory.jdbm</groupId>
+                        <artifactId>apacheds-jdbm1</artifactId>
+                    </exclusion>
                 </exclusions>
             </dependency>
             <dependency>
