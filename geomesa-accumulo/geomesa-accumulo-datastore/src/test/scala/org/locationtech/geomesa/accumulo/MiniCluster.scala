@@ -21,7 +21,13 @@ import java.io._
 import java.nio.file.Files
 import scala.collection.JavaConverters._
 
-case object MiniCluster extends MiniCluster {
+case object MiniCluster {
+
+  val namespace = "gm"
+
+  lazy private val mc = new MiniCluster(namespace)
+
+  lazy val cluster = mc.cluster
 
   private val systemPermissions = Seq(
     SystemPermission.CREATE_NAMESPACE,
@@ -37,7 +43,7 @@ case object MiniCluster extends MiniCluster {
     NamespacePermission.DROP_TABLE
   )
 
-  sys.addShutdownHook(close())
+  sys.addShutdownHook(mc.close())
 
   case class UserWithAuths(name: String, password: String, auths: Authorizations)
 
@@ -48,15 +54,13 @@ case object MiniCluster extends MiniCluster {
   }
 }
 
-trait MiniCluster extends Closeable with LazyLogging {
+class MiniCluster(val namespace: String = "gm") extends Closeable with LazyLogging {
 
   import MiniCluster._
 
   private val miniClusterTempDir = Files.createTempDirectory("gm-mini-acc-")
 
-  val namespace = "gm"
-
-  lazy val cluster: MiniAccumuloCluster = {
+  val cluster: MiniAccumuloCluster = {
     logger.info(s"Starting Accumulo minicluster at $miniClusterTempDir")
 
     val config = new MiniAccumuloConfig(miniClusterTempDir.toFile, Users.root.password)
@@ -79,7 +83,7 @@ trait MiniCluster extends Closeable with LazyLogging {
     configure(configImpl, coreSite)
 
     val cluster = new MiniAccumuloCluster(config) // required for zookeeper 3.5
-    WithClose(new FileWriter(new File(configImpl.getConfDir, "conf/zoo.cfg"), true)) { writer =>
+    WithClose(new FileWriter(new File(configImpl.getConfDir, "zoo.cfg"), true)) { writer =>
       writer.write("admin.enableServer=false\n") // disable the admin server, which tries to bind to 8080
       writer.write("4lw.commands.whitelist=*\n") // enable 'ruok', which the minicluster uses to check zk status
     }

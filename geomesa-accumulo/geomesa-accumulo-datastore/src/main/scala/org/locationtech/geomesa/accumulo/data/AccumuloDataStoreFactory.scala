@@ -33,6 +33,7 @@ import org.locationtech.geomesa.utils.geotools.GeoMesaParam
 import java.awt.RenderingHints
 import java.io.IOException
 import java.nio.charset.StandardCharsets
+import java.security.PrivilegedExceptionAction
 import java.util.Locale
 
 class AccumuloDataStoreFactory extends DataStoreFactorySpi {
@@ -159,6 +160,7 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
         ClientProperty.AUTH_TYPE.getValue(config).toLowerCase(Locale.US)
       }
 
+    var ugi: UserGroupInformation = null
     // build authentication token according to how we are authenticating
     val auth: AuthenticationToken = if (authType == AccumuloClientConfig.PasswordAuthType) {
       new PasswordToken(getRequired(PasswordParam, ClientProperty.AUTH_TOKEN).getBytes(StandardCharsets.UTF_8))
@@ -166,7 +168,7 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
       val file = new java.io.File(getRequired(KeytabPathParam, ClientProperty.AUTH_TOKEN))
       // mimic behavior from accumulo 1.9 and earlier:
       // `public KerberosToken(String principal, File keytab, boolean replaceCurrentUser)`
-      UserGroupInformation.loginUserFromKeytab(user, file.getAbsolutePath)
+      ugi = UserGroupInformation.loginUserFromKeytabAndReturnUGI(user, file.getAbsolutePath)
       new KerberosToken(user, file)
     } else {
       throw new IllegalArgumentException(s"Unsupported auth type: $authType")
@@ -195,7 +197,15 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
       }
     }
 
-    Accumulo.newClient().from(config).as(user, auth).build()
+    val client = Accumulo.newClient().from(config).as(user, auth).build()
+    ugi.doAs(new PrivilegedExceptionAction[Unit]() {
+      override def run(): Unit = {
+        val client = Accumulo.newClient().from(config).as(user, auth).build()
+        println(client.securityOperations().listLocalUsers().asScala)
+        client.close()
+      }
+    })
+    client
   }
 
   def buildConfig(connector: AccumuloClient, params: java.util.Map[String, _]): AccumuloDataStoreConfig = {
@@ -204,7 +214,7 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
     val authProvider = buildAuthsProvider(connector, params)
     val auditProvider = buildAuditProvider(params)
     val auditQueries = AuditQueriesParam.lookup(params).booleanValue()
-    
+
     val auditService = new AccumuloAuditService(connector, authProvider, s"${catalog}_queries", auditQueries)
 
     val queries = AccumuloQueryConfig(
