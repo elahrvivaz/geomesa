@@ -307,8 +307,8 @@ org.xmlresolver:xmlresolver	data:4.4.3	compile
 org.yaml:snakeyaml	1.33	compile
 picocontainer:picocontainer	1.2	compile
 redis.clients:jedis	4.3.1	compile
-si.uom:si-quantity	2.0.1	compile
-si.uom:si-units	2.0.1	compile
+si.uom:si-quantity	2.1	compile
+si.uom:si-units	2.1	compile
 software.amazon.ion:ion-java	1.0.2	compile
 systems.uom:systems-common	2.0.2	compile
 tech.units:indriya	2.2	compile

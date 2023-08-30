@@ -1449,6 +1449,16 @@
                 <artifactId>indriya</artifactId>
                 <version>${indriya.version}</version>
             </dependency>
+            <dependency>
+                <groupId>si.uom</groupId>
+                <artifactId>si-quantity</artifactId>
+                <version>2.1</version>
+            </dependency>
+            <dependency>
+                <groupId>si.uom</groupId>
+                <artifactId>si-units</artifactId>
+                <version>2.1</version>
+            </dependency>
 
             <!--
                 `org.eclipse.emf` is a transitive dependency of gt-xsd-wfs, however the version number is
