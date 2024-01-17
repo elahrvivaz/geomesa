@@ -19,8 +19,8 @@
 
 set -e
 
-VALID_VERSIONS=("2.12" "2.13")
-FULL_VERSIONS=("2.12.18" "2.13.12")
+VALID_VERSIONS=("2.12" "2.13" "3")
+FULL_VERSIONS=("2.12.18" "2.13.12" "3.3.1")
 
 usage() {
   echo "Usage: $(basename "$0") [-h|--help] <version>
@@ -51,14 +51,14 @@ if [[ -z "$FULL_VERSION" ]]; then
 fi
 
 # pull out the scala version from the main artifactId
-FROM_VERSION="$(sed -n '/geomesa_/ s| *<artifactId>geomesa_\([0-9]\.[0-9][0-9]*\)</artifactId>|\1|p' "$BASEDIR"/pom.xml)"
+FROM_VERSION="$(sed -n '/geomesa_/ s| *<artifactId>geomesa_\([0-9.]*\)</artifactId>|\1|p' "$BASEDIR"/pom.xml)"
 
 find "$BASEDIR" -name 'pom.xml' -not -path '*target*' -print \
   -exec sed -i "s/\(artifactId.*\)_$FROM_VERSION/\1_$TO_VERSION/g" {} \;
 
 # update <scala.binary.version> in parent POM
 # match any scala binary version to ensure idempotency
-sed -i "1,/<scala\.binary\.version>[0-9]\.[0-9][0-9]*</s/<scala\.binary\.version>[0-9]\.[0-9][0-9]*</<scala.binary.version>$TO_VERSION</" \
+sed -i "1,/<scala\.binary\.version>[0-9.]*</s/<scala\.binary\.version>[0-9.]*</<scala.binary.version>$TO_VERSION</" \
   "$BASEDIR/pom.xml"
 
 # update <scala.version> in parent POM

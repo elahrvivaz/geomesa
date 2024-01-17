@@ -3,18 +3,18 @@
 
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
-        <artifactId>geomesa-metrics_2.12</artifactId>
+        <artifactId>geomesa-metrics_3</artifactId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>geomesa-metrics-graphite_2.12</artifactId>
+    <artifactId>geomesa-metrics-graphite_3</artifactId>
     <name>GeoMesa Metrics Graphite Reporter</name>
 
     <dependencies>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-metrics-core_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-metrics-core_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>io.dropwizard.metrics</groupId>
@@ -25,11 +25,11 @@
         <!-- test dependencies -->
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-core_${scala.binary.version}</artifactId>
+            <artifactId>specs2-core_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-junit_${scala.binary.version}</artifactId>
+            <artifactId>specs2-junit_${scala.compat.version}</artifactId>
         </dependency>
     </dependencies>
 

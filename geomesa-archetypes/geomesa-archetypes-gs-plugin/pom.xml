@@ -3,12 +3,12 @@
 
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <artifactId>geomesa-archetypes_2.12</artifactId>
+        <artifactId>geomesa-archetypes_3</artifactId>
         <groupId>org.locationtech.geomesa</groupId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>geomesa-archetypes-gs-plugin_2.12</artifactId>
+    <artifactId>geomesa-archetypes-gs-plugin_3</artifactId>
     <name>GeoMesa GeoServer Plugin Archetype</name>
     <packaging>pom</packaging>
 
@@ -252,7 +252,7 @@
     <dependencies>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-process-wps_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-process-wps_${scala.compat.version}</artifactId>
             <exclusions>
                 <exclusion>
                     <groupId>org.geotools</groupId>

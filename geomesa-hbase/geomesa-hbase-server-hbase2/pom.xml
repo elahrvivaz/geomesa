@@ -1,20 +1,20 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
-        <artifactId>geomesa-hbase_2.12</artifactId>
+        <artifactId>geomesa-hbase_3</artifactId>
         <groupId>org.locationtech.geomesa</groupId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>geomesa-hbase-server-hbase2_2.12</artifactId>
+    <artifactId>geomesa-hbase-server-hbase2_3</artifactId>
     <name>GeoMesa HBase Server, HBase 2.x</name>
     <description>Coprocessors and filters for HBase 2.x</description>
 
     <dependencies>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hbase-server_2.12</artifactId>
+            <artifactId>geomesa-hbase-server_3</artifactId>
         </dependency>
 
         <!-- provided deps -->
@@ -38,11 +38,11 @@
         <!-- test deps -->
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-core_${scala.binary.version}</artifactId>
+            <artifactId>specs2-core_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-junit_${scala.binary.version}</artifactId>
+            <artifactId>specs2-junit_${scala.compat.version}</artifactId>
         </dependency>
     </dependencies>
 

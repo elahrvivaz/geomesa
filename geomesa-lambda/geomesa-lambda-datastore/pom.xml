@@ -3,11 +3,11 @@
     <modelVersion>4.0.0</modelVersion>
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
-        <artifactId>geomesa-lambda_2.12</artifactId>
+        <artifactId>geomesa-lambda_3</artifactId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>geomesa-lambda-datastore_2.12</artifactId>
+    <artifactId>geomesa-lambda-datastore_3</artifactId>
     <name>GeoMesa Lambda DataStore</name>
 
     <properties>
@@ -17,39 +17,39 @@
     <dependencies>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-accumulo-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-accumulo-datastore_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-index-api_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-index-api_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-utils_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-utils_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-filter_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-filter_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-kafka-utils_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-kafka-utils_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-feature-all_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-feature-all_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-arrow-gt_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-arrow-gt_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-z3_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-z3_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-process-vector_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-process-vector_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.geotools</groupId>
@@ -95,7 +95,7 @@
         </dependency>
         <dependency>
             <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka_${scala.binary.version}</artifactId>
+            <artifactId>kafka_${scala.compat3.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.kafka</groupId>
@@ -105,15 +105,15 @@
         <!-- test dependencies -->
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-core_${scala.binary.version}</artifactId>
+            <artifactId>specs2-core_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-junit_${scala.binary.version}</artifactId>
+            <artifactId>specs2-junit_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-accumulo-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-accumulo-datastore_${scala.compat.version}</artifactId>
             <classifier>tests</classifier>
         </dependency>
         <dependency>
@@ -122,7 +122,7 @@
         </dependency>
         <dependency>
             <groupId>org.apache.kafka</groupId>
-            <artifactId>kafka_${scala.binary.version}</artifactId>
+            <artifactId>kafka_${scala.compat3.version}</artifactId>
             <classifier>test</classifier>
         </dependency>
         <dependency>
@@ -136,7 +136,7 @@
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-kafka-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-kafka-datastore_${scala.compat.version}</artifactId>
             <classifier>tests</classifier>
         </dependency>
         <dependency>

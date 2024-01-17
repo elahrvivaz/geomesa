@@ -3,12 +3,12 @@
 
     <modelVersion>4.0.0</modelVersion>
     <parent>
-        <artifactId>geomesa-archetypes_2.12</artifactId>
+        <artifactId>geomesa-archetypes_3</artifactId>
         <groupId>org.locationtech.geomesa</groupId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
 
-    <artifactId>geomesa-archetypes-binary-dist_2.12</artifactId>
+    <artifactId>geomesa-archetypes-binary-dist_3</artifactId>
     <name>GeoMesa Binary Distribution Archetype</name>
     <packaging>pom</packaging>
 
@@ -16,18 +16,18 @@
         <!-- common models jar-->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-tools_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-tools_${scala.compat.version}</artifactId>
             <classifier>data</classifier>
         </dependency>
 
         <!-- additional deps to manage in for deploying to lib dir-->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-utils_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-utils_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-feature-all_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-feature-all_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>com.clearspring.analytics</groupId>
@@ -43,7 +43,7 @@
         </dependency>
         <dependency>
             <groupId>org.scala-lang.modules</groupId>
-            <artifactId>scala-xml_${scala.binary.version}</artifactId>
+            <artifactId>scala-xml_${scala.compat.version}</artifactId>
         </dependency>
 
         <dependency>
@@ -60,7 +60,7 @@
         <!-- manage these out from the lib dir -->
         <dependency>
             <groupId>org.scala-lang</groupId>
-            <artifactId>scala-compiler</artifactId>
+            <artifactId>${scala.compiler}</artifactId>
             <scope>provided</scope>
         </dependency>
     </dependencies>
@@ -79,7 +79,7 @@
                         </goals>
                         <phase>package</phase>
                         <configuration>
-                            <finalName>geomesa-${tools.module}_${scala.binary.version}-${project.version}</finalName>
+                            <finalName>geomesa-${tools.module}_${scala.compat.version}-${project.version}</finalName>
                             <tarLongFileMode>posix</tarLongFileMode>
                             <descriptors>
                                 <descriptor>${project.basedir}/../../geomesa-archetypes/geomesa-archetypes-binary-dist/binary-release.xml</descriptor>

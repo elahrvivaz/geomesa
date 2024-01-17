@@ -1,19 +1,19 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
-        <artifactId>geomesa_2.12</artifactId>
+        <artifactId>geomesa_3</artifactId>
         <groupId>org.locationtech.geomesa</groupId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>geomesa-security_2.12</artifactId>
+    <artifactId>geomesa-security_3</artifactId>
     <name>GeoMesa Security</name>
 
     <dependencies>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-utils_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-utils_${scala.compat.version}</artifactId>
         </dependency>
 
         <!-- provided dependencies -->
@@ -25,15 +25,15 @@
         <!-- test dependencies -->
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-core_${scala.binary.version}</artifactId>
+            <artifactId>specs2-core_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-junit_${scala.binary.version}</artifactId>
+            <artifactId>specs2-junit_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-mock_${scala.binary.version}</artifactId>
+            <artifactId>specs2-mock_${scala.compat3.version}</artifactId>
         </dependency>
     </dependencies>
 

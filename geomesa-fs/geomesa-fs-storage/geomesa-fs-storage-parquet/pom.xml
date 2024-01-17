@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
-        <artifactId>geomesa-fs-storage_2.12</artifactId>
+        <artifactId>geomesa-fs-storage_3</artifactId>
         <groupId>org.locationtech.geomesa</groupId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>geomesa-fs-storage-parquet_2.12</artifactId>
+    <artifactId>geomesa-fs-storage-parquet_3</artifactId>
     <name>GeoMesa FileSystem Storage Parquet</name>
 
     <dependencies>
@@ -28,38 +28,34 @@
             <artifactId>hadoop-mapreduce-client-core</artifactId>
         </dependency>
         <dependency>
-            <groupId>org.scala-lang</groupId>
-            <artifactId>scala-reflect</artifactId>
-        </dependency>
-        <dependency>
             <groupId>org.parboiled</groupId>
-            <artifactId>parboiled-scala_${scala.binary.version}</artifactId>
+            <artifactId>parboiled-scala_${scala.compat3.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-feature-common_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-feature-common_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-fs-storage-api_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-fs-storage-api_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-fs-storage-common_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-fs-storage-common_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-index-api_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-index-api_${scala.compat.version}</artifactId>
         </dependency>
 
         <!-- Test dependencies -->
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-core_${scala.binary.version}</artifactId>
+            <artifactId>specs2-core_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-junit_${scala.binary.version}</artifactId>
+            <artifactId>specs2-junit_${scala.compat.version}</artifactId>
         </dependency>
     </dependencies>
 

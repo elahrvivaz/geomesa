@@ -2,14 +2,14 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/maven-v4_0_0.xsd">
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
-        <artifactId>geomesa-archetypes-binary-dist_2.12</artifactId>
+        <artifactId>geomesa-archetypes-binary-dist_3</artifactId>
         <relativePath>../../geomesa-archetypes/geomesa-archetypes-binary-dist/pom.xml</relativePath>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <packaging>pom</packaging>
 
-    <artifactId>geomesa-cassandra-dist_2.12</artifactId>
+    <artifactId>geomesa-cassandra-dist_3</artifactId>
     <name>GeoMesa Cassandra Distribution</name>
 
     <properties>
@@ -23,7 +23,7 @@
         <!-- Cassandra Tools -->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-cassandra-tools_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-cassandra-tools_${scala.compat.version}</artifactId>
         </dependency>
 
         <dependency>
@@ -34,13 +34,13 @@
         <!-- Cassandra Datastore -->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-cassandra-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-cassandra-datastore_${scala.compat.version}</artifactId>
         </dependency>
 
         <!-- GeoServer plugin - needed as a dependency for reactor ordering, but don't bring in transitive deps -->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-cassandra-gs-plugin_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-cassandra-gs-plugin_${scala.compat.version}</artifactId>
             <type>pom</type>
             <scope>provided</scope>
             <exclusions>

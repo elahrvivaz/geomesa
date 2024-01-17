@@ -1,55 +1,55 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
-        <artifactId>geomesa-hbase_2.12</artifactId>
+        <artifactId>geomesa-hbase_3</artifactId>
         <groupId>org.locationtech.geomesa</groupId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>geomesa-hbase-datastore_2.12</artifactId>
+    <artifactId>geomesa-hbase-datastore_3</artifactId>
     <name>GeoMesa HBase DataStore</name>
 
     <dependencies>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hbase-rpc_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-hbase-rpc_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-index-api_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-index-api_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-z3_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-z3_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-utils_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-utils_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hadoop-utils_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-hadoop-utils_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-filter_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-filter_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-process-vector_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-process-vector_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-feature-kryo_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-feature-kryo_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-security_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-security_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-zk-utils_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-zk-utils_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.geotools</groupId>
@@ -73,11 +73,11 @@
         <!-- test deps -->
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-core_${scala.binary.version}</artifactId>
+            <artifactId>specs2-core_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-junit_${scala.binary.version}</artifactId>
+            <artifactId>specs2-junit_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.hbase</groupId>
@@ -145,7 +145,7 @@
             <dependencies>
                 <dependency>
                     <groupId>org.locationtech.geomesa</groupId>
-                    <artifactId>geomesa-hbase-server-hbase2_2.12</artifactId>
+                    <artifactId>geomesa-hbase-server-hbase2_3</artifactId>
                     <scope>test</scope>
                 </dependency>
             </dependencies>
@@ -158,7 +158,7 @@
             <dependencies>
                 <dependency>
                     <groupId>org.locationtech.geomesa</groupId>
-                    <artifactId>geomesa-hbase-server-hbase1_2.12</artifactId>
+                    <artifactId>geomesa-hbase-server-hbase1_3</artifactId>
                     <scope>test</scope>
                 </dependency>
             </dependencies>

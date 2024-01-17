@@ -3,14 +3,14 @@
 
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
-        <artifactId>geomesa-archetypes-binary-dist_2.12</artifactId>
+        <artifactId>geomesa-archetypes-binary-dist_3</artifactId>
         <relativePath>../../geomesa-archetypes/geomesa-archetypes-binary-dist/pom.xml</relativePath>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <packaging>pom</packaging>
 
-    <artifactId>geomesa-hbase-dist_2.12</artifactId>
+    <artifactId>geomesa-hbase-dist_3</artifactId>
     <name>GeoMesa HBase Distribution</name>
 
     <properties>
@@ -34,30 +34,30 @@
         <!-- datastore -->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hbase-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-hbase-datastore_${scala.compat.version}</artifactId>
         </dependency>
 
         <!-- distributed runtime -->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hbase-distributed-runtime-hbase1_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-hbase-distributed-runtime-hbase1_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hbase-distributed-runtime-hbase2_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-hbase-distributed-runtime-hbase2_${scala.compat.version}</artifactId>
         </dependency>
 
         <!-- tools -->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hbase-tools_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-hbase-tools_${scala.compat.version}</artifactId>
             <version>${project.version}</version>
         </dependency>
 
         <!-- geoserver plugin - needed as a dependency for reactor ordering, but don't bring in transitive deps -->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hbase-gs-plugin_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-hbase-gs-plugin_${scala.compat.version}</artifactId>
             <type>pom</type>
             <scope>provided</scope>
             <exclusions>
@@ -71,17 +71,17 @@
         <!-- spark support -->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hbase-spark_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-hbase-spark_${scala.compat.version}</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hbase-spark-runtime-hbase1_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-hbase-spark-runtime-hbase1_${scala.compat.version}</artifactId>
             <version>${project.version}</version>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hbase-spark-runtime-hbase2_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-hbase-spark-runtime-hbase2_${scala.compat.version}</artifactId>
             <version>${project.version}</version>
         </dependency>
     </dependencies>

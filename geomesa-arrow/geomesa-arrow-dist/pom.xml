@@ -3,14 +3,14 @@
 
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
-        <artifactId>geomesa-archetypes-binary-dist_2.12</artifactId>
+        <artifactId>geomesa-archetypes-binary-dist_3</artifactId>
         <relativePath>../../geomesa-archetypes/geomesa-archetypes-binary-dist/pom.xml</relativePath>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
     <packaging>pom</packaging>
 
-    <artifactId>geomesa-arrow-dist_2.12</artifactId>
+    <artifactId>geomesa-arrow-dist_3</artifactId>
     <name>GeoMesa Arrow Distribution</name>
 
     <properties>
@@ -24,13 +24,13 @@
         <!-- Tools (bin,lib,etc)-->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-arrow-tools_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-arrow-tools_${scala.compat.version}</artifactId>
         </dependency>
 
         <!-- additional deps to manage in for deploying to lib dir-->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-arrow-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-arrow-datastore_${scala.compat.version}</artifactId>
         </dependency>
     </dependencies>
 

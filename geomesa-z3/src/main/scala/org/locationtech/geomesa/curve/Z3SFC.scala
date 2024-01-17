@@ -47,7 +47,7 @@ class Z3SFC(dims: Z3Dimensions) extends SpaceTimeFillingCurve {
   protected def lenientIndex(x: Double, y: Double, t: Long): Long = {
     val bx = if (x < lon.min) { lon.min } else if (x > lon.max) { lon.max } else { x }
     val by = if (y < lat.min) { lat.min } else if (y > lat.max) { lat.max } else { y }
-    val bt = if (t < time.min) { time.min } else if (t > time.max) { time.max } else { t }
+    val bt = if (t < time.min) { time.min } else if (t > time.max) { time.max } else { t.toDouble }
     Z3(lon.normalize(bx), lat.normalize(by), time.normalize(bt)).z
   }
 

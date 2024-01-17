@@ -3,12 +3,12 @@
 
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
-        <artifactId>geomesa-accumulo_2.12</artifactId>
+        <artifactId>geomesa-accumulo_3</artifactId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>geomesa-accumulo-jobs_2.12</artifactId>
+    <artifactId>geomesa-accumulo-jobs_3</artifactId>
     <name>GeoMesa Accumulo Jobs</name>
 
     <properties>
@@ -18,11 +18,11 @@
     <dependencies>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-accumulo-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-accumulo-datastore_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-jobs_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-jobs_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
@@ -58,15 +58,15 @@
         <!-- test dependencies -->
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-core_${scala.binary.version}</artifactId>
+            <artifactId>specs2-core_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-junit_${scala.binary.version}</artifactId>
+            <artifactId>specs2-junit_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-accumulo-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-accumulo-datastore_${scala.compat.version}</artifactId>
             <classifier>tests</classifier>
         </dependency>
         <dependency>

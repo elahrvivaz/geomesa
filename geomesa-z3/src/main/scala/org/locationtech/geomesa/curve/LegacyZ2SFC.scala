@@ -13,8 +13,8 @@ import org.locationtech.geomesa.zorder.sfcurve.Z2
 
 @deprecated("Z2SFC", "1.3.2")
 object LegacyZ2SFC extends Z2SFC(31) {
-  override val lon = SemiNormalizedLon(math.pow(2, 31).toLong - 1)
-  override val lat = SemiNormalizedLat(math.pow(2, 31).toLong - 1)
+  override val lon: SemiNormalizedLon = SemiNormalizedLon(math.pow(2, 31).toLong - 1)
+  override val lat: SemiNormalizedLat = SemiNormalizedLat(math.pow(2, 31).toLong - 1)
 
   // old impl required for deleting existing values that may have been written
   override protected def lenientIndex(x: Double, y: Double): Long = {

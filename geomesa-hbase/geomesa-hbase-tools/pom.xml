@@ -3,12 +3,12 @@
 
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
-        <artifactId>geomesa-hbase_2.12</artifactId>
+        <artifactId>geomesa-hbase_3</artifactId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>geomesa-hbase-tools_2.12</artifactId>
+    <artifactId>geomesa-hbase-tools_3</artifactId>
     <name>GeoMesa HBase Tools</name>
 
     <properties>
@@ -18,15 +18,15 @@
     <dependencies>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hbase-datastore_2.12</artifactId>
+            <artifactId>geomesa-hbase-datastore_3</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-hbase-jobs_2.12</artifactId>
+            <artifactId>geomesa-hbase-jobs_3</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-tools_2.12</artifactId>
+            <artifactId>geomesa-tools_3</artifactId>
         </dependency>
         <dependency>
             <groupId>com.beust</groupId>
@@ -65,11 +65,11 @@
         <!-- test deps -->
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-core_${scala.binary.version}</artifactId>
+            <artifactId>specs2-core_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-junit_${scala.binary.version}</artifactId>
+            <artifactId>specs2-junit_${scala.compat.version}</artifactId>
         </dependency>
     </dependencies>
 

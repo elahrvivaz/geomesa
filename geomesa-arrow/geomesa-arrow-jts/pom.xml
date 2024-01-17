@@ -2,7 +2,7 @@
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 
     <parent>
-        <artifactId>geomesa-arrow_2.12</artifactId>
+        <artifactId>geomesa-arrow_3</artifactId>
         <groupId>org.locationtech.geomesa</groupId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
@@ -28,7 +28,7 @@
         <!-- not used, but we can't exclude direct inherited dependencies, so just mark it provided -->
         <dependency>
             <groupId>org.scala-lang</groupId>
-            <artifactId>scala-library</artifactId>
+            <artifactId>${scala.library}</artifactId>
             <scope>provided</scope>
         </dependency>
 

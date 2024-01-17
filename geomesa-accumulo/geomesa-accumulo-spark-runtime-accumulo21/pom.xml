@@ -1,48 +1,48 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project xmlns="http://maven.apache.org/POM/4.0.0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
     <parent>
-        <artifactId>geomesa-accumulo_2.12</artifactId>
+        <artifactId>geomesa-accumulo_3</artifactId>
         <groupId>org.locationtech.geomesa</groupId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
     <name>GeoMesa Accumulo Spark Runtime, Accumulo 2.1.x</name>
-    <artifactId>geomesa-accumulo-spark-runtime-accumulo21_2.12</artifactId>
+    <artifactId>geomesa-accumulo-spark-runtime-accumulo21_3</artifactId>
 
     <dependencies>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-accumulo-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-accumulo-datastore_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-accumulo-jobs_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-accumulo-jobs_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-accumulo-spark_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-accumulo-spark_${scala.compat.version}</artifactId>
         </dependency>
 
         <!-- only needed for packaging into the shaded jar -->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-spark-sql_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-spark-sql_${scala.compat3.version}</artifactId>
             <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-tools_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-tools_${scala.compat.version}</artifactId>
             <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-spark-jupyter-leaflet_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-spark-jupyter-leaflet_${scala.compat.version}</artifactId>
             <scope>runtime</scope>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-cqengine-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-cqengine-datastore_${scala.compat.version}</artifactId>
             <scope>runtime</scope>
         </dependency>
 
@@ -98,11 +98,11 @@
 
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-core_${scala.binary.version}</artifactId>
+            <artifactId>spark-core_${scala.compat3.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
-            <artifactId>spark-sql_${scala.binary.version}</artifactId>
+            <artifactId>spark-sql_${scala.compat3.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.hadoop</groupId>
@@ -119,22 +119,22 @@
         <!-- test dependencies -->
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-core_${scala.binary.version}</artifactId>
+            <artifactId>specs2-core_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-junit_${scala.binary.version}</artifactId>
+            <artifactId>specs2-junit_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-spark-sql_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-spark-sql_${scala.compat3.version}</artifactId>
             <classifier>tests</classifier>
             <version>${project.version}</version>
             <scope>test</scope>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-accumulo-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-accumulo-datastore_${scala.compat.version}</artifactId>
             <classifier>tests</classifier>
         </dependency>
         <dependency>

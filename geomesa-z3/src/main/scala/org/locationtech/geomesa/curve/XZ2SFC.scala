@@ -63,7 +63,7 @@ class XZ2SFC(g: Short, xBounds: (Double, Double), yBounds: (Double, Double)) {
     val l1 = math.floor(math.log(maxDim) / XZSFC.LogPointFive).toInt
 
     // the length will either be (l1) or (l1 + 1)
-    val length = if (l1 >= g) { g } else {
+    val length = if (l1 >= g) { g.toInt } else {
       val w2 = math.pow(0.5, l1 + 1) // width of an element at resolution l2 (l1 + 1)
 
       // predicate for checking how many axis the polygon intersects

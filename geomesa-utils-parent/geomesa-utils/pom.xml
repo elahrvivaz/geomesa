@@ -3,12 +3,12 @@
 
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
-        <artifactId>geomesa-utils-parent_2.12</artifactId>
+        <artifactId>geomesa-utils-parent_3</artifactId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>geomesa-utils_2.12</artifactId>
+    <artifactId>geomesa-utils_3</artifactId>
     <name>GeoMesa Utils</name>
 
     <properties>
@@ -18,7 +18,7 @@
     <dependencies>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-z3_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-z3_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.commons</groupId>
@@ -106,7 +106,7 @@
         </dependency>
         <dependency>
             <groupId>org.parboiled</groupId>
-            <artifactId>parboiled-scala_${scala.binary.version}</artifactId>
+            <artifactId>parboiled-scala_${scala.compat3.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>com.github.ben-manes.caffeine</groupId>
@@ -118,29 +118,29 @@
         </dependency>
         <dependency>
             <groupId>org.scala-lang.modules</groupId>
-            <artifactId>scala-parser-combinators_${scala.binary.version}</artifactId>
+            <artifactId>scala-parser-combinators_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.scala-lang.modules</groupId>
-            <artifactId>scala-xml_${scala.binary.version}</artifactId>
+            <artifactId>scala-xml_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>com.typesafe.scala-logging</groupId>
-            <artifactId>scala-logging_${scala.binary.version}</artifactId>
+            <artifactId>scala-logging_${scala.compat.version}</artifactId>
         </dependency>
 
         <!-- test dependencies -->
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-core_${scala.binary.version}</artifactId>
+            <artifactId>specs2-core_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-junit_${scala.binary.version}</artifactId>
+            <artifactId>specs2-junit_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-mock_${scala.binary.version}</artifactId>
+            <artifactId>specs2-mock_${scala.compat3.version}</artifactId>
         </dependency>
     </dependencies>
 

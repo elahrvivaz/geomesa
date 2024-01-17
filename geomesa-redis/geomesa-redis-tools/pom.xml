@@ -3,12 +3,12 @@
 
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
-        <artifactId>geomesa-redis_2.12</artifactId>
+        <artifactId>geomesa-redis_3</artifactId>
         <version>5.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
-    <artifactId>geomesa-redis-tools_2.12</artifactId>
+    <artifactId>geomesa-redis-tools_3</artifactId>
     <name>GeoMesa Redis Tools</name>
     <packaging>jar</packaging>
 
@@ -19,23 +19,23 @@
     <dependencies>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-redis-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-redis-datastore_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-security_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-security_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-utils_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-utils_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-filter_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-filter_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-tools_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-tools_${scala.compat.version}</artifactId>
         </dependency>
 
         <dependency>
@@ -49,7 +49,7 @@
         <dependency>
             <!-- needed in the lib dir -->
             <groupId>org.scala-lang.modules</groupId>
-            <artifactId>scala-xml_${scala.binary.version}</artifactId>
+            <artifactId>scala-xml_${scala.compat.version}</artifactId>
         </dependency>
         <!--<dependency>
             &lt;!&ndash; 'works with' due to license issues &ndash;&gt;
@@ -71,7 +71,7 @@
         <!-- provided deps -->
         <dependency>
             <groupId>org.scala-lang</groupId>
-            <artifactId>scala-compiler</artifactId>
+            <artifactId>${scala.compiler}</artifactId>
             <scope>provided</scope>
         </dependency>
         <dependency>
@@ -82,11 +82,11 @@
         <!-- test deps -->
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-core_${scala.binary.version}</artifactId>
+            <artifactId>specs2-core_${scala.compat.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.specs2</groupId>
-            <artifactId>specs2-junit_${scala.binary.version}</artifactId>
+            <artifactId>specs2-junit_${scala.compat.version}</artifactId>
         </dependency>
     </dependencies>
 
