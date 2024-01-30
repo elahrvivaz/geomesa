@@ -32,13 +32,14 @@ import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.conf.GeoMesaSystemProperties.SystemProperty
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypeComparator.TypeComparison
 import org.locationtech.geomesa.utils.geotools.{ConfigSftParsing, SimpleFeatureTypeComparator, SimpleFeatureTypes}
+import org.locationtech.geomesa.utils.io.fs.FileSystemDelegate
 import org.locationtech.geomesa.utils.io.fs.FileSystemDelegate.FileHandle
 import org.locationtech.geomesa.utils.io.fs.LocalDelegate.StdInHandle
-import org.locationtech.geomesa.utils.io.{CloseWithLogging, PathUtils, WithClose}
+import org.locationtech.geomesa.utils.io.{CloseWithLogging, CopyingInputStream, PathUtils, WithClose}
 import org.locationtech.geomesa.utils.text.TextTools
 import org.opengis.feature.simple.SimpleFeatureType
 
-import java.io.{File, FileWriter, InputStream, PrintWriter}
+import java.io.{ByteArrayInputStream, Closeable, File, FileWriter, InputStream, OutputStream, PrintWriter, SequenceInputStream}
 import java.nio.charset.StandardCharsets
 import java.util.{Collections, Locale}
 import scala.collection.mutable.ListBuffer
@@ -104,7 +105,7 @@ trait IngestCommand[DS <: DataStore]
 
     withDataStore { ds =>
       // use .get to re-throw the exception if we fail
-      IngestCommand.getSftAndConverter(params, inputs.paths, format, Some(ds)).get.foreach { case (sft, converter) =>
+      IngestCommand.getSftAndConverter(params, inputs, format, Some(ds)).get.foreach { case (sft, converter) =>
         val start = System.currentTimeMillis()
         // create schema for the feature prior to ingest
         val existing = Try(ds.getSchema(sft.getTypeName)).getOrElse(null)
@@ -228,7 +229,7 @@ object IngestCommand extends LazyLogging {
     */
   def getSftAndConverter(
       params: TypeNameParam with FeatureSpecParam with ConverterConfigParam with OptionalForceParam,
-      inputs: Seq[String],
+      inputs: Inputs,
       format: Option[String],
       ds: Option[_ <: DataStore]): Try[Option[(SimpleFeatureType, Config)]] = Try {
     import org.locationtech.geomesa.utils.conversions.ScalaImplicits.RichIterator
@@ -238,15 +239,10 @@ object IngestCommand extends LazyLogging {
 
     var converter: Config = Option(params.config).map(CLArgResolver.getConfig).orNull
 
-    if (converter == null && inputs.nonEmpty) {
-      // ingesting from stdin without specifying a converter is not supported
-      if (inputs == Inputs.StdInInputs) {
-        throw new ParameterException("Cannot infer types from stdin - please specify a converter/sft or ingest from a file")
-      }
-
+    if (converter == null && inputs.paths.nonEmpty) {
       // if there is no converter passed in, try to infer the schema from the input files themselves
       Command.user.info("No converter defined - will attempt to detect schema from input files")
-      val file = inputs.iterator.flatMap(PathUtils.interpretPath).headOption.getOrElse {
+      val file: FileHandle = inputs.handles.headOption.getOrElse {
         throw new ParameterException("Parameter <files> did not evaluate to anything that could be read")
       }
       val opened = ListBuffer.empty[CloseableIterator[InputStream]]
@@ -357,8 +353,8 @@ object IngestCommand extends LazyLogging {
      * Interprets the input paths into actual files, handling wildcards, etc
      */
     lazy val handles: List[FileHandle] = paths match {
-      case Nil         => StdInHandle.available().toList
-      case StdInInputs => List(new StdInHandle())
+      case Nil         => if (StdInHandle.isAvailable) { List(new CachingStdInHandle()) } else { List.empty }
+      case StdInInputs => List(new CachingStdInHandle())
       case _           => paths.flatMap(PathUtils.interpretPath).toList
     }
 
@@ -457,5 +453,53 @@ object IngestCommand extends LazyLogging {
         logger.error("Error trying to persist inferred schema", e)
         Command.user.error(s"Error trying to persist inferred schema: $e")
     }
+  }
+//
+//  trait InferenceFactory extends (() => InputStream) with Closeable
+//
+//  case class FileInferenceFactory(file: FileHandle) extends InferenceFactory {
+//    private val opened = ListBuffer.empty[CloseableIterator[InputStream]]
+//    override def apply(): InputStream = {
+//      val streams = file.open.map(_._2)
+//      opened += streams
+//      if (streams.hasNext) { streams.next } else {
+//        throw new ParameterException("Parameter <files> did not evaluate to anything that could be read")
+//      }
+//    }
+//    override def close(): Unit = CloseWithLogging(opened)
+//  }
+//
+//  case class StdInInferenceFactory() extends InferenceFactory {
+//    private val is = new CopyingInputStream(System.in, 1024)
+//    private var cached: Array[Byte] = Array.empty
+//
+//    override def apply(): InputStream = {
+//      if (is.copied > 0) {
+//        cached ++= is.replay(is.copied)
+//      }
+//      new SequenceInputStream(new ByteArrayInputStream(cached), is)
+//    }
+//    override def close(): Unit = {}
+//  }
+
+  class CachingStdInHandle extends FileHandle {
+
+    private val is = new CopyingInputStream(System.in, 1024)
+    private var cached: Array[Byte] = Array.empty
+
+    override def path: String = "<stdin>"
+    override def exists: Boolean = false
+    // .available will throw if stream is closed
+    override def length: Long = Try(System.in.available().toLong).getOrElse(0L) + cached.length
+
+    override def open: CloseableIterator[(Option[String], InputStream)] = {
+      if (is.copied > 0) {
+        cached ++= is.replay(is.copied)
+      }
+      CloseableIterator.single(None -> new SequenceInputStream(new ByteArrayInputStream(cached), is))
+    }
+
+    override def write(mode: FileSystemDelegate.CreateMode, createParents: Boolean): OutputStream = System.out
+    override def delete(recursive: Boolean): Unit = {}
   }
 }
