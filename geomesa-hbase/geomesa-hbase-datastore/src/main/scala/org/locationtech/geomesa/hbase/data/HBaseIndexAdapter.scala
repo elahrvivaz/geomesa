@@ -42,7 +42,7 @@ import org.locationtech.geomesa.hbase.utils.HBaseVersions
 import org.locationtech.geomesa.index.api.IndexAdapter.BaseIndexWriter
 import org.locationtech.geomesa.index.api.QueryPlan.{FeatureReducer, IndexResultsToFeatures}
 import org.locationtech.geomesa.index.api.WritableFeature.FeatureWrapper
-import org.locationtech.geomesa.index.api.{WritableFeature, _}
+import org.locationtech.geomesa.index.api._
 import org.locationtech.geomesa.index.conf.QueryHints
 import org.locationtech.geomesa.index.filters.{S2Filter, S3Filter, Z2Filter, Z3Filter}
 import org.locationtech.geomesa.index.index.id.IdIndex
@@ -350,7 +350,9 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
   override def createWriter(
       sft: SimpleFeatureType,
       indices: Seq[GeoMesaFeatureIndex[_, _]],
-      partition: Option[String]): HBaseIndexWriter = {
+      partition: Option[String],
+      atomic: Boolean): HBaseIndexWriter = {
+    require(!atomic, "HBase data store does not currently support atomic writes")
     val wrapper = WritableFeature.wrapper(sft, groups)
     if (sft.isVisibilityRequired) {
       new HBaseIndexWriter(ds, indices, wrapper, partition) with RequiredVisibilityWriter
@@ -617,13 +619,7 @@ object HBaseIndexAdapter extends LazyLogging {
 
     private var i = 0
 
-    override protected def write(feature: WritableFeature, values: Array[RowKeyValue[_]], update: Boolean): Unit = {
-      if (update) {
-        // for updates, ensure that our timestamps don't clobber each other
-        flush()
-        Thread.sleep(1)
-      }
-
+    override protected def append(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {
       val ttl = if (expiration != null) {
         val t = expiration.expires(feature.feature) - System.currentTimeMillis
         if (t > 0) {
@@ -669,6 +665,18 @@ object HBaseIndexAdapter extends LazyLogging {
         }
         i += 1
       }
+    }
+
+    override protected def update(
+        feature: WritableFeature,
+        values: Array[RowKeyValue[_]],
+        previous: WritableFeature,
+        previousValues: Array[RowKeyValue[_]]): Unit = {
+      delete(previous, previousValues)
+      // for updates, ensure that our timestamps don't clobber each other
+      flush()
+      Thread.sleep(1)
+      append(feature, values)
     }
 
     override protected def delete(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {

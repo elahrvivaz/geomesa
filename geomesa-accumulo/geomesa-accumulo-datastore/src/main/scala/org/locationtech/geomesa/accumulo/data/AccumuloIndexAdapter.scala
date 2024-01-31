@@ -279,12 +279,13 @@ class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloD
   override def createWriter(
       sft: SimpleFeatureType,
       indices: Seq[GeoMesaFeatureIndex[_, _]],
-      partition: Option[String]): AccumuloIndexWriter = {
+      partition: Option[String],
+      atomic: Boolean): AccumuloIndexWriter = {
     val wrapper = AccumuloWritableFeature.wrapper(sft, groups, indices)
     if (sft.isVisibilityRequired) {
-      new AccumuloIndexWriter(ds, indices, wrapper, partition) with RequiredVisibilityWriter
+      new AccumuloIndexWriter(ds, indices, wrapper, partition, atomic) with RequiredVisibilityWriter
     } else {
-      new AccumuloIndexWriter(ds, indices, wrapper, partition)
+      new AccumuloIndexWriter(ds, indices, wrapper, partition, atomic)
     }
   }
 }
@@ -362,7 +363,8 @@ object AccumuloIndexAdapter {
       ds: AccumuloDataStore,
       indices: Seq[GeoMesaFeatureIndex[_, _]],
       wrapper: FeatureWrapper[WritableFeature],
-      partition: Option[String]
+      partition: Option[String],
+      atomic: Boolean
     ) extends BaseIndexWriter[WritableFeature](indices, wrapper) {
 
     import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
@@ -382,12 +384,7 @@ object AccumuloIndexAdapter {
 
     private var i = 0
 
-    override protected def write(feature: WritableFeature, values: Array[RowKeyValue[_]], update: Boolean): Unit = {
-      if (timestamps && update) {
-        // for updates, ensure that our timestamps don't clobber each other
-        multiWriter.flush()
-        Thread.sleep(1)
-      }
+    override protected def append(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {
       i = 0
       while (i < values.length) {
         values(i) match {
@@ -408,6 +405,24 @@ object AccumuloIndexAdapter {
             }
         }
         i += 1
+      }
+    }
+
+    override protected def update(
+        feature: WritableFeature,
+        values: Array[RowKeyValue[_]],
+        previous: WritableFeature,
+        previousValues: Array[RowKeyValue[_]]): Unit = {
+      if (atomic) {
+        ???
+      } else {
+        delete(previous, previousValues)
+        if (timestamps) {
+          // for updates, ensure that our timestamps don't clobber each other
+          multiWriter.flush()
+          Thread.sleep(1)
+        }
+        append(feature, values)
       }
     }
 

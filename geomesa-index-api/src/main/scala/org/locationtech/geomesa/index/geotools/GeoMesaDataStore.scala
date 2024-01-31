@@ -12,7 +12,7 @@ import com.github.benmanes.caffeine.cache.{AsyncCacheLoader, AsyncLoadingCache, 
 import com.typesafe.scalalogging.LazyLogging
 import org.geotools.data._
 import org.locationtech.geomesa.index.FlushableFeatureWriter
-import org.locationtech.geomesa.index.api.{IndexManager, _}
+import org.locationtech.geomesa.index.api._
 import org.locationtech.geomesa.index.conf.partition.TablePartition
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStore.{SchemaCompatibility, VersionKey}
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStoreFactory.GeoMesaDataStoreConfig
@@ -374,10 +374,11 @@ abstract class GeoMesaDataStore[DS <: GeoMesaDataStore[DS]](val config: GeoMesaD
       sft: SimpleFeatureType,
       transaction: Transaction,
       filter: Option[Filter]): FlushableFeatureWriter = {
-    if (transaction != Transaction.AUTO_COMMIT) {
+    val atomic = transaction == AtomicWrites
+    if (!atomic && transaction != Transaction.AUTO_COMMIT) {
       logger.warn("Ignoring transaction - not supported")
     }
-    GeoMesaFeatureWriter(this, sft, manager.indices(sft, mode = IndexMode.Write), filter)
+    GeoMesaFeatureWriter(this, sft, manager.indices(sft, mode = IndexMode.Write), filter, atomic)
   }
 
   /**
@@ -392,7 +393,7 @@ abstract class GeoMesaDataStore[DS <: GeoMesaDataStore[DS]](val config: GeoMesaD
     if (sft == null) {
       throw new IOException(s"Schema '$typeName' has not been initialized. Please call 'createSchema' first.")
     }
-    GeoMesaFeatureWriter(this, sft, indices, None)
+    GeoMesaFeatureWriter(this, sft, indices, None, atomic = false)
   }
 
   /**

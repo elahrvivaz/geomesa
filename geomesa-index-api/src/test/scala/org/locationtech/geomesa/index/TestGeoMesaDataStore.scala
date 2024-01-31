@@ -17,7 +17,7 @@ import org.locationtech.geomesa.index.TestGeoMesaDataStore._
 import org.locationtech.geomesa.index.api.IndexAdapter.{BaseIndexWriter, IndexWriter, RequiredVisibilityWriter}
 import org.locationtech.geomesa.index.api.QueryPlan.{FeatureReducer, ResultsToFeatures}
 import org.locationtech.geomesa.index.api.WritableFeature.FeatureWrapper
-import org.locationtech.geomesa.index.api.{WritableFeature, _}
+import org.locationtech.geomesa.index.api._
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStore
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStoreFactory.{DataStoreQueryConfig, GeoMesaDataStoreConfig}
 import org.locationtech.geomesa.index.metadata.GeoMesaMetadata
@@ -113,7 +113,9 @@ object TestGeoMesaDataStore {
     override def createWriter(
         sft: SimpleFeatureType,
         indices: Seq[GeoMesaFeatureIndex[_, _]],
-        partition: Option[String]): IndexWriter = {
+        partition: Option[String],
+        atomic: Boolean): IndexWriter = {
+      require(!atomic, "Test data store does not currently support atomic writes")
       val tables = indices.map(i => this.tables(i.getTableNames(partition).head))
       val wrapper = WritableFeature.wrapper(sft, groups)
       if (sft.isVisibilityRequired) {
@@ -183,12 +185,21 @@ object TestGeoMesaDataStore {
 
     private var i = 0
 
-    override protected def write(feature: WritableFeature, values: Array[RowKeyValue[_]], update: Boolean): Unit = {
+    override protected def append(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {
       i = 0
       values.foreach {
         case kv: SingleRowKeyValue[_] => tables(i).add(kv); i += 1
         case kv: MultiRowKeyValue[_] => kv.split.foreach(tables(i).add); i += 1
       }
+    }
+
+    override protected def update(
+        feature: WritableFeature,
+        values: Array[RowKeyValue[_]],
+        previous: WritableFeature,
+        previousValues: Array[RowKeyValue[_]]): Unit = {
+      delete(previous, previousValues)
+      append(feature, values)
     }
 
     override protected def delete(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {
