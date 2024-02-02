@@ -15,6 +15,7 @@ import org.geotools.feature.simple.SimpleFeatureTypeBuilder
 import org.geotools.util.factory.Hints
 import org.locationtech.geomesa.accumulo.data.AccumuloIndexAdapter.AccumuloResultsToFeatures
 import org.locationtech.geomesa.accumulo.data.AccumuloQueryPlan._
+import org.locationtech.geomesa.accumulo.data.index.ColumnFamilyMapper
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloIndexAdapter, AccumuloQueryPlan}
 import org.locationtech.geomesa.accumulo.iterators.ArrowIterator.AccumuloArrowResultsToFeatures
 import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator.AccumuloBinResultsToFeatures
@@ -311,7 +312,7 @@ trait AccumuloJoinIndex extends GeoMesaFeatureIndex[AttributeIndexValues[Any], A
 
     val (recordColFamily, recordSchema) = {
       val (cf, s) = ds.adapter.groups.group(sft, hints.getTransformDefinition, ecqlFilter)
-      (Some(new Text(AccumuloIndexAdapter.mapColumnFamily(recordIndex)(cf))), s)
+      (Some(new Text(ColumnFamilyMapper(recordIndex)(cf))), s)
     }
 
     // since each range is a single row, it wouldn't be very efficient to do any aggregating scans
