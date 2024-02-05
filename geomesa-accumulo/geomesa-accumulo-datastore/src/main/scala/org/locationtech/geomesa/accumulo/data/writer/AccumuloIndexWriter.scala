@@ -1,4 +1,4 @@
-package org.locationtech.geomesa.accumulo.data.index
+package org.locationtech.geomesa.accumulo.data.writer
 
 import org.apache.accumulo.core.data.Mutation
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
@@ -36,7 +36,7 @@ class AccumuloIndexWriter(
   private val timestamps = indices.exists(i => !i.sft.isLogicalTime)
   private val visCache = new VisibilityCache()
 
-  override protected def append(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {
+  override protected[writer] def append(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {
     var i = 0
     while (i < values.length) {
       values(i) match {
@@ -74,7 +74,7 @@ class AccumuloIndexWriter(
     append(feature, values)
   }
 
-  override protected def delete(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {
+  override protected[writer] def delete(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {
     var i = 0
     while (i < values.length) {
       values(i) match {

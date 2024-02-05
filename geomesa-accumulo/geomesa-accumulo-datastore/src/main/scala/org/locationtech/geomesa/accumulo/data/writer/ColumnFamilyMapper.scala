@@ -1,4 +1,4 @@
-package org.locationtech.geomesa.accumulo.data.index
+package org.locationtech.geomesa.accumulo.data.writer
 
 import org.locationtech.geomesa.accumulo.index.JoinIndex
 import org.locationtech.geomesa.index.api.GeoMesaFeatureIndex

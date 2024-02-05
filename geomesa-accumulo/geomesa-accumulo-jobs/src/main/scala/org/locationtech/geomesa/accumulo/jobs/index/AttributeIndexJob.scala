@@ -19,7 +19,7 @@ import org.apache.hadoop.mapreduce.{Counter, Job, Mapper}
 import org.apache.hadoop.util.{Tool, ToolRunner}
 import org.geotools.data.Query
 import org.locationtech.geomesa.accumulo.data._
-import org.locationtech.geomesa.accumulo.data.index.ColumnFamilyMapper
+import org.locationtech.geomesa.accumulo.data.writer.ColumnFamilyMapper
 import org.locationtech.geomesa.accumulo.index.JoinIndex
 import org.locationtech.geomesa.accumulo.jobs.index.AttributeIndexJob.{AttributeIndexArgs, AttributeMapper}
 import org.locationtech.geomesa.accumulo.jobs.mapreduce.GeoMesaAccumuloInputFormat

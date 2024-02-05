@@ -23,6 +23,7 @@ import org.geotools.data.DataAccessFactory.Param
 import org.geotools.data.{DataStoreFactorySpi, Parameter}
 import org.locationtech.geomesa.accumulo.AccumuloProperties.{BatchWriterProperties, RemoteProcessingProperties}
 import org.locationtech.geomesa.accumulo.audit.{AccumuloAuditService, ParamsAuditProvider}
+import org.locationtech.geomesa.accumulo.data.writer.AccumuloAtomicIndexWriter
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStore
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStoreFactory._
 import org.locationtech.geomesa.security.{AuthUtils, AuthorizationsProvider}
@@ -43,6 +44,7 @@ class AccumuloDataStoreFactory extends DataStoreFactorySpi {
 
   override def createDataStore(params: java.util.Map[String, _]): AccumuloDataStore = {
     val connector = AccumuloDataStoreFactory.buildAccumuloConnector(params)
+    AccumuloAtomicIndexWriter.configureTransactions(connector)
     val config = AccumuloDataStoreFactory.buildConfig(connector, params)
     val ds = new AccumuloDataStore(connector, config)
     GeoMesaDataStore.initRemoteVersion(ds)
@@ -249,7 +251,9 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
   def buildAuthsProvider(connector: AccumuloClient, params: java.util.Map[String, _]): AuthorizationsProvider = {
     // convert the connector authorizations into a string array - this is the maximum auths this connector can support
     val securityOps = connector.securityOperations
-    val masterAuths = securityOps.getUserAuthorizations(connector.whoami).asScala.toSeq.map(b => new String(b))
+    val masterAuths =
+      securityOps.getUserAuthorizations(connector.whoami).asScala.toSet.map(b => new String(b)) -
+          AccumuloAtomicIndexWriter.TransactionAuth // remove transaction auths, so that we don't return data from non-final txs
 
     // get the auth params passed in as a comma-delimited string
     val configuredAuths = AuthsParam.lookupOpt(params).getOrElse("").split(",").filterNot(_.isEmpty).toSeq
@@ -268,7 +272,7 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
     if (configuredAuths.nonEmpty && forceEmptyAuths) {
       throw new IllegalArgumentException("Forcing empty auths is checked, but explicit auths are provided")
     }
-    val auths = if (forceEmptyAuths || configuredAuths.nonEmpty) { configuredAuths } else { masterAuths }
+    val auths = if (forceEmptyAuths || configuredAuths.nonEmpty) { configuredAuths } else { masterAuths.toSeq }
 
     AuthUtils.getProvider(params, auths)
   }

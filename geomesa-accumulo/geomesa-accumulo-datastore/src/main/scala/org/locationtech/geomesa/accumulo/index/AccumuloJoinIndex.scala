@@ -15,7 +15,7 @@ import org.geotools.feature.simple.SimpleFeatureTypeBuilder
 import org.geotools.util.factory.Hints
 import org.locationtech.geomesa.accumulo.data.AccumuloIndexAdapter.AccumuloResultsToFeatures
 import org.locationtech.geomesa.accumulo.data.AccumuloQueryPlan._
-import org.locationtech.geomesa.accumulo.data.index.ColumnFamilyMapper
+import org.locationtech.geomesa.accumulo.data.writer.ColumnFamilyMapper
 import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloIndexAdapter, AccumuloQueryPlan}
 import org.locationtech.geomesa.accumulo.iterators.ArrowIterator.AccumuloArrowResultsToFeatures
 import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator.AccumuloBinResultsToFeatures

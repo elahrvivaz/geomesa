@@ -3,7 +3,7 @@ package org.locationtech.geomesa.accumulo.data
 import org.apache.accumulo.core.client.ConditionalWriter
 import org.apache.accumulo.core.security.ColumnVisibility
 
-package object index {
+package object writer {
 
   import scala.collection.JavaConverters._
 
