@@ -1,43 +1,54 @@
 package org.locationtech.geomesa.accumulo.data.writer
 
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.accumulo.core.client.{AccumuloClient, AccumuloSecurityException, ConditionalWriter, ConditionalWriterConfig}
+import org.apache.accumulo.core.client.admin.NewTableConfiguration
+import org.apache.accumulo.core.client.{AccumuloClient, AccumuloSecurityException, ConditionalWriter, ConditionalWriterConfig, IsolatedScanner}
 import org.apache.accumulo.core.conf.ClientProperty
 import org.apache.accumulo.core.data.{Condition, ConditionalMutation}
 import org.apache.accumulo.core.security.{Authorizations, ColumnVisibility}
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
-import org.locationtech.geomesa.accumulo.data.writer.AccumuloAtomicIndexWriter.{ConditionMatcher, RowEntry}
+import org.locationtech.geomesa.accumulo.data.writer.AccumuloAtomicIndexWriter.ConditionBuilder.{NoCondition, TxCommitCondition, TxWriteCondition}
+import org.locationtech.geomesa.accumulo.data.writer.AccumuloAtomicIndexWriter.{Mutator, TransactionManager, TxVisibilities}
+import org.locationtech.geomesa.accumulo.util.TableUtils
 import org.locationtech.geomesa.index.api.IndexAdapter.BaseIndexWriter
 import org.locationtech.geomesa.index.api.WritableFeature.FeatureWrapper
-import org.locationtech.geomesa.index.api._
-import org.locationtech.geomesa.utils.io.CloseQuietly
+import org.locationtech.geomesa.index.api.{RowKeyValue, _}
+import org.locationtech.geomesa.index.utils.Releasable
+import org.locationtech.geomesa.utils.conf.GeoMesaSystemProperties.SystemProperty
+import org.locationtech.geomesa.utils.io.{CloseQuietly, CloseWithLogging, WithClose}
+import org.locationtech.geomesa.utils.text.StringSerialization
+import org.opengis.feature.simple.SimpleFeatureType
 
 import java.nio.charset.StandardCharsets
-import java.util.UUID
+import java.util.{ConcurrentModificationException, UUID}
 import java.util.concurrent.TimeUnit
-import scala.collection.mutable.ArrayBuffer
+import scala.annotation.tailrec
+import scala.util.{Failure, Success, Try}
 
 /**
- * Accumulo index writer implementation
+ * Accumulo atomic index writer implementation
  *
  * @param ds data store
+ * @param sft simple feature type
  * @param indices indices to write to
  * @param wrapper feature wrapper
  * @param partition partition to write to (if partitioned schema)
  */
 class AccumuloAtomicIndexWriter(
     ds: AccumuloDataStore,
+    sft: SimpleFeatureType,
     indices: Seq[GeoMesaFeatureIndex[_, _]],
     wrapper: FeatureWrapper[WritableFeature],
     partition: Option[String]
   ) extends BaseIndexWriter[WritableFeature](indices, wrapper) {
 
+  import AccumuloAtomicIndexWriter.ConditionBuilder._
   import AccumuloAtomicIndexWriter._
 
+  private val locking = new TransactionManager(ds, sft)
   private val writerConfig: ConditionalWriterConfig = {
     val config = new ConditionalWriterConfig()
-    // get the user auths + add in our tx auth so we can see other txs that might conflict
-    config.setAuthorizations(ds.auths(TransactionAuth))
+    config.setAuthorizations(ds.auths)
     val maxThreads = ClientProperty.BATCH_WRITER_THREADS_MAX.getInteger(ds.connector.properties())
     if (maxThreads != null) {
       config.setMaxWriteThreads(maxThreads)
@@ -56,108 +67,34 @@ class AccumuloAtomicIndexWriter(
     }
     ds.connector.createConditionalWriter(table, writerConfig)
   }
-
   private val colFamilyMappings = indices.map(ColumnFamilyMapper.apply).toArray
   private val visCache = new VisibilityCache()
-  private val txId = UUID.randomUUID().toString
-
-  private val txVis = new TransactionVisibilities()
-  private val writeVis = new InsertVisibilities()
-
-  private val txCommitCondition = new TxCommitCondition(txVis)
-
-  private val nonAtomicWriter = new AccumuloIndexWriter(ds, indices, wrapper, partition)
 
   override protected def append(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {
-    var i = 0
-    val errors = append(values, txVis, TxWriteCondition)
-    if (errors.isEmpty) {
-      append(values, writeVis, txCommitCondition) // TODO check for errors
-      remove(values, txVis, txCommitCondition)
-    } else {
-      // clean up any mutations we wrote
-      // TODO
-      throw ConditionalWriteException(feature.feature.getID, errors)
-    }
-  }
-
-  private def append(
-      values: Array[RowKeyValue[_]],
-      visibilities: VisibilityBuilder,
-      condition: ConditionBuilder): java.util.List[ConditionalWriteStatus] = {
-    val errors = new java.util.ArrayList[ConditionalWriteStatus]()
-    var i = 0
-    while (i < values.length) {
-      values(i) match {
-        case kv: SingleRowKeyValue[_] =>
-          val mutation = new ConditionalMutation(kv.row)
-          kv.values.foreach { v =>
-            val cf = colFamilyMappings(i)(v.cf)
-            val vis = visibilities(v.vis)
-            mutation.addCondition(condition(cf, v.cq, vis, v.value))
-            mutation.put(cf, v.cq, vis, v.value)
-          }
-          val status = writers(i).write(mutation).getStatus
-          if (status != ConditionalWriter.Status.ACCEPTED) {
-            errors.add(ConditionalWriteStatus(indices(i).identifier, status))
-          }
-
-        case mkv: MultiRowKeyValue[_] =>
-          mkv.rows.foreach { row =>
-            val mutation = new ConditionalMutation(row)
-            mkv.values.foreach { v =>
-              val cf = colFamilyMappings(i)(v.cf)
-              val vis = visibilities(v.vis)
-              mutation.addCondition(condition(cf, v.cq, vis, v.value))
-              mutation.put(cf, v.cq, vis, v.value)
-            }
-            val status = writers(i).write(mutation).getStatus
-            if (status != ConditionalWriter.Status.ACCEPTED) {
-              errors.add(ConditionalWriteStatus(indices(i).identifier, status))
-            }
-          }
+    val lock = locking.lock(feature.id).get // re-throw any lock exception
+    try {
+      val errors = mutate(values, AppendCondition, Mutator.Put)
+      if (!errors.isEmpty) {
+        // clean up any mutations we wrote - since we use the same condition this should end up in the original state
+        mutate(values, AppendCondition, Mutator.Delete)
+        throw ConditionalWriteException(feature.feature.getID, errors)
       }
-      i += 1
+    } finally {
+      lock.release()
     }
   }
 
   override protected def delete(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {
-    var i = 0
-    val errors = new java.util.ArrayList[ConditionalWriteStatus]()
-    while (i < values.length) {
-      values(i) match {
-        case SingleRowKeyValue(row, _, _, _, _, _, vals) =>
-          val mutation = new ConditionalMutation(row)
-          vals.foreach { v =>
-            val cf = colFamilyMappings(i)(v.cf)
-            val vis = visCache(v.vis)
-            mutation.addCondition(new Condition(cf, v.cq).setValue(v.value).setVisibility(vis))
-            mutation.putDelete(cf, v.cq, vis)
-          }
-          val status = writers(i).write(mutation).getStatus
-          if (status != ConditionalWriter.Status.ACCEPTED) {
-            errors.add(ConditionalWriteStatus(indices(i).identifier, status))
-          }
-
-        case MultiRowKeyValue(rows, _, _, _, _, _, vals) =>
-          rows.foreach { row =>
-            val mutation = new ConditionalMutation(row)
-            vals.foreach { v =>
-              val cf = colFamilyMappings(i)(v.cf)
-              val vis = visCache(v.vis)
-              mutation.addCondition(new Condition(cf, v.cq).setValue(v.value).setVisibility(vis))
-              mutation.putDelete(cf, v.cq, vis)
-            }
-            val status = writers(i).write(mutation).getStatus
-            if (status != ConditionalWriter.Status.ACCEPTED) {
-              errors.add(ConditionalWriteStatus(indices(i).identifier, status))
-            }
-          }
+    val lock = locking.lock(feature.id).get // re-throw any lock exception
+    try {
+      val errors = mutate(values, DeleteCondition, Mutator.Delete)
+      if (!errors.isEmpty) {
+        // clean up any mutations we deleted - since we use the same condition this should end up in the original state
+        mutate(values, DeleteCondition, Mutator.Put)
+        throw ConditionalWriteException(feature.feature.getID, errors)
       }
-      i += 1
-    }
-    if (!errors.isEmpty) {
-      throw ConditionalWriteException(feature.feature.getID, errors)
+    } finally {
+      lock.release()
     }
   }
 
@@ -166,6 +103,25 @@ class AccumuloAtomicIndexWriter(
       values: Array[RowKeyValue[_]],
       previous: WritableFeature,
       previousValues: Array[RowKeyValue[_]]): Unit = {
+    val lock = locking.lock(feature.id).get // re-throw any lock exception
+    try {
+      // TODO match up previous/new values and update them without a separate delete
+      var errors = mutate(previousValues, DeleteCondition, Mutator.Delete)
+      if (!errors.isEmpty) {
+        // clean up any mutations we deleted - since we use the same condition this should end up in the original state
+        mutate(previousValues, DeleteCondition, Mutator.Put)
+        throw ConditionalWriteException(feature.feature.getID, errors)
+      }
+      errors = mutate(values, AppendCondition, Mutator.Put)
+      if (!errors.isEmpty) {
+        // clean up any mutations we wrote - since we use the same condition this should end up in the original state
+        mutate(values, AppendCondition, Mutator.Delete)
+        throw ConditionalWriteException(feature.feature.getID, errors)
+      }
+    } finally {
+      lock.release()
+    }
+
     var i = 0
     val errors = new java.util.ArrayList[ConditionalWriteStatus]()
     while (i < values.length) {
@@ -218,35 +174,172 @@ class AccumuloAtomicIndexWriter(
     ???
   }
 
-  override def flush(): Unit = {}
+  private def mutate(
+      values: Array[RowKeyValue[_]],
+      condition: ConditionBuilder,
+      mutator: Mutator): java.util.List[ConditionalWriteStatus] = {
+    val errors = new java.util.ArrayList[ConditionalWriteStatus]()
+    var i = 0
+    while (i < values.length) {
+      values(i) match {
+        case kv: SingleRowKeyValue[_] =>
+          val mutation = new ConditionalMutation(kv.row)
+          kv.values.foreach { v =>
+            val cf = colFamilyMappings(i)(v.cf)
+            val vis = visCache(v.vis)
+            mutation.addCondition(condition(cf, v.cq, vis, v.value))
+            mutator(mutation, cf, v.cq, vis, v.value)
+          }
+          val status = writers(i).write(mutation).getStatus
+          if (status != ConditionalWriter.Status.ACCEPTED) {
+            errors.add(ConditionalWriteStatus(indices(i).identifier, status))
+          }
+
+        case mkv: MultiRowKeyValue[_] =>
+          mkv.rows.foreach { row =>
+            val mutation = new ConditionalMutation(row)
+            mkv.values.foreach { v =>
+              val cf = colFamilyMappings(i)(v.cf)
+              val vis = visCache(v.vis)
+              mutation.addCondition(condition(cf, v.cq, vis, v.value))
+              mutator(mutation, cf, v.cq, vis, v.value)
+            }
+            val status = writers(i).write(mutation).getStatus
+            if (status != ConditionalWriter.Status.ACCEPTED) {
+              errors.add(ConditionalWriteStatus(indices(i).identifier, status))
+            }
+          }
+      }
+      i += 1
+    }
+    errors
+  }
+
+  private def group(value: RowKeyValue[_], colFamilyMapper: ColumnFamilyMapper): Map[Row, Map[Key, Array[Byte]]] = {
+    val entries = value match {
+      case kv: SingleRowKeyValue[_] =>
+        val internal = kv.values.map { v =>
+          Key(colFamilyMapper(v.cf), v.cq, visCache(v.vis)) -> v.value
+        }
+        Seq(Row(kv.row) -> internal.toMap)
+
+      case mkv: MultiRowKeyValue[_] =>
+        mkv.rows.map { row =>
+          val internal = mkv.values.map { v =>
+            Key(colFamilyMapper(v.cf), v.cq, visCache(v.vis)) -> v.value
+          }
+          Row(row) -> internal.toMap
+        }
+    }
+    entries.toMap
+  }
+
+  override def flush(): Unit = {} // there is no batching here, every single write gets flushed
 
   override def close(): Unit = CloseQuietly(writers).foreach(e => throw e)
 }
 
 object AccumuloAtomicIndexWriter extends LazyLogging {
 
-  import scala.collection.JavaConverters._
+  val LockTimeout: SystemProperty = SystemProperty("geomesa.accumulo.tx.lock.timeout", "30s")
 
-  val TransactionAuth: String = "gmtx"
+  private class TransactionManager(ds: AccumuloDataStore, sft: SimpleFeatureType) {
 
-  /**
-   * Configures the client for atomic transactions. Note that the client may not have the necessary
-   * permissions, in which case the authorizations  must be configured externally.
-   *
-   * @param client accumulo client
-   */
-  def configureTransactions(client: AccumuloClient): Unit = {
-    val auths = client.securityOperations().getUserAuthorizations(client.whoami())
-    if (!auths.contains(TransactionAuth)) {
-      try {
-        val update = new java.util.ArrayList(auths.getAuthorizations)
-        update.add(TransactionAuth.getBytes(StandardCharsets.UTF_8))
-        client.securityOperations().changeUserAuthorizations(client.whoami(), new Authorizations(update))
-      } catch {
-        case e: AccumuloSecurityException =>
-          logger.warn(
-            s"Could not add authorization '$TransactionAuth' to user '${client.whoami()}'. Atomic writes will " +
-                s"not work - see https://www.geomesa.org/documentation/stable/user/TODO for details", e)
+    import ConditionalWriter.Status._
+
+    private val client = ds.connector
+    private val table = s"${ds.config.catalog}_${StringSerialization.alphaNumericSafeString(sft.getTypeName)}_tx"
+    private val empty = Array.empty[Byte]
+    private val txId = UUID.randomUUID().toString.getBytes(StandardCharsets.UTF_8)
+    private val timeout = LockTimeout.toDuration.get.toMillis // safe to .get since we have a valid default
+
+    TableUtils.createTableIfNeeded(client, table, logical = false)
+
+    private val writer = {
+      val config = new ConditionalWriterConfig()
+      config.setAuthorizations(ds.auths)
+      val timeout = ClientProperty.BATCH_WRITER_TIMEOUT_MAX.getTimeInMillis(client.properties())
+      if (timeout != null) {
+        config.setTimeout(timeout, TimeUnit.MILLISECONDS)
+      }
+      client.createConditionalWriter(table, config)
+    }
+
+    @tailrec
+    final def lock(id: Array[Byte]): Try[Releasable] = {
+      val mutation = new ConditionalMutation(id)
+      mutation.addCondition(new Condition(empty, empty))
+      mutation.put(empty, empty, txId)
+
+      val status = writer.write(mutation).getStatus
+      if (status == ACCEPTED) {
+        Success(new Unlock(id))
+      } else if (status == VIOLATED || status == INVISIBLE_VISIBILITY) {
+        // the table shouldn't have any constraints and we're not writing with any visibilities
+        throw new IllegalStateException(s"Could not acquire lock due to unexpected condition: $status")
+      } else { // REJECTED | UNKNOWN
+        // for rejected, check to see if the lock has expired
+        // for unknown, we need to scan the row to see if it was written or not
+        val scanner = new IsolatedScanner(client.createScanner(table, Authorizations.EMPTY))
+        try {
+          scanner.setRange(new org.apache.accumulo.core.data.Range(new String(id, StandardCharsets.UTF_8)))
+          val iter = scanner.iterator()
+          if (iter.hasNext) {
+            val next = iter.next()
+            val existingTx = next.getValue
+            if (existingTx.compareTo(txId) == 0) {
+              Success(new Unlock(id))
+            } else if (next.getKey.getTimestamp < System.currentTimeMillis() + timeout) {
+              Failure(new ConcurrentModificationException("Feature is locked for editing by another process"))
+            } else {
+              val mutation = new ConditionalMutation(id)
+              val condition =
+                new Condition(empty, empty).setTimestamp(next.getKey.getTimestamp).setValue(existingTx.get)
+              mutation.addCondition(condition)
+              mutation.put(empty, empty, txId)
+              writer.write(mutation) // don't need to check the status... will re-try regardless
+              lock(id)
+            }
+          } else {
+            // mutation was rejected but row was subsequently deleted, or mutation failed - either way, re-try
+            lock(id)
+          }
+        } finally {
+          CloseWithLogging(scanner)
+        }
+      }
+    }
+
+    private class Unlock(id: Array[Byte]) extends Releasable {
+      override def release(): Unit = {
+        val mutation = new ConditionalMutation(id)
+        mutation.addCondition(new Condition(empty, empty).setValue(txId))
+        mutation.putDelete(empty, empty)
+
+        val status = writer.write(mutation).getStatus
+        if (status == UNKNOWN) {
+          // for unknown, we need to scan the row to see if it was written or not
+          val scanner = new IsolatedScanner(client.createScanner(table, Authorizations.EMPTY))
+          try {
+            scanner.setRange(new org.apache.accumulo.core.data.Range(new String(id, StandardCharsets.UTF_8)))
+            val iter = scanner.iterator()
+            if (iter.hasNext) {
+              if (iter.next().getValue.compareTo(txId) == 0) {
+                release() // re-try
+              }
+              // } else {
+              // row was successfully deleted
+            }
+          } finally {
+            CloseWithLogging(scanner)
+          }
+        } else if (status == VIOLATED || status == INVISIBLE_VISIBILITY) {
+          // the table shouldn't have any constraints and we're not writing with any visibilities
+          throw new IllegalStateException(s"Could not release lock due to unexpected condition: $status")
+          // } else {
+          //  ACCEPTED means lock was released
+          //  REJECTED means lock was expired and overwritten
+        }
       }
     }
   }
@@ -255,75 +348,69 @@ object AccumuloAtomicIndexWriter extends LazyLogging {
     def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Condition
   }
 
-  private object TxWriteCondition extends ConditionBuilder {
-    override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Condition =
-      new Condition(cf, cq) // requires cf+cq to not exist
+  private object ConditionBuilder {
+    object AppendCondition extends ConditionBuilder {
+      override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Condition =
+        new Condition(cf, cq) // requires cf+cq to not exist
+    }
+
+    object DeleteCondition extends ConditionBuilder {
+      override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Condition =
+        new Condition(cf, cq).setVisibility(vis).setValue(value)
+    }
+
+
   }
 
-  private class TxCommitCondition(builder: TransactionVisibilities) extends ConditionBuilder {
-    override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Condition = {
-      new Condition(cf, cq).setVisibility(builder(vis.getExpression)).setValue(value)
+  private trait Mutator {
+    def apply(
+        mutation: ConditionalMutation,
+        cf: Array[Byte],
+        cq: Array[Byte],
+        vis: ColumnVisibility,
+        value: Array[Byte]): Unit
+  }
+
+  private object Mutator {
+    object Put extends Mutator {
+      override def apply(
+          mutation: ConditionalMutation,
+          cf: Array[Byte],
+          cq: Array[Byte],
+          vis: ColumnVisibility,
+          value: Array[Byte]): Unit = mutation.put(cf, cq, vis, value)
+    }
+    object Delete extends Mutator {
+      override def apply(
+          mutation: ConditionalMutation,
+          cf: Array[Byte],
+          cq: Array[Byte],
+          vis: ColumnVisibility,
+          value: Array[Byte]): Unit = mutation.putDelete(cf, cq, vis)
     }
   }
 
-  private object TxCleanCondition extends ConditionBuilder {
-    override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Condition =
-      new Condition(cf, cq).setVisibility(vis).setValue(value)
-  }
-
-  private trait VisibilityBuilder {
-    def apply(vis: Array[Byte]): ColumnVisibility
-  }
-
-  private class TransactionVisibilities extends VisibilityBuilder {
-
-    private val cache = new VisibilityCache()
-    private val TransactionAuthVis: ColumnVisibility = new ColumnVisibility(TransactionAuth)
-    private val AndTransactionAuthVisPrefix: Array[Byte] = "(".getBytes(StandardCharsets.UTF_8)
-    private val AndTransactionAuthVisSuffix: Array[Byte] = s")&$TransactionAuth".getBytes(StandardCharsets.UTF_8)
-
-    def apply(vis: Array[Byte]): ColumnVisibility = {
-      if (vis.isEmpty) { TransactionAuthVis } else {
-        cache(AndTransactionAuthVisPrefix ++ vis ++ AndTransactionAuthVisSuffix)
+  private case class Row(row: Array[Byte]) {
+    override def equals(obj: Any): Boolean = {
+      obj match {
+        case Row(row) => java.util.Arrays.equals(row, this.row)
+        case _ => false
       }
     }
+    override def hashCode(): Int = java.util.Arrays.hashCode(row)
   }
 
-  private class InsertVisibilities extends VisibilityBuilder {
-    private val cache = new VisibilityCache()
-    def apply(vis: Array[Byte]): ColumnVisibility = cache(vis)
-  }
-
-  private class ConditionMatcher(entries: ArrayBuffer[RowEntry]) {
-    def apply(row: Array[Byte], cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Condition = {
-      new Condition(cf, v.cq) // requires cf/cq to not exist
-    }
-
-    def remaining: Seq[RowEntry] = {
-      ???
-    }
-  }
-
-  private object ConditionMatcher {
-    def apply(rkv: RowKeyValue[_], cfMapper: ColumnFamilyMapper, visCache: VisibilityCache): ConditionMatcher = {
-      val entries = ArrayBuffer.empty[RowEntry]
-      rkv match {
-        case SingleRowKeyValue(row, _, _, _, _, _, vals) =>
-          vals.foreach { v =>
-            entries += RowEntry(row, cfMapper(v.cf), v.cq, visCache(v.vis), v.value)
-          }
-
-        case MultiRowKeyValue(rows, _, _, _, _, _, vals) =>
-          rows.foreach { row =>
-            vals.foreach { v =>
-              entries += RowEntry(row, cfMapper(v.cf), v.cq, visCache(v.vis), v.value)
-            }
-          }
+  private case class Key(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility) {
+    override def equals(obj: Any): Boolean = {
+      obj match {
+        case Key(cf, cq, vis) =>
+          java.util.Arrays.equals(cf, this.cf) && java.util.Arrays.equals(cq, this.cq) &&
+              java.util.Arrays.equals(vis.getExpression, this.vis.getExpression)
+        case _ => false
       }
-      new ConditionMatcher(entries)
     }
+    override def hashCode(): Int =
+      java.util.Arrays.hashCode(Array(cf, cq, vis.getExpression).map(java.util.Arrays.hashCode))
   }
-
-  private case class RowEntry(row: Array[Byte], cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte])
 }
 

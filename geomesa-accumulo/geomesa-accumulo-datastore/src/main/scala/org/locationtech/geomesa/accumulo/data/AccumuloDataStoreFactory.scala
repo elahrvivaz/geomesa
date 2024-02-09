@@ -44,7 +44,6 @@ class AccumuloDataStoreFactory extends DataStoreFactorySpi {
 
   override def createDataStore(params: java.util.Map[String, _]): AccumuloDataStore = {
     val connector = AccumuloDataStoreFactory.buildAccumuloConnector(params)
-    AccumuloAtomicIndexWriter.configureTransactions(connector)
     val config = AccumuloDataStoreFactory.buildConfig(connector, params)
     val ds = new AccumuloDataStore(connector, config)
     GeoMesaDataStore.initRemoteVersion(ds)
@@ -251,9 +250,7 @@ object AccumuloDataStoreFactory extends GeoMesaDataStoreInfo {
   def buildAuthsProvider(connector: AccumuloClient, params: java.util.Map[String, _]): AuthorizationsProvider = {
     // convert the connector authorizations into a string array - this is the maximum auths this connector can support
     val securityOps = connector.securityOperations
-    val masterAuths =
-      securityOps.getUserAuthorizations(connector.whoami).asScala.toSet.map(b => new String(b)) -
-          AccumuloAtomicIndexWriter.TransactionAuth // remove transaction auths, so that we don't return data from non-final txs
+    val masterAuths = securityOps.getUserAuthorizations(connector.whoami).asScala.map(b => new String(b)).toSeq
 
     // get the auth params passed in as a comma-delimited string
     val configuredAuths = AuthsParam.lookupOpt(params).getOrElse("").split(",").filterNot(_.isEmpty).toSeq

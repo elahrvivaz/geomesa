@@ -85,17 +85,7 @@ class AccumuloDataStore(val connector: AccumuloClient, override val config: Accu
     *
     * @return
     */
-  def auths: Authorizations = auths()
-
-  /**
-   * Gets the authorizations for the current user, plus adding in additional auths. This may change, so
-   * the results shouldn't be cached
-   *
-   * @param additional additional auths to add to the authorizations
-   * @return
-   */
-  def auths(additional: String*): Authorizations =
-    new Authorizations(config.authProvider.getAuthorizations.asScala.toSeq ++ additional: _*)
+  def auths: Authorizations = new Authorizations(config.authProvider.getAuthorizations.asScala.toSeq: _*)
 
   override def delete(): Unit = {
     // note: don't delete the query audit table

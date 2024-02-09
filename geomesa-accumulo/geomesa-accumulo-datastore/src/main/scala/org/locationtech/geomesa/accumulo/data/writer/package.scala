@@ -7,10 +7,14 @@ package object writer {
 
   import scala.collection.JavaConverters._
 
+  trait VisibilityBuilder {
+    def apply(vis: Array[Byte]): ColumnVisibility
+  }
+
   /**
    * Cache for storing column visibilities - not thread safe
    */
-  class VisibilityCache {
+  class VisibilityCache extends VisibilityBuilder {
 
     private val defaultVisibility = new ColumnVisibility()
     private val visibilities = new java.util.HashMap[VisHolder, ColumnVisibility]()

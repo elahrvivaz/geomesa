@@ -282,8 +282,8 @@ class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloD
     (atomic, sft.isVisibilityRequired) match {
       case (false, false) => new AccumuloIndexWriter(ds, indices, wrapper, partition)
       case (false, true)  => new AccumuloIndexWriter(ds, indices, wrapper, partition)  with RequiredVisibilityWriter
-      case (true, false)  => new AccumuloAtomicIndexWriter(ds, indices, wrapper, partition)
-      case (true, true)   => new AccumuloAtomicIndexWriter(ds, indices, wrapper, partition)  with RequiredVisibilityWriter
+      case (true, false)  => new AccumuloAtomicIndexWriter(ds, sft, indices, wrapper, partition)
+      case (true, true)   => new AccumuloAtomicIndexWriter(ds, sft, indices, wrapper, partition)  with RequiredVisibilityWriter
     }
   }
 }
