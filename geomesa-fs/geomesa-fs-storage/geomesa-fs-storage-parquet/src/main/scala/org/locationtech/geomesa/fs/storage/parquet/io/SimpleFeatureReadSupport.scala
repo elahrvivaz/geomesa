@@ -29,10 +29,8 @@ import scala.collection.mutable.ArrayBuffer
 
 class SimpleFeatureReadSupport extends ReadSupport[SimpleFeature] {
 
-  private var schema: SimpleFeatureParquetSchema = _
-
   override def init(context: InitContext): ReadContext = {
-    schema = SimpleFeatureParquetSchema.read(context).getOrElse {
+    val schema = SimpleFeatureParquetSchema.read(context).getOrElse {
       throw new IllegalArgumentException("Could not extract SimpleFeatureType from read context")
     }
     // ensure that our read schema matches the geomesa parquet version
@@ -44,6 +42,11 @@ class SimpleFeatureReadSupport extends ReadSupport[SimpleFeature] {
       keyValueMetaData: java.util.Map[String, String],
       fileSchema: MessageType,
       readContext: ReadSupport.ReadContext): RecordMaterializer[SimpleFeature] = {
+
+    // TODO how does this differ from init? seems like init might have merged metadata, vs this is a single file?
+    var schema: SimpleFeatureParquetSchema = _
+
+    // TODO filter based on file bounds?
     new SimpleFeatureRecordMaterializer(schema)
   }
 }
