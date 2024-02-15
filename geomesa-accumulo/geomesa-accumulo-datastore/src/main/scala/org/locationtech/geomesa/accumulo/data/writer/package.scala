@@ -46,11 +46,4 @@ package object writer {
 
     override def hashCode(): Int = java.util.Arrays.hashCode(vis)
   }
-
-  case class ConditionalWriteException(fid: String, rejections: java.util.List[ConditionalWriteStatus])
-      extends RuntimeException(s"Conditional write was rejected for feature '$fid': ${rejections.asScala.mkString(", ")}")
-
-  case class ConditionalWriteStatus(index: String, condition: ConditionalWriter.Status) {
-    override def toString: String = s"$index:$condition"
-  }
 }
