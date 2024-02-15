@@ -14,7 +14,8 @@ import org.apache.accumulo.core.file.keyfunctor.RowFunctor
 import org.apache.hadoop.io.Text
 import org.locationtech.geomesa.accumulo.data.AccumuloIndexAdapter.{AccumuloResultsToFeatures, ZIterPriority}
 import org.locationtech.geomesa.accumulo.data.AccumuloQueryPlan.{BatchScanPlan, EmptyPlan}
-import org.locationtech.geomesa.accumulo.data.writer.{AccumuloAtomicIndexWriter, AccumuloIndexWriter, ColumnFamilyMapper}
+import org.locationtech.geomesa.accumulo.data.writer.tx.AccumuloAtomicIndexWriter
+import org.locationtech.geomesa.accumulo.data.writer.{AccumuloIndexWriter, ColumnFamilyMapper}
 import org.locationtech.geomesa.accumulo.index.AccumuloJoinIndex
 import org.locationtech.geomesa.accumulo.iterators.ArrowIterator.AccumuloArrowResultsToFeatures
 import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator.AccumuloBinResultsToFeatures
