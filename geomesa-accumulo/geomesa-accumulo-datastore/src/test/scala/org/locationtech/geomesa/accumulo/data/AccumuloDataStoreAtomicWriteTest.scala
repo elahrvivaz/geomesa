@@ -40,7 +40,7 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultip
     AccumuloDataStoreParams.CatalogParam.key      -> catalog
   )
 
-  def features(sft: SimpleFeatureType): Seq[SimpleFeature] = Seq.tabulate(10) { i =>
+  def features(sft: SimpleFeatureType): Seq[SimpleFeature] = Seq.tabulate(5) { i =>
     ScalaSimpleFeature.create(sft, s"$i", s"name$i", s"2024-02-15T0$i:00:01.000Z", s"POINT (0 $i)")
   }
 
@@ -64,7 +64,7 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultip
   "AccumuloDataStore" should {
     "append with an atomic writer" in {
       val sft = createNewSchema(spec)
-      val feats = features(sft).take(5)
+      val feats = features(sft)
       WithClose(ds.getFeatureWriterAppend(sft.getTypeName, AtomicWriteTransaction.INSTANCE)) { writer =>
         feats.foreach(FeatureUtils.write(writer, _, useProvidedFid = true))
       }
@@ -92,7 +92,7 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultip
     }
     "make updates with an atomic writer" in {
       val sft = createNewSchema(spec)
-      val feats = features(sft).take(5)
+      val feats = features(sft)
       addFeatures(feats)
 
       val up = update1(sft)
@@ -109,7 +109,7 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultip
     }
     "throw exception and roll-back if atomic write is violated" in {
       val sft = createNewSchema(spec)
-      val feats = features(sft).take(5)
+      val feats = features(sft)
       addFeatures(feats)
 
       val up1 = update1(sft)
@@ -119,8 +119,8 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultip
         val update = writer.next
         update.setAttribute("geom", up1.getAttribute("geom"))
         update.setAttribute("dtg", up1.getAttribute("dtg"))
-        // after getting the read, go in and make a non-atomic edit
-        WithClose(ds.getFeatureWriter(sft.getTypeName, ECQL.toFilter("IN ('4')"), Transaction.AUTO_COMMIT)) { writer =>
+        // after getting the read, go in and make an edit
+        WithClose(ds.getFeatureWriter(sft.getTypeName, ECQL.toFilter("IN ('4')"), AtomicWriteTransaction.INSTANCE)) { writer =>
           writer.hasNext must beTrue
           val update = writer.next
           update.setAttribute("geom", up2.getAttribute("geom"))
