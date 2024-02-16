@@ -30,8 +30,6 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultip
 
   import scala.collection.JavaConverters._
 
-  sequential
-
   val spec = "name:String:index=true,dtg:Date,geom:Point:srid=4326"
 
   override lazy val dsParams: Map[String, String] = Map(
@@ -73,6 +71,24 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultip
       foreach(filters) { filter =>
         query(sft, filter) mustEqual feats
       }
+      WithClose(ds.getFeatureWriterAppend(sft.getTypeName, AtomicWriteTransaction.INSTANCE)) { writer =>
+        foreach(feats) { f =>
+          FeatureUtils.write(writer, f, useProvidedFid = true) must throwA[ConditionalWriteException].like {
+            case e: ConditionalWriteException =>
+              e.getRejections.asScala must containTheSameElementsAs(
+                Seq(
+                  ConditionalWriteStatus("id", "put", ConditionalWriter.Status.REJECTED),
+                  ConditionalWriteStatus("z2:geom", "put", ConditionalWriter.Status.REJECTED),
+                  ConditionalWriteStatus("z3:geom:dtg", "put", ConditionalWriter.Status.REJECTED),
+                  ConditionalWriteStatus("attr:name:geom:dtg", "put", ConditionalWriter.Status.REJECTED),
+                )
+              )
+          }
+        }
+      }
+      foreach(filters) { filter =>
+        query(sft, filter) mustEqual feats
+      }
     }
     "make updates with an atomic writer" in {
       val sft = createNewSchema(spec)
@@ -91,7 +107,7 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultip
         query(sft, filter) mustEqual feats.take(4) ++ Seq(up)
       }
     }
-    "throw exceptions and roll-back if atomic write is violated" in {
+    "throw exception and roll-back if atomic write is violated" in {
       val sft = createNewSchema(spec)
       val feats = features(sft).take(5)
       addFeatures(feats)
@@ -111,25 +127,29 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultip
           update.setAttribute("dtg", up2.getAttribute("dtg"))
           writer.write()
         }
+        foreach(filters) { filter =>
+          query(sft, filter) mustEqual feats.take(4) ++ Seq(up2)
+        }
         writer.write() must throwA[ConditionalWriteException].like {
           case e: ConditionalWriteException =>
             e.getFeatureId mustEqual "4"
-            e.getRejections.asScala must
-                containTheSameElementsAs(Seq(
-                  ConditionalWriteStatus("z2:geom", ConditionalWriter.Status.REJECTED),
-                  ConditionalWriteStatus("z3:geom:dtg", ConditionalWriter.Status.REJECTED),
-                  ConditionalWriteStatus("id", ConditionalWriter.Status.REJECTED),
-                  ConditionalWriteStatus("attr:name:geom:dtg", ConditionalWriter.Status.REJECTED),
-                ))
+            e.getRejections.asScala must containTheSameElementsAs(
+              Seq(
+                ConditionalWriteStatus("id", "put", ConditionalWriter.Status.REJECTED),
+                ConditionalWriteStatus("z2:geom", "delete", ConditionalWriter.Status.REJECTED),
+                ConditionalWriteStatus("z3:geom:dtg", "delete", ConditionalWriter.Status.REJECTED),
+                ConditionalWriteStatus("attr:name:geom:dtg", "delete", ConditionalWriter.Status.REJECTED),
+              )
+            )
         }
       }
       // verify update was rolled back correctly
       foreach(filters) { filter =>
-        println(filter)
-        query(sft, filter).foreach(println)
-        println
-        query(sft, filter) must containTheSameElementsAs(feats.take(4) ++ Seq(up2))
+        query(sft, filter) mustEqual feats.take(4) ++ Seq(up2)
       }
+    }
+    "throw exception and roll-back if atomic write is violated" in {
+
     }
   }
 }

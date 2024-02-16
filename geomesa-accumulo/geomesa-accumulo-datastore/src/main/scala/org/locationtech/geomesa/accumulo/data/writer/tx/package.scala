@@ -11,6 +11,9 @@ package org.locationtech.geomesa.accumulo.data.writer
 import org.apache.accumulo.core.data.{Condition, ConditionalMutation}
 import org.apache.accumulo.core.security.ColumnVisibility
 import org.locationtech.geomesa.accumulo.data.writer.tx.ConditionBuilder.{AppendCondition, DeleteCondition, UpdateCondition}
+import org.locationtech.geomesa.utils.index.ByteArrays
+
+import java.nio.charset.StandardCharsets
 
 package object tx {
 
@@ -51,6 +54,9 @@ package object tx {
           java.util.Arrays.equals(cq, other.cq) &&
           java.util.Arrays.equals(vis.getExpression, other.vis.getExpression)
     }
+    override def toString: String =
+      s"cf: ${new String(cf, StandardCharsets.UTF_8)}, cq: ${new String(cq, StandardCharsets.UTF_8)}, " +
+          s"vis: $vis, value: ${ByteArrays.toHex(value)}"
   }
 
   sealed trait ConditionBuilder {
@@ -59,13 +65,13 @@ package object tx {
   }
 
   object ConditionBuilder {
-    object AppendCondition extends ConditionBuilder {
+    case object AppendCondition extends ConditionBuilder {
       override val mutator: Mutator = Mutator.Put
       override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Seq[Condition] =
         Seq(new Condition(cf, cq)) // requires cf+cq to not exist
     }
 
-    object DeleteCondition extends ConditionBuilder {
+    case object DeleteCondition extends ConditionBuilder {
       override val mutator: Mutator = Mutator.Delete
       override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Seq[Condition] =
         Seq(new Condition(cf, cq).setVisibility(vis).setValue(value))
@@ -80,6 +86,8 @@ package object tx {
 
   sealed trait Mutator {
 
+    def name: String
+
     def apply(
         mutation: ConditionalMutation,
         cf: Array[Byte],
@@ -92,6 +100,7 @@ package object tx {
 
   object Mutator {
     object Put extends Mutator {
+      override val name: String = "put"
       override def invert: Mutator = Delete
       override def apply(
           mutation: ConditionalMutation,
@@ -101,6 +110,7 @@ package object tx {
           value: Array[Byte]): Unit = mutation.put(cf, cq, vis, value)
     }
     object Delete extends Mutator {
+      override val name: String = "delete"
       override def invert: Mutator = Put
       override def apply(
           mutation: ConditionalMutation,

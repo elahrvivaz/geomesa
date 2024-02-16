@@ -139,27 +139,27 @@ class AccumuloAtomicIndexWriter(
 
   private def mutate(mutations: Array[Seq[ConditionalMutations]]): Seq[ConditionalWriteStatus] = {
     val errors = ArrayBuffer.empty[ConditionalWriteStatus]
-    val successes = ArrayBuffer.empty[Int]
+    val successes = ArrayBuffer.empty[(Int, ConditionalMutations)]
     var i = 0
     while (i < mutations.length) {
       mutations(i).foreach { m =>
         val status = writers(i).write(m.mutation()).getStatus
         if (status == ConditionalWriter.Status.ACCEPTED) {
-          successes += i
+          successes += i -> m
         } else {
           // TODO handle UNKNOWN and re-try?
           val index = if (indices(i).attributes.isEmpty) { indices(i).name } else {
             s"${indices(i).name}:${indices(i).attributes.mkString(":")}"
           }
-          errors += ConditionalWriteStatus(index, status)
+          errors += ConditionalWriteStatus(index, m.condition.mutator.name, status)
         }
       }
       i += 1
     }
     if (errors.nonEmpty) {
       // revert any writes we made
-      successes.foreach { i =>
-        mutations(i).foreach(m => writers(i).write(m.invert()))
+      successes.foreach { case (i, m) =>
+        writers(i).write(m.invert())
       }
     }
     errors.toSeq

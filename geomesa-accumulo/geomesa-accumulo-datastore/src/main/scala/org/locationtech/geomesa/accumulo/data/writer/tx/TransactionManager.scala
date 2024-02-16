@@ -15,7 +15,7 @@ import org.apache.accumulo.core.security.Authorizations
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.util.TableUtils
 import org.locationtech.geomesa.index.utils.Releasable
-import org.locationtech.geomesa.utils.io.CloseWithLogging
+import org.locationtech.geomesa.utils.io.{CloseWithLogging, WithClose}
 import org.locationtech.geomesa.utils.text.StringSerialization
 import org.opengis.feature.simple.SimpleFeatureType
 
@@ -72,8 +72,7 @@ class TransactionManager(ds: AccumuloDataStore, sft: SimpleFeatureType, timeout:
     } else { // REJECTED | UNKNOWN
       // for rejected, check to see if the lock has expired
       // for unknown, we need to scan the row to see if it was written or not
-      val scanner = new IsolatedScanner(client.createScanner(table, Authorizations.EMPTY))
-      val existingTx = try {
+      val existingTx = WithClose(new IsolatedScanner(client.createScanner(table, Authorizations.EMPTY))) { scanner =>
         scanner.setRange(new org.apache.accumulo.core.data.Range(new String(id, StandardCharsets.UTF_8)))
         val iter = scanner.iterator()
         if (iter.hasNext) {
@@ -82,8 +81,6 @@ class TransactionManager(ds: AccumuloDataStore, sft: SimpleFeatureType, timeout:
         } else {
           None
         }
-      } finally {
-        CloseWithLogging(scanner)
       }
       existingTx match {
         case None => lock(id) // mutation was rejected but row was subsequently deleted, or mutation failed - either way, re-try
@@ -95,6 +92,7 @@ class TransactionManager(ds: AccumuloDataStore, sft: SimpleFeatureType, timeout:
               Failure(new ConcurrentModificationException("Feature is locked for editing by another process"))
             }
           } else {
+            // lock has expired - try to grab it
             val mutation = new ConditionalMutation(id)
             mutation.addCondition(new Condition(empty, empty).setTimestamp(timestamp).setValue(existing.get))
             mutation.put(empty, empty, txId)

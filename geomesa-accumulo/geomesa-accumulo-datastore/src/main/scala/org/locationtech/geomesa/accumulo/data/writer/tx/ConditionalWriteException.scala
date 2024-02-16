@@ -26,9 +26,10 @@ object ConditionalWriteException {
       s"Conditional write was rejected for feature '$fid': ${rejections.mkString(", ")}")
   }
 
-  case class ConditionalWriteStatus(index: String, condition: ConditionalWriter.Status) {
+  case class ConditionalWriteStatus(index: String, action: String, condition: ConditionalWriter.Status) {
     def getIndex: String = index
+    def getAction: String = action
     def getCondition: ConditionalWriter.Status = condition
-    override def toString: String = s"$index $condition"
+    override def toString: String = s"$index $action $condition"
   }
 }
