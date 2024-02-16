@@ -17,6 +17,7 @@ import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.index.api.GeoMesaFeatureIndex
 import org.locationtech.geomesa.index.api.IndexAdapter.IndexWriter
 import org.locationtech.geomesa.index.conf.partition.TablePartition
+import org.locationtech.geomesa.index.geotools.GeoMesaFeatureWriter.WriteException
 import org.locationtech.geomesa.index.stats.GeoMesaStats.StatUpdater
 import org.locationtech.geomesa.utils.concurrent.CachedThreadPool
 import org.locationtech.geomesa.utils.io.{CloseQuietly, FlushQuietly}
@@ -95,10 +96,10 @@ trait GeoMesaFeatureWriter[DS <: GeoMesaDataStore[DS]] extends SimpleFeatureWrit
   @throws[Exception]
   private def throwWriteErrors(e: Throwable, feature: SimpleFeature): Unit = {
     val msg = s"Error indexing feature '${feature.getID}:${DataUtilities.encodeFeature(feature, false)}'"
-    if (e.isInstanceOf[IllegalArgumentException]) {
-      throw new IllegalArgumentException(msg, e)
-    } else {
-      throw new RuntimeException(msg, e)
+    e match {
+      case _: WriteException => throw e
+      case _: IllegalArgumentException => throw new IllegalArgumentException(msg, e)
+      case _ => throw new RuntimeException(msg, e)
     }
   }
 }
@@ -168,6 +169,16 @@ object GeoMesaFeatureWriter extends LazyLogging {
     } else {
       withFid(feature, idGenerator.createId(feature.getFeatureType, feature))
     }
+  }
+
+  /**
+   * Marker class to allow specific exceptions to bubble up
+   *
+   * @param msg error message
+   * @param cause cause (may be null)
+   */
+  class WriteException(msg: String, cause: Throwable) extends RuntimeException(msg, cause) {
+    def this(msg: String) = this(msg, null)
   }
 
   private def withFid(feature: SimpleFeature, fid: String): SimpleFeature = {

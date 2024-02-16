@@ -20,6 +20,7 @@ import org.locationtech.geomesa.accumulo.audit.AccumuloAuditService
 import org.locationtech.geomesa.accumulo.data.AccumuloBackedMetadata.SingleRowAccumuloMetadata
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStoreFactory.AccumuloDataStoreConfig
 import org.locationtech.geomesa.accumulo.data.stats._
+import org.locationtech.geomesa.accumulo.data.writer.tx.TransactionManager
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators.{AgeOffIterator, DtgAgeOffIterator, ProjectVersionIterator, VisibilityIterator}
 import org.locationtech.geomesa.accumulo.util.TableUtils
@@ -98,7 +99,9 @@ class AccumuloDataStore(val connector: AccumuloClient, override val config: Accu
   }
 
   override def getAllTableNames(typeName: String): Seq[String] = {
-    val others = Seq(stats.metadata.table) ++ config.audit.map(_._1.asInstanceOf[AccumuloAuditService].table).toSeq
+    val others =
+      Seq(stats.metadata.table, TransactionManager.tableName(this, typeName)) ++
+          config.audit.map(_._1.asInstanceOf[AccumuloAuditService].table).toSeq
     super.getAllTableNames(typeName) ++ others
   }
 

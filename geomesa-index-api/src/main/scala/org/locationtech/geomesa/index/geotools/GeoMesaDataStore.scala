@@ -374,7 +374,7 @@ abstract class GeoMesaDataStore[DS <: GeoMesaDataStore[DS]](val config: GeoMesaD
       sft: SimpleFeatureType,
       transaction: Transaction,
       filter: Option[Filter]): FlushableFeatureWriter = {
-    val atomic = transaction == AtomicWritesTransaction.INSTANCE
+    val atomic = transaction == AtomicWriteTransaction.INSTANCE
     if (!atomic && transaction != Transaction.AUTO_COMMIT) {
       logger.warn("Ignoring transaction - not supported")
     }

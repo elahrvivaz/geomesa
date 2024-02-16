@@ -25,6 +25,10 @@ import java.util.{ConcurrentModificationException, UUID}
 import scala.annotation.tailrec
 import scala.util.{Failure, Success, Try}
 
+object TransactionManager {
+  def tableName(ds: AccumuloDataStore, typeName: String): String =
+    s"${ds.config.catalog}_${StringSerialization.alphaNumericSafeString(typeName)}_tx"
+}
 
 /**
  *
@@ -32,12 +36,12 @@ import scala.util.{Failure, Success, Try}
  * @param sft simple feature type being locked
  * @param timeout timeout waiting for a lock, in millis
  */
-private class TransactionManager(ds: AccumuloDataStore, sft: SimpleFeatureType, timeout: Long) {
+class TransactionManager(ds: AccumuloDataStore, sft: SimpleFeatureType, timeout: Long) {
 
   import ConditionalWriter.Status._
 
   private val client = ds.connector
-  private val table = s"${ds.config.catalog}_${StringSerialization.alphaNumericSafeString(sft.getTypeName)}_tx"
+  private val table = TransactionManager.tableName(ds, sft.getTypeName)
   private val empty = Array.empty[Byte]
   private val txId = UUID.randomUUID().toString.getBytes(StandardCharsets.UTF_8)
 

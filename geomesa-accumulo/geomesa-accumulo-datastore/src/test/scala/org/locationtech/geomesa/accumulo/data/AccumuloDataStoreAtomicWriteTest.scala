@@ -8,55 +8,48 @@
 
 package org.locationtech.geomesa.accumulo.data
 
-import org.apache.accumulo.core.security.Authorizations
-import org.apache.commons.codec.binary.Hex
-import org.apache.hadoop.io.Text
+import org.apache.accumulo.core.client.ConditionalWriter
 import org.geotools.data._
-import org.geotools.data.simple.SimpleFeatureStore
-import org.geotools.feature.DefaultFeatureCollection
-import org.geotools.filter.text.cql2.CQL
 import org.geotools.filter.text.ecql.ECQL
-import org.geotools.util.factory.Hints
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.{TestWithFeatureType, TestWithMultipleSfts}
-import org.locationtech.geomesa.accumulo.index._
-import org.locationtech.geomesa.accumulo.iterators.Z2Iterator
+import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
+import org.locationtech.geomesa.accumulo.data.writer.tx.ConditionalWriteException
+import org.locationtech.geomesa.accumulo.data.writer.tx.ConditionalWriteException.ConditionalWriteStatus
 import org.locationtech.geomesa.features.ScalaSimpleFeature
-import org.locationtech.geomesa.index.geotools.AtomicWritesTransaction
-import org.locationtech.geomesa.index.index.attribute.AttributeIndex
-import org.locationtech.geomesa.index.index.id.IdIndex
-import org.locationtech.geomesa.index.index.z2.Z2Index
-import org.locationtech.geomesa.index.index.z3.Z3Index
-import org.locationtech.geomesa.index.utils.ExplainString
+import org.locationtech.geomesa.index.geotools.AtomicWriteTransaction
 import org.locationtech.geomesa.utils.collection.SelfClosingIterator
-import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
-import org.locationtech.geomesa.utils.geotools.{FeatureUtils, SimpleFeatureTypes}
-import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes.AttributeOptions
+import org.locationtech.geomesa.utils.geotools.FeatureUtils
 import org.locationtech.geomesa.utils.io.WithClose
-import org.locationtech.geomesa.utils.stats.IndexCoverage
-import org.locationtech.geomesa.utils.text.{StringSerialization, WKTUtils}
-import org.locationtech.jts.geom.{Geometry, Point}
 import org.opengis.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.opengis.filter.Filter
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
-import java.io.IOException
-import java.util.Date
-
 @RunWith(classOf[JUnitRunner])
-class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithFeatureType {
+class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultipleSfts {
 
   import scala.collection.JavaConverters._
 
   sequential
 
-  override val spec = "name:String:index=true,dtg:Date,geom:Point:srid=4326"
+  val spec = "name:String:index=true,dtg:Date,geom:Point:srid=4326"
 
-  lazy val features = Seq.tabulate(10) { i =>
+  override lazy val dsParams: Map[String, String] = Map(
+    AccumuloDataStoreParams.InstanceNameParam.key -> "uno",
+    AccumuloDataStoreParams.ZookeepersParam.key   -> "localhost:2181",
+    AccumuloDataStoreParams.UserParam.key         -> "root",
+    AccumuloDataStoreParams.PasswordParam.key     -> "secret",
+    AccumuloDataStoreParams.CatalogParam.key      -> catalog
+  )
+
+  def features(sft: SimpleFeatureType): Seq[SimpleFeature] = Seq.tabulate(10) { i =>
     ScalaSimpleFeature.create(sft, s"$i", s"name$i", s"2024-02-15T0$i:00:01.000Z", s"POINT (0 $i)")
   }
-  lazy val update4 = ScalaSimpleFeature.create(sft, "4", "name4", "2024-02-15T04:00:02.000Z", "POINT (1 4)")
+
+  def update1(sft: SimpleFeatureType): SimpleFeature =
+    ScalaSimpleFeature.create(sft, "4", "name4", "2024-02-15T04:00:02.000Z", "POINT (1 4)")
+  def update2(sft: SimpleFeatureType): SimpleFeature =
+    ScalaSimpleFeature.create(sft, "4", "name4", "2024-02-15T04:00:03.000Z", "POINT (2 4)")
 
   val filters = Seq(
     s"IN(${Seq.tabulate(10)(i => i).mkString("'", "','", "'")})", // id index
@@ -65,41 +58,77 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithFeatur
     s"name IN(${Seq.tabulate(10)(i => s"name$i").mkString("'", "','", "'")})" // attribute
   ).map(ECQL.toFilter)
 
-  def query(filter: Filter): Seq[SimpleFeature] = {
+  def query(sft: SimpleFeatureType, filter: Filter): Seq[SimpleFeature] = {
     val query = new Query(sft.getTypeName, filter)
     SelfClosingIterator(ds.getFeatureReader(query, Transaction.AUTO_COMMIT)).toList.sortBy(_.getID)
   }
 
   "AccumuloDataStore" should {
-    "use an atomic writer" in {
-      WithClose(ds.getFeatureWriterAppend(sftName, AtomicWritesTransaction.INSTANCE)) { writer =>
-        features.take(5).foreach(FeatureUtils.write(writer, _, useProvidedFid = true))
+    "append with an atomic writer" in {
+      val sft = createNewSchema(spec)
+      val feats = features(sft).take(5)
+      WithClose(ds.getFeatureWriterAppend(sft.getTypeName, AtomicWriteTransaction.INSTANCE)) { writer =>
+        feats.foreach(FeatureUtils.write(writer, _, useProvidedFid = true))
       }
       foreach(filters) { filter =>
-        query(filter) mustEqual features.take(5)
+        query(sft, filter) mustEqual feats
       }
     }
-    "make updates" in {
-      WithClose(ds.getFeatureWriter(sftName, ECQL.toFilter("IN ('4')"), AtomicWritesTransaction.INSTANCE)) { writer =>
+    "make updates with an atomic writer" in {
+      val sft = createNewSchema(spec)
+      val feats = features(sft).take(5)
+      addFeatures(feats)
+
+      val up = update1(sft)
+      WithClose(ds.getFeatureWriter(sft.getTypeName, ECQL.toFilter("IN ('4')"), AtomicWriteTransaction.INSTANCE)) { writer =>
         writer.hasNext must beTrue
         val update = writer.next
-        update.setAttribute("geom", update4.getAttribute("geom"))
-        update.setAttribute("dtg", update4.getAttribute("dtg"))
+        update.setAttribute("geom", up.getAttribute("geom"))
+        update.setAttribute("dtg", up.getAttribute("dtg"))
         writer.write()
       }
       foreach(filters) { filter =>
-        query(filter) mustEqual features.take(4) ++ Seq(update4)
+        query(sft, filter) mustEqual feats.take(4) ++ Seq(up)
       }
-      // revert back to the original feature
-      WithClose(ds.getFeatureWriter(sftName, ECQL.toFilter("IN ('4')"), AtomicWritesTransaction.INSTANCE)) { writer =>
+    }
+    "throw exceptions and roll-back if atomic write is violated" in {
+      val sft = createNewSchema(spec)
+      val feats = features(sft).take(5)
+      addFeatures(feats)
+
+      val up1 = update1(sft)
+      val up2 = update2(sft)
+      WithClose(ds.getFeatureWriter(sft.getTypeName, ECQL.toFilter("IN ('4')"), AtomicWriteTransaction.INSTANCE)) { writer =>
         writer.hasNext must beTrue
         val update = writer.next
-        update.setAttribute("geom", features(4).getAttribute("geom"))
-        update.setAttribute("dtg", features(4).getAttribute("dtg"))
-        writer.write()
+        update.setAttribute("geom", up1.getAttribute("geom"))
+        update.setAttribute("dtg", up1.getAttribute("dtg"))
+        // after getting the read, go in and make a non-atomic edit
+        WithClose(ds.getFeatureWriter(sft.getTypeName, ECQL.toFilter("IN ('4')"), Transaction.AUTO_COMMIT)) { writer =>
+          writer.hasNext must beTrue
+          val update = writer.next
+          update.setAttribute("geom", up2.getAttribute("geom"))
+          update.setAttribute("dtg", up2.getAttribute("dtg"))
+          writer.write()
+        }
+        writer.write() must throwA[ConditionalWriteException].like {
+          case e: ConditionalWriteException =>
+            e.getFeatureId mustEqual "4"
+            e.getRejections.asScala must
+                containTheSameElementsAs(Seq(
+                  ConditionalWriteStatus("z2:geom", ConditionalWriter.Status.REJECTED),
+                  ConditionalWriteStatus("z3:geom:dtg", ConditionalWriter.Status.REJECTED),
+                  ConditionalWriteStatus("id", ConditionalWriter.Status.REJECTED),
+                  ConditionalWriteStatus("attr:name:geom:dtg", ConditionalWriter.Status.REJECTED),
+                ))
+        }
       }
+      // verify update was rolled back correctly
       foreach(filters) { filter =>
-        query(filter) mustEqual features.take(5)
+        println(filter)
+        query(sft, filter).foreach(println)
+        println
+        query(sft, filter) must containTheSameElementsAs(feats.take(4) ++ Seq(up2))
       }
     }
   }

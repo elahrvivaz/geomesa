@@ -18,12 +18,12 @@ import java.util.Set;
  * when it's read and when it's updated. Does not support normal transaction operations, such
  * as commit or rollback, and instead operates like auto-commit.
  */
-public class AtomicWritesTransaction
+public class AtomicWriteTransaction
       implements Transaction {
 
-    public static final AtomicWritesTransaction INSTANCE = new AtomicWritesTransaction();
+    public static final AtomicWriteTransaction INSTANCE = new AtomicWriteTransaction();
 
-    private AtomicWritesTransaction() {
+    private AtomicWriteTransaction() {
 
     }
 

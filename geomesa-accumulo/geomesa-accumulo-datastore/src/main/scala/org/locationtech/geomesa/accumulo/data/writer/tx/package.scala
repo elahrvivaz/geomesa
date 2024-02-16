@@ -8,26 +8,41 @@
 
 package org.locationtech.geomesa.accumulo.data.writer
 
-import org.apache.accumulo.core.client.ConditionalWriter
 import org.apache.accumulo.core.data.{Condition, ConditionalMutation}
 import org.apache.accumulo.core.security.ColumnVisibility
+import org.locationtech.geomesa.accumulo.data.writer.tx.ConditionBuilder.{AppendCondition, DeleteCondition, UpdateCondition}
 
 package object tx {
 
-  case class ConditionalMutations(
-      row: Array[Byte],
-      kvs: Seq[MutationValue],
-      condition: ConditionBuilder,
-      mutator: Mutator) {
+  case class ConditionalMutations(row: Array[Byte], kvs: Seq[MutationValue], condition: ConditionBuilder) {
+
+    /**
+     * Create the mutation
+     *
+     * @return
+     */
     def mutation(): ConditionalMutation = {
       val mutation = new ConditionalMutation(row)
       kvs.foreach { kv =>
         condition(kv.cf, kv.cq, kv.vis, kv.value).foreach(mutation.addCondition)
-        mutator(mutation, kv.cf, kv.cq, kv.vis, kv.value)
+        condition.mutator(mutation, kv.cf, kv.cq, kv.vis, kv.value)
       }
       mutation
     }
-    def invert(): ConditionalMutation = copy(mutator = mutator.invert).mutation()
+
+    /**
+     * Create a mutation that will undo the regular mutation from this object
+     *
+     * @return
+     */
+    def invert(): ConditionalMutation = {
+      val inverted = condition match {
+        case AppendCondition => copy(condition = DeleteCondition)
+        case DeleteCondition => copy(condition = AppendCondition)
+        case UpdateCondition(values) => ConditionalMutations(row, values, UpdateCondition(kvs))
+      }
+      inverted.mutation()
+    }
   }
 
   case class MutationValue(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]) {
@@ -38,26 +53,28 @@ package object tx {
     }
   }
 
-  trait ConditionBuilder {
+  sealed trait ConditionBuilder {
     def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Seq[Condition]
+    def mutator: Mutator
   }
 
   object ConditionBuilder {
     object AppendCondition extends ConditionBuilder {
+      override val mutator: Mutator = Mutator.Put
       override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Seq[Condition] =
         Seq(new Condition(cf, cq)) // requires cf+cq to not exist
     }
 
     object DeleteCondition extends ConditionBuilder {
+      override val mutator: Mutator = Mutator.Delete
       override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Seq[Condition] =
         Seq(new Condition(cf, cq).setVisibility(vis).setValue(value))
     }
 
     case class UpdateCondition(previous: Seq[MutationValue]) extends ConditionBuilder {
-      override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Seq[Condition] = {
-        new Condition(cf, cq).setVisibility(vis).setValue(value)
-        ???
-      }
+      override val mutator: Mutator = Mutator.Put
+      override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Seq[Condition] =
+        previous.map(kv => new Condition(kv.cf, kv.cq).setVisibility(kv.vis).setValue(kv.value))
     }
   }
 
@@ -92,23 +109,5 @@ package object tx {
           vis: ColumnVisibility,
           value: Array[Byte]): Unit = mutation.putDelete(cf, cq, vis)
     }
-  }
-
-  class ConditionalWriteException(val fid: String, val rejections: java.util.List[ConditionalWriteStatus], msg: String)
-      extends RuntimeException(msg)
-
-  object ConditionalWriteException {
-
-    import scala.collection.JavaConverters._
-
-    def apply(fid: String, rejections: Seq[ConditionalWriteStatus]): ConditionalWriteException = {
-      new ConditionalWriteException(fid, rejections.asJava,
-        s"Conditional write was rejected for feature '$fid': ${rejections.mkString(", ")}")
-
-    }
-  }
-
-  case class ConditionalWriteStatus(index: String, condition: ConditionalWriter.Status) {
-    override def toString: String = s"$index:$condition"
   }
 }
