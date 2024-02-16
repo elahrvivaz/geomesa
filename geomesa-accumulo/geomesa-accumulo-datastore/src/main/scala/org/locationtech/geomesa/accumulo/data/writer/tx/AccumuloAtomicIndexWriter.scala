@@ -9,16 +9,14 @@
 package org.locationtech.geomesa.accumulo.data.writer
 package tx
 
-import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.client.{ConditionalWriter, ConditionalWriterConfig}
 import org.apache.accumulo.core.conf.ClientProperty
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
-import org.locationtech.geomesa.accumulo.data.writer.tx.ConditionBuilder.{AppendCondition, DeleteCondition, UpdateCondition}
 import org.locationtech.geomesa.accumulo.data.writer.tx.ConditionalWriteException.ConditionalWriteStatus
+import org.locationtech.geomesa.accumulo.data.writer.tx.MutationBuilder.{AppendBuilder, DeleteBuilder, UpdateBuilder}
 import org.locationtech.geomesa.index.api.IndexAdapter.BaseIndexWriter
 import org.locationtech.geomesa.index.api.WritableFeature.FeatureWrapper
 import org.locationtech.geomesa.index.api._
-import org.locationtech.geomesa.utils.conf.GeoMesaSystemProperties.SystemProperty
 import org.locationtech.geomesa.utils.io.CloseQuietly
 import org.opengis.feature.simple.SimpleFeatureType
 
@@ -41,11 +39,6 @@ class AccumuloAtomicIndexWriter(
     wrapper: FeatureWrapper[WritableFeature],
     partition: Option[String]
   ) extends BaseIndexWriter[WritableFeature](indices, wrapper) {
-
-  import AccumuloAtomicIndexWriter.LockTimeout
-
-  // note: safe to call .get on LockTimeout as we have a default value
-  private val locking = new TransactionManager(ds, sft, LockTimeout.toDuration.get.toMillis)
 
   private val writers: Array[ConditionalWriter] = {
     val config = new ConditionalWriterConfig()
@@ -71,28 +64,18 @@ class AccumuloAtomicIndexWriter(
   private val visCache = new VisibilityCache()
 
   override protected def append(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {
-    val lock = locking.lock(feature.id).get // re-throw any lock exception
-    try {
-      val mutations = buildMutations(values, AppendCondition)
-      val errors = mutate(mutations)
-      if (errors.nonEmpty) {
-        throw ConditionalWriteException(feature.feature.getID, errors)
-      }
-    } finally {
-      lock.release()
+    val mutations = buildMutations(values, AppendBuilder.apply)
+    val errors = mutate(mutations)
+    if (errors.nonEmpty) {
+      throw ConditionalWriteException(feature.feature.getID, errors)
     }
   }
 
   override protected def delete(feature: WritableFeature, values: Array[RowKeyValue[_]]): Unit = {
-    val lock = locking.lock(feature.id).get // re-throw any lock exception
-    try {
-      val mutations = buildMutations(values, DeleteCondition)
-      val errors = mutate(mutations)
-      if (errors.nonEmpty) {
-        throw ConditionalWriteException(feature.feature.getID, errors)
-      }
-    } finally {
-      lock.release()
+    val mutations = buildMutations(values, DeleteBuilder.apply)
+    val errors = mutate(mutations)
+    if (errors.nonEmpty) {
+      throw ConditionalWriteException(feature.feature.getID, errors)
     }
   }
 
@@ -101,57 +84,62 @@ class AccumuloAtomicIndexWriter(
       values: Array[RowKeyValue[_]],
       previous: WritableFeature,
       previousValues: Array[RowKeyValue[_]]): Unit = {
-    val lock = locking.lock(feature.id).get // re-throw any lock exception
-    try {
-      val mutations = Array.ofDim[Seq[ConditionalMutations]](values.length)
-      // note: these are temporary conditions - we update them below
-      val updates = buildMutations(values, AppendCondition)
-      val deletes = buildMutations(previousValues, DeleteCondition)
-      var i = 0
-      while (i < values.length) {
-        val prev = ArrayBuffer(deletes(i): _*)
-        val appends = updates(i).map { mutations =>
-          // find any previous values that will be updated
-          val p = prev.indexWhere(p => java.util.Arrays.equals(p.row, mutations.row))
-          if (p == -1) { mutations } else {
-            // note: side-effect
-            // any previous values that aren't updated need to be deleted
-            val updated = prev.remove(p)
-            val remaining = updated.kvs.filterNot(kv => mutations.kvs.exists(_.equalKey(kv)))
-            if (remaining.nonEmpty) {
-              prev.append(updated.copy(kvs = remaining))
-            }
-            // add the previous values as a condition on the write
-            mutations.copy(condition = UpdateCondition(updated.kvs))
+    val mutations = Array.ofDim[Seq[MutationBuilder]](values.length)
+    // note: these are temporary conditions - we update them below
+    val updates = buildMutations(values, AppendBuilder.apply)
+    val deletes = buildMutations(previousValues, DeleteBuilder.apply)
+    var i = 0
+    while (i < values.length) {
+      val prev = ArrayBuffer(deletes(i): _*)
+      val appends = updates(i).map { mutations =>
+        // find any previous values that will be updated
+        val p = prev.indexWhere(p => java.util.Arrays.equals(p.row, mutations.row))
+        if (p == -1) { mutations } else {
+          // note: side-effect
+          // any previous values that aren't updated need to be deleted
+          val toUpdate = prev.remove(p)
+          val remaining = toUpdate.kvs.filterNot(kv => mutations.kvs.exists(_.equalKey(kv)))
+          if (remaining.nonEmpty) {
+            prev.append(toUpdate.copy(kvs = remaining))
           }
+          // add the previous values as a condition on the write
+          UpdateBuilder(mutations.row, mutations.kvs, toUpdate.kvs)
         }
-        mutations(i) = appends ++ prev
-        i += 1
       }
-      val errors = mutate(mutations)
-      if (errors.nonEmpty) {
-        throw ConditionalWriteException(feature.feature.getID, errors)
-      }
-    } finally {
-      lock.release()
+      mutations(i) = appends ++ prev
+      i += 1
+    }
+    val errors = mutate(mutations)
+    if (errors.nonEmpty) {
+      throw ConditionalWriteException(feature.feature.getID, errors)
     }
   }
 
-  private def mutate(mutations: Array[Seq[ConditionalMutations]]): Seq[ConditionalWriteStatus] = {
+  private def mutate[T <: MutationBuilder](mutations: Array[Seq[T]]): Seq[ConditionalWriteStatus] = {
     val errors = ArrayBuffer.empty[ConditionalWriteStatus]
-    val successes = ArrayBuffer.empty[(Int, ConditionalMutations)]
+    val successes = ArrayBuffer.empty[(Int, MutationBuilder)]
     var i = 0
     while (i < mutations.length) {
       mutations(i).foreach { m =>
-        val status = writers(i).write(m.mutation()).getStatus
+        val status = writers(i).write(m.apply()).getStatus
         if (status == ConditionalWriter.Status.ACCEPTED) {
           successes += i -> m
         } else {
           // TODO handle UNKNOWN and re-try?
+//          val existingTx = WithClose(new IsolatedScanner(client.createScanner(table, Authorizations.EMPTY))) { scanner =>
+//            scanner.setRange(new org.apache.accumulo.core.data.Range(new String(id, StandardCharsets.UTF_8)))
+//            val iter = scanner.iterator()
+//            if (iter.hasNext) {
+//              val next = iter.next()
+//              Some(next.getKey.getTimestamp -> next.getValue)
+//            } else {
+//              None
+//            }
+//          }
           val index = if (indices(i).attributes.isEmpty) { indices(i).name } else {
             s"${indices(i).name}:${indices(i).attributes.mkString(":")}"
           }
-          errors += ConditionalWriteStatus(index, m.condition.mutator.name, status)
+          errors += ConditionalWriteStatus(index, m.name, status)
         }
       }
       i += 1
@@ -165,10 +153,10 @@ class AccumuloAtomicIndexWriter(
     errors.toSeq
   }
 
-  private def buildMutations(
+  private def buildMutations[T <: MutationBuilder](
       values: Array[RowKeyValue[_]],
-      condition: ConditionBuilder): Array[Seq[ConditionalMutations]] = {
-    val mutations = Array.ofDim[Seq[ConditionalMutations]](values.length)
+      builderFactory: (Array[Byte], Seq[MutationValue]) => T): Array[Seq[T]] = {
+    val mutations = Array.ofDim[Seq[T]](values.length)
     var i = 0
     while (i < values.length) {
       mutations(i) = values(i) match {
@@ -176,14 +164,14 @@ class AccumuloAtomicIndexWriter(
           val values = kv.values.map { v =>
             MutationValue(colFamilyMappings(i)(v.cf), v.cq, visCache(v.vis), v.value)
           }
-          Seq(ConditionalMutations(kv.row, values, condition))
+          Seq(builderFactory(kv.row, values))
 
         case mkv: MultiRowKeyValue[_] =>
           mkv.rows.map { row =>
             val values = mkv.values.map { v =>
               MutationValue(colFamilyMappings(i)(v.cf), v.cq, visCache(v.vis), v.value)
             }
-            ConditionalMutations(row, values, condition)
+            builderFactory(row, values)
           }
       }
       i += 1
@@ -195,9 +183,3 @@ class AccumuloAtomicIndexWriter(
 
   override def close(): Unit = CloseQuietly(writers).foreach(e => throw e)
 }
-
-object AccumuloAtomicIndexWriter extends LazyLogging {
-
-  val LockTimeout: SystemProperty = SystemProperty("geomesa.accumulo.tx.lock.timeout", "2s")
-}
-

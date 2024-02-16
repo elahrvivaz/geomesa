@@ -10,44 +10,83 @@ package org.locationtech.geomesa.accumulo.data.writer
 
 import org.apache.accumulo.core.data.{Condition, ConditionalMutation}
 import org.apache.accumulo.core.security.ColumnVisibility
-import org.locationtech.geomesa.accumulo.data.writer.tx.ConditionBuilder.{AppendCondition, DeleteCondition, UpdateCondition}
 import org.locationtech.geomesa.utils.index.ByteArrays
 
 import java.nio.charset.StandardCharsets
 
 package object tx {
 
-  case class ConditionalMutations(row: Array[Byte], kvs: Seq[MutationValue], condition: ConditionBuilder) {
+  sealed trait MutationBuilder {
+
+    def name: String
+
+    def row: Array[Byte]
+
+    def kvs: Seq[MutationValue]
 
     /**
      * Create the mutation
      *
      * @return
      */
-    def mutation(): ConditionalMutation = {
-      val mutation = new ConditionalMutation(row)
-      kvs.foreach { kv =>
-        condition(kv.cf, kv.cq, kv.vis, kv.value).foreach(mutation.addCondition)
-        condition.mutator(mutation, kv.cf, kv.cq, kv.vis, kv.value)
-      }
-      mutation
-    }
+    def apply(): ConditionalMutation
 
     /**
      * Create a mutation that will undo the regular mutation from this object
      *
      * @return
      */
-    def invert(): ConditionalMutation = {
-      val inverted = condition match {
-        case AppendCondition => copy(condition = DeleteCondition)
-        case DeleteCondition => copy(condition = AppendCondition)
-        case UpdateCondition(values) => ConditionalMutations(row, values, UpdateCondition(kvs))
+    def invert(): ConditionalMutation
+  }
+
+  object MutationBuilder {
+    case class AppendBuilder(row: Array[Byte], kvs: Seq[MutationValue]) extends MutationBuilder {
+      override def name: String = "insert"
+      override def apply(): ConditionalMutation = {
+        val mutation = new ConditionalMutation(row)
+        kvs.foreach { kv =>
+          mutation.addCondition(new Condition(kv.cf, kv.cq)) // requires cf+cq to not exist
+          mutation.put(kv.cf, kv.cq, kv.vis, kv.value)
+        }
+        mutation
       }
-      inverted.mutation()
+      override def invert(): ConditionalMutation = DeleteBuilder(row, kvs)()
+    }
+
+    case class DeleteBuilder(row: Array[Byte], kvs: Seq[MutationValue]) extends MutationBuilder {
+      override def name: String = "delete"
+      override def apply(): ConditionalMutation = {
+        val mutation = new ConditionalMutation(row)
+        kvs.foreach { kv =>
+          mutation.addCondition(new Condition(kv.cf, kv.cq).setVisibility(kv.vis).setValue(kv.value))
+          mutation.putDelete(kv.cf, kv.cq, kv.vis)
+        }
+        mutation
+      }
+      override def invert(): ConditionalMutation = AppendBuilder(row, kvs)()
+    }
+
+    case class UpdateBuilder(row: Array[Byte], kvs: Seq[MutationValue], previous: Seq[MutationValue])
+        extends MutationBuilder {
+      override def name: String = "update"
+      override def apply(): ConditionalMutation = {
+        val mutation = new ConditionalMutation(row)
+        previous.foreach(kv => mutation.addCondition(new Condition(kv.cf, kv.cq).setVisibility(kv.vis).setValue(kv.value)))
+        kvs.foreach(kv => mutation.put(kv.cf, kv.cq, kv.vis, kv.value))
+        mutation
+      }
+      override def invert(): ConditionalMutation = UpdateBuilder(row, previous, kvs)()
     }
   }
 
+  /**
+   * Holder for a mutation's values - i.e. the non-row parts of a key plus the value
+   *
+   * @param cf column family
+   * @param cq column qualifier
+   * @param vis visibility label
+   * @param value value
+   */
   case class MutationValue(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]) {
     def equalKey(other: MutationValue): Boolean = {
       java.util.Arrays.equals(cf, other.cf) &&
@@ -57,67 +96,5 @@ package object tx {
     override def toString: String =
       s"cf: ${new String(cf, StandardCharsets.UTF_8)}, cq: ${new String(cq, StandardCharsets.UTF_8)}, " +
           s"vis: $vis, value: ${ByteArrays.toHex(value)}"
-  }
-
-  sealed trait ConditionBuilder {
-    def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Seq[Condition]
-    def mutator: Mutator
-  }
-
-  object ConditionBuilder {
-    case object AppendCondition extends ConditionBuilder {
-      override val mutator: Mutator = Mutator.Put
-      override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Seq[Condition] =
-        Seq(new Condition(cf, cq)) // requires cf+cq to not exist
-    }
-
-    case object DeleteCondition extends ConditionBuilder {
-      override val mutator: Mutator = Mutator.Delete
-      override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Seq[Condition] =
-        Seq(new Condition(cf, cq).setVisibility(vis).setValue(value))
-    }
-
-    case class UpdateCondition(previous: Seq[MutationValue]) extends ConditionBuilder {
-      override val mutator: Mutator = Mutator.Put
-      override def apply(cf: Array[Byte], cq: Array[Byte], vis: ColumnVisibility, value: Array[Byte]): Seq[Condition] =
-        previous.map(kv => new Condition(kv.cf, kv.cq).setVisibility(kv.vis).setValue(kv.value))
-    }
-  }
-
-  sealed trait Mutator {
-
-    def name: String
-
-    def apply(
-        mutation: ConditionalMutation,
-        cf: Array[Byte],
-        cq: Array[Byte],
-        vis: ColumnVisibility,
-        value: Array[Byte]): Unit
-
-    def invert: Mutator
-  }
-
-  object Mutator {
-    object Put extends Mutator {
-      override val name: String = "put"
-      override def invert: Mutator = Delete
-      override def apply(
-          mutation: ConditionalMutation,
-          cf: Array[Byte],
-          cq: Array[Byte],
-          vis: ColumnVisibility,
-          value: Array[Byte]): Unit = mutation.put(cf, cq, vis, value)
-    }
-    object Delete extends Mutator {
-      override val name: String = "delete"
-      override def invert: Mutator = Put
-      override def apply(
-          mutation: ConditionalMutation,
-          cf: Array[Byte],
-          cq: Array[Byte],
-          vis: ColumnVisibility,
-          value: Array[Byte]): Unit = mutation.putDelete(cf, cq, vis)
-    }
   }
 }

@@ -77,10 +77,10 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultip
             case e: ConditionalWriteException =>
               e.getRejections.asScala must containTheSameElementsAs(
                 Seq(
-                  ConditionalWriteStatus("id", "put", ConditionalWriter.Status.REJECTED),
-                  ConditionalWriteStatus("z2:geom", "put", ConditionalWriter.Status.REJECTED),
-                  ConditionalWriteStatus("z3:geom:dtg", "put", ConditionalWriter.Status.REJECTED),
-                  ConditionalWriteStatus("attr:name:geom:dtg", "put", ConditionalWriter.Status.REJECTED),
+                  ConditionalWriteStatus("id", "insert", ConditionalWriter.Status.REJECTED),
+                  ConditionalWriteStatus("z2:geom", "insert", ConditionalWriter.Status.REJECTED),
+                  ConditionalWriteStatus("z3:geom:dtg", "insert", ConditionalWriter.Status.REJECTED),
+                  ConditionalWriteStatus("attr:name:geom:dtg", "insert", ConditionalWriter.Status.REJECTED),
                 )
               )
           }
@@ -135,7 +135,7 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultip
             e.getFeatureId mustEqual "4"
             e.getRejections.asScala must containTheSameElementsAs(
               Seq(
-                ConditionalWriteStatus("id", "put", ConditionalWriter.Status.REJECTED),
+                ConditionalWriteStatus("id", "update", ConditionalWriter.Status.REJECTED),
                 ConditionalWriteStatus("z2:geom", "delete", ConditionalWriter.Status.REJECTED),
                 ConditionalWriteStatus("z3:geom:dtg", "delete", ConditionalWriter.Status.REJECTED),
                 ConditionalWriteStatus("attr:name:geom:dtg", "delete", ConditionalWriter.Status.REJECTED),
@@ -147,9 +147,6 @@ class AccumuloDataStoreAtomicWriteTest extends Specification with TestWithMultip
       foreach(filters) { filter =>
         query(sft, filter) mustEqual feats.take(4) ++ Seq(up2)
       }
-    }
-    "throw exception and roll-back if atomic write is violated" in {
-
     }
   }
 }
