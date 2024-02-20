@@ -16,9 +16,15 @@
     </properties>
 
     <dependencies>
+        <!-- diff from before:
+        no geomesa zk utils
+        no geomesa process
+        no geomesa accumulo datastore
+        no apache curator
+        -->
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-accumulo-datastore_${scala.binary.version}</artifactId>
+            <artifactId>geomesa-accumulo-iterators_${scala.binary.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.geotools</groupId>

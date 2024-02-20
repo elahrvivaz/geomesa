@@ -39,6 +39,22 @@ case object MiniCluster extends LazyLogging {
 
   val namespace = "gm"
 
+      // lazy val cluster: AccumuloContainer = {
+      //
+      //    lazy val host = Option(container).map(_.getHost).getOrElse("localhost")
+      //    lazy val port = Option(container).map(_.getFirstMappedPort).getOrElse(5432).toString
+      //
+      //    override def beforeAll(): Unit = {
+      //      val image =
+      //        new ImageFromDockerfile("testcontainers/postgis_cron", false)
+      //            .withFileFromClasspath(".", "testcontainers")
+      //            .withBuildArg("FROM_TAG", sys.props.getOrElse("postgis.docker.tag", "15-3.3"))
+      //      container = new GenericContainer(image)
+      //      container.addEnv("POSTGRES_HOST_AUTH_METHOD", "trust")
+      //      container.addExposedPort(5432)
+      //      container.start()
+      //      container.followOutput(new Slf4jLogConsumer(logger.underlying))
+
   lazy val cluster: MiniAccumuloCluster = {
     logger.info(s"Starting Accumulo minicluster at $miniClusterTempDir")
 
