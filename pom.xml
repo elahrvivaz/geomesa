@@ -120,7 +120,7 @@
 
         <!-- provided artifacts, not bundled to support multiple environments -->
         <accumulo.version>2.0.1</accumulo.version>
-        <accumulo-21.version>2.1.1</accumulo-21.version>
+        <accumulo-21.version>2.1.2</accumulo-21.version>
         <zookeeper.version>3.9.1</zookeeper.version>
         <thrift.version>0.12.0</thrift.version>
         <thrift-accumulo-21.version>0.17.0</thrift-accumulo-21.version>
@@ -191,6 +191,7 @@
         <test.fork.count>4</test.fork.count>
         <test.fork.reuse>true</test.fork.reuse>
         <test.enable.assertions>false</test.enable.assertions> <!-- arrow tests become extremely slow with assertions enabled-->
+        <test.accumulo.docker.tag>2.1.2</test.accumulo.docker.tag>
         <test.redis.docker.tag>7-alpine</test.redis.docker.tag>
         <test.postgres.docker.tag>15.1</test.postgres.docker.tag>
         <test.postgis.docker.tag>15-3.3</test.postgis.docker.tag>
@@ -204,7 +205,7 @@
         <copyright.year>2024</copyright.year>
 
         <!-- recommended installation versions -->
-        <accumulo.version.recommended>2.1.1</accumulo.version.recommended>
+        <accumulo.version.recommended>2.1.2</accumulo.version.recommended>
         <hbase.version.recommended>2.5.7</hbase.version.recommended>
         <hbase.thirdparty.version.recommended>4.1.5</hbase.thirdparty.version.recommended>
         <cassandra.server.version.recommended>3.11.14</cassandra.server.version.recommended>
@@ -397,6 +398,16 @@
             <dependency>
                 <groupId>org.locationtech.geomesa</groupId>
                 <artifactId>geomesa-accumulo-datastore_${scala.binary.version}</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.locationtech.geomesa</groupId>
+                <artifactId>geomesa-accumulo-iterators_${scala.binary.version}</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.locationtech.geomesa</groupId>
+                <artifactId>geomesa-accumulo-indices_${scala.binary.version}</artifactId>
                 <version>${project.version}</version>
             </dependency>
             <dependency>
@@ -2961,6 +2972,7 @@
                             <zookeeper.jmx.log4j.disable>true</zookeeper.jmx.log4j.disable>
                             <java.util.logging.config.file>logging.properties</java.util.logging.config.file>
                             <org.jboss.logging.provider>slf4j</org.jboss.logging.provider>
+                            <accumulo.docker.tag>${test.accumulo.docker.tag}</accumulo.docker.tag>
                             <postgis.docker.tag>${test.postgis.docker.tag}</postgis.docker.tag>
                             <postgres.docker.tag>${test.postgres.docker.tag}</postgres.docker.tag>
                             <redis.docker.tag>${test.redis.docker.tag}</redis.docker.tag>
