@@ -11,7 +11,7 @@ package org.locationtech.geomesa.accumulo.data
 
 import org.geotools.data.DataStoreFinder
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.MiniCluster
+import org.locationtech.geomesa.accumulo.AccumuloContainer
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
@@ -23,16 +23,16 @@ class AccumuloDataStoreFactoryTest extends Specification {
   import scala.collection.JavaConverters._
 
   // we use class name to prevent spillage between unit tests
-  lazy val catalog = s"${MiniCluster.namespace}.${getClass.getSimpleName}"
+  lazy val catalog = s"${AccumuloContainer.Namespace}.${getClass.getSimpleName}"
 
   "AccumuloDataStoreFactory" should {
 
     "create a password authenticated store" in {
       val params = Map(
-        AccumuloDataStoreParams.InstanceIdParam.key -> MiniCluster.cluster.getInstanceName,
-        AccumuloDataStoreParams.ZookeepersParam.key -> MiniCluster.cluster.getZooKeepers,
-        AccumuloDataStoreParams.UserParam.key       -> MiniCluster.Users.root.name,
-        AccumuloDataStoreParams.PasswordParam.key   -> MiniCluster.Users.root.password,
+        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
+        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.Container.zookeepers,
+        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.Container.user,
+        AccumuloDataStoreParams.PasswordParam.key   -> AccumuloContainer.Container.password,
         AccumuloDataStoreParams.CatalogParam.key    -> catalog
       ).asJava
       AccumuloDataStoreFactory.canProcess(params) must beTrue
@@ -48,9 +48,9 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "create a keytab authenticated store" in {
       val params = Map(
-        AccumuloDataStoreParams.InstanceIdParam.key -> MiniCluster.cluster.getInstanceName,
-        AccumuloDataStoreParams.ZookeepersParam.key -> MiniCluster.cluster.getZooKeepers,
-        AccumuloDataStoreParams.UserParam.key       -> MiniCluster.Users.root.name,
+        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
+        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.Container.zookeepers,
+        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.Container.user,
         AccumuloDataStoreParams.KeytabPathParam.key -> "/path/to/keytab",
         AccumuloDataStoreParams.CatalogParam.key    -> catalog
       ).asJava
@@ -60,10 +60,10 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "not accept password and keytab" in {
       val params = Map(
-        AccumuloDataStoreParams.InstanceIdParam.key -> MiniCluster.cluster.getInstanceName,
-        AccumuloDataStoreParams.ZookeepersParam.key -> MiniCluster.cluster.getZooKeepers,
-        AccumuloDataStoreParams.UserParam.key       -> MiniCluster.Users.root.name,
-        AccumuloDataStoreParams.PasswordParam.key   -> MiniCluster.Users.root.password,
+        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
+        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.Container.zookeepers,
+        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.Container.user,
+        AccumuloDataStoreParams.PasswordParam.key   -> AccumuloContainer.Container.password,
         AccumuloDataStoreParams.KeytabPathParam.key -> "/path/to/keytab",
         AccumuloDataStoreParams.CatalogParam.key    -> catalog
       ).asJava
@@ -73,9 +73,9 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "not accept a missing instanceId" in {
       val params = Map(
-        AccumuloDataStoreParams.ZookeepersParam.key -> MiniCluster.cluster.getZooKeepers,
-        AccumuloDataStoreParams.UserParam.key       -> MiniCluster.Users.root.name,
-        AccumuloDataStoreParams.PasswordParam.key   -> MiniCluster.Users.root.password,
+        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.Container.zookeepers,
+        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.Container.user,
+        AccumuloDataStoreParams.PasswordParam.key   -> AccumuloContainer.Container.password,
         AccumuloDataStoreParams.CatalogParam.key    -> catalog
       ).asJava
       AccumuloDataStoreFactory.canProcess(params) must beTrue
@@ -84,9 +84,9 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "not accept a missing zookeepers" in {
       val params = Map(
-        AccumuloDataStoreParams.InstanceIdParam.key -> MiniCluster.cluster.getInstanceName,
-        AccumuloDataStoreParams.UserParam.key       -> MiniCluster.Users.root.name,
-        AccumuloDataStoreParams.PasswordParam.key   -> MiniCluster.Users.root.password,
+        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
+        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.Container.user,
+        AccumuloDataStoreParams.PasswordParam.key   -> AccumuloContainer.Container.password,
         AccumuloDataStoreParams.CatalogParam.key    -> catalog
       ).asJava
       AccumuloDataStoreFactory.canProcess(params) must beTrue
@@ -95,9 +95,9 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "not accept a missing user" in {
       val params = Map(
-        AccumuloDataStoreParams.InstanceIdParam.key -> MiniCluster.cluster.getInstanceName,
-        AccumuloDataStoreParams.ZookeepersParam.key -> MiniCluster.cluster.getZooKeepers,
-        AccumuloDataStoreParams.PasswordParam.key   -> MiniCluster.Users.root.password,
+        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
+        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.Container.zookeepers,
+        AccumuloDataStoreParams.PasswordParam.key   -> AccumuloContainer.Container.password,
         AccumuloDataStoreParams.CatalogParam.key    -> catalog
       ).asJava
       AccumuloDataStoreFactory.canProcess(params) must beTrue
@@ -106,9 +106,9 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "not accept a missing password and keytab" in {
       val params = Map(
-        AccumuloDataStoreParams.InstanceIdParam.key -> MiniCluster.cluster.getInstanceName,
-        AccumuloDataStoreParams.ZookeepersParam.key -> MiniCluster.cluster.getZooKeepers,
-        AccumuloDataStoreParams.UserParam.key       -> MiniCluster.Users.root.name,
+        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
+        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.Container.zookeepers,
+        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.Container.user,
         AccumuloDataStoreParams.CatalogParam.key    -> catalog
       ).asJava
       AccumuloDataStoreFactory.canProcess(params) must beTrue
