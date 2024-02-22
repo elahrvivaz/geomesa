@@ -16,13 +16,13 @@ import org.apache.accumulo.core.security.{Authorizations, NamespacePermission, S
 import org.locationtech.geomesa.accumulo.AccumuloContainer.UserWithAuths
 import org.locationtech.geomesa.utils.io.WithClose
 import org.slf4j.LoggerFactory
-import org.testcontainers.containers.{GenericContainer, Network}
+import org.testcontainers.containers.GenericContainer
 import org.testcontainers.containers.output.{OutputFrame, Slf4jLogConsumer}
 import org.testcontainers.containers.wait.strategy.Wait
 import org.testcontainers.utility.{DockerImageName, MountableFile}
 
 import java.io.{File, FilenameFilter}
-import java.net.ServerSocket
+import java.net.{ServerSocket, URI}
 import java.nio.charset.StandardCharsets
 import java.nio.file.Paths
 import java.time.Duration
@@ -46,7 +46,7 @@ class AccumuloContainer extends GenericContainer[AccumuloContainer](AccumuloCont
 
   withCopyFileToContainer(
     MountableFile.forHostPath(AccumuloContainer.DistributedRuntimeJarPath),
-    "/fluo-uno/install/accumulo/lib/geomesa-accumulo-distributed-runtime.jar")
+    "/opt/fluo-uno/install/accumulo/lib/geomesa-accumulo-distributed-runtime.jar")
 
   withLogConsumer(AccumuloContainer.LogConsumer)
   waitingFor(Wait.forLogMessage(".*Running accumulo complete.*\\n", 1).withStartupTimeout(Duration.ofMinutes(10)))
@@ -66,7 +66,6 @@ class AccumuloContainer extends GenericContainer[AccumuloContainer](AccumuloCont
     val props = new Properties()
     props.setProperty(ClientProperty.INSTANCE_NAME.getKey, instanceName)
     props.setProperty(ClientProperty.INSTANCE_ZOOKEEPERS.getKey, zookeepers)
-    props.list(System.out)
     val password = new PasswordToken(user.password.getBytes(StandardCharsets.UTF_8))
     Accumulo.newClient().from(props).as(user.name, password).build()
   }
@@ -74,16 +73,16 @@ class AccumuloContainer extends GenericContainer[AccumuloContainer](AccumuloCont
 
 case object AccumuloContainer extends StrictLogging {
 
-  // TODO accumulo 2.0 vs 2.1, esp for spark distributed runtime tests
   val ImageName =
-    DockerImageName.parse("docker-art.ccri.com/internal-utils/accumulo-uno-docker")
-        .withTag(sys.props.getOrElse("accumulo.docker.tag", "2.1"))
+    DockerImageName.parse("ghcr.io/geomesa/accumulo-uno")
+        .withTag(sys.props.getOrElse("accumulo.docker.tag", "2.1.2"))
 
   val Namespace = "gm"
 
   lazy val Container: AccumuloContainer = {
     val container = tryContainer.get
     WithClose(container.client()) { client =>
+      client.namespaceOperations().create(Namespace)
       val secOps = client.securityOperations()
       secOps.changeUserAuthorizations(Users.root.name, Users.root.auths)
       Seq(Users.admin, Users.user).foreach { case UserWithAuths(name, password, auths) =>
@@ -156,6 +155,7 @@ case object AccumuloContainer extends StrictLogging {
     val lookup =
       Option(getClass.getClassLoader.getResource("geomesa-accumulo-distributed-runtime.properties"))
           .map(_.toURI)
+
     logger.debug(s"Distributed runtime lookup: ${lookup.orNull}")
     val jar = lookup.flatMap {
       // running through intellij
@@ -175,8 +175,8 @@ case object AccumuloContainer extends StrictLogging {
         }
 
       // running through maven
-      case file if file.toString.contains(".jar!") =>
-        Some(Paths.get(file.toString.replaceAll("\\.jar!.*", ".jar")).toFile.getAbsolutePath)
+      case file if file.getScheme == "jar" =>
+        Some(Paths.get(URI.create(file.toString.substring(4).replaceAll("\\.jar!.*", ".jar"))).toFile.getAbsolutePath)
 
       case _ =>
         None

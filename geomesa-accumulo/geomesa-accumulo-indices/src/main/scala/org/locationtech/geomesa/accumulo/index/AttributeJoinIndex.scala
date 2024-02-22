@@ -11,8 +11,8 @@ package org.locationtech.geomesa.accumulo.index
 import org.locationtech.geomesa.filter.FilterHelper
 import org.locationtech.geomesa.index.api._
 import org.locationtech.geomesa.index.index.attribute.{AttributeIndex, AttributeIndexKey, AttributeIndexValues}
-import org.opengis.feature.simple.SimpleFeatureType
-import org.opengis.filter.Filter
+import org.geotools.api.feature.simple.SimpleFeatureType
+import org.geotools.api.filter.Filter
 
 /**
   * Mixin trait to add join support to the normal attribute index class
