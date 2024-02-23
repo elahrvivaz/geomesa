@@ -117,6 +117,11 @@
             <classifier>tests</classifier>
         </dependency>
         <dependency>
+            <groupId>org.locationtech.geomesa</groupId>
+            <artifactId>geomesa-accumulo-distributed-runtime_${scala.binary.version}</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
             <groupId>org.apache.kafka</groupId>
             <artifactId>kafka_${scala.binary.version}</artifactId>
             <classifier>test</classifier>
