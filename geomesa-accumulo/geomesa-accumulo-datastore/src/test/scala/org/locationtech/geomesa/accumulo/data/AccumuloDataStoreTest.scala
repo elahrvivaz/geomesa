@@ -175,9 +175,9 @@ class AccumuloDataStoreTest extends Specification with TestWithMultipleSfts {
       val results = ds.getFeatureSource(defaultTypeName).getFeatures(query)
       val features = SelfClosingIterator(results.features).toList
 
-      "results schema should match" >> { results.getSchema mustEqual defaultSft }
-      "geometry should be set" >> { forall(features)(_.getDefaultGeometry mustEqual defaultGeom) }
-      "result length should be 1" >> { features must haveLength(2) }
+      results.getSchema mustEqual defaultSft
+      features must haveLength(2)
+      forall(features)(_.getDefaultGeometry mustEqual defaultGeom)
     }
 
     "create a schema with custom record splitting options with table sharing off" in {
@@ -347,37 +347,26 @@ class AccumuloDataStoreTest extends Specification with TestWithMultipleSfts {
       val originalSchema = "name:String,dtg:Date,*geom:Point:srid=4326"
       val sftName = createNewSchema(originalSchema).getTypeName
 
-      "prevent changing default geometry" >> {
-        val modified =
-          SimpleFeatureTypes.createType(sftName, "name:String,dtg:Date,geom:Point:srid=4326,*geom2:Point:srid=4326")
-        modified.getUserData.putAll(ds.getSchema(sftName).getUserData)
-        ds.updateSchema(sftName, modified) should throwAn[UnsupportedOperationException]
-        val retrievedSchema = SimpleFeatureTypes.encodeType(ds.getSchema(sftName))
-        retrievedSchema mustEqual originalSchema
-      }
-      "prevent changing attribute order" >> {
-        val modified = SimpleFeatureTypes.createType(sftName, "dtg:Date,name:String,*geom:Point:srid=4326")
-        modified.getUserData.putAll(ds.getSchema(sftName).getUserData)
-        ds.updateSchema(sftName, modified) should throwA[UnsupportedOperationException]
-        val retrievedSchema = SimpleFeatureTypes.encodeType(ds.getSchema(sftName))
-        retrievedSchema mustEqual originalSchema
-      }
-      "prevent removing attributes" >> {
-        val modified = SimpleFeatureTypes.createType(sftName, "dtg:Date,*geom:Point:srid=4326")
-        modified.getUserData.putAll(ds.getSchema(sftName).getUserData)
-        ds.updateSchema(sftName, modified) should throwA[UnsupportedOperationException]
-        val retrievedSchema = SimpleFeatureTypes.encodeType(ds.getSchema(sftName))
-        retrievedSchema mustEqual originalSchema
-      }
-      "allow adding attributes" >> {
-        // note: we actually modify the schema here so this check is last
-        val newSchema = "name:String,dtg:Date,*geom:Point:srid=4326,newField:String"
-        val modified = SimpleFeatureTypes.createType(sftName, newSchema)
+      def modify(spec: String): Unit = {
+        val modified = SimpleFeatureTypes.createType(sftName, spec)
         modified.getUserData.putAll(ds.getSchema(sftName).getUserData)
         ds.updateSchema(sftName, modified)
-        val retrievedSchema = SimpleFeatureTypes.encodeType(ds.getSchema(sftName))
-        retrievedSchema mustEqual newSchema
       }
+
+      // "prevent changing default geometry" >> {
+      modify("name:String,dtg:Date,geom:Point:srid=4326,*geom2:Point:srid=4326") must throwAn[UnsupportedOperationException]
+      SimpleFeatureTypes.encodeType(ds.getSchema(sftName)) mustEqual originalSchema
+      // "prevent changing attribute order" >> {
+      modify("dtg:Date,name:String,*geom:Point:srid=4326") must throwA[UnsupportedOperationException]
+      SimpleFeatureTypes.encodeType(ds.getSchema(sftName)) mustEqual originalSchema
+      // "prevent removing attributes" >> {
+      modify("dtg:Date,*geom:Point:srid=4326") must throwA[UnsupportedOperationException]
+      SimpleFeatureTypes.encodeType(ds.getSchema(sftName)) mustEqual originalSchema
+      // "allow adding attributes" >> {
+      // note: we actually modify the schema here so this check is last
+      val newSchema = "name:String,dtg:Date,*geom:Point:srid=4326,newField:String"
+      modify(newSchema)
+      SimpleFeatureTypes.encodeType(ds.getSchema(sftName)) mustEqual newSchema
     }
 
     "Provide a feature update implementation" in {
