@@ -112,7 +112,7 @@
         <commons.lang.version>2.6</commons.lang.version>
 
         <!-- test dependencies -->
-        <specs2.version>4.20.4</specs2.version>
+        <specs2.version>4.20.5</specs2.version>
         <junit.version>4.13.2</junit.version>
         <testcontainers.version>1.19.3</testcontainers.version>
         <!-- needs to track hadoop: https://github.com/apache/hadoop/blob/release-3.3.6-RC1/hadoop-project/pom.xml#L1279C18-L1279C24 -->
@@ -170,7 +170,7 @@
         <maven.shade.plugin.version>3.5.1</maven.shade.plugin.version>
         <!-- note: we use an older version that still supports using zinc compile server -->
         <scala.maven.plugin.version>3.4.4</scala.maven.plugin.version>
-        <maven.surefire.plugin.version>3.2.3</maven.surefire.plugin.version>
+        <maven.surefire.plugin.version>3.2.5</maven.surefire.plugin.version>
         <maven.failsafe.plugin.version>3.2.3</maven.failsafe.plugin.version>
         <maven.deploy.plugin.version>3.1.1</maven.deploy.plugin.version>
         <maven.source.plugin.version>3.3.0</maven.source.plugin.version>
@@ -189,7 +189,8 @@
         <maven.test.opens>--add-opens=java.base/java.nio=ALL-UNNAMED --illegal-access=warn</maven.test.opens>
         <maven.test.debug>-Xrunjdwp:transport=dt_socket,address=5005,server=y,suspend=y</maven.test.debug>
         <maven.test.jvmargs>${maven.test.memory} ${maven.test.opens}</maven.test.jvmargs>
-        <test.fork.count>4</test.fork.count>
+        <test.thread.count>4</test.thread.count> <!-- note: per cpu -->
+        <test.fork.count>2</test.fork.count>
         <test.fork.reuse>true</test.fork.reuse>
         <test.enable.assertions>false</test.enable.assertions> <!-- arrow tests become extremely slow with assertions enabled-->
         <test.accumulo.docker.tag>2.1.2</test.accumulo.docker.tag>
@@ -2931,7 +2932,7 @@
                     <dependencies>
                         <dependency>
                             <groupId>org.apache.maven.surefire</groupId>
-                            <artifactId>surefire-junit4</artifactId>
+                            <artifactId>surefire-junit47</artifactId>
                             <version>${maven.surefire.plugin.version}</version>
                         </dependency>
                     </dependencies>
@@ -2941,6 +2942,7 @@
                         <forkedProcessTimeoutInSeconds>0</forkedProcessTimeoutInSeconds>
                         <rerunFailingTestsCount>1</rerunFailingTestsCount> <!-- re-try intermittent failures -->
                         <enableAssertions>${test.enable.assertions}</enableAssertions>
+                        <trimStackTrace>true</trimStackTrace>
                         <includes>
                             <include>**/*Test.java</include>
                         </includes>
