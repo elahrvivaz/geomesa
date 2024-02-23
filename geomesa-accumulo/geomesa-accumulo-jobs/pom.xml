@@ -79,6 +79,10 @@
             <artifactId>testcontainers</artifactId>
         </dependency>
         <dependency>
+            <groupId>org.geomesa.testcontainers</groupId>
+            <artifactId>testcontainers-accumulo</artifactId>
+        </dependency>
+        <dependency>
             <!-- 'works with' due to license issues -->
             <groupId>org.xerial.snappy</groupId>
             <artifactId>snappy-java</artifactId>

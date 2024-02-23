@@ -29,10 +29,10 @@ class IngestCommandTest extends Specification {
 
   def baseArgs: Array[String] = Array(
     "ingest",
-    "--instance",      AccumuloContainer.Container.instanceName,
-    "--zookeepers",    AccumuloContainer.Container.zookeepers,
-    "--user",          AccumuloContainer.Users.root.name,
-    "--password",      AccumuloContainer.Users.root.password,
+    "--instance",      AccumuloContainer.instanceName,
+    "--zookeepers",    AccumuloContainer.zookeepers,
+    "--user",          AccumuloContainer.user,
+    "--password",      AccumuloContainer.password,
     "--catalog",       s"${AccumuloContainer.Namespace}.${getClass.getSimpleName}${sftCounter.getAndIncrement()}",
     "--compact-stats", "false"
   )

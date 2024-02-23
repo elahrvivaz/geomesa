@@ -29,11 +29,11 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "create a password authenticated store" in {
       val params = Map(
-        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
-        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.Container.zookeepers,
-        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.Container.user,
-        AccumuloDataStoreParams.PasswordParam.key   -> AccumuloContainer.Container.password,
-        AccumuloDataStoreParams.CatalogParam.key    -> catalog
+        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.instanceName,
+        AccumuloDataStoreParams.ZookeepersParam.key   -> AccumuloContainer.zookeepers,
+        AccumuloDataStoreParams.UserParam.key         -> AccumuloContainer.user,
+        AccumuloDataStoreParams.PasswordParam.key     -> AccumuloContainer.password,
+        AccumuloDataStoreParams.CatalogParam.key      -> catalog
       ).asJava
       AccumuloDataStoreFactory.canProcess(params) must beTrue
       val ds = DataStoreFinder.getDataStore(params)
@@ -48,11 +48,11 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "create a keytab authenticated store" in {
       val params = Map(
-        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
-        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.Container.zookeepers,
-        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.Container.user,
-        AccumuloDataStoreParams.KeytabPathParam.key -> "/path/to/keytab",
-        AccumuloDataStoreParams.CatalogParam.key    -> catalog
+        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.instanceName,
+        AccumuloDataStoreParams.ZookeepersParam.key   -> AccumuloContainer.zookeepers,
+        AccumuloDataStoreParams.UserParam.key         -> AccumuloContainer.user,
+        AccumuloDataStoreParams.KeytabPathParam.key   -> "/path/to/keytab",
+        AccumuloDataStoreParams.CatalogParam.key      -> catalog
       ).asJava
       AccumuloDataStoreFactory.canProcess(params) must beTrue
       // TODO GEOMESA-2797 test kerberos
@@ -60,12 +60,12 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "not accept password and keytab" in {
       val params = Map(
-        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
-        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.Container.zookeepers,
-        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.Container.user,
-        AccumuloDataStoreParams.PasswordParam.key   -> AccumuloContainer.Container.password,
-        AccumuloDataStoreParams.KeytabPathParam.key -> "/path/to/keytab",
-        AccumuloDataStoreParams.CatalogParam.key    -> catalog
+        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.instanceName,
+        AccumuloDataStoreParams.ZookeepersParam.key   -> AccumuloContainer.zookeepers,
+        AccumuloDataStoreParams.UserParam.key         -> AccumuloContainer.user,
+        AccumuloDataStoreParams.PasswordParam.key     -> AccumuloContainer.password,
+        AccumuloDataStoreParams.KeytabPathParam.key   -> "/path/to/keytab",
+        AccumuloDataStoreParams.CatalogParam.key      -> catalog
       ).asJava
       AccumuloDataStoreFactory.canProcess(params) must beTrue
       DataStoreFinder.getDataStore(params) must throwAn[IllegalArgumentException]
@@ -73,9 +73,9 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "not accept a missing instanceId" in {
       val params = Map(
-        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.Container.zookeepers,
-        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.Container.user,
-        AccumuloDataStoreParams.PasswordParam.key   -> AccumuloContainer.Container.password,
+        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.zookeepers,
+        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.user,
+        AccumuloDataStoreParams.PasswordParam.key   -> AccumuloContainer.password,
         AccumuloDataStoreParams.CatalogParam.key    -> catalog
       ).asJava
       AccumuloDataStoreFactory.canProcess(params) must beTrue
@@ -84,10 +84,10 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "not accept a missing zookeepers" in {
       val params = Map(
-        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
-        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.Container.user,
-        AccumuloDataStoreParams.PasswordParam.key   -> AccumuloContainer.Container.password,
-        AccumuloDataStoreParams.CatalogParam.key    -> catalog
+        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.instanceName,
+        AccumuloDataStoreParams.UserParam.key         -> AccumuloContainer.user,
+        AccumuloDataStoreParams.PasswordParam.key     -> AccumuloContainer.password,
+        AccumuloDataStoreParams.CatalogParam.key      -> catalog
       ).asJava
       AccumuloDataStoreFactory.canProcess(params) must beTrue
       DataStoreFinder.getDataStore(params) must throwAn[IOException]
@@ -95,10 +95,10 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "not accept a missing user" in {
       val params = Map(
-        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
-        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.Container.zookeepers,
-        AccumuloDataStoreParams.PasswordParam.key   -> AccumuloContainer.Container.password,
-        AccumuloDataStoreParams.CatalogParam.key    -> catalog
+        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.instanceName,
+        AccumuloDataStoreParams.ZookeepersParam.key   -> AccumuloContainer.zookeepers,
+        AccumuloDataStoreParams.PasswordParam.key     -> AccumuloContainer.password,
+        AccumuloDataStoreParams.CatalogParam.key      -> catalog
       ).asJava
       AccumuloDataStoreFactory.canProcess(params) must beTrue
       DataStoreFinder.getDataStore(params) must throwAn[IOException]
@@ -106,10 +106,10 @@ class AccumuloDataStoreFactoryTest extends Specification {
 
     "not accept a missing password and keytab" in {
       val params = Map(
-        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
-        AccumuloDataStoreParams.ZookeepersParam.key -> AccumuloContainer.Container.zookeepers,
-        AccumuloDataStoreParams.UserParam.key       -> AccumuloContainer.Container.user,
-        AccumuloDataStoreParams.CatalogParam.key    -> catalog
+        AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.instanceName,
+        AccumuloDataStoreParams.ZookeepersParam.key   -> AccumuloContainer.zookeepers,
+        AccumuloDataStoreParams.UserParam.key         -> AccumuloContainer.user,
+        AccumuloDataStoreParams.CatalogParam.key      -> catalog
       ).asJava
       AccumuloDataStoreFactory.canProcess(params) must beTrue
       DataStoreFinder.getDataStore(params) must throwAn[IOException]

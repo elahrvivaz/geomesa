@@ -115,6 +115,7 @@
         <specs2.version>4.20.5</specs2.version>
         <junit.version>4.13.2</junit.version>
         <testcontainers.version>1.19.3</testcontainers.version>
+        <testcontainers.accumulo.version>1.0.0</testcontainers.accumulo.version>
         <!-- needs to track hadoop: https://github.com/apache/hadoop/blob/release-3.3.6-RC1/hadoop-project/pom.xml#L1279C18-L1279C24 -->
         <hadoop.minicluster.mockito.version>2.28.2</hadoop.minicluster.mockito.version>
 
@@ -189,9 +190,7 @@
         <maven.test.opens>--add-opens=java.base/java.nio=ALL-UNNAMED --illegal-access=warn</maven.test.opens>
         <maven.test.debug>-Xrunjdwp:transport=dt_socket,address=5005,server=y,suspend=y</maven.test.debug>
         <maven.test.jvmargs>${maven.test.memory} ${maven.test.opens}</maven.test.jvmargs>
-        <test.thread.count>4</test.thread.count> <!-- note: per cpu -->
         <test.fork.count>2</test.fork.count>
-        <test.fork.reuse>true</test.fork.reuse>
         <test.enable.assertions>false</test.enable.assertions> <!-- arrow tests become extremely slow with assertions enabled-->
         <test.accumulo.docker.tag>2.1.2</test.accumulo.docker.tag>
         <test.redis.docker.tag>7-alpine</test.redis.docker.tag>
@@ -2759,6 +2758,12 @@
                 <version>${testcontainers.version}</version>
                 <scope>test</scope>
             </dependency>
+            <dependency>
+                <groupId>org.geomesa.testcontainers</groupId>
+                <artifactId>testcontainers-accumulo</artifactId>
+                <version>${testcontainers.accumulo.version}</version>
+                <scope>test</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -2937,12 +2942,11 @@
                         </dependency>
                     </dependencies>
                     <configuration>
-                        <forkCount>${test.fork.count}</forkCount>
-                        <reuseForks>${test.fork.reuse}</reuseForks>
+                        <forkCount>${test.fork.count}</forkCount><!-- note: <parallel> doesn't work with specs2 -->
+                        <reuseForks>true</reuseForks>
                         <forkedProcessTimeoutInSeconds>0</forkedProcessTimeoutInSeconds>
                         <rerunFailingTestsCount>1</rerunFailingTestsCount> <!-- re-try intermittent failures -->
                         <enableAssertions>${test.enable.assertions}</enableAssertions>
-                        <trimStackTrace>true</trimStackTrace>
                         <includes>
                             <include>**/*Test.java</include>
                         </includes>

@@ -49,10 +49,10 @@ class ShpIngestTest extends Specification {
 
   def createCommand(file: String): AccumuloIngestCommand = {
     val command = new AccumuloIngestCommand()
-    command.params.user        = AccumuloContainer.Users.root.name
-    command.params.instance    = AccumuloContainer.Container.instanceName
-    command.params.zookeepers  = AccumuloContainer.Container.zookeepers
-    command.params.password    = AccumuloContainer.Users.root.password
+    command.params.user        = AccumuloContainer.user
+    command.params.instance    = AccumuloContainer.instanceName
+    command.params.zookeepers  = AccumuloContainer.zookeepers
+    command.params.password    = AccumuloContainer.password
     command.params.catalog     = s"${AccumuloContainer.Namespace}.${getClass.getSimpleName}${sftCounter.getAndIncrement()}"
     command.params.force       = true
     command.params.files       = Collections.singletonList(new File(dir.toFile, s"$file.shp").getAbsolutePath)

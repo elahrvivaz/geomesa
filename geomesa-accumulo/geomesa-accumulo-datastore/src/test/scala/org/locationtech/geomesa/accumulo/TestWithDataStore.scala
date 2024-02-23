@@ -31,10 +31,10 @@ trait TestWithDataStore extends Specification {
 
   // note the table needs to be different to prevent tests from conflicting with each other
   lazy val dsParams: Map[String, String] = Map(
-    AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.Container.instanceName,
-    AccumuloDataStoreParams.ZookeepersParam.key   -> AccumuloContainer.Container.zookeepers,
-    AccumuloDataStoreParams.UserParam.key         -> AccumuloContainer.Container.user,
-    AccumuloDataStoreParams.PasswordParam.key     -> AccumuloContainer.Container.password,
+    AccumuloDataStoreParams.InstanceNameParam.key -> AccumuloContainer.instanceName,
+    AccumuloDataStoreParams.ZookeepersParam.key   -> AccumuloContainer.zookeepers,
+    AccumuloDataStoreParams.UserParam.key         -> AccumuloContainer.user,
+    AccumuloDataStoreParams.PasswordParam.key     -> AccumuloContainer.password,
     AccumuloDataStoreParams.CatalogParam.key      -> catalog
   )
 
