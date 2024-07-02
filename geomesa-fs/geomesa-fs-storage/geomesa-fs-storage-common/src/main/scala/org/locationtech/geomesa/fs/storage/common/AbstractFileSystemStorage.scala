@@ -236,9 +236,10 @@ abstract class AbstractFileSystemStorage(
     def pathAndObserver: WriterConfig = {
       val path = StorageUtils.nextFile(context.root, partition, metadata.leafStorage, extension, fileType)
       PathCache.register(context.fc, path)
-      val observer = if (observers.isEmpty) { None } else {
-        val compositeObserver = new CompositeObserver(observers.map(_.apply(path)))
-        Some(compositeObserver)
+      val observer = if (observers.lengthCompare(2) < 0) {
+        observers.headOption.map(_.apply(path))
+      } else {
+        Some(new CompositeObserver(observers.map(_.apply(path))))
       }
       WriterConfig(partition, action, path, observer)
     }
@@ -352,7 +353,8 @@ abstract class AbstractFileSystemStorage(
     * @param file file being written
     * @param action file type
     */
-  protected class FileBasedMetadataCallback(partition: String, action: StorageFileAction, file: Path) extends ((Envelope, Long) => Unit) {
+  protected class FileBasedMetadataCallback(partition: String, action: StorageFileAction, file: Path)
+      extends ((Envelope, Long) => Unit) {
     override def apply(env: Envelope, count: Long): Unit = {
       val files = Seq(StorageFile(file.getName, System.currentTimeMillis(), action))
       metadata.addPartition(PartitionMetadata(partition, files, PartitionBounds(env), count))

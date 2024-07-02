@@ -22,7 +22,6 @@ import org.locationtech.jts.geom._
  *
  * This class is kept for backwards compatibility with older Parquet file formats.
  */
-@Deprecated
 class ParquetFunctionFactory extends TransformerFunctionFactory {
 
   override def functions: Seq[TransformerFunction] = geometries

@@ -24,7 +24,7 @@ class OrcFileSystemWriter(
     sft: SimpleFeatureType,
     config: Configuration,
     file: Path,
-    observer: Option[FileSystemObserver] = None
+    observer: FileSystemObserver = NoOpObserver
   ) extends FileSystemWriter {
 
   private val schema = OrcFileSystemStorage.createTypeDescription(sft)
@@ -34,7 +34,6 @@ class OrcFileSystemWriter(
   private val batch = schema.createRowBatch()
 
   private val attributeWriter = OrcAttributeWriter(sft, batch)
-  private val observerVal = observer.getOrElse(NoOpObserver)
 
   override def write(sf: SimpleFeature): Unit = {
     attributeWriter.apply(sf, batch.size)
@@ -44,19 +43,19 @@ class OrcFileSystemWriter(
       writer.addRowBatch(batch)
       batch.reset()
     }
-    observerVal.write(sf)
+    observer.write(sf)
   }
 
   override def flush(): Unit = {
     flushBatch()
-    observerVal.flush()
+    observer.flush()
   }
 
   override def close(): Unit = {
     try { flushBatch() } catch {
-      case NonFatal(e) => CloseQuietly(Seq(writer, observerVal)).foreach(e.addSuppressed); throw e
+      case NonFatal(e) => CloseQuietly(Seq(writer, observer)).foreach(e.addSuppressed); throw e
     }
-    CloseQuietly.raise(Seq(writer, observerVal))
+    CloseQuietly.raise(Seq(writer, observer))
   }
 
   private def flushBatch(): Unit = {

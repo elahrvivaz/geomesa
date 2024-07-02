@@ -21,7 +21,7 @@ import org.locationtech.jts.geom.Envelope
 
 object SimpleFeatureParquetWriter extends LazyLogging {
 
-  def builder(file: Path, conf: Configuration, callback: (Envelope, Long) => Unit = ((_, _) => {})): Builder = {
+  def builder(file: Path, conf: Configuration, callback: (Envelope, Long) => Unit = (_, _) => {}): Builder = {
     val codec = CompressionCodecName.fromConf(conf.get("parquet.compression", "SNAPPY"))
     logger.debug(s"Using Parquet Compression codec ${codec.name()}")
     new Builder(file, callback)

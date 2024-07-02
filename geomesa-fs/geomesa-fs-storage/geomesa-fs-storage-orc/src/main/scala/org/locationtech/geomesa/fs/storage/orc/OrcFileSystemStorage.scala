@@ -34,19 +34,15 @@ import org.locationtech.jts.geom.{Envelope, Geometry}
 class OrcFileSystemStorage(context: FileSystemContext, metadata: StorageMetadata)
     extends AbstractFileSystemStorage(context, metadata, OrcFileSystemStorage.FileExtension) {
 
-  private class SingleGeometryObserver(partition: String, action: StorageFileAction, file: Path) extends MetadataObserver {
-    override protected def onClose(bounds: Envelope, count: Long): Unit = new FileBasedMetadataCallback(partition, action, file)(bounds, count)
-  }
-
   override protected def createWriter(partition: String, action: StorageFileAction, file: Path, observer: Option[FileSystemObserver]): FileSystemWriter = {
     val singleGeometryObserver = new SingleGeometryObserver(partition, action, file)
 
-    observer match {
-      case Some(_) =>
-        val compositeObserver = new CompositeObserver(Seq(singleGeometryObserver, observer.get))
-        new OrcFileSystemWriter(metadata.sft, context.conf, file, Some(compositeObserver))
-      case None => new OrcFileSystemWriter(metadata.sft, context.conf, file, Some(singleGeometryObserver))
+    val obs = observer match {
+      case Some(o: CompositeObserver) => CompositeObserver(Seq(singleGeometryObserver) ++ o.observers)
+      case None => singleGeometryObserver
     }
+
+    new OrcFileSystemWriter(metadata.sft, context.conf, file, obs)
   }
 
   override protected def createReader(
@@ -54,6 +50,11 @@ class OrcFileSystemStorage(context: FileSystemContext, metadata: StorageMetadata
       transform: Option[(String, SimpleFeatureType)]): FileSystemPathReader = {
     val optimized = filter.map(FastFilterFactory.optimize(metadata.sft, _))
     new OrcFileSystemReader(metadata.sft, context.conf, optimized, transform)
+  }
+
+  private class SingleGeometryObserver(partition: String, action: StorageFileAction, file: Path) extends MetadataObserver {
+    override protected def onClose(bounds: Envelope, count: Long): Unit =
+      new FileBasedMetadataCallback(partition, action, file)(bounds, count)
   }
 }
 

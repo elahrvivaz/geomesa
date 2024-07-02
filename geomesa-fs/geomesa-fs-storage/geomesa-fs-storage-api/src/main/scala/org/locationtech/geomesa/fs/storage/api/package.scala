@@ -60,10 +60,11 @@ package object api {
         encoding: String,
         scheme: NamedOptions,
         leafStorage: Boolean,
-        fileSize: Option[Long] = None): Metadata = {
+        fileSize: Option[Long] = None,
+        extraConfigs: Map[String, String] = Map.empty): Metadata = {
       val config: Map[String, String] =
         Map(Encoding -> encoding, LeafStorage -> java.lang.Boolean.toString(leafStorage)) ++
-            fileSize.map(f => TargetFileSize -> java.lang.Long.toString(f)).toMap
+            fileSize.map(f => TargetFileSize -> java.lang.Long.toString(f)).toMap ++ extraConfigs
       Metadata(sft, scheme, config)
     }
   }

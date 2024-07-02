@@ -58,12 +58,13 @@ package object common {
   }
 
   object StorageKeys {
-    val EncodingKey    = "geomesa.fs.encoding"
-    val LeafStorageKey = "geomesa.fs.leaf-storage"
-    val MetadataKey    = "geomesa.fs.metadata"
-    val SchemeKey      = "geomesa.fs.scheme"
-    val FileSizeKey    = "geomesa.fs.file-size"
-    val ObserversKey   = "geomesa.fs.observers"
+    val KeyPrefix      = "geomesa.fs."
+    val EncodingKey    = s"${KeyPrefix}encoding"
+    val LeafStorageKey = s"${KeyPrefix}leaf-storage"
+    val MetadataKey    = s"${KeyPrefix}metadata"
+    val SchemeKey      = s"${KeyPrefix}scheme"
+    val FileSizeKey    = s"${KeyPrefix}file-size"
+    val ObserversKey   = s"${KeyPrefix}observers"
   }
 
   /**
@@ -75,6 +76,14 @@ package object common {
 
     import StorageKeys._
     import StorageSerialization.{deserialize, serialize}
+
+    import scala.collection.JavaConverters._
+
+    def removeAllConfigs(): Map[String, String] = {
+      sft.getUserData.asScala.toMap.collect {
+        case (k: String, v: String) if k.startsWith(KeyPrefix) => (k.substring(KeyPrefix.length), v)
+      }
+    }
 
     def setEncoding(encoding: String): Unit = sft.getUserData.put(EncodingKey, encoding)
     def removeEncoding(): Option[String] = remove(EncodingKey)

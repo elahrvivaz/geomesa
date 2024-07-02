@@ -110,7 +110,7 @@ class ParquetConverterFactory
   }
 
   private def computeTransformFunction(name: String, path: String, descriptor: AttributeDescriptor, schemaVersion: Int): String = {
-    def expressionV2(name: String, path: String, descriptor: AttributeDescriptor): String = {
+    def expressionV2(): String = {
       ObjectType.selectType(descriptor) match {
         case Seq(ObjectType.GEOMETRY, ObjectType.POINT) => s"point(avroPath($$0, '/$name'))"
         case Seq(ObjectType.GEOMETRY, ObjectType.MULTIPOINT) => s"multipoint(avroPath($$0, '/$name'))"
@@ -123,7 +123,7 @@ class ParquetConverterFactory
       }
     }
 
-    def expressionV0V1(name: String, path: String, descriptor: AttributeDescriptor): String = {
+    def expressionV0V1(): String = {
       ObjectType.selectType(descriptor) match {
         case Seq(ObjectType.GEOMETRY, ObjectType.POINT) => s"parquetPoint($$0, '/$name')"
         case Seq(ObjectType.GEOMETRY, ObjectType.MULTIPOINT) => s"parquetMultiPoint($$0, '/$name')"
@@ -137,10 +137,9 @@ class ParquetConverterFactory
     }
 
     schemaVersion match {
-      case 2 => expressionV2(name, path, descriptor)
-      case 1 => expressionV0V1(name, path, descriptor)
-      case 0 => expressionV0V1(name, path, descriptor)
-      case v => throw new IllegalArgumentException(s"Unknown SimpleFeatureParquetSchema version: $v")
+      case 2     => expressionV2()
+      case 1 | 0 => expressionV0V1()
+      case v     => throw new IllegalArgumentException(s"Unknown SimpleFeatureParquetSchema version: $v")
     }
   }
 }

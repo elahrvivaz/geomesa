@@ -52,7 +52,7 @@ object FileSystemObserverFactory {
    *
    * @param observers observers
    */
-  class CompositeObserver(observers: Seq[FileSystemObserver]) extends FileSystemObserver {
+  case class CompositeObserver(observers: Seq[FileSystemObserver]) extends FileSystemObserver {
     override def write(feature: SimpleFeature): Unit = observers.foreach(_.write(feature))
     override def flush(): Unit = FlushQuietly(observers).foreach(e => throw e)
     override def close(): Unit = CloseQuietly(observers).foreach(e => throw e)
