@@ -14,13 +14,14 @@ import org.geotools.api.filter.spatial._
 import org.geotools.api.filter.{Filter, FilterFactory}
 import org.geotools.filter.spatial.BBOXImpl
 import org.locationtech.geomesa.filter.FilterHelper.trimToWorld
-import org.locationtech.geomesa.utils.geohash.GeohashUtils
+import org.locationtech.geomesa.utils.geotools.GeometryUtils
 import org.locationtech.geomesa.utils.geotools.GeometryUtils.distanceDegrees
 import org.locationtech.geomesa.utils.geotools.converters.FastConverter
 import org.locationtech.jts.geom.{Geometry, GeometryCollection}
+import org.locationtech.spatial4j.context.jts.JtsSpatialContext
 
 import java.util.Locale
-import scala.util.{Failure, Success}
+import scala.util.control.NonFatal
 
 /**
   * Process a geometry for querying
@@ -53,6 +54,7 @@ object GeometryProcessing extends GeometryProcessing with LazyLogging {
 
   private val processor = FilterProperties.GeometryProcessing.get match {
     case p if p.equalsIgnoreCase("spatial4j")  => Spatial4jStrategy
+    case p if p.equalsIgnoreCase("counterclockwise") => CounterClockwiseWindingStrategy
     case p if p.equalsIgnoreCase("none") => NoneStrategy
     case p =>
       logger.warn(s"Invalid value for '${FilterProperties.GeometryProcessing.property}', using default (spatial4j): $p")
@@ -155,9 +157,21 @@ object GeometryProcessing extends GeometryProcessing with LazyLogging {
     override protected def split(geom: Geometry, op: BinarySpatialOperator): Geometry = {
       // add waypoints if needed so that IDL is handled correctly
       val waypoints = if (op.isInstanceOf[BBOX]) { FilterHelper.addWayPointsToBBOX(geom) } else { geom }
-      GeohashUtils.getInternationalDateLineSafeGeometry(waypoints) match {
-        case Success(g) => g
-        case Failure(e) => logger.warn(s"Error splitting geometry on AM for $waypoints", e); waypoints
+      try {
+        // copy the geometry so that we don't modify the input - spatial4j/jts mutates the geometry
+        // don't use the defaultGeometryFactory as it has limited precision
+        val copy = GeometryUtils.geoFactory.createGeometry(waypoints)
+        JtsSpatialContext.GEO.getShapeFactory.makeShape(copy, true, true).getGeom
+      } catch {
+        case NonFatal(e) => logger.warn(s"Error splitting geometry on AM for $waypoints", e); waypoints
+      }
+    }
+  }
+
+  private object CounterClockwiseWindingStrategy extends AbstractGeometryProcessing {
+    override protected def split(geom: Geometry, op: BinarySpatialOperator): Geometry = {
+      try { GeometryUtils.splitGeometryByCounterClockwiseWinding(geom) } catch {
+        case NonFatal(e) => logger.warn(s"Error processing geometry: $geom", e); geom
       }
     }
   }

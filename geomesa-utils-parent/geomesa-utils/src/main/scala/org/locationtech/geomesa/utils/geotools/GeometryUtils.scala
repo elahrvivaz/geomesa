@@ -15,6 +15,8 @@ import org.locationtech.geomesa.utils.geohash.GeohashUtils
 import org.locationtech.geomesa.utils.geohash.GeohashUtils.ResolutionRange
 import org.locationtech.jts.geom._
 
+import java.util.Comparator
+import scala.collection.mutable.ArrayBuffer
 import scala.util.control.NonFatal
 
 /**
@@ -289,6 +291,142 @@ object GeometryUtils extends LazyLogging {
       }
     } catch {
       case NonFatal(e) => logger.warn(s"Error splitting bounding box envelope '$envelope':", e); Seq(envelope)
+    }
+  }
+
+  /**
+   * Any coords of geometry outside lon [-180,180] are transformed to be within [-180,180]
+   * (to avoid spatial4j validation errors)
+   *
+   * @param geom geom
+   * @return
+   */
+  def translateGeometry(geom: Geometry): Geometry = {
+
+    def degreesLonTranslation(lon: Double): Double = lon + (((lon + 180) / 360.0).floor * -360).toInt
+
+    def translateCoord(coord: Coordinate): Coordinate =
+      new Coordinate(degreesLonTranslation(coord.x), coord.y)
+
+    def translatePolygon(geometry: Polygon): Polygon = {
+      val shell = translateLinearRing(geometry.getExteriorRing)
+      val holes = Array.tabulate(geometry.getNumInteriorRing)(i => translateLinearRing(geometry.getInteriorRingN(i)))
+      geoFactory.createPolygon(shell, holes)
+    }
+
+    def translateLineString(geometry: LineString): LineString =
+      geoFactory.createLineString(geometry.getCoordinates.map(c => translateCoord(c)))
+
+    def translateLinearRing(geometry: LinearRing): LinearRing =
+      geoFactory.createLinearRing(geometry.getCoordinates.map(c => translateCoord(c)))
+
+    def translateMultiLineString(geometry: Geometry): MultiLineString = {
+      val translated =
+        Array.tabulate(geometry.getNumGeometries)(i => translateLineString(geometry.getGeometryN(i).asInstanceOf[LineString]))
+      geoFactory.createMultiLineString(translated)
+    }
+
+    def translateMultiPolygon(geometry: Geometry): MultiPolygon = {
+      val translated =
+        Array.tabulate(geometry.getNumGeometries)(i => translatePolygon(geometry.getGeometryN(i).asInstanceOf[Polygon]))
+      geoFactory.createMultiPolygon(translated)
+    }
+
+    def translateMultiPoint(geometry: Geometry): MultiPoint =
+      geoFactory.createMultiPoint(geometry.getCoordinates.map(c => translateCoord(c)))
+
+    def translatePoint(geometry: Geometry): Point =
+      geoFactory.createPoint(translateCoord(geometry.getCoordinate))
+
+    if (geom.getEnvelopeInternal.getMinX >= -180 && geom.getEnvelopeInternal.getMaxX <= 180) {
+      geom
+    } else {
+      geom match {
+        case g: Polygon =>         translatePolygon(g)
+        case g: LineString =>      translateLineString(g)
+        case g: MultiLineString => translateMultiLineString(g)
+        case g: MultiPolygon =>    translateMultiPolygon(g)
+        case g: MultiPoint =>      translateMultiPoint(g)
+        case g: Point =>           translatePoint(g)
+      }
+    }
+  }
+
+  /**
+   * Interprets polygons coordinates as having counter-clockwise winding, and turns them into MultiPolygons as
+   * needed to remove ambiguity around the anti-meridian
+   *
+   * @param geometry geometry
+   * @return
+   */
+  def splitGeometryByCounterClockwiseWinding(geometry: Geometry): Geometry = {
+    geometry match {
+      case g: Polygon =>
+        if (isCounterClockwise(g.getExteriorRing)) { g } else {
+          val a = g.getExteriorRing.getCoordinates.min(OrientationComparator)
+          val exterior = g.getExteriorRing.getCoordinates.foldLeft(Array.empty[Coordinate])
+          exterior.getCoordinateN
+          val interiors = Array.tabulate(g.getNumInteriorRing) { i =>
+            g.getInteriorRingN(i)
+          }
+        }
+
+      case g: MultiPolygon =>
+        var modified = false
+        val geoms = ArrayBuffer.empty[Polygon]
+        var i = 0
+        while (i < g.getNumGeometries) {
+          val n = g.getGeometryN(n)
+          splitGeometryByCounterClockwiseWinding(n) match {
+            case p: Polygon =>
+              geoms += p
+              modified = modified || !n.eq(p)
+            case m: MultiPolygon =>
+              geoms ++= Seq.tabulate(m.getNumGeometries)(i => m.getGeometryN(i).asInstanceOf[Polygon])
+              modified = true
+          }
+          i += 1
+        }
+        if (modified) { geoFactory.createMultiPolygon(geoms.toArray) } else { g }
+
+      case g: GeometryCollection =>
+        var modified = false
+        val geoms = Array.tabulate(g.getNumGeometries) { i =>
+          val n = g.getGeometryN(i)
+          val split = splitGeometryByCounterClockwiseWinding(n)
+          modified = modified || !n.eq(split)
+          split
+        }
+        if (modified) { geoFactory.createGeometryCollection(geoms) } else { g }
+
+      case _ =>
+        geometry
+    }
+  }
+
+  /**
+   * Determines if a polygon is oriented counter-clockwise, i.e. when traversing the polygon, the interior is
+   * always on the left-hand side. Algorithm taken from
+   * https://en.wikipedia.org/wiki/Curve_orientation#Practical_considerations
+   *
+   * @param geom polygon exterior
+   * @return
+   */
+  private def isCounterClockwise(geom: LinearRing): Boolean = {
+    val coords = geom.getCoordinates
+    val b = coords.min(OrientationComparator)
+    val i = coords.indexOf(b)
+    val a = if (i == 0) { coords(coords.length - 2) } else { coords(i - 1) }
+    val c = if (i == coords.length - 1) { coords(1) } else { coords(i + 1) }
+    ((b.x - a.x) * (c.y - a.y)) - ((c.x - a.x) * (b.y - a.y)) > 0
+  }
+
+  private object OrientationComparator extends Ordering[Coordinate] {
+    override def compare(o1: Coordinate, o2: Coordinate): Int = {
+      val y = o1.y.compareTo(o2.y)
+      if (y != 0) { y } else {
+        o2.x.compareTo(o1.x)
+      }
     }
   }
 }

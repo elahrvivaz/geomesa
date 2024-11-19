@@ -322,62 +322,12 @@ object GeohashUtils
    * To represent a geometry with successive coordinates having lon diff > 180 and not wrapping
    * the IDL, you must insert a waypoint such that the difference is less than 180
    */
-  def getInternationalDateLineSafeGeometry(targetGeom: Geometry): Try[Geometry] = {
-
-    def degreesLonTranslation(lon: Double): Double = (((lon + 180) / 360.0).floor * -360).toInt
-
-    def translateCoord(coord: Coordinate): Coordinate = {
-      new Coordinate(coord.x + degreesLonTranslation(coord.x), coord.y)
-    }
-
-    def translatePolygon(geometry: Geometry): Geometry =
-      defaultGeometryFactory.createPolygon(geometry.getCoordinates.map(c => translateCoord(c)))
-
-    def translateLineString(geometry: Geometry): Geometry =
-      defaultGeometryFactory.createLineString(geometry.getCoordinates.map(c => translateCoord(c)))
-
-    def translateMultiLineString(geometry: Geometry): Geometry = {
-      val coords = (0 until geometry.getNumGeometries).map { i => geometry.getGeometryN(i) }
-      val translated = coords.map { c => translateLineString(c).asInstanceOf[LineString] }
-      defaultGeometryFactory.createMultiLineString(translated.toArray)
-    }
-
-    def translateMultiPolygon(geometry: Geometry): Geometry = {
-      val coords = (0 until geometry.getNumGeometries).map { i => geometry.getGeometryN(i) }
-      val translated = coords.map { c => translatePolygon(c).asInstanceOf[Polygon] }
-      defaultGeometryFactory.createMultiPolygon(translated.toArray)
-    }
-
-    def translateMultiPoint(geometry: Geometry): Geometry =
-      defaultGeometryFactory.createMultiPoint(geometry.getCoordinates.map(c => translateCoord(c)))
-
-    def translatePoint(geometry: Geometry): Geometry = {
-      defaultGeometryFactory.createPoint(translateCoord(geometry.getCoordinate))
-    }
-
-    def translateGeometry(geometry: Geometry): Geometry = {
-      geometry match {
-        case p: Polygon =>          translatePolygon(geometry)
-        case l: LineString =>       translateLineString(geometry)
-        case m: MultiLineString =>  translateMultiLineString(geometry)
-        case m: MultiPolygon =>     translateMultiPolygon(geometry)
-        case m: MultiPoint =>       translateMultiPoint(geometry)
-        case p: Point =>            translatePoint(geometry)
-      }
-    }
-
-    Try {
-      // copy the geometry so that we don't modify the input - JTS mutates the geometry
-      // don't use the defaultGeometryFactory as it has limited precision
-      val copy = GeometryUtils.geoFactory.createGeometry(targetGeom)
-      val withinBoundsGeom =
-        if (targetGeom.getEnvelopeInternal.getMinX < -180 || targetGeom.getEnvelopeInternal.getMaxX > 180)
-          translateGeometry(copy)
-        else
-          copy
-
-      JtsSpatialContext.GEO.makeShape(withinBoundsGeom, true, true).getGeom
-    }
+  def getInternationalDateLineSafeGeometry(targetGeom: Geometry): Try[Geometry] = Try {
+    // copy the geometry so that we don't modify the input - spatial4j/jts mutates the geometry
+    // don't use the defaultGeometryFactory as it has limited precision
+    val copy = GeometryUtils.geoFactory.createGeometry(targetGeom)
+    val withinBoundsGeom = GeometryUtils.translateGeometry(copy)
+    JtsSpatialContext.GEO.getShapeFactory.makeShape(withinBoundsGeom, true, true).getGeom
   }
 
   /**
