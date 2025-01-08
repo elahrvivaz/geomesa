@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -90,7 +90,7 @@ object SimpleFeatureConverter extends StrictLogging {
     */
   def apply(sft: SimpleFeatureType, config: Config): SimpleFeatureConverter = {
     factories.toStream.flatMap(_.apply(sft, config)).headOption.getOrElse {
-      throw new IllegalArgumentException(s"Cannot find factory for ${sft.getTypeName}")
+      throw new IllegalArgumentException(s"Cannot find converter factory for ${sft.getTypeName}")
     }
   }
 

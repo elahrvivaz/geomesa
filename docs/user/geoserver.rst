@@ -23,6 +23,10 @@ although this may occasionally cause errors as GeoServer does not follow semanti
 +-------------------+-------------------+
 | GeoMesa Version   | GeoServer Version |
 +===================+===================+
+| 5.2.0             | 2.26.1            |
++-------------------+-------------------+
+| 5.1.0             | 2.26.0            |
++-------------------+-------------------+
 | 5.0.0             | 2.24.2            |
 +-------------------+-------------------+
 | 4.0.0             | 2.22.2            |
@@ -208,10 +212,10 @@ GeoMesa data stores can audit query metrics. To enabled auditing, check the box 
 when registering the data store in GeoServer.
 
 GeoMesa data stores will generally write audited queries to log files. To configure an audit log, set the level for
-``org.locationtech.geomesa.utils.audit`` to ``DEBUG``. This can be accomplished by editing the GeoServer logging
+``org.locationtech.geomesa.index.audit`` to ``DEBUG``. This can be accomplished by editing the GeoServer logging
 configuration (e.g. ``$GEOSERVER_DATA_DIR/logs/DEFAULT_LOGGING.xml``)::
 
-   <Logger name="org.locationtech.geomesa.utils.audit" level="debug" additivity="false">
+   <Logger name="org.locationtech.geomesa.index.audit" level="debug" additivity="false">
      <AppenderRef ref="auditLogFile"/> <!-- note: requires an appender to be defined with this name -->
    </Logger>
 

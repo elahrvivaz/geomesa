@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -8,6 +8,7 @@
 
 package org.locationtech.geomesa.accumulo.data
 
+import org.apache.accumulo.core.conf.Property
 import org.apache.accumulo.core.security.Authorizations
 import org.apache.commons.codec.binary.Hex
 import org.apache.hadoop.io.Text
@@ -24,6 +25,7 @@ import org.locationtech.geomesa.accumulo.TestWithMultipleSfts
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators.Z2Iterator
 import org.locationtech.geomesa.features.ScalaSimpleFeature
+import org.locationtech.geomesa.index.index.NamedIndex
 import org.locationtech.geomesa.index.index.attribute.AttributeIndex
 import org.locationtech.geomesa.index.index.id.IdIndex
 import org.locationtech.geomesa.index.index.z2.Z2Index
@@ -519,7 +521,7 @@ class AccumuloDataStoreTest extends Specification with TestWithMultipleSfts {
       }
     }
 
-    "delete all associated tables" >> {
+    "delete all associated tables" in {
       val catalog = "AccumuloDataStoreDeleteAllTablesTest"
       // note the table needs to be different to prevent testing errors
       val ds = DataStoreFinder.getDataStore((dsParams ++ Map(AccumuloDataStoreParams.CatalogParam.key -> catalog)).asJava).asInstanceOf[AccumuloDataStore]
@@ -532,7 +534,7 @@ class AccumuloDataStoreTest extends Specification with TestWithMultipleSfts {
       ds.connector.tableOperations().list().asScala.toSeq must not(containAnyOf(tables))
     }
 
-    "query on bbox and unbounded temporal" >> {
+    "query on bbox and unbounded temporal" in {
       val sft = createNewSchema("name:String,dtg:Date,*geom:Point:srid=4326")
 
       addFeatures((0 until 6).map { i =>
@@ -552,7 +554,7 @@ class AccumuloDataStoreTest extends Specification with TestWithMultipleSfts {
       read.map(_.getID) must containAllOf(Seq("2", "3", "4"))
     }
 
-    "create tables with an accumulo namespace" >> {
+    "create tables with an accumulo namespace" in {
       val table = "test.AccumuloDataStoreNamespaceTest"
       val params = dsParams ++ Map(AccumuloDataStoreParams.CatalogParam.key -> table)
       val dsWithNs = DataStoreFinder.getDataStore(params.asJava).asInstanceOf[AccumuloDataStore]
@@ -561,7 +563,7 @@ class AccumuloDataStoreTest extends Specification with TestWithMultipleSfts {
       dsWithNs.connector.namespaceOperations().exists("test") must beTrue
     }
 
-    "only create catalog table when necessary" >> {
+    "only create catalog table when necessary" in {
       val table = "AccumuloDataStoreTableTest"
       val params = dsParams ++ Map(AccumuloDataStoreParams.CatalogParam.key -> table)
       val ds = DataStoreFinder.getDataStore(params.asJava).asInstanceOf[AccumuloDataStore]
@@ -577,6 +579,49 @@ class AccumuloDataStoreTest extends Specification with TestWithMultipleSfts {
       ds.createSchema(SimpleFeatureTypes.createType("test", "*geom:Point:srid=4326"))
       exists must beTrue
       ds.getSchema("test") must not(beNull)
+    }
+
+    "create tables with block cache enabled/disabled" in {
+      foreach(Seq(",geomesa.table.partition=time", "")) { partitioned =>
+        val sft = createNewSchema(s"name:String:index=true,dtg:Date,*geom:Point:srid=4326;table.cache.enabled='z3,attr'$partitioned")
+        addFeatures((0 until 6).map { i =>
+          val sf = new ScalaSimpleFeature(sft, i.toString)
+          sf.setAttributes(Array[AnyRef](i.toString, s"2012-01-02T05:0$i:07.000Z", s"POINT(45.0 4$i.0)"))
+          sf
+        })
+        val indices = ds.manager.indices(sft)
+        def getBlockCacheConfig(i: NamedIndex): String = {
+          val index = indices.find(_.name == i.name).orNull
+          index must not(beNull)
+          val tables = index.getTableNames()
+          tables must haveLength(1)
+          ds.connector.tableOperations().getProperties(tables.head).asScala
+            .find(_.getKey == Property.TABLE_BLOCKCACHE_ENABLED.getKey).map(_.getValue).orNull
+        }
+        foreach(Seq(Z3Index, AttributeIndex)) { i =>
+          getBlockCacheConfig(i) mustEqual "true"
+        }
+        foreach(Seq(Z2Index, IdIndex)) { i =>
+          getBlockCacheConfig(i) mustEqual "false"
+        }
+      }
+    }
+
+    "create index tables with a different prefix than the catalog table" in {
+      val prefix = s"custom.${catalog.replaceFirst(".*\\.", "")}"
+      foreach(Seq(",geomesa.table.partition=time", "")) { partitioned =>
+        val userData = s"index.table.prefix='$prefix',index.table.prefix.z3='z3$prefix'$partitioned"
+        val sft = createNewSchema(s"name:String:index=true,dtg:Date,*geom:Point:srid=4326;$userData")
+        addFeatures((0 until 6).map { i =>
+          val sf = new ScalaSimpleFeature(sft, i.toString)
+          sf.setAttributes(Array[AnyRef](i.toString, s"2012-01-02T05:0$i:07.000Z", s"POINT(45.0 4$i.0)"))
+          sf
+        })
+        foreach(ds.manager.indices(sft)) { index =>
+          val p = if (index.name == Z3Index.name) { s"z3$prefix" } else { prefix }
+          foreach(index.getTableNames())(_ must startWith(s"${p}_${sft.getTypeName}_"))
+        }
+      }
     }
   }
 }

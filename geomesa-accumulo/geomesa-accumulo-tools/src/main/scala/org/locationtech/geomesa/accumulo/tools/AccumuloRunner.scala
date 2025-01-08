@@ -1,6 +1,6 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
- * Portions Crown Copyright (c) 2016-2024 Dstl
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
+ * Portions Crown Copyright (c) 2016-2025 Dstl
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -32,6 +32,7 @@ object AccumuloRunner extends RunnerWithAccumuloEnvironment {
       new tools.export.AccumuloExplainCommand,
       new tools.export.AccumuloExportCommand,
       new tools.export.AccumuloPlaybackCommand,
+      new tools.ingest.AccumuloBulkCopyCommand,
       new tools.ingest.AccumuloBulkIngestCommand,
       new tools.ingest.AccumuloDeleteFeaturesCommand,
       new tools.ingest.AccumuloIngestCommand,
@@ -43,6 +44,7 @@ object AccumuloRunner extends RunnerWithAccumuloEnvironment {
       new tools.status.AccumuloGetSftConfigCommand,
       new tools.status.AccumuloGetTypeNamesCommand,
       new tools.status.AccumuloVersionRemoteCommand,
+      new tools.stats.AccumuloQueryAuditCommand,
       new tools.stats.AccumuloStatsAnalyzeCommand,
       new tools.stats.AccumuloStatsBoundsCommand,
       new tools.stats.AccumuloStatsConfigureCommand,

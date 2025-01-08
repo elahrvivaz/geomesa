@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -19,7 +19,6 @@ import org.locationtech.jts.io.ParseException;
 import org.locationtech.jts.io.WKBReader;
 import org.locationtech.jts.io.WKBWriter;
 
-import javax.annotation.Nullable;
 import java.util.Map;
 
 /**
@@ -29,6 +28,7 @@ public class WKBGeometryVector implements GeometryVector<Geometry, VarBinaryVect
   private VarBinaryVector vector;
   private WKBWriter writer = null;
   private WKBReader reader = null;
+  private boolean flipAxisOrder = false;
 
   public static final Field field = Field.nullablePrimitive("wkb", ArrowType.Binary.INSTANCE);
 
@@ -36,11 +36,25 @@ public class WKBGeometryVector implements GeometryVector<Geometry, VarBinaryVect
     return new FieldType(true, ArrowType.Binary.INSTANCE, null, metadata);
   }
 
-  public WKBGeometryVector(String name, BufferAllocator allocator, @Nullable Map<String, String> metadata) {
+  /**
+   * Constructor
+   *
+   * @param name name of the vector
+   * @param allocator allocator for the vector
+   * @param metadata metadata (may be null)
+   */
+  public WKBGeometryVector(String name, BufferAllocator allocator, Map<String, String> metadata) {
     this.vector = new VarBinaryVector(name, createFieldType(metadata), allocator);
   }
 
-  public WKBGeometryVector(String name, AbstractContainerVector container, @Nullable Map<String, String> metadata) {
+  /**
+   * Constructor
+   *
+   * @param name name of the vector
+   * @param container parent container
+   * @param metadata metadata (may be null)
+   */
+  public WKBGeometryVector(String name, AbstractContainerVector container, Map<String, String> metadata) {
     this.vector = container.addOrGet(name, createFieldType(metadata), VarBinaryVector.class);
   }
 
@@ -102,6 +116,16 @@ public class WKBGeometryVector implements GeometryVector<Geometry, VarBinaryVect
   @Override
   public void transfer(int fromIndex, int toIndex, GeometryVector<Geometry, VarBinaryVector> to) {
     to.set(toIndex, get(fromIndex));
+  }
+
+  @Override
+  public boolean isFlipAxisOrder() {
+    return flipAxisOrder;
+  }
+
+  @Override
+  public void setFlipAxisOrder(boolean flip) {
+    flipAxisOrder = flip;
   }
 
   @Override

@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -10,7 +10,7 @@ package org.locationtech.geomesa.accumulo
 
 import com.typesafe.scalalogging.StrictLogging
 import org.apache.accumulo.core.client.security.tokens.PasswordToken
-import org.apache.accumulo.core.security.{Authorizations, NamespacePermission, SystemPermission}
+import org.apache.accumulo.core.security.{Authorizations, SystemPermission}
 import org.geomesa.testcontainers.AccumuloContainer
 import org.locationtech.geomesa.utils.io.WithClose
 import org.testcontainers.utility.DockerImageName
@@ -22,7 +22,7 @@ case object AccumuloContainer extends StrictLogging {
 
   val ImageName =
     DockerImageName.parse("ghcr.io/geomesa/accumulo-uno")
-        .withTag(sys.props.getOrElse("accumulo.docker.tag", "2.1.2"))
+        .withTag(sys.props.getOrElse("accumulo.docker.tag", "2.1.3"))
 
   val Namespace = "gm"
 
@@ -34,13 +34,11 @@ case object AccumuloContainer extends StrictLogging {
   lazy val Container: AccumuloContainer = {
     val container = tryContainer.get
     WithClose(container.client()) { client =>
-      client.namespaceOperations().create(Namespace)
       val secOps = client.securityOperations()
       secOps.changeUserAuthorizations(Users.root.name, Users.root.auths)
       Seq(Users.admin, Users.user).foreach { case UserWithAuths(name, password, auths) =>
         secOps.createLocalUser(name, new PasswordToken(password))
         SystemPermissions.foreach(p => secOps.grantSystemPermission(name, p))
-        NamespacePermissions.foreach(p => secOps.grantNamespacePermission(name, Namespace, p))
         client.securityOperations().changeUserAuthorizations(name, auths)
       }
     }
@@ -77,14 +75,9 @@ case object AccumuloContainer extends StrictLogging {
   private val SystemPermissions = Seq(
     SystemPermission.CREATE_NAMESPACE,
     SystemPermission.ALTER_NAMESPACE,
-    SystemPermission.DROP_NAMESPACE
-  )
-
-  private val NamespacePermissions = Seq(
-    NamespacePermission.READ,
-    NamespacePermission.WRITE,
-    NamespacePermission.CREATE_TABLE,
-    NamespacePermission.ALTER_TABLE,
-    NamespacePermission.DROP_TABLE
+    SystemPermission.DROP_NAMESPACE,
+    SystemPermission.CREATE_TABLE,
+    SystemPermission.ALTER_TABLE,
+    SystemPermission.DROP_TABLE,
   )
 }

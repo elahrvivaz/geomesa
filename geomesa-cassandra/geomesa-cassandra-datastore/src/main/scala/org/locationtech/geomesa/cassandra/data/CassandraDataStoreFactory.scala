@@ -1,6 +1,6 @@
 /***********************************************************************
- * Copyright (c) 2017-2024 IBM
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2017-2025 IBM
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -14,9 +14,11 @@ import com.datastax.driver.core.policies.{DCAwareRoundRobinPolicy, DefaultRetryP
 import org.geotools.api.data.DataAccessFactory.Param
 import org.geotools.api.data.{DataStore, DataStoreFactorySpi, Parameter}
 import org.locationtech.geomesa.cassandra.data.CassandraDataStoreFactory.{CassandraDataStoreConfig, CassandraQueryConfig}
+import org.locationtech.geomesa.index.audit.AuditWriter
+import org.locationtech.geomesa.index.audit.AuditWriter.AuditLogger
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStoreFactory.{DataStoreQueryConfig, GeoMesaDataStoreConfig, GeoMesaDataStoreInfo, GeoMesaDataStoreParams}
 import org.locationtech.geomesa.security.{AuthorizationsProvider, DefaultAuthorizationsProvider}
-import org.locationtech.geomesa.utils.audit.{AuditLogger, AuditProvider, AuditWriter, NoOpAuditProvider}
+import org.locationtech.geomesa.utils.audit.AuditProvider
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam
 
 import java.awt.RenderingHints
@@ -45,7 +47,7 @@ class CassandraDataStoreFactory extends DataStoreFactorySpi {
     val ks = KeySpaceParam.lookup(params)
     val generateStats = GenerateStatsParam.lookup(params)
     val audit = if (AuditQueriesParam.lookup(params)) {
-      Some(AuditLogger, Option(AuditProvider.Loader.load(params)).getOrElse(NoOpAuditProvider), "cassandra")
+      Some(new AuditLogger("cassandra", AuditProvider.Loader.loadOrNone(params)))
     } else {
       None
     }
@@ -197,7 +199,7 @@ object CassandraDataStoreFactory extends GeoMesaDataStoreInfo {
       catalog: String,
       generateStats: Boolean,
       authProvider: AuthorizationsProvider,
-      audit: Option[(AuditWriter, AuditProvider, String)],
+      audit: Option[AuditWriter],
       queries: CassandraQueryConfig,
       namespace: Option[String]
     ) extends GeoMesaDataStoreConfig

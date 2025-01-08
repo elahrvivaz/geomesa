@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -10,9 +10,11 @@ package org.locationtech.geomesa.accumulo.audit
 
 import org.apache.accumulo.core.data.{Key, Mutation, Value}
 import org.apache.hadoop.io.Text
-import org.locationtech.geomesa.index.audit.QueryEvent
+import org.locationtech.geomesa.index.audit.AuditWriter
+import org.locationtech.geomesa.index.audit.AuditedEvent.QueryEvent
 
 import java.nio.charset.StandardCharsets
+import java.util.Collections
 import java.util.Map.Entry
 
 /**
@@ -20,26 +22,35 @@ import java.util.Map.Entry
  */
 object AccumuloQueryEventTransform extends AccumuloEventTransform[QueryEvent] {
 
-  private [audit] val CQ_USER     = new Text("user")
-  private [audit] val CQ_FILTER   = new Text("queryFilter")
-  private [audit] val CQ_HINTS    = new Text("queryHints")
-  private [audit] val CQ_PLANTIME = new Text("timePlanning")
-  private [audit] val CQ_SCANTIME = new Text("timeScanning")
-  private [audit] val CQ_TIME     = new Text("timeTotal")
-  private [audit] val CQ_HITS     = new Text("hits")
-  private [audit] val CQ_DELETED  = new Text("deleted")
+  import scala.collection.JavaConverters._
+
+  private val HintRegex = "([A-Z_]+|unknown_hint)=(.*?)(, |$)".r
+
+  private val CqUser     = new Text("user")
+  private val CqFilter   = new Text("queryFilter")
+  private val CqHints    = new Text("queryHints")
+  private val CqMetadata = new Text("metadata")
+  private val CqStart    = new Text("start")
+  private val CqEnd      = new Text("end")
+  private val CqPlanTime = new Text("timePlanning")
+  private val CqScanTime = new Text("timeScanning")
+  private val CqTime     = new Text("timeTotal")
+  private val CqHits     = new Text("hits")
 
   override def toMutation(event: QueryEvent): Mutation = {
-    val mutation = createMutation(event)
-    val cf = createRandomColumnFamily
-    mutation.put(cf, CQ_USER,     new Value(event.user.getBytes(StandardCharsets.UTF_8)))
-    mutation.put(cf, CQ_FILTER,   new Value(event.filter.getBytes(StandardCharsets.UTF_8)))
-    mutation.put(cf, CQ_HINTS,    new Value(event.hints.getBytes(StandardCharsets.UTF_8)))
-    mutation.put(cf, CQ_PLANTIME, new Value(s"${event.planTime}ms".getBytes(StandardCharsets.UTF_8)))
-    mutation.put(cf, CQ_SCANTIME, new Value(s"${event.scanTime}ms".getBytes(StandardCharsets.UTF_8)))
-    mutation.put(cf, CQ_TIME,     new Value(s"${event.scanTime + event.planTime}ms".getBytes(StandardCharsets.UTF_8)))
-    mutation.put(cf, CQ_HITS,     new Value(event.hits.toString.getBytes(StandardCharsets.UTF_8)))
-    mutation.put(cf, CQ_DELETED,  new Value(event.deleted.toString.getBytes(StandardCharsets.UTF_8)))
+    val mutation = new Mutation(AccumuloEventTransform.toRowKey(event.typeName, event.end))
+    // avoids collisions if timestamp is the same, not 100% foolproof but good enough
+    val cf = AccumuloEventTransform.createRandomColumnFamily
+    mutation.put(cf, CqUser,     new Value(event.user.getBytes(StandardCharsets.UTF_8)))
+    mutation.put(cf, CqFilter,   new Value(event.filter.getBytes(StandardCharsets.UTF_8)))
+    mutation.put(cf, CqHints,    new Value(AuditWriter.Gson.toJson(event.hints).getBytes(StandardCharsets.UTF_8)))
+    mutation.put(cf, CqMetadata, new Value(AuditWriter.Gson.toJson(event.metadata).getBytes(StandardCharsets.UTF_8)))
+    mutation.put(cf, CqStart,    new Value(event.start.toString.getBytes(StandardCharsets.UTF_8)))
+    mutation.put(cf, CqEnd,      new Value(event.end.toString.getBytes(StandardCharsets.UTF_8)))
+    mutation.put(cf, CqPlanTime, new Value(s"${event.planTime}ms".getBytes(StandardCharsets.UTF_8)))
+    mutation.put(cf, CqScanTime, new Value(s"${event.scanTime}ms".getBytes(StandardCharsets.UTF_8)))
+    mutation.put(cf, CqTime,     new Value(s"${event.scanTime + event.planTime}ms".getBytes(StandardCharsets.UTF_8)))
+    mutation.put(cf, CqHits,     new Value(event.hits.toString.getBytes(StandardCharsets.UTF_8)))
     mutation
   }
 
@@ -48,31 +59,44 @@ object AccumuloQueryEventTransform extends AccumuloEventTransform[QueryEvent] {
       return null
     }
 
-    val (featureName, date) = typeNameAndDate(entries.head.getKey)
-    val values = collection.mutable.Map.empty[Text, Any]
+    val (featureName, end) = AccumuloEventTransform.typeNameAndDate(entries.head.getKey)
+
+    var user = "unknown"
+    var hints = Collections.emptyMap[String, String]()
+    var metadata = Collections.emptyMap[String, AnyRef]()
+    var filter = ""
+    var start = -1L
+    var planTime = 0L
+    var scanTime = 0L
+    var hits = 0L
 
     entries.foreach { e =>
       e.getKey.getColumnQualifier match {
-        case CQ_USER     => values.put(CQ_USER, e.getValue.toString)
-        case CQ_FILTER   => values.put(CQ_FILTER, e.getValue.toString)
-        case CQ_HINTS    => values.put(CQ_HINTS, e.getValue.toString)
-        case CQ_PLANTIME => values.put(CQ_PLANTIME, e.getValue.toString.stripSuffix("ms").toLong)
-        case CQ_SCANTIME => values.put(CQ_SCANTIME, e.getValue.toString.stripSuffix("ms").toLong)
-        case CQ_HITS     => values.put(CQ_HITS, e.getValue.toString.toLong)
-        case CQ_DELETED  => values.put(CQ_DELETED, e.getValue.toString.toBoolean)
-        case CQ_TIME     => // time is an aggregate, doesn't need to map back to anything
-        case _           => logger.warn(s"Unmapped entry in query stat: ${e.getKey.getColumnQualifier.toString}")
+        case CqUser     => user = e.getValue.toString
+        case CqFilter   => filter = e.getValue.toString
+        case CqHints    => hints = parseHints(e.getValue.toString)
+        case CqMetadata => metadata = AuditWriter.Gson.fromJson(e.getValue.toString, classOf[java.util.Map[String, AnyRef]])
+        case CqStart    => start = e.getValue.toString.toLong
+        case CqEnd      => // end is already extracted from the row key
+        case CqPlanTime => planTime = e.getValue.toString.stripSuffix("ms").toLong
+        case CqScanTime => scanTime = e.getValue.toString.stripSuffix("ms").toLong
+        case CqHits     => hits = e.getValue.toString.toLong
+        case CqTime     => // time is an aggregate, doesn't need to map back to anything
+        case _          => logger.warn(s"Unmapped entry in query stat: ${e.getKey.getColumnQualifier.toString}")
       }
     }
 
-    val user = values.getOrElse(CQ_USER, "unknown").asInstanceOf[String]
-    val queryHints = values.getOrElse(CQ_HINTS, "").asInstanceOf[String]
-    val queryFilter = values.getOrElse(CQ_FILTER, "").asInstanceOf[String]
-    val planTime = values.getOrElse(CQ_PLANTIME, 0L).asInstanceOf[Long]
-    val scanTime = values.getOrElse(CQ_SCANTIME, 0L).asInstanceOf[Long]
-    val hits = values.getOrElse(CQ_HITS, 0L).asInstanceOf[Long]
-    val deleted = values.getOrElse(CQ_DELETED, false).asInstanceOf[Boolean]
+    QueryEvent(StoreType, featureName, user, filter, hints, metadata, start, end, planTime, scanTime, hits)
+  }
 
-    QueryEvent(AccumuloAuditService.StoreType, featureName, date, user, queryFilter, queryHints, planTime, scanTime, hits, deleted)
+  private def parseHints(value: String): java.util.Map[String, String] = {
+    if (value.isEmpty) {
+      Collections.emptyMap()
+    } else if (value.charAt(0) == '{') {
+      AuditWriter.Gson.fromJson(value, classOf[java.util.Map[String, String]])
+    } else {
+      // old format, do our best to parse it out into distinct hints
+      HintRegex.findAllMatchIn(value).map(m => m.group(1) -> m.group(2)).toMap.asJava
+    }
   }
 }

@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -17,8 +17,8 @@ import org.apache.hadoop.mapreduce.lib.output.{LazyOutputFormat, MultipleOutputs
 import org.apache.hadoop.mapreduce.{Counter, Job, Mapper, Reducer}
 import org.geotools.api.data.DataStoreFinder
 import org.geotools.api.feature.simple.{SimpleFeature, SimpleFeatureType}
+import org.locationtech.geomesa.accumulo.data.AccumuloDataStore
 import org.locationtech.geomesa.accumulo.data.writer.VisibilityCache
-import org.locationtech.geomesa.accumulo.data.{AccumuloDataStore, AccumuloWritableFeature}
 import org.locationtech.geomesa.index.api.WritableFeature.FeatureWrapper
 import org.locationtech.geomesa.index.api._
 import org.locationtech.geomesa.index.conf.partition.TablePartition
@@ -65,7 +65,7 @@ object GeoMesaAccumuloFileOutputFormat extends LazyLogging {
     }
 
     val tables = partitions match {
-      case None => indices.flatMap(_.getTableNames(None))
+      case None => indices.flatMap(_.getTableNames())
       case Some(parts) =>
         Configurator.setPartitions(job.getConfiguration, parts)
         logger.debug(s"Creating index tables for ${parts.length} partitions")
@@ -138,7 +138,7 @@ object GeoMesaAccumuloFileOutputFormat extends LazyLogging {
       val indexIds = GeoMesaConfigurator.getIndicesOut(context.getConfiguration).orNull
       require(indexIds != null, "Indices to write was not set in the job configuration")
       val indices = indexIds.map(ds.manager.index(sft, _, IndexMode.Write))
-      wrapper = AccumuloWritableFeature.wrapper(sft, ds.adapter.groups, indices)
+      wrapper = WritableFeature.wrapper(sft, ds.adapter.groups)
       partitioner = TablePartition(ds, sft)
       writers = indices.map(i => (i, i.createConverter()))
 
@@ -154,12 +154,7 @@ object GeoMesaAccumuloFileOutputFormat extends LazyLogging {
         val feature = wrapper.wrap(value)
         val partition = partitioner.map(_.partition(value))
         writers.foreach { case (index, writer) =>
-          index.getTableNames(partition) match {
-            case Seq(table) => tableAndKey.getTable.set(table)
-            case tables =>
-              val msg = if (tables.isEmpty) { "No table found" } else { "Multiple tables found" }
-              throw new IllegalStateException(msg + partition.map(p => s" for partition $p").getOrElse(""))
-          }
+          tableAndKey.getTable.set(index.getTableName(partition))
 
           writer.convert(feature) match {
             case kv: SingleRowKeyValue[_] =>

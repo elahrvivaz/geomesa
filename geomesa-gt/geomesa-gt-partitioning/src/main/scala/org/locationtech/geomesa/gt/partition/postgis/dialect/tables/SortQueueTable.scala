@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -16,7 +16,7 @@ object SortQueueTable extends SqlStatements {
 
   override protected def createStatements(info: TypeInfo): Seq[String] = {
     val create =
-      s"""CREATE TABLE IF NOT EXISTS ${info.tables.sortQueue.name.qualified} (
+      s"""CREATE ${info.walLogSQL} TABLE IF NOT EXISTS ${info.tables.sortQueue.name.qualified} (
          |  partition_name text,
          |  unsorted_count bigint,
          |  enqueued timestamp without time zone

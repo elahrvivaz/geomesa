@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -247,7 +247,7 @@ class CompactCommandTest extends Specification {
         val storage = ds.storage(sft.getTypeName)
         foreach(storage.metadata.getPartitions()) { partition =>
           partition.files.size must beGreaterThan(1)
-          val sizes = storage.getFilePaths(partition.name).map(p => storage.context.fc.getFileStatus(p.path).getLen)
+          val sizes = storage.getFilePaths(partition.name).map(p => storage.context.fs.getFileStatus(p.path).getLen)
           // hard to get very close with 2 different formats and small files...
           foreach(sizes)(size => {
             size must beCloseTo(targetFileSize.get(encoding), 12000)

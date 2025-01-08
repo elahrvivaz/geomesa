@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -9,9 +9,9 @@
 package org.locationtech.geomesa.index.geotools
 
 import org.locationtech.geomesa.index.PartitionParallelScan
+import org.locationtech.geomesa.index.audit.AuditWriter
 import org.locationtech.geomesa.index.conf.{QueryProperties, StatsProperties}
 import org.locationtech.geomesa.security.AuthorizationsProvider
-import org.locationtech.geomesa.utils.audit.{AuditProvider, AuditWriter}
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam
 import org.locationtech.geomesa.utils.geotools.GeoMesaParam._
 
@@ -106,7 +106,7 @@ object GeoMesaDataStoreFactory {
 
   trait GeoMesaDataStoreConfig extends NamespaceConfig {
     def authProvider: AuthorizationsProvider
-    def audit: Option[(AuditWriter, AuditProvider, String)]
+    def audit: Option[AuditWriter]
     def generateStats: Boolean
     def queries: DataStoreQueryConfig
   }

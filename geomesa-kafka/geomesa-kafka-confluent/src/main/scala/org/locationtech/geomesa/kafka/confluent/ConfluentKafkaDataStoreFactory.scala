@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -75,8 +75,18 @@ object ConfluentKafkaDataStoreFactory extends GeoMesaDataStoreInfo with LazyLogg
       largeText = true
     )
 
+  private val UnusedParams =
+    Seq(
+      KafkaDataStoreParams.Brokers, // note: added separately so it's first in the list
+      KafkaDataStoreParams.Catalog,
+      KafkaDataStoreParams.Zookeepers,
+      KafkaDataStoreParams.ZkPath,
+      KafkaDataStoreParams.SerializationType,
+    )
+
   override val ParameterInfo: Array[GeoMesaParam[_ <: AnyRef]] =
-    SchemaRegistryUrl +: KafkaDataStoreFactory.ParameterInfo :+ SchemaOverrides
+    Array(KafkaDataStoreParams.Brokers, SchemaRegistryUrl, SchemaOverrides) ++
+      KafkaDataStoreFactory.ParameterInfo.filterNot(UnusedParams.contains)
 
   override def canProcess(params: java.util.Map[String, _]): Boolean =
     KafkaDataStoreParams.Brokers.exists(params) && SchemaRegistryUrl.exists(params)

@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -8,11 +8,18 @@
 
 package org.locationtech.geomesa
 
+import org.locationtech.geomesa.accumulo.util.TableManager
 import org.locationtech.geomesa.utils.conf.GeoMesaSystemProperties.SystemProperty
 
 package object accumulo {
 
   object AccumuloProperties {
+
+    object TableProperties {
+      val TableCreationSync: SystemProperty =
+        SystemProperty("geomesa.accumulo.table.sync", TableManager.TableSynchronization.ZooKeeper.toString)
+      val TableCacheExpiry: SystemProperty = SystemProperty("geomesa.accumulo.table.cache.expiry", "10 minutes")
+    }
 
     object AccumuloMapperProperties {
       val DESIRED_SPLITS_PER_TSERVER = SystemProperty("geomesa.mapreduce.splits.tserver.max")

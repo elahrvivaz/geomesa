@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -12,7 +12,6 @@ import com.typesafe.scalalogging.LazyLogging
 import org.apache.curator.framework.CuratorFramework
 import org.apache.curator.framework.recipes.cache.{PathChildrenCache, PathChildrenCacheEvent, PathChildrenCacheListener}
 import org.apache.curator.framework.recipes.locks.InterProcessSemaphoreMutex
-import org.locationtech.geomesa.index.utils.Releasable
 import org.locationtech.geomesa.lambda.stream.OffsetManager.OffsetListener
 import org.locationtech.geomesa.lambda.stream.ZookeeperOffsetManager.CuratorOffsetListener
 import org.locationtech.geomesa.utils.io.CloseWithLogging
@@ -68,16 +67,16 @@ class ZookeeperOffsetManager(zookeepers: String, namespace: String = "geomesa") 
     CloseWithLogging(client)
   }
 
-  override protected def acquireDistributedLock(path: String): Releasable =
+  override protected def acquireDistributedLock(path: String): Closeable =
     acquireLock(path, lock => { lock.acquire(); true })
 
-  override protected def acquireDistributedLock(path: String, timeOut: Long): Option[Releasable] =
+  override protected def acquireDistributedLock(path: String, timeOut: Long): Option[Closeable] =
     Option(acquireLock(path, lock => lock.acquire(timeOut, TimeUnit.MILLISECONDS)))
 
-  private def acquireLock(path: String, acquire: InterProcessSemaphoreMutex => Boolean): Releasable = {
+  private def acquireLock(path: String, acquire: InterProcessSemaphoreMutex => Boolean): Closeable = {
     val lock = new InterProcessSemaphoreMutex(client, s"/$path/locks")
     if (acquire(lock)) {
-      new Releasable { override def release(): Unit = lock.release() }
+      () => lock.release()
     } else {
       null
     }

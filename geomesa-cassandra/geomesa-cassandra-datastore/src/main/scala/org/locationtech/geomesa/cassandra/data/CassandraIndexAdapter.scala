@@ -1,6 +1,6 @@
 /***********************************************************************
- * Copyright (c) 2017-2024 IBM
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2017-2025 IBM
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -24,7 +24,7 @@ import org.locationtech.geomesa.index.api.IndexAdapter.{BaseIndexWriter, Require
 import org.locationtech.geomesa.index.api.QueryPlan.IndexResultsToFeatures
 import org.locationtech.geomesa.index.api.WritableFeature.FeatureWrapper
 import org.locationtech.geomesa.index.api._
-import org.locationtech.geomesa.index.planning.LocalQueryRunner.{ArrowDictionaryHook, LocalTransformReducer}
+import org.locationtech.geomesa.index.planning.LocalQueryRunner.LocalTransformReducer
 import org.locationtech.geomesa.utils.index.ByteArrays
 
 import java.nio.ByteBuffer
@@ -84,8 +84,7 @@ class CassandraIndexAdapter(ds: CassandraDataStore) extends IndexAdapter[Cassand
 
     val QueryStrategy(filter, _, keyRanges, tieredKeyRanges, ecql, hints, _) = strategy
 
-    val hook = Some(ArrowDictionaryHook(ds.stats, filter.filter))
-    val reducer = Some(new LocalTransformReducer(strategy.index.sft, ecql, None, hints.getTransform, hints, hook))
+    val reducer = Some(new LocalTransformReducer(strategy.index.sft, ecql, None, hints.getTransform, hints))
 
     if (keyRanges.isEmpty) { EmptyPlan(filter, reducer) } else {
       val mapper = CassandraColumnMapper(strategy.index)
@@ -189,10 +188,8 @@ object CassandraIndexAdapter extends LazyLogging {
 
     private val mappers = indices.toArray.map { index =>
       val mapper = CassandraColumnMapper(index)
-      val table = index.getTableNames(partition) match {
-        case Seq(t) => t // should always be writing to a single table here
-        case tables => throw new IllegalStateException(s"Expected a single table but got: ${tables.mkString(", ")}")
-      }
+      // should always be writing to a single table here
+      val table = index.getTableName(partition)
       val insert = mapper.insert(ds.session, table)
       val delete = mapper.delete(ds.session, table)
       (mapper, insert, delete)

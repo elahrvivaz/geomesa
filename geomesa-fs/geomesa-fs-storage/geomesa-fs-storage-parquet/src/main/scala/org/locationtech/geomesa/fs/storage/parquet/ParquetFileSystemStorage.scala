@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -11,6 +11,7 @@ package org.locationtech.geomesa.fs.storage.parquet
 import com.typesafe.scalalogging.LazyLogging
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path
+import org.apache.parquet.example.data.Group
 import org.apache.parquet.filter2.compat.FilterCompat
 import org.apache.parquet.hadoop.ParquetReader
 import org.apache.parquet.hadoop.example.GroupReadSupport
@@ -23,10 +24,14 @@ import org.locationtech.geomesa.fs.storage.api._
 import org.locationtech.geomesa.fs.storage.common.AbstractFileSystemStorage.FileSystemPathReader
 import org.locationtech.geomesa.fs.storage.common.jobs.StorageConfiguration
 import org.locationtech.geomesa.fs.storage.common.observer.FileSystemObserver
+import org.locationtech.geomesa.fs.storage.common.observer.FileSystemObserverFactory.NoOpObserver
+import org.locationtech.geomesa.fs.storage.common.utils.PathCache
 import org.locationtech.geomesa.fs.storage.common.{AbstractFileSystemStorage, FileValidationEnabled}
 import org.locationtech.geomesa.fs.storage.parquet.ParquetFileSystemStorage.ParquetFileSystemWriter
 import org.locationtech.geomesa.utils.io.CloseQuietly
 import org.locationtech.jts.geom.Envelope
+
+import scala.util.control.NonFatal
 
 /**
   *
@@ -36,6 +41,8 @@ import org.locationtech.jts.geom.Envelope
 class ParquetFileSystemStorage(context: FileSystemContext, metadata: StorageMetadata)
     extends AbstractFileSystemStorage(context, metadata, ParquetFileSystemStorage.FileExtension) {
 
+  override protected def createWriter(file: Path, observer: FileSystemObserver): FileSystemWriter =
+    new ParquetFileSystemWriter(metadata.sft, context, file, observer)
   override protected def createWriter(
       partition: String,
       action: StorageFileAction,
@@ -74,11 +81,18 @@ object ParquetFileSystemStorage extends LazyLogging {
   val ParquetCompressionOpt = "parquet.compression"
 
   class ParquetFileSystemWriter(
+      sft: SimpleFeatureType,
+      context: FileSystemContext,
       file: Path,
-      conf: Configuration,
       observer: Option[FileSystemObserver] = None,
       callback: (Envelope, Long) => Unit = (_, _) => {}
     ) extends FileSystemWriter {
+
+    private val conf = {
+      val conf = new Configuration(context.conf)
+      StorageConfiguration.setSft(conf, sft)
+      conf
+    }
 
     private val writer = SimpleFeatureParquetWriter.builder(file, conf, callback).build()
 
@@ -89,27 +103,35 @@ object ParquetFileSystemStorage extends LazyLogging {
     override def flush(): Unit = observer.foreach(_.flush())
     override def close(): Unit = {
       CloseQuietly(Seq(writer) ++ observer).foreach(e => throw e)
-      if (FileValidationEnabled.get.toBoolean) {
+      PathCache.register(context.fs, file)
+      if (FileValidationEnabled.toBoolean.get) {
         validateParquetFile(file)
       }
     }
   }
 
+  /**
+   * Validate a file by reading it back
+   *
+   * @param file file to validate
+   */
   def validateParquetFile(file: Path): Unit = {
-    val reader = ParquetReader.builder(new GroupReadSupport(), file).build()
-
+    var reader: ParquetReader[Group] = null
     try {
-      // Read Parquet file content
+      // read Parquet file content
+      reader = ParquetReader.builder(new GroupReadSupport(), file).build()
       var record = reader.read()
       while (record != null) {
         // Process the record
         record = reader.read()
       }
-      logger.debug(s"'$file' is a valid Parquet file")
+      logger.trace(s"$file is a valid Parquet file")
     } catch {
-      case e: Exception => throw new RuntimeException(s"Unable to validate '$file': File may be corrupted", e)
+      case NonFatal(e) => throw new RuntimeException(s"Unable to validate $file: File may be corrupted", e)
     } finally {
-      reader.close()
+      if (reader != null) {
+        reader.close()
+      }
     }
   }
 }

@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -33,11 +33,8 @@ class AccumuloIndexWriter(
 
   private val multiWriter = ds.connector.createMultiTableBatchWriter()
   private val writers = indices.toArray.map { index =>
-    val table = index.getTableNames(partition) match {
-      case Seq(t) => t // should always be writing to a single table here
-      case tables => throw new IllegalStateException(s"Expected a single table but got: ${tables.mkString(", ")}")
-    }
-    multiWriter.getBatchWriter(table)
+    // should always be writing to a single table here
+    multiWriter.getBatchWriter(index.getTableName(partition))
   }
 
   private val colFamilyMappings = indices.map(ColumnFamilyMapper.apply).toArray

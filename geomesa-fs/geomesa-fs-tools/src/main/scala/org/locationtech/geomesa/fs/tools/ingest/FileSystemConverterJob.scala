@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -10,7 +10,7 @@ package org.locationtech.geomesa.fs.tools.ingest
 
 import com.typesafe.config.Config
 import com.typesafe.scalalogging.LazyLogging
-import org.apache.hadoop.fs.{FileContext, Path}
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.io.{BytesWritable, LongWritable, Text}
 import org.apache.hadoop.mapreduce._
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat
@@ -31,7 +31,7 @@ import org.locationtech.geomesa.jobs.{JobResult, StatusCallback}
 import org.locationtech.geomesa.tools.Command
 import org.locationtech.geomesa.tools.ingest.ConverterIngestJob
 import org.locationtech.geomesa.tools.ingest.IngestCommand.IngestCounters
-import org.locationtech.geomesa.tools.utils.StorageJobUtils
+import org.locationtech.geomesa.tools.utils.DistributedCopy
 
 import java.io.File
 
@@ -79,7 +79,7 @@ abstract class FileSystemConverterJob(
     super.await(reporter).merge {
       tmpPath.map { tp =>
         reporter.reset()
-        StorageJobUtils.distCopy(tp, root, reporter) match {
+        new DistributedCopy().copy(Seq(tp), root, reporter) match {
           case JobSuccess(message, counts) =>
             Command.user.info(message)
             JobSuccess("", counts)
@@ -137,9 +137,8 @@ object FileSystemConverterJob {
 
     override def setup(context: Context): Unit = {
       val root = StorageConfiguration.getRootPath(context.getConfiguration)
-      val fc = FileContext.getFileContext(root.toUri, context.getConfiguration)
       // note: we don't call `reload` (to get the partition metadata) as we aren't using it
-      metadata = StorageMetadataFactory.load(FileSystemContext(fc, context.getConfiguration, root)).getOrElse {
+      metadata = StorageMetadataFactory.load(FileSystemContext(root, context.getConfiguration)).getOrElse {
         throw new IllegalArgumentException(s"Could not load storage instance at path $root")
       }
       serializer = KryoFeatureSerializer(metadata.sft, SerializationOptions.none)
@@ -179,9 +178,8 @@ object FileSystemConverterJob {
 
     override def setup(context: Context): Unit = {
       val root = StorageConfiguration.getRootPath(context.getConfiguration)
-      val fc = FileContext.getFileContext(root.toUri, context.getConfiguration)
       // note: we don't call `reload` (to get the partition metadata) as we aren't using it
-      val metadata = StorageMetadataFactory.load(FileSystemContext(fc, context.getConfiguration, root)).getOrElse {
+      val metadata = StorageMetadataFactory.load(FileSystemContext(root, context.getConfiguration)).getOrElse {
         throw new IllegalArgumentException(s"Could not load storage instance at path $root")
       }
       serializer = KryoFeatureSerializer(metadata.sft, SerializationOptions.none)

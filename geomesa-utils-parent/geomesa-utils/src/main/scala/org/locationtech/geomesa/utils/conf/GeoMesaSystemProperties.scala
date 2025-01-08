@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -34,8 +34,17 @@ object GeoMesaSystemProperties extends LazyLogging {
 
     def toDuration: Option[Duration] = option.flatMap { value =>
       Try(DurationParsing.caseInsensitive(value)) match {
+        case Success(v) if v.isFinite && v > Duration.Zero => Some(v)
+        case _ =>
+          logger.warn(s"Invalid duration for property $property: $value")
+          Option(default).map(Duration.apply)
+      }
+    }
+
+    def toUnboundedDuration: Option[Duration] = option.flatMap { value =>
+      Try(DurationParsing.caseInsensitive(value)) match {
         case Success(v) => Some(v)
-        case Failure(_) =>
+        case _ =>
           logger.warn(s"Invalid duration for property $property: $value")
           Option(default).map(Duration.apply)
       }

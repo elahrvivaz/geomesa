@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -8,22 +8,22 @@
 
 package org.locationtech.geomesa.accumulo.data
 
-import org.apache.accumulo.core.conf.Property
+import com.typesafe.scalalogging.LazyLogging
 import org.apache.accumulo.core.data.{Key, Range, Value}
 import org.apache.accumulo.core.file.keyfunctor.RowFunctor
 import org.apache.hadoop.io.Text
 import org.geotools.api.feature.simple.{SimpleFeature, SimpleFeatureType}
-import org.locationtech.geomesa.accumulo.data.AccumuloIndexAdapter.{AccumuloResultsToFeatures, ZIterPriority}
+import org.locationtech.geomesa.accumulo.data.AccumuloIndexAdapter._
 import org.locationtech.geomesa.accumulo.data.AccumuloQueryPlan.{BatchScanPlan, EmptyPlan}
 import org.locationtech.geomesa.accumulo.data.writer.tx.AccumuloAtomicIndexWriter
 import org.locationtech.geomesa.accumulo.data.writer.{AccumuloIndexWriter, ColumnFamilyMapper}
-import org.locationtech.geomesa.accumulo.index.{AttributeJoinIndex, JoinIndex}
+import org.locationtech.geomesa.accumulo.index.AttributeJoinIndex
 import org.locationtech.geomesa.accumulo.iterators.ArrowIterator.AccumuloArrowResultsToFeatures
 import org.locationtech.geomesa.accumulo.iterators.BinAggregatingIterator.AccumuloBinResultsToFeatures
 import org.locationtech.geomesa.accumulo.iterators.DensityIterator.AccumuloDensityResultsToFeatures
 import org.locationtech.geomesa.accumulo.iterators.StatsIterator.AccumuloStatsResultsToFeatures
 import org.locationtech.geomesa.accumulo.iterators._
-import org.locationtech.geomesa.accumulo.util.TableUtils
+import org.locationtech.geomesa.accumulo.util.TableManager
 import org.locationtech.geomesa.index.api.IndexAdapter.{IndexWriter, RequiredVisibilityWriter}
 import org.locationtech.geomesa.index.api.QueryPlan.IndexResultsToFeatures
 import org.locationtech.geomesa.index.api._
@@ -34,9 +34,10 @@ import org.locationtech.geomesa.index.index.s3.{S3Index, S3IndexValues}
 import org.locationtech.geomesa.index.index.z2.{Z2Index, Z2IndexValues}
 import org.locationtech.geomesa.index.index.z3.{Z3Index, Z3IndexValues}
 import org.locationtech.geomesa.index.iterators.StatsScan
-import org.locationtech.geomesa.index.planning.LocalQueryRunner.{ArrowDictionaryHook, LocalTransformReducer}
+import org.locationtech.geomesa.index.planning.LocalQueryRunner.LocalTransformReducer
 import org.locationtech.geomesa.security.SecurityUtils
 import org.locationtech.geomesa.utils.concurrent.CachedThreadPool
+import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes.{Configs, InternalConfigs}
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.locationtech.geomesa.utils.io.WithClose
 
@@ -48,7 +49,8 @@ import java.util.Map.Entry
   *
   * @param ds data store
   */
-class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloDataStore] {
+class AccumuloIndexAdapter(ds: AccumuloDataStore)
+    extends TableManager(ds.connector) with IndexAdapter[AccumuloDataStore] with LazyLogging {
 
   import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
@@ -63,7 +65,7 @@ class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloD
       splits: => Seq[Array[Byte]]): Unit = {
     val table = index.configureTableName(partition) // writes table name to metadata
     // create table if it doesn't exist
-    val created = TableUtils.createTableIfNeeded(ds.connector, table, index.sft.isLogicalTime)
+    val created = ensureTableExists(table, index.sft.isLogicalTime)
 
     def addSplitsAndGroups(): Unit = {
       // create splits
@@ -95,15 +97,31 @@ class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloD
     }
 
     if (created) {
+      import org.apache.accumulo.core.conf.Property.{TABLE_BLOCKCACHE_ENABLED, TABLE_BLOOM_ENABLED, TABLE_BLOOM_KEY_FUNCTOR}
+
       addSplitsAndGroups()
 
-      // enable block cache
-      tableOps.setProperty(table, Property.TABLE_BLOCKCACHE_ENABLED.getKey, "true")
+      // block cache config
+      val enableBlockCache = {
+        val key = if (index.sft.isPartitioned) { InternalConfigs.PartitionTableCache } else { Configs.TableCacheEnabled }
+        val config = index.sft.getUserData.get(key).asInstanceOf[String]
+        if (config == null) { true } else {
+          val enabled = config.split(',').exists { hint =>
+            hint.equalsIgnoreCase(index.name) || hint.equalsIgnoreCase((Seq(index.name) ++ index.attributes).mkString(":")) ||
+              hint.equalsIgnoreCase(index.identifier)
+          }
+          logger.debug(s"Setting ${TABLE_BLOCKCACHE_ENABLED.getKey}=$enabled for index ${index.identifier} based on user config: $config")
+          enabled
+        }
+      }
+      if (enableBlockCache) {
+        tableOps.setProperty(table, TABLE_BLOCKCACHE_ENABLED.getKey, "true")
+      }
 
       if (index.name == IdIndex.name) {
         // enable the row functor as the feature ID is stored in the Row ID
-        tableOps.setProperty(table, Property.TABLE_BLOOM_KEY_FUNCTOR.getKey, classOf[RowFunctor].getCanonicalName)
-        tableOps.setProperty(table, Property.TABLE_BLOOM_ENABLED.getKey, "true")
+        tableOps.setProperty(table, TABLE_BLOOM_KEY_FUNCTOR.getKey, classOf[RowFunctor].getCanonicalName)
+        tableOps.setProperty(table, TABLE_BLOOM_ENABLED.getKey, "true")
       }
 
       if (index.sft.isVisibilityRequired) {
@@ -115,20 +133,8 @@ class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloD
     }
   }
 
-  override def renameTable(from: String, to: String): Unit = {
-    if (tableOps.exists(from)) {
-      tableOps.rename(from, to)
-    }
-  }
-
-  override def deleteTables(tables: Seq[String]): Unit = {
-    def deleteOne(table: String): Unit = {
-      if (tableOps.exists(table)) {
-        tableOps.delete(table)
-      }
-    }
-    tables.toList.map(table => CachedThreadPool.submit(() => deleteOne(table))).foreach(_.get)
-  }
+  override def deleteTables(tables: Seq[String]): Unit =
+    tables.toList.map(table => CachedThreadPool.submit(() => deleteTable(table))).foreach(_.get)
 
   override def clearTables(tables: Seq[String], prefix: Option[Array[Byte]]): Unit = {
     val auths = ds.auths // get the auths once up front
@@ -170,10 +176,7 @@ class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloD
     lazy val returnSchema = hints.getTransformSchema.getOrElse(schema)
     lazy val fti = FilterTransformIterator.configure(schema, index, ecql, hints).toSeq
     lazy val resultsToFeatures = AccumuloResultsToFeatures(index, returnSchema)
-    lazy val localReducer = {
-      val arrowHook = Some(ArrowDictionaryHook(ds.stats, filter.filter))
-      Some(new LocalTransformReducer(returnSchema, None, None, None, hints, arrowHook))
-    }
+    lazy val localReducer = Some(new LocalTransformReducer(returnSchema, None, None, None, hints))
 
     index match {
       case i: AttributeJoinIndex =>
@@ -279,7 +282,7 @@ class AccumuloIndexAdapter(ds: AccumuloDataStore) extends IndexAdapter[AccumuloD
       indices: Seq[GeoMesaFeatureIndex[_, _]],
       partition: Option[String],
       atomic: Boolean): IndexWriter = {
-    val wrapper = AccumuloWritableFeature.wrapper(sft, groups, indices)
+    val wrapper = WritableFeature.wrapper(sft, groups)
     (atomic, sft.isVisibilityRequired) match {
       case (false, false) => new AccumuloIndexWriter(ds, indices, wrapper, partition)
       case (false, true)  => new AccumuloIndexWriter(ds, indices, wrapper, partition)  with RequiredVisibilityWriter

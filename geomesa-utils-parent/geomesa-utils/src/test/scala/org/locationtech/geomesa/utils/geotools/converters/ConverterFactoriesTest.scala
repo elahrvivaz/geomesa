@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -13,6 +13,7 @@ import org.junit.runner.RunWith
 import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
+import java.sql.Timestamp
 import java.time._
 import java.time.format.DateTimeFormatter
 import java.util.{Date, UUID}
@@ -273,6 +274,21 @@ class ConverterFactoriesTest extends Specification {
       )
       foreach(times) { time =>
         factory.createConverter(time.getClass, classOf[Date], null).convert(time, classOf[Date]) mustEqual date
+      }
+    }
+
+    "convert java time classes to sql dates" >> {
+      val times = Seq(
+        Instant.ofEpochMilli(date.getTime),
+        ZonedDateTime.ofInstant(Instant.ofEpochMilli(date.getTime), ZoneOffset.UTC),
+        LocalDateTime.ofInstant(Instant.ofEpochMilli(date.getTime), ZoneOffset.UTC),
+        OffsetDateTime.ofInstant(Instant.ofEpochMilli(date.getTime), ZoneOffset.UTC),
+        LocalDate.from(ZonedDateTime.ofInstant(Instant.ofEpochMilli(date.getTime), ZoneOffset.UTC))
+      )
+      foreach(times) { time =>
+        val result = factory.createConverter(time.getClass, classOf[Timestamp], null).convert(time, classOf[Timestamp])
+        result must beAnInstanceOf[Timestamp]
+        date mustEqual result // compare backwards (expected vs actual) so that equals check works
       }
     }
   }

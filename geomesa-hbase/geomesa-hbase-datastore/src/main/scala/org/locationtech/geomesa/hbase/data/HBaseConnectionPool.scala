@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -17,6 +17,7 @@ import org.apache.hadoop.hbase.security.token.AuthenticationTokenIdentifier
 import org.apache.hadoop.hbase.{HBaseConfiguration, HConstants}
 import org.apache.hadoop.security.authentication.util.KerberosUtil
 import org.apache.hadoop.security.{SecurityUtil, UserGroupInformation}
+import org.locationtech.geomesa.hbase.HBaseSystemProperties
 import org.locationtech.geomesa.hbase.data.HBaseDataStoreFactory.{HBaseGeoMesaKeyTab, HBaseGeoMesaPrincipal}
 import org.locationtech.geomesa.hbase.data.HBaseDataStoreParams.{ConfigPathsParam, ConfigsParam, ConnectionParam, ZookeeperParam}
 import org.locationtech.geomesa.hbase.utils.HBaseVersions
@@ -38,7 +39,7 @@ object HBaseConnectionPool extends LazyLogging {
       // add common resources from system property - lazy to allow object initialization if there's an error
       private lazy val configuration = {
         val base = HBaseConfiguration.create()
-        HBaseDataStoreFactory.ConfigPathProperty.option.foreach(addResources(base, _))
+        HBaseSystemProperties.ConfigPathProperty.option.foreach(addResources(base, _))
         base
       }
 

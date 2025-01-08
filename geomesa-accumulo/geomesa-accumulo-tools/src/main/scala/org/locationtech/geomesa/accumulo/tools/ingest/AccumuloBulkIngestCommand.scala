@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -29,7 +29,7 @@ import org.locationtech.geomesa.tools.DistributedRunParam.RunModes.RunMode
 import org.locationtech.geomesa.tools._
 import org.locationtech.geomesa.tools.ingest.IngestCommand.{IngestParams, Inputs}
 import org.locationtech.geomesa.tools.ingest._
-import org.locationtech.geomesa.tools.utils.{Prompt, StorageJobUtils}
+import org.locationtech.geomesa.tools.utils.{DistributedCopy, Prompt}
 import org.locationtech.geomesa.utils.hadoop.HadoopDelegate
 import org.locationtech.geomesa.utils.index.IndexMode
 
@@ -143,7 +143,7 @@ class AccumuloBulkIngestCommand extends IngestCommand[AccumuloDataStore] with Ac
           reporter.reset()
           val conf = new Configuration()
           conf.set("tmpjars", this.libjars) // copy over out libjars so s3 apis are on the classpath
-          StorageJobUtils.distCopy(dir, output, reporter, conf) match {
+          new DistributedCopy(conf).copy(Seq(dir), output, reporter) match {
             case JobSuccess(message, counts) =>
               Command.user.info(message)
               JobSuccess("", counts)

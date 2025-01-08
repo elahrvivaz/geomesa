@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -23,11 +23,12 @@ import org.geotools.api.filter.Filter
 import org.locationtech.geomesa.features.SerializationType.SerializationType
 import org.locationtech.geomesa.filter.factory.FastFilterFactory
 import org.locationtech.geomesa.index.FlushableFeatureWriter
+import org.locationtech.geomesa.index.audit.AuditWriter
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStoreFactory.NamespaceConfig
 import org.locationtech.geomesa.index.geotools.{GeoMesaFeatureReader, MetadataBackedDataStore}
 import org.locationtech.geomesa.index.metadata.GeoMesaMetadata
 import org.locationtech.geomesa.index.stats.{GeoMesaStats, HasGeoMesaStats, RunnableStats}
-import org.locationtech.geomesa.index.utils.LocalLocking
+import org.locationtech.geomesa.index.utils.DistributedLocking.LocalLocking
 import org.locationtech.geomesa.kafka.consumer.ThreadedConsumer.ConsumerErrorHandler
 import org.locationtech.geomesa.kafka.data.KafkaCacheLoader.KafkaCacheLoaderImpl
 import org.locationtech.geomesa.kafka.data.KafkaDataStore.KafkaDataStoreConfig
@@ -40,7 +41,6 @@ import org.locationtech.geomesa.kafka.versions.KafkaConsumerVersions
 import org.locationtech.geomesa.memory.cqengine.utils.CQIndexType.CQIndexType
 import org.locationtech.geomesa.metrics.core.GeoMesaMetrics
 import org.locationtech.geomesa.security.AuthorizationsProvider
-import org.locationtech.geomesa.utils.audit.{AuditProvider, AuditWriter}
 import org.locationtech.geomesa.utils.conf.GeoMesaSystemProperties.SystemProperty
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes.Configs.TableSharing
 import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes.InternalConfigs.TableSharingPrefix
@@ -229,6 +229,7 @@ class KafkaDataStore(
     val topic = KafkaDataStore.topic(sft)
     val props = new Properties()
     props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, config.brokers)
+    config.consumers.properties.foreach { case (k, v) => props.put(k, v) }
     config.producers.properties.foreach { case (k, v) => props.put(k, v) }
 
     WithClose(AdminClient.create(props)) { admin =>
@@ -266,6 +267,7 @@ class KafkaDataStore(
     val topic = KafkaDataStore.topic(sft)
     val props = new Properties()
     props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, config.brokers)
+    config.consumers.properties.foreach { case (k, v) => props.put(k, v) }
     config.producers.properties.foreach { case (k, v) => props.put(k, v) }
 
     WithClose(AdminClient.create(props)) { admin =>
@@ -570,7 +572,7 @@ object KafkaDataStore extends LazyLogging {
       looseBBox: Boolean,
       layerViewsConfig: Map[String, Seq[LayerViewConfig]],
       authProvider: AuthorizationsProvider,
-      audit: Option[(AuditWriter, AuditProvider, String)],
+      audit: Option[AuditWriter],
       metrics: Option[GeoMesaMetrics],
       namespace: Option[String]) extends NamespaceConfig
 

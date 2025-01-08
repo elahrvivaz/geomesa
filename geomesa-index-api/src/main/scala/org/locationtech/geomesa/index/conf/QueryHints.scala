@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -60,11 +60,14 @@ object QueryHints {
   val ARROW_FORMAT_VERSION     = new ClassKey(classOf[String])
   val ARROW_DICTIONARY_FIELDS  = new ClassKey(classOf[java.lang.String])
   val ARROW_PROCESS_DELTAS     = new ClassKey(classOf[java.lang.Boolean])
+  val ARROW_FLATTEN_STRUCT     = new ClassKey(classOf[java.lang.Boolean])
 
   val LAMBDA_QUERY_PERSISTENT  = new ClassKey(classOf[java.lang.Boolean])
   val LAMBDA_QUERY_TRANSIENT   = new ClassKey(classOf[java.lang.Boolean])
 
   val FILTER_COMPAT            = new ClassKey(classOf[java.lang.String])
+
+  val FLIP_AXIS_ORDER          = new ClassKey(classOf[java.lang.Boolean])
 
   def sortReadableString(sort: Seq[(String, Boolean)]): String =
     sort.map { case (f, r) => s"$f ${if (r) "DESC" else "ASC" }"}.mkString(", ")
@@ -141,6 +144,7 @@ object QueryHints {
     def getArrowFormatVersion: Option[String] = Option(hints.get(ARROW_FORMAT_VERSION).asInstanceOf[String])
     def isArrowProcessDeltas: Boolean =
       Option(hints.get(ARROW_PROCESS_DELTAS).asInstanceOf[java.lang.Boolean]).forall(Boolean.unbox)
+    def isArrowFlatten: Boolean = Option(hints.get(ARROW_FLATTEN_STRUCT).asInstanceOf[java.lang.Boolean]).exists(Boolean.unbox)
 
     def isStatsQuery: Boolean = hints.containsKey(STATS_STRING)
     def getStatsQuery: String = hints.get(STATS_STRING).asInstanceOf[String]
@@ -176,5 +180,8 @@ object QueryHints {
         }
       }
     }
+
+    def isFlipAxisOrder: Boolean =
+      Option(hints.get(FLIP_AXIS_ORDER).asInstanceOf[java.lang.Boolean]).exists(Boolean.unbox)
   }
 }

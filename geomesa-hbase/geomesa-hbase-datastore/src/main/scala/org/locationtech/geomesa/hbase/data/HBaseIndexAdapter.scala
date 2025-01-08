@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -51,7 +51,7 @@ import org.locationtech.geomesa.index.index.s3.{S3Index, S3IndexValues}
 import org.locationtech.geomesa.index.index.z2.{Z2Index, Z2IndexValues}
 import org.locationtech.geomesa.index.index.z3.{Z3Index, Z3IndexValues}
 import org.locationtech.geomesa.index.iterators.StatsScan
-import org.locationtech.geomesa.index.planning.LocalQueryRunner.{ArrowDictionaryHook, LocalTransformReducer}
+import org.locationtech.geomesa.index.planning.LocalQueryRunner.LocalTransformReducer
 import org.locationtech.geomesa.utils.index.ByteArrays
 import org.locationtech.geomesa.utils.io.{CloseWithLogging, FlushWithLogging, WithClose}
 import org.locationtech.geomesa.utils.text.StringSerialization
@@ -155,7 +155,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
         val table = TableName.valueOf(name)
         if (admin.tableExists(table)) {
           HBaseVersions.disableTableAsync(admin, table)
-          val timeout = TableAvailabilityTimeout.toDuration.filter(_.isFinite)
+          val timeout = TableAvailabilityTimeout.toUnboundedDuration.filter(_.isFinite)
           logger.debug(s"Waiting for table '$table' to be disabled with " +
               s"${timeout.map(t => s"a timeout of $t").getOrElse("no timeout")}")
           val stop = timeout.map(t => System.currentTimeMillis() + t.toMillis)
@@ -217,11 +217,10 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
 
     if (!ds.config.remoteFilter) {
       // everything is done client side
-      val arrowHook = Some(ArrowDictionaryHook(ds.stats, filter.filter))
       // note: we assume visibility filtering is still done server-side as it's part of core hbase
       // note: we use the full filter here, since we can't use the z3 server-side filter
       // for some attribute queries we wouldn't need the full filter...
-      val reducer = Some(new LocalTransformReducer(schema, filter.filter, None, transform, hints, arrowHook))
+      val reducer = Some(new LocalTransformReducer(schema, filter.filter, None, transform, hints))
       empty(reducer).getOrElse {
         val scans = configureScans(tables, ranges, small, colFamily, Seq.empty, coprocessor = false)
         val resultsToFeatures = new HBaseResultsToFeatures(index, schema)
@@ -272,10 +271,7 @@ class HBaseIndexAdapter(ds: HBaseDataStore) extends IndexAdapter[HBaseDataStore]
       lazy val coprocessorScans =
         configureScans(tables, ranges, small, colFamily, indexFilter.toSeq.map(_._2), coprocessor = true)
       lazy val resultsToFeatures = new HBaseResultsToFeatures(index, returnSchema)
-      lazy val localReducer = {
-        val arrowHook = Some(ArrowDictionaryHook(ds.stats, filter.filter))
-        Some(new LocalTransformReducer(returnSchema, None, None, None, hints, arrowHook))
-      }
+      lazy val localReducer = Some(new LocalTransformReducer(returnSchema, None, None, None, hints))
 
       if (hints.isDensityQuery) {
         empty(None).getOrElse {
@@ -546,7 +542,7 @@ object HBaseIndexAdapter extends LazyLogging {
    */
   def waitForTable(admin: Admin, table: TableName): Unit = {
     if (!admin.isTableAvailable(table)) {
-      val timeout = TableAvailabilityTimeout.toDuration.filter(_.isFinite)
+      val timeout = TableAvailabilityTimeout.toUnboundedDuration.filter(_.isFinite)
       logger.debug(s"Waiting for table '$table' to become available with " +
           s"${timeout.map(t => s"a timeout of $t").getOrElse("no timeout")}")
       val stop = timeout.map(t => System.currentTimeMillis() + t.toMillis)
@@ -601,10 +597,8 @@ object HBaseIndexAdapter extends LazyLogging {
     }
 
     private val mutators = indices.toArray.map { index =>
-      val table = index.getTableNames(partition) match {
-        case Seq(t) => t // should always be writing to a single table here
-        case tables => throw new IllegalStateException(s"Expected a single table but got: ${tables.mkString(", ")}")
-      }
+      // should always be writing to a single table here
+      val table = index.getTableName(partition)
       val params = new BufferedMutatorParams(TableName.valueOf(table))
       batchSize.foreach(params.writeBufferSize)
       flushTimeout.foreach(params.setWriteBufferPeriodicFlushTimeoutMs)

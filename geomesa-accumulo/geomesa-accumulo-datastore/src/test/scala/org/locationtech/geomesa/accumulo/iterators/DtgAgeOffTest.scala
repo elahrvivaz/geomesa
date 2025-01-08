@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -8,11 +8,14 @@
 
 package org.locationtech.geomesa.accumulo.iterators
 
+import org.apache.accumulo.core.security.NamespacePermission
 import org.geotools.api.data.{DataStore, DataStoreFinder}
 import org.geotools.api.feature.simple.SimpleFeature
 import org.geotools.api.filter.Filter
 import org.junit.runner.RunWith
+import org.locationtech.geomesa.accumulo.AccumuloContainer.Users
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStoreParams
+import org.locationtech.geomesa.accumulo.util.TableManager
 import org.locationtech.geomesa.accumulo.{AccumuloContainer, TestWithFeatureType}
 import org.locationtech.geomesa.features.ScalaSimpleFeature
 import org.locationtech.geomesa.security.SecurityUtils
@@ -57,6 +60,15 @@ class DtgAgeOffTest extends Specification with TestWithFeatureType {
 
   def query(ds: DataStore): Seq[SimpleFeature] =
     SelfClosingIterator(ds.getFeatureSource(sft.getTypeName).getFeatures(Filter.INCLUDE).features).toList
+
+  step {
+    val ns = catalog.substring(0, catalog.indexOf("."))
+    WithClose(AccumuloContainer.Container.client()) { client =>
+      new TableManager(client).ensureNamespaceExists(ns)
+      client.securityOperations().grantNamespacePermission(Users.user.name, ns, NamespacePermission.READ)
+      client.securityOperations().grantNamespacePermission(Users.admin.name, ns, NamespacePermission.READ)
+    }
+  }
 
   "DTGAgeOff" should {
     "run at scan time with vis" in {

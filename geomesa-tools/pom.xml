@@ -4,7 +4,7 @@
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
         <artifactId>geomesa_2.12</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>5.2.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -27,6 +27,10 @@
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
             <artifactId>geomesa-utils_${scala.binary.version}</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.locationtech.geomesa</groupId>
+            <artifactId>geomesa-hadoop-utils_${scala.binary.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
@@ -58,7 +62,7 @@
         </dependency>
         <dependency>
             <groupId>org.locationtech.geomesa</groupId>
-            <artifactId>geomesa-filter_2.12</artifactId>
+            <artifactId>geomesa-filter_${scala.binary.version}</artifactId>
         </dependency>
         <dependency>
             <groupId>org.apache.avro</groupId>

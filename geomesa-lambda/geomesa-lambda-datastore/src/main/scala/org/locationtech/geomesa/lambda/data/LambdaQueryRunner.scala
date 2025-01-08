@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -12,9 +12,6 @@ import com.github.benmanes.caffeine.cache.LoadingCache
 import com.typesafe.scalalogging.StrictLogging
 import org.geotools.api.data._
 import org.geotools.api.feature.simple.{SimpleFeature, SimpleFeatureType}
-import org.locationtech.geomesa.filter.filterToString
-import org.locationtech.geomesa.index.audit.QueryEvent
-import org.locationtech.geomesa.index.geoserver.ViewParams
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStore
 import org.locationtech.geomesa.index.planning.QueryRunner.QueryResult
 import org.locationtech.geomesa.index.utils.{ExplainLogger, Explainer}
@@ -30,6 +27,11 @@ class LambdaQueryRunner(ds: LambdaDataStore, persistence: DataStore, transients:
 
   import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
+  private val audit = persistence match {
+    case ds: GeoMesaDataStore[_] => ds.config.audit
+    case _ => None
+  }
+
   // TODO pass explain through?
 
   override def runQuery(sft: SimpleFeatureType, original: Query, explain: Explainer): QueryResult = {
@@ -43,20 +45,9 @@ class LambdaQueryRunner(ds: LambdaDataStore, persistence: DataStore, transients:
     } else {
       def run(): CloseableIterator[SimpleFeature] = {
         // ensure that we still audit the query
-        val audit = Option(persistence).collect { case ds: GeoMesaDataStore[_] => ds.config.audit }.flatten
-        audit.foreach { case (writer, provider, typ) =>
-          val stat = QueryEvent(
-            s"$typ-lambda",
-            sft.getTypeName,
-            System.currentTimeMillis(),
-            provider.getCurrentUserId,
-            filterToString(query.getFilter),
-            ViewParams.getReadableHints(query),
-            0,
-            0,
-            0
-          )
-          writer.writeEvent(stat) // note: implementations should be asynchronous
+        audit.foreach { writer =>
+          val start = System.currentTimeMillis()
+          writer.writeQueryEvent(sft.getTypeName, writer.auditProvider.getCurrentUserId, query.getFilter, query.getHints, Seq.empty, start, start, 0, 0, 0)
         }
         transients.get(sft.getTypeName)
             .read(Option(query.getFilter), Option(query.getPropertyNames), Option(query.getHints), explain)

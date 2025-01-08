@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -85,7 +85,7 @@ object ViewParams extends LazyLogging {
     * @param query query
     * @return
     */
-  def getReadableHints(query: Query): String = getReadableHints(query.getHints)
+  def getReadableHints(query: Query): java.util.Map[String, String] = getReadableHints(query.getHints)
 
   /**
    * Maps query hints to readable strings
@@ -93,19 +93,18 @@ object ViewParams extends LazyLogging {
    * @param hints hints
    * @return
    */
-  def getReadableHints(hints: Hints): String = {
-    val readable = Seq.newBuilder[String]
-    readable.sizeHint(hints.size())
-    hints.asScala.foreach { case (k: Hints.Key, v) =>
+  def getReadableHints(hints: Hints): java.util.Map[String, String] = {
+    val readable = new java.util.TreeMap[String, String]() // use tree map for consistent ordering by key
+    hints.asScala.map { case (k: Hints.Key, v) =>
       val key = hintToString(k)
       val value = v match {
         case null => "null"
         case sft: SimpleFeatureType => SimpleFeatureTypes.encodeType(sft)
         case s => s.toString
       }
-      readable += s"$key=$value"
+      readable.put(key, value)
     }
-    readable.result.sorted.mkString(", ")
+    readable
   }
 
   def hintToString(hint: Hints.Key): String = AllHintsInverse.getOrElse(hint, "unknown_hint")

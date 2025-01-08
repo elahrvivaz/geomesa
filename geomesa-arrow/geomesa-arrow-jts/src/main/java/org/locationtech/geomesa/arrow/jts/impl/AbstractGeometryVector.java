@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -20,6 +20,7 @@ public abstract class AbstractGeometryVector<T extends Geometry, U extends Field
 
   private V ordinal;
   protected U vector;
+  private boolean flipAxisOrder = false;
 
   protected AbstractGeometryVector(U vector) {
     this.vector = vector;
@@ -49,6 +50,16 @@ public abstract class AbstractGeometryVector<T extends Geometry, U extends Field
   public int getNullCount() {
     int count = vector.getNullCount();
     return Math.max(count, 0);
+  }
+
+  @Override
+  public boolean isFlipAxisOrder() {
+    return flipAxisOrder;
+  }
+
+  @Override
+  public void setFlipAxisOrder(boolean flip) {
+    flipAxisOrder = flip;
   }
 
   @Override

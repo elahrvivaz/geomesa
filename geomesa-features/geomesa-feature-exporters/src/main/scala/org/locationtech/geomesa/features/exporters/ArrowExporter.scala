@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -25,10 +25,11 @@ class ArrowExporter(out: OutputStream, hints: Hints) extends FeatureExporter {
   import org.locationtech.geomesa.index.conf.QueryHints.RichHints
 
   private lazy val sort = hints.getArrowSort
-  private lazy val encoding = SimpleFeatureEncoding.min(hints.isArrowIncludeFid, hints.isArrowProxyFid)
+  private lazy val encoding = SimpleFeatureEncoding.min(hints.isArrowIncludeFid, hints.isArrowProxyFid, hints.isFlipAxisOrder)
   private lazy val ipc = hints.getArrowFormatVersion.getOrElse(FormatVersion.ArrowFormatVersion.get)
   private lazy val batchSize = hints.getArrowBatchSize.getOrElse(ArrowProperties.BatchSize.get.toInt)
   private lazy val dictionaryFields = hints.getArrowDictionaryFields
+  private lazy val flattenFields = hints.isArrowFlatten
 
   private var delegate: FeatureExporter = _
 
@@ -37,12 +38,12 @@ class ArrowExporter(out: OutputStream, hints: Hints) extends FeatureExporter {
       new EncodedDelegate(out)
     } else if (dictionaryFields.isEmpty) {
       // note: features should be sorted already, even if arrow encoding wasn't performed
-      new BatchDelegate(out, encoding, FormatVersion.options(ipc), sort, batchSize, Map.empty)
+      new BatchDelegate(out, encoding, FormatVersion.options(ipc), sort, batchSize, Map.empty, flattenFields)
     } else {
       if (sort.isDefined) {
         throw new NotImplementedError("Sorting and calculating dictionaries at the same time is not supported")
       }
-      new DictionaryDelegate(out, dictionaryFields, encoding, FormatVersion.options(ipc), batchSize)
+      new DictionaryDelegate(out, dictionaryFields, encoding, FormatVersion.options(ipc), batchSize, flattenFields)
     }
     delegate.start(sft)
   }
@@ -72,14 +73,15 @@ object ArrowExporter {
       dictionaryFields: Seq[String],
       encoding: SimpleFeatureEncoding,
       ipcOpts: IpcOption,
-      batchSize: Int
+      batchSize: Int,
+      flattenStruct: Boolean = false
     ) extends FeatureExporter {
 
     private var writer: DictionaryBuildingWriter = _
     private var count = 0L
 
     override def start(sft: SimpleFeatureType): Unit = {
-      writer = new DictionaryBuildingWriter(sft, dictionaryFields, encoding, ipcOpts)
+      writer = new DictionaryBuildingWriter(sft, dictionaryFields, encoding, ipcOpts, flattenStruct = flattenStruct)
     }
 
     override def export(features: Iterator[SimpleFeature]): Option[Long] = {
@@ -112,14 +114,15 @@ object ArrowExporter {
       ipcOpts: IpcOption,
       sort: Option[(String, Boolean)],
       batchSize: Int,
-      dictionaries: Map[String, ArrowDictionary]
+      dictionaries: Map[String, ArrowDictionary],
+      flattenStruct: Boolean = false
     ) extends FeatureExporter {
 
     private var writer: SimpleFeatureArrowFileWriter = _
     private var count = 0L
 
     override def start(sft: SimpleFeatureType): Unit = {
-      writer = SimpleFeatureArrowFileWriter(os, sft, dictionaries, encoding, ipcOpts, sort)
+      writer = SimpleFeatureArrowFileWriter(os, sft, dictionaries, encoding, ipcOpts, sort, flattenStruct = flattenStruct)
     }
 
     override def export(features: Iterator[SimpleFeature]): Option[Long] = {

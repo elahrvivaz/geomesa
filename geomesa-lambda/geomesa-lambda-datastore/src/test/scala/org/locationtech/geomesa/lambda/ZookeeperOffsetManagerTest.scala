@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -33,7 +33,7 @@ class ZookeeperOffsetManagerTest extends Specification with BeforeAfterAll with 
   override def beforeAll(): Unit = {
     val image =
       DockerImageName.parse("zookeeper")
-          .withTag(sys.props.getOrElse("zookeeper.docker.tag", "3.6.4"))
+          .withTag(sys.props.getOrElse("zookeeper.docker.tag", "3.9.2"))
     container = new GenericContainer(image)
     container.addExposedPort(2181)
     container.start()

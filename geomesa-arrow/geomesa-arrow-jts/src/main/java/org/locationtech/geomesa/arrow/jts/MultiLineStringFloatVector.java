@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -15,7 +15,6 @@ import org.apache.arrow.vector.complex.ListVector;
 import org.apache.arrow.vector.types.pojo.Field;
 import org.locationtech.geomesa.arrow.jts.impl.AbstractMultiLineStringVector;
 
-import javax.annotation.Nullable;
 import java.util.List;
 import java.util.Map;
 
@@ -24,11 +23,25 @@ public class MultiLineStringFloatVector extends AbstractMultiLineStringVector<Fl
   // fields created by this vector
   public static final List<Field> fields = GeometryFields.XY_FLOAT_LIST_2;
 
-  public MultiLineStringFloatVector(String name, BufferAllocator allocator, @Nullable Map<String, String> metadata) {
+  /**
+   * Constructor
+   *
+   * @param name name of the vector
+   * @param allocator allocator for the vector
+   * @param metadata metadata (may be null)
+   */
+  public MultiLineStringFloatVector(String name, BufferAllocator allocator, Map<String, String> metadata) {
     super(name, allocator, metadata);
   }
 
-  public MultiLineStringFloatVector(String name, AbstractContainerVector container, @Nullable Map<String, String> metadata) {
+  /**
+   * Constructor
+   *
+   * @param name name of the vector
+   * @param container parent container
+   * @param metadata metadata (may be null)
+   */
+  public MultiLineStringFloatVector(String name, AbstractContainerVector container, Map<String, String> metadata) {
     super(name, container, metadata);
   }
 

@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -96,7 +96,7 @@ object TableConfCommand {
   }
 
   def getTableNames(ds: AccumuloDataStore, sft: SimpleFeatureType, index: String): Seq[String] = {
-    val tables = ds.manager.indices(sft).filter(_.name.equalsIgnoreCase(index)).flatMap(_.getTableNames(None))
+    val tables = ds.manager.indices(sft).filter(_.name.equalsIgnoreCase(index)).flatMap(_.getTableNames())
     if (tables.isEmpty) {
       throw new IllegalArgumentException(s"Index '$index' does not exist for schema '${sft.getTypeName}'. " +
           s"Available indices: ${ds.manager.indices(sft).map(_.name).distinct.mkString(", ")}")

@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -28,9 +28,12 @@ object PathUtils extends FileSystemDelegate with LazyLogging {
 
   // delegate allows us to avoid a runtime dependency on hadoop
   private val hadoopDelegate: FileSystemDelegate =
-    Try(Class.forName("org.locationtech.geomesa.utils.hadoop.HadoopDelegate").newInstance())
-        .getOrElse(null)
-        .asInstanceOf[FileSystemDelegate]
+    try {
+      Class.forName("org.locationtech.geomesa.utils.hadoop.HadoopDelegate")
+        .getDeclaredConstructor().newInstance().asInstanceOf[FileSystemDelegate]
+    } catch {
+      case _: Throwable => null
+    }
 
   override def interpretPath(path: String): Seq[FileHandle] = chooseDelegate(path).interpretPath(path)
 
@@ -90,7 +93,7 @@ object PathUtils extends FileSystemDelegate with LazyLogging {
     val buffered = new BufferedInputStream(is)
     CompressionUtils.Utils.find(_.isCompressedFilename(filename)) match {
       case None => buffered
-      case Some(utils) => utils.compress(buffered)
+      case Some(utils) => utils.decompress(buffered)
     }
   }
 

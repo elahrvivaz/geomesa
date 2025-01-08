@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -39,7 +39,7 @@ trait SizeableFileSystemStorage extends FileSystemStorage {
    * @return true if the file is appropriately sized
    */
   def fileIsSized(path: Path, target: Long): Boolean = {
-    val size = context.fc.getFileStatus(path).getLen
+    val size = context.fs.getFileStatus(path).getLen
     math.abs((size.toDouble / target) - 1d) <= fileSizeError
   }
 

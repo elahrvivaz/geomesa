@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -377,6 +377,11 @@ object DeltaWriter extends StrictLogging {
           }
           count += toRead
           total += toRead
+        }
+        var i = 0
+        while (i < count) {
+          result.underlying.setIndexDefined(i)
+          i += 1
         }
 
         if (writeHeader) {

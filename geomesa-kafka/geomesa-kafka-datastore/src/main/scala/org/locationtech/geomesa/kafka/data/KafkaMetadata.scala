@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -111,6 +111,7 @@ class KafkaMetadata[T](val config: KafkaDataStoreConfig, val serializer: Metadat
   private def adminClientOp[V](fn: AdminClient => V): V = {
     val props = new Properties()
     props.put(AdminClientConfig.BOOTSTRAP_SERVERS_CONFIG, config.brokers)
+    config.consumers.properties.foreach { case (k, v) => props.put(k, v) }
     config.producers.properties.foreach { case (k, v) => props.put(k, v) }
     WithClose(AdminClient.create(props)) { admin => fn(admin) }
   }

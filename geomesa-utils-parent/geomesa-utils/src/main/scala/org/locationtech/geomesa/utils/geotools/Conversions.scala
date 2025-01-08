@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -16,7 +16,7 @@ import org.locationtech.geomesa.curve.TimePeriod.TimePeriod
 import org.locationtech.geomesa.curve.{TimePeriod, XZSFC}
 import org.locationtech.geomesa.utils.conf.{FeatureExpiration, IndexId, SemanticVersion}
 import org.locationtech.geomesa.utils.geometry.GeometryPrecision
-import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes.Configs
+import org.locationtech.geomesa.utils.geotools.SimpleFeatureTypes.{Configs, InternalConfigs}
 import org.locationtech.geomesa.utils.index.VisibilityLevel
 import org.locationtech.geomesa.utils.index.VisibilityLevel.VisibilityLevel
 import org.locationtech.geomesa.utils.stats.Cardinality
@@ -330,6 +330,13 @@ object RichSimpleFeatureType extends Conversions {
     def isFeatureExpirationEnabled: Boolean = sft.getUserData.containsKey(Configs.FeatureExpiration)
 
     def isTemporalPriority: Boolean = boolean(sft.getUserData.get(TemporalPriority))
+
+    def isPartitioned: Boolean = sft.getUserData.containsKey(Configs.TablePartitioning)
+
+    def getTablePrefix(indexName: String): Option[String] = {
+      val key = if (isPartitioned) { InternalConfigs.PartitionTablePrefix } else { Configs.IndexTablePrefix }
+      userData[String](s"$key.$indexName").orElse(userData[String](key))
+    }
 
     def getRemoteVersion: Option[SemanticVersion] = userData[String](RemoteVersion).map(SemanticVersion.apply)
 

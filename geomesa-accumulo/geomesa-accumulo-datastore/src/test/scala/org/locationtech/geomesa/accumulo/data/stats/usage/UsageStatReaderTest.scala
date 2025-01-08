@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -8,36 +8,36 @@
 
 package org.locationtech.geomesa.accumulo.data.stats.usage
 
-import org.apache.accumulo.core.security.Authorizations
+import org.geotools.filter.text.ecql.ECQL
+import org.geotools.util.factory.Hints
 import org.junit.runner.RunWith
-import org.locationtech.geomesa.accumulo.TestWithDataStore
+import org.locationtech.geomesa.accumulo.AccumuloContainer
 import org.locationtech.geomesa.accumulo.audit._
-import org.locationtech.geomesa.index.audit.QueryEvent
+import org.locationtech.geomesa.index.conf.QueryHints
+import org.locationtech.geomesa.security.DefaultAuthorizationsProvider
+import org.locationtech.geomesa.utils.io.WithClose
 import org.locationtech.geomesa.utils.text.DateParsing
+import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
 
 import java.time.{Instant, ZoneOffset, ZonedDateTime}
 
 @RunWith(classOf[JUnitRunner])
-class UsageStatReaderTest extends TestWithDataStore {
+class UsageStatReaderTest extends Specification {
 
   val featureName = "stat_reader_test"
-  val statsTable = s"${catalog}_${featureName}_queries"
 
-  implicit val transform: AccumuloEventTransform[QueryEvent] = AccumuloQueryEventTransform
-
-  val auths = new Authorizations()
-
-  lazy val writer = new AccumuloEventWriter(ds.connector, statsTable)
-  lazy val reader = new AccumuloEventReader(ds.connector, statsTable)
+  lazy val client = AccumuloContainer.Container.client()
+  lazy val writer = new AccumuloAuditWriter(client, "UsageStatReaderTest_queries", new ParamsAuditProvider, enabled = true)
+  lazy val reader = new AccumuloAuditReader(client, writer.table, new DefaultAuthorizationsProvider())
 
   step {
-    val stats = Seq(
-      QueryEvent(AccumuloAuditService.StoreType, featureName, DateParsing.parseMillis("2014-07-26T13:20:01Z"), "user1", "query1", "hint1=true", 101L, 201L, 11),
-      QueryEvent(AccumuloAuditService.StoreType, featureName, DateParsing.parseMillis("2014-07-26T14:20:01Z"), "user1", "query2", "hint2=true", 102L, 202L, 12),
-      QueryEvent(AccumuloAuditService.StoreType, featureName, DateParsing.parseMillis("2014-07-27T13:20:01Z"), "user1", "query3", "hint3=true", 102L, 202L, 12)
-    )
-    stats.foreach(writer.queueStat(_))
+    writer.writeQueryEvent(featureName, "root", ECQL.toFilter("IN('query1')"), new Hints(QueryHints.QUERY_INDEX, "z3"), Seq.empty,
+      DateParsing.parseMillis("2014-07-26T13:20:00Z"), DateParsing.parseMillis("2014-07-26T13:20:01Z"), 101L, 201L, 11)
+    writer.writeQueryEvent(featureName, "root", ECQL.toFilter("IN('query2')"), new Hints(QueryHints.ARROW_ENCODE, true), Seq.empty,
+      DateParsing.parseMillis("2014-07-26T14:20:00Z"), DateParsing.parseMillis("2014-07-26T14:20:01Z"), 102L, 202L, 12)
+    writer.writeQueryEvent(featureName, "root", ECQL.toFilter("IN('query3')"), new Hints(QueryHints.BIN_TRACK, "trackId"), Seq.empty,
+      DateParsing.parseMillis("2014-07-27T13:20:00Z"), DateParsing.parseMillis("2014-07-27T13:20:01Z"), 102L, 202L, 12)
     writer.run()
   }
 
@@ -45,43 +45,37 @@ class UsageStatReaderTest extends TestWithDataStore {
 
     "query all stats in order" in {
       val dates = (ZonedDateTime.ofInstant(Instant.EPOCH, ZoneOffset.UTC), ZonedDateTime.now(ZoneOffset.UTC))
-      val queries = reader.query[QueryEvent](featureName, dates, auths)
+      val queries = WithClose(reader.getQueryEvents(featureName, dates))(_.toList)
 
-      queries must not(beNull)
-
-      val list = queries.toList
-
-      list.size mustEqual 3
-      list(0).filter mustEqual "query1"
-      list(1).filter mustEqual "query2"
-      list(2).filter mustEqual "query3"
+      queries must haveSize(3)
+      queries(0).filter mustEqual "IN ('query1')"
+      queries(1).filter mustEqual "IN ('query2')"
+      queries(2).filter mustEqual "IN ('query3')"
     }
 
     "query by day" in {
       val s = DateParsing.parse("2014-07-26T00:00:00Z")
       val e = DateParsing.parse("2014-07-26T23:59:59Z")
-      val queries = reader.query[QueryEvent](featureName, (s, e), auths)
+      val queries = WithClose(reader.getQueryEvents(featureName, (s, e)))(_.toList)
 
-      queries must not(beNull)
-
-      val list = queries.toList
-
-      list.size mustEqual 2
-      list(0).filter mustEqual "query1"
-      list(1).filter mustEqual "query2"
+      queries must haveSize(2)
+      queries(0).filter mustEqual "IN ('query1')"
+      queries(1).filter mustEqual "IN ('query2')"
     }
 
     "query by hour" in {
       val s = DateParsing.parse("2014-07-26T13:00:00Z")
       val e = DateParsing.parse("2014-07-26T13:59:59Z")
-      val queries = reader.query[QueryEvent](featureName, (s, e), auths)
+      val queries = WithClose(reader.getQueryEvents(featureName, (s, e)))(_.toList)
 
-      queries must not(beNull)
-
-      val list = queries.toList
-
-      list.size mustEqual 1
-      list(0).filter mustEqual "query1"
+      queries must haveSize(1)
+      queries(0).filter mustEqual "IN ('query1')"
     }
+  }
+
+  step {
+    reader.close()
+    writer.close()
+    client.close()
   }
 }

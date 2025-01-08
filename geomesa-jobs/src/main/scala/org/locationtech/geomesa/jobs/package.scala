@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -87,5 +87,10 @@ package object jobs {
   trait StatusCallback {
     def reset(): Unit
     def apply(prefix: String, progress: Float, counters: Seq[(String, Long)], done: Boolean): Unit
+  }
+
+  object NoStatus extends StatusCallback {
+    override def reset(): Unit = {}
+    override def apply(prefix: String, progress: Float, counters: Seq[(String, Long)], done: Boolean): Unit = {}
   }
 }

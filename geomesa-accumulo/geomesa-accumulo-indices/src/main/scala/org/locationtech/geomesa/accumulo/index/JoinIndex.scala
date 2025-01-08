@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -31,8 +31,7 @@ class JoinIndex(ds: GeoMesaDataStore[_],
                               tier: Array[Byte],
                               id: Array[Byte],
                               lenient: Boolean): RowKeyValue[AttributeIndexKey] = {
-        val kv = super.toIndexKey(writable, tier, id, lenient)
-        kv.copy(values = writable.asInstanceOf[ReducedIndexValues].indexValues)
+        super.toIndexKey(writable, tier, id, lenient).copy(writable.reducedValues)
       }
     }
 }

@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -42,6 +42,7 @@ object SimpleFeatureTypes {
     val IndexAttributeShards  = "geomesa.attr.splits"
     val IndexIdShards         = "geomesa.id.splits"
     val IndexIgnoreDtg        = "geomesa.ignore.dtg"
+    val IndexTablePrefix      = "index.table.prefix"
     val IndexVisibilityLevel  = "geomesa.visibility.level"
     val IndexXzPrecision      = "geomesa.xz.precision"
     val IndexZ3Interval       = "geomesa.z3.interval"
@@ -59,6 +60,7 @@ object SimpleFeatureTypes {
     val TableSharing          = "geomesa.table.sharing"
     val TableSplitterClass    = "table.splitter.class"
     val TableSplitterOpts     = "table.splitter.options"
+    val TableCacheEnabled     = "table.cache.enabled"
     val TemporalPriority      = "geomesa.temporal.priority"
     val UpdateBackupMetadata  = "schema.update.backup.metadata"
     val UpdateRenameTables    = "schema.update.rename.tables"
@@ -72,15 +74,33 @@ object SimpleFeatureTypes {
     val ENABLED_INDEX_OPTS: Seq[String] = Seq(EnabledIndices, "geomesa.indexes.enabled", "table.indexes.enabled")
   }
 
-  private [geomesa] object InternalConfigs {
+  private[geomesa] object InternalConfigs {
     val GeomesaPrefix          = "geomesa."
     val TableSharingPrefix     = "geomesa.table.sharing.prefix"
     val UserDataPrefix         = "geomesa.user-data.prefix"
     val IndexVersions          = "geomesa.indices"
     val PartitionSplitterClass = "geomesa.splitter.class"
     val PartitionSplitterOpts  = "geomesa.splitter.opts"
+    val PartitionTablePrefix   = "geomesa.table.prefix"
     val RemoteVersion          = "gm.remote.version" // note: doesn't start with geomesa so we don't persist it
+    val PartitionTableCache    = "geomesa.table.cache"
     val KeywordsDelimiter      = "\u0000"
+
+    // configs that are not normally persisted, but that we want to persist for creating partitioned tables down the line
+    val PartitionConfigMappings: Map[String, String] = Map(
+      Configs.TableCacheEnabled  -> PartitionTableCache,
+      Configs.TableSplitterClass -> PartitionSplitterClass,
+      Configs.TableSplitterOpts  -> PartitionSplitterOpts,
+    )
+    val PartitionConfigPrefixMappings: Map[String, String] = Map(
+      Configs.IndexTablePrefix -> PartitionTablePrefix,
+    )
+
+    // deprecated configs that we want to re-map for back-compatibility
+    val DeprecatedConfigMappings: Map[String, String] = Map(
+      "geomesa.indexes.enabled" -> Configs.EnabledIndices,
+      "table.indexes.enabled"   -> Configs.EnabledIndices,
+    )
   }
 
   object AttributeOptions {
@@ -96,11 +116,37 @@ object SimpleFeatureTypes {
     val OptStats        = "keep-stats"
   }
 
-  private [geomesa] object AttributeConfigs {
+  private[geomesa] object AttributeConfigs {
     val UserDataListType     = "subtype"
     val UserDataMapKeyType   = "keyclass"
     val UserDataMapValueType = "valueclass"
   }
+
+  private val IndexChecks: Seq[SimpleFeatureType => Any] =
+    Seq(
+      _.getIndices,
+      _.getDtgField,
+      _.isUuidEncoded,
+      _.getAttributeShards,
+      _.getIdShards,
+      _.getZ3Shards,
+      _.getZ2Shards,
+      _.getVisibilityLevel,
+      _.getXZPrecision,
+      _.getZ3Interval,
+      _.getS3Interval,
+      _.getCompression,
+      _.isPartitioned,
+      _.getTableSharingPrefix,
+    )
+
+  private val AttributeChecks: Seq[AttributeDescriptor => Any] =
+    Seq(
+      _.getUserData.get(AttributeOptions.OptIndexValue),
+      _.getUserData.get(AttributeOptions.OptJson),
+      _.getUserData.get(AttributeOptions.OptPrecision),
+      _.getUserData.get(AttributeOptions.OptColumnGroups),
+    )
 
   private val cache = new ConcurrentHashMap[(String, String), ImmutableSimpleFeatureType]()
 
@@ -462,6 +508,27 @@ object SimpleFeatureTypes {
 
     if (exact) { 0 } else {
       1  // we haven't hit an absolute inequality, but we've found a reordering or subtype
+    }
+  }
+
+  /**
+   * Compares that index tables are the same format (key and value) between the two feature types
+   *
+   * @param a first type
+   * @param b second type
+   * @return 0 if indices are the same, non-zero otherwise
+   */
+  def compareIndexConfigs(a: SimpleFeatureType, b: SimpleFeatureType): Int = {
+    def compareAttributes(i: Int): Boolean = {
+      val (ad, bd) = (a.getDescriptor(i), b.getDescriptor(i))
+      ad.getType.getBinding == bd.getType.getBinding && AttributeChecks.forall(c => c(ad) == c(bd))
+    }
+    if (a.getAttributeCount == b.getAttributeCount &&
+        IndexChecks.forall(c => c(a) == c(b)) &&
+        Range(0, a.getAttributeCount).forall(compareAttributes)) {
+      0
+    } else {
+      1
     }
   }
 

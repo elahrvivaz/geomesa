@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -65,7 +65,11 @@ class ArrowConversionProcess extends GeoMesaProcess with LazyLogging {
               @DescribeParameter(name = "sortReverse", description = "Reverse the default sort order", min = 0)
               sortReverse: java.lang.Boolean,
               @DescribeParameter(name = "batchSize", description = "Number of features to include in each record batch", min = 0)
-              batchSize: java.lang.Integer
+              batchSize: java.lang.Integer,
+              @DescribeParameter(name = "flattenStruct", description = "Removes the outer SFT struct yielding top level feature access", min = 0)
+              flattenStruct: java.lang.Boolean,
+              @DescribeParameter(name = "flipAxisOrder", description = "Flip the axis order of returned coordinates from latitude/longitude (default) to longitude/latitude", min = 0, defaultValue = "false")
+              flipAxisOrder: java.lang.Boolean = false
              ): java.util.Iterator[Array[Byte]] = {
 
     import scala.collection.JavaConverters._
@@ -82,13 +86,13 @@ class ArrowConversionProcess extends GeoMesaProcess with LazyLogging {
       }
     }
 
-    val encoding = SimpleFeatureEncoding.min(includeFids == null || includeFids, proxyFids != null && proxyFids)
+    val encoding = SimpleFeatureEncoding.min(includeFids == null || includeFids, proxyFids != null && proxyFids, Option(flipAxisOrder).exists(_.booleanValue))
     val ipcVersion = Option(formatVersion).getOrElse(FormatVersion.ArrowFormatVersion.get)
     val reverse = Option(sortReverse).map(_.booleanValue())
     val batch = Option(batchSize).map(_.intValue).getOrElse(ArrowProperties.BatchSize.get.toInt)
 
     val visitor =
-      new ArrowVisitor(sft, encoding, ipcVersion, toEncode, Option(sortField), reverse, false, batch)
+      new ArrowVisitor(sft, encoding, ipcVersion, toEncode, Option(sortField), reverse, false, batch, flattenStruct)
     GeoMesaFeatureCollection.visit(features, visitor)
     visitor.getResult.results
   }
@@ -104,7 +108,8 @@ object ArrowConversionProcess {
       sortField: Option[String],
       sortReverse: Option[Boolean],
       preSorted: Boolean,
-      batchSize: Int
+      batchSize: Int,
+      flattenStruct: Boolean
     ) extends GeoMesaProcessVisitor with LazyLogging {
 
     import scala.collection.JavaConverters._
@@ -114,9 +119,9 @@ object ArrowConversionProcess {
       val sort = sortField.map(s => (s, sortReverse.getOrElse(false)))
       val ipcOpts = FormatVersion.options(ipcVersion)
       if (dictionaryFields.isEmpty && (sortField.isEmpty || preSorted)) {
-        new SimpleArrowManualVisitor(sft, encoding, ipcOpts, sort, batchSize)
+        new SimpleArrowManualVisitor(sft, encoding, ipcOpts, sort, batchSize, flattenStruct)
       } else {
-        new ComplexArrowManualVisitor(sft, encoding, ipcOpts, dictionaryFields, sort, preSorted, batchSize)
+        new ComplexArrowManualVisitor(sft, encoding, ipcOpts, dictionaryFields, sort, preSorted, batchSize, flattenStruct)
       }
     }
 
@@ -148,6 +153,8 @@ object ArrowConversionProcess {
       query.getHints.put(QueryHints.ARROW_PROXY_FID, encoding.fids.contains(Encoding.Min))
       query.getHints.put(QueryHints.ARROW_BATCH_SIZE, batchSize)
       query.getHints.put(QueryHints.ARROW_FORMAT_VERSION, ipcVersion)
+      query.getHints.put(QueryHints.ARROW_FLATTEN_STRUCT, flattenStruct)
+      query.getHints.put(QueryHints.FLIP_AXIS_ORDER, encoding.flipAxisOrder)
       sortField.foreach(query.getHints.put(QueryHints.ARROW_SORT_FIELD, _))
       sortReverse.foreach(query.getHints.put(QueryHints.ARROW_SORT_REVERSE, _))
 
@@ -174,7 +181,8 @@ object ArrowConversionProcess {
       encoding: SimpleFeatureEncoding,
       ipcOpts: IpcOption,
       sort: Option[(String, Boolean)],
-      batchSize: Int
+      batchSize: Int,
+      flattenStruct: Boolean
     ) extends ArrowManualVisitor {
 
     private val out = new ByteArrayOutputStream()
@@ -182,7 +190,7 @@ object ArrowConversionProcess {
     private var count = 0L
 
     private val writer =
-      SimpleFeatureArrowFileWriter(out, sft, Map.empty[String, ArrowDictionary], encoding, ipcOpts, sort)
+      SimpleFeatureArrowFileWriter(out, sft, Map.empty[String, ArrowDictionary], encoding, ipcOpts, sort, flattenStruct)
 
     override def visit(feature: SimpleFeature): Unit = {
       writer.add(feature)
@@ -217,7 +225,8 @@ object ArrowConversionProcess {
       dictionaryFields: Seq[String],
       sort: Option[(String, Boolean)],
       preSorted: Boolean,
-      batchSize: Int
+      batchSize: Int,
+      flattenStruct: Boolean
     ) extends ArrowManualVisitor {
 
     private val features = ArrayBuffer.empty[SimpleFeature]
@@ -256,7 +265,7 @@ object ArrowConversionProcess {
       val out = new ByteArrayOutputStream()
       val bytes = ListBuffer.empty[Array[Byte]]
 
-      WithClose(SimpleFeatureArrowFileWriter(out, sft, dictionaries, encoding, ipcOpts, sort)) { writer =>
+      WithClose(SimpleFeatureArrowFileWriter(out, sft, dictionaries, encoding, ipcOpts, sort, flattenStruct)) { writer =>
         while (sorted.hasNext) { // send batches
           var i = 0
           while (i < batchSize && sorted.hasNext) {

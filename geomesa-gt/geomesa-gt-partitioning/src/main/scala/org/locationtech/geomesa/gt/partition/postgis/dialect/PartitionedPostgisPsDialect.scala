@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -12,9 +12,15 @@ import com.github.benmanes.caffeine.cache.{CacheLoader, Caffeine, LoadingCache}
 import org.geotools.api.feature.`type`.AttributeDescriptor
 import org.geotools.api.feature.simple.SimpleFeatureType
 import org.geotools.api.filter.Filter
-import org.geotools.data.postgis.PostGISPSDialect
-import org.geotools.jdbc.JDBCDataStore
+import org.geotools.api.filter.expression.{Expression, PropertyName}
+import org.geotools.data.postgis.{PostGISPSDialect, PostgisPSFilterToSql}
+import org.geotools.feature.AttributeTypeBuilder
+import org.geotools.feature.simple.SimpleFeatureTypeBuilder
+import org.geotools.jdbc.{JDBCDataStore, PreparedFilterToSQL}
+import org.geotools.util.Version
+import org.locationtech.geomesa.gt.partition.postgis.dialect.PartitionedPostgisPsDialect.PartitionedPostgisPsFilterToSql
 
+import java.lang.invoke.{MethodHandle, MethodHandles, MethodType}
 import java.sql.{Connection, DatabaseMetaData, PreparedStatement, Types}
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -39,11 +45,33 @@ class PartitionedPostgisPsDialect(store: JDBCDataStore, delegate: PartitionedPos
           }
         })
 
-  override def setValue(value: Any, binding: Class[_], ps: PreparedStatement, column: Int, cx: Connection): Unit = {
+  // reference to super.setValue, for back-compatibility with gt 30
+  private lazy val superSetValue: MethodHandle = {
+    val methodType =
+      MethodType.methodType(classOf[Unit], classOf[Object], classOf[Class[_]], classOf[PreparedStatement], classOf[Int], classOf[Connection])
+    MethodHandles.lookup.findSpecial(classOf[PostGISPSDialect], "setValue", methodType, classOf[PartitionedPostgisPsDialect])
+  }
+
+  override def createPreparedFilterToSQL: PreparedFilterToSQL = {
+    val fts = new PartitionedPostgisPsFilterToSql(this, delegate.getPostgreSQLVersion(null))
+    fts.setFunctionEncodingEnabled(delegate.isFunctionEncodingEnabled)
+    fts.setLooseBBOXEnabled(delegate.isLooseBBOXEnabled)
+    fts.setEncodeBBOXFilterAsEnvelope(delegate.isEncodeBBOXFilterAsEnvelope)
+    fts.setEscapeBackslash(delegate.isEscapeBackslash)
+    fts
+  }
+
+  override def setValue(
+      value: AnyRef,
+      binding: Class[_],
+      att: AttributeDescriptor,
+      ps: PreparedStatement,
+      column: Int,
+      cx: Connection): Unit = {
     // json columns are string type in geotools, but we have to use setObject or else we get a binding error
     if (binding == classOf[String] && jsonColumns.get(new PreparedStatementKey(ps, column))) {
       ps.setObject(column, value, Types.OTHER)
-    } else if (binding == classOf[java.util.List[_]]) {
+    } else if (binding.isArray || binding == classOf[java.util.List[_]]) {
       // handle bug in jdbc store not calling setArrayValue in update statements
       value match {
         case null =>
@@ -63,12 +91,45 @@ class PartitionedPostgisPsDialect(store: JDBCDataStore, delegate: PartitionedPos
             setArray(array, ps, column, cx)
           }
 
-        case _ =>
-          // this will almost certainly fail...
-          super.setValue(value, binding, ps, column, cx)
+        case singleton =>
+          setArray(Array(singleton), ps, column, cx)
       }
     } else {
-      super.setValue(value, binding, ps, column, cx)
+      super.setValue(value, binding, att, ps, column, cx)
+    }
+  }
+
+  // for back-compatibility with gt 30
+  // noinspection ScalaUnusedSymbol
+  def setValue(value: AnyRef, binding: Class[_], ps: PreparedStatement, column: Int, cx: Connection): Unit = {
+    // json columns are string type in geotools, but we have to use setObject or else we get a binding error
+    if (binding == classOf[String] && jsonColumns.get(new PreparedStatementKey(ps, column))) {
+      ps.setObject(column, value, Types.OTHER)
+    } else if (binding.isArray || binding == classOf[java.util.List[_]]) {
+      // handle bug in jdbc store not calling setArrayValue in update statements
+      value match {
+        case null =>
+          ps.setNull(column, Types.ARRAY)
+
+        case list: java.util.Collection[_] =>
+          if (list.isEmpty) {
+            ps.setNull(column, Types.ARRAY)
+          } else {
+            setArray(list.toArray(), ps, column, cx)
+          }
+
+        case array: Array[_] =>
+          if (array.isEmpty) {
+            ps.setNull(column, Types.ARRAY)
+          } else {
+            setArray(array, ps, column, cx)
+          }
+
+        case singleton =>
+          setArray(Array(singleton), ps, column, cx)
+      }
+    } else {
+      superSetValue.invoke(this, value, binding, ps, column, cx)
     }
   }
 
@@ -115,8 +176,63 @@ class PartitionedPostgisPsDialect(store: JDBCDataStore, delegate: PartitionedPos
 
 object PartitionedPostgisPsDialect {
 
+  class PartitionedPostgisPsFilterToSql(dialect: PartitionedPostgisPsDialect, pgVersion: Version)
+      extends PostgisPSFilterToSql(dialect, pgVersion) {
+
+    import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
+
+    import scala.collection.JavaConverters._
+
+    override def setFeatureType(featureType: SimpleFeatureType): Unit = {
+      // convert List-type attributes to Array-types so that prepared statement bindings work correctly
+      if (featureType.getAttributeDescriptors.asScala.exists(_.getType.getBinding == classOf[java.util.List[_]])) {
+        val builder = new SimpleFeatureTypeBuilder() {
+          override def init(`type`: SimpleFeatureType): Unit = {
+            super.init(`type`)
+            attributes().clear()
+          }
+        }
+        builder.init(featureType)
+        featureType.getAttributeDescriptors.asScala.foreach { descriptor =>
+          val ab = new AttributeTypeBuilder(builder.getFeatureTypeFactory)
+          ab.init(descriptor)
+          if (descriptor.getType.getBinding == classOf[java.util.List[_]]) {
+            ab.setBinding(java.lang.reflect.Array.newInstance(Option(descriptor.getListType()).getOrElse(classOf[String]), 0).getClass)
+          }
+          builder.add(ab.buildDescriptor(descriptor.getLocalName))
+        }
+        this.featureType = builder.buildFeatureType()
+        this.featureType.getUserData.putAll(featureType.getUserData)
+      } else {
+        this.featureType = featureType
+      }
+    }
+
+    // note: this would be a cleaner solution, but it doesn't get invoked due to explicit calls to
+    // super.getExpressionType in PostgisPSFilterToSql :/
+    override def getExpressionType(expression: Expression): Class[_] = {
+      val result = Option(expression).collect { case p: PropertyName => p }.flatMap { p =>
+        Option(p.evaluate(featureType).asInstanceOf[AttributeDescriptor]).map { descriptor =>
+          val binding = descriptor.getType.getBinding
+          if (binding == classOf[java.util.List[_]]) {
+            val listType = descriptor.getListType()
+            if (listType == null) {
+              classOf[Array[String]]
+            } else {
+              java.lang.reflect.Array.newInstance(listType, 0).getClass
+            }
+          } else {
+            binding
+          }
+        }
+      }
+
+      result.getOrElse(super.getExpressionType(expression))
+    }
+  }
+
   // uses eq on the prepared statement to ensure that we compute json fields exactly once per prepared statement/col
-  class PreparedStatementKey(val ps: PreparedStatement, val column: Int) {
+  private class PreparedStatementKey(val ps: PreparedStatement, val column: Int) {
 
     override def equals(other: Any): Boolean = {
       other match {

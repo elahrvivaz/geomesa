@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -73,11 +73,7 @@ object KafkaMigrateZkCommand {
     @Parameter(names = Array("--delete"), description = "Delete the metadata out of Zookeeper after migration")
     var delete: Boolean = false
 
-    @Parameter(names = Array("--config"), description = "Properties file used to configure the Kafka admin client")
-    var producerProperties: File = _
-
     override val serialization: String = null
-    override val consumerProperties: File = null
     override val partitions: Int = 1 // note: ignored for the metadata topic
     override val numConsumers: Int = 0
     override val readBack: Duration = null

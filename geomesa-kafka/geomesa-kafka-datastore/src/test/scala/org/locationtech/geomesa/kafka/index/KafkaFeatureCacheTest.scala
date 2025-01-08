@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -46,6 +46,8 @@ class KafkaFeatureCacheTest extends Specification with Mockito {
   val track2v0 = track("track2", "POINT (30 30)")
 
   val track3v0 = track("track3", "POINT (0 60)")
+
+  val track4v0 = track("track4", "POINT (null null)")
 
   def track(id: String, track: String): SimpleFeature = ScalaSimpleFeature.create(sft, id, id, track)
 
@@ -183,6 +185,22 @@ class KafkaFeatureCacheTest extends Specification with Mockito {
           cache.put(track1v0)
           cache.size() mustEqual 2
           cache.query(ECQL.toFilter("trackId ILIKE 'T%'")).toSeq must containTheSameElementsAs(Seq(track0v0, track1v0))
+        } finally {
+          cache.close()
+        }
+      }
+    }
+
+    "query with null geometries inserted into cache" >> {
+      foreach(caches()) { cache =>
+        try {
+          cache.put(track0v0)
+          cache.put(track1v0)
+          cache.put(track4v0)
+          cache.size() mustEqual 2
+
+          val res = cache.query(wholeWorldFilter).toSeq
+          res must containTheSameElementsAs(Seq(track0v0, track1v0))
         } finally {
           cache.close()
         }

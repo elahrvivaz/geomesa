@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -75,7 +75,7 @@ object CompactPartitions extends SqlProcedure {
        |        -- lock the child table to prevent any inserts that would be lost
        |        EXECUTE 'LOCK TABLE ${info.schema.quoted}.' || quote_ident(spill_partition) ||
        |          ' IN SHARE ROW EXCLUSIVE MODE';
-       |        EXECUTE 'CREATE TABLE ${info.schema.quoted}.' || quote_ident(partition_name || '_tmp_sort') ||
+       |        EXECUTE 'CREATE ${info.walLogSQL} TABLE ${info.schema.quoted}.' || quote_ident(partition_name || '_tmp_sort') ||
        |          partition_tablespace || ' AS SELECT * FROM' ||
        |          ' (SELECT * FROM ${info.schema.quoted}.' || quote_ident(partition_name) ||
        |          ' UNION ALL SELECT * FROM ${info.schema.quoted}.' || quote_ident(spill_partition) ||
@@ -83,7 +83,7 @@ object CompactPartitions extends SqlProcedure {
        |          ' ORDER BY _st_sortablehash($geomCol)';
        |        GET DIAGNOSTICS unsorted_count := ROW_COUNT;
        |      ELSE
-       |        EXECUTE 'CREATE TABLE ${info.schema.quoted}.' || quote_ident(partition_name || '_tmp_sort') ||
+       |        EXECUTE 'CREATE ${info.walLogSQL} TABLE ${info.schema.quoted}.' || quote_ident(partition_name || '_tmp_sort') ||
        |          partition_tablespace || ' AS SELECT * FROM ' || quote_ident(partition_name) ||
        |          ' ORDER BY _st_sortablehash($geomCol)';
        |        GET DIAGNOSTICS unsorted_count := ROW_COUNT;

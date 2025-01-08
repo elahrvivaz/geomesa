@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -18,7 +18,7 @@ import org.locationtech.geomesa.index.api.ShardStrategy.AttributeShardStrategy
 import org.locationtech.geomesa.index.api._
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStoreFactory.GeoMesaDataStoreConfig
 import org.locationtech.geomesa.index.utils.Explainer
-import org.locationtech.geomesa.utils.index.ByteArrays
+import org.locationtech.geomesa.utils.index.{ByteArrays, VisibilityLevel}
 import org.locationtech.geomesa.utils.index.ByteArrays.{OneByteArray, ZeroByteArray}
 
 import java.nio.charset.StandardCharsets
@@ -35,6 +35,7 @@ class AttributeIndexKeySpace(val sft: SimpleFeatureType, val sharding: ShardStra
     extends IndexKeySpace[AttributeIndexValues[Any], AttributeIndexKey] with LazyLogging {
 
   import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
+  import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
   protected val fieldIndex: Int = sft.indexOf(attributeField)
   protected val fieldIndexShort: Short = fieldIndex.toShort
@@ -200,7 +201,9 @@ class AttributeIndexKeySpace(val sft: SimpleFeatureType, val sharding: ShardStra
                              config: Option[GeoMesaDataStoreConfig],
                              hints: Hints): Boolean = {
     // if we have an attribute, but weren't able to extract any bounds, values.values will be empty
-    values.forall(v => v.values.isEmpty || !v.values.precise)
+    values.forall(v => v.values.isEmpty || !v.values.precise) ||
+      // for attribute-level vis, we need to re-evaluate the filter to account for visibility of the row key
+      (sft.getVisibilityLevel == VisibilityLevel.Attribute && values.exists(_.values.nonEmpty))
   }
 
   /**

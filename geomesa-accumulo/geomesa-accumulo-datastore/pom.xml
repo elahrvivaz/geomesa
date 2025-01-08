@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
         <artifactId>geomesa-accumulo_2.12</artifactId>
-        <version>5.1.0-SNAPSHOT</version>
+        <version>5.2.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>geomesa-accumulo-datastore_2.12</artifactId>
@@ -109,6 +109,10 @@
         <dependency>
             <groupId>org.apache.hadoop</groupId>
             <artifactId>hadoop-client</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.hadoop</groupId>
+            <artifactId>hadoop-distcp</artifactId>
         </dependency>
 
         <!-- test dependencies -->

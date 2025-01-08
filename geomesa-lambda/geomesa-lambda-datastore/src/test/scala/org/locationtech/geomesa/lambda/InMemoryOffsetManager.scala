@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -8,10 +8,11 @@
 
 package org.locationtech.geomesa.lambda
 
-import org.locationtech.geomesa.index.utils.Releasable
+import org.locationtech.geomesa.index.utils.DistributedLocking
 import org.locationtech.geomesa.lambda.stream.OffsetManager
 import org.locationtech.geomesa.lambda.stream.OffsetManager.OffsetListener
 
+import java.io.Closeable
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.locks.{Lock, ReentrantLock}
 
@@ -43,16 +44,16 @@ class InMemoryOffsetManager extends OffsetManager {
 
   override def close(): Unit = {}
 
-  override protected def acquireDistributedLock(key: String): Releasable = {
+  override protected def acquireDistributedLock(key: String): Closeable = {
     val lock = locks.synchronized(locks.getOrElseUpdate(key, new ReentrantLock()))
     lock.lock()
-    Releasable(lock)
+    DistributedLocking.releasable(lock)
   }
 
-  override protected def acquireDistributedLock(key: String, timeOut: Long): Option[Releasable] = {
+  override protected def acquireDistributedLock(key: String, timeOut: Long): Option[Closeable] = {
     val lock = locks.synchronized(locks.getOrElseUpdate(key, new ReentrantLock()))
     if (lock.tryLock(timeOut, TimeUnit.MILLISECONDS)) {
-      Some(Releasable(lock))
+      Some(DistributedLocking.releasable(lock))
     } else {
       None
     }

@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -28,7 +28,7 @@ import org.locationtech.geomesa.jobs.mapreduce.GeoMesaOutputFormat.OutputCounter
 import org.locationtech.geomesa.jobs.mapreduce.JobWithLibJars
 import org.locationtech.geomesa.jobs.{JobResult, StatusCallback}
 import org.locationtech.geomesa.tools.Command
-import org.locationtech.geomesa.tools.utils.{JobRunner, StorageJobUtils}
+import org.locationtech.geomesa.tools.utils.{DistributedCopy, JobRunner}
 import org.locationtech.geomesa.utils.text.TextTools
 
 import java.io.File
@@ -63,7 +63,7 @@ trait FileSystemCompactionJob extends StorageConfiguration with JobWithLibJars {
     job.setOutputKeyClass(classOf[Void])
     job.setOutputValueClass(classOf[SimpleFeature])
 
-    val qualifiedTempPath = tempPath.map(storage.context.fc.makeQualified)
+    val qualifiedTempPath = tempPath.map(storage.context.fs.makeQualified)
 
     StorageConfiguration.setRootPath(job.getConfiguration, storage.context.root)
     StorageConfiguration.setPartitions(job.getConfiguration, partitions.map(_.name).toArray)
@@ -92,7 +92,7 @@ trait FileSystemCompactionJob extends StorageConfiguration with JobWithLibJars {
 
     val result = JobRunner.run(job, statusCallback, mapCounters, Seq.empty).merge {
       qualifiedTempPath.map { tp =>
-        StorageJobUtils.distCopy(tp, storage.context.root, statusCallback)
+        new DistributedCopy().copy(Seq(tp), storage.context.root, statusCallback)
       }
     }
 
@@ -105,7 +105,7 @@ trait FileSystemCompactionJob extends StorageConfiguration with JobWithLibJars {
         existingDataFiles.foreach { case (partition, files) =>
           val counter = StorageConfiguration.Counters.partition(partition.name)
           val count = Option(job.getCounters.findCounter(StorageConfiguration.Counters.Group, counter)).map(_.getValue)
-          files.foreach(f => storage.context.fc.delete(f.path, false))
+          files.foreach(f => storage.context.fs.delete(f.path, false))
           storage.metadata.removePartition(partition.copy(count = count.getOrElse(0L)))
           val removed = count.map(c => s"containing $c features ").getOrElse("")
           Command.user.info(s"Removed ${TextTools.getPlural(files.size, "file")} ${removed}in partition ${partition.name}")

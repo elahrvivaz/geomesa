@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -25,7 +25,7 @@ object HadoopSharedCluster extends StrictLogging {
 
   val ImageName =
     DockerImageName.parse("ghcr.io/geomesa/accumulo-uno")
-        .withTag(sys.props.getOrElse("accumulo.docker.tag", "2.1.2"))
+        .withTag(sys.props.getOrElse("accumulo.docker.tag", "2.1.3"))
 
   lazy val Container: HadoopContainer = tryContainer.get
 

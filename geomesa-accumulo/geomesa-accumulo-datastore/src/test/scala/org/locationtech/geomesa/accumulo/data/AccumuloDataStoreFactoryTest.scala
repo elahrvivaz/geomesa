@@ -1,6 +1,6 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
- * Portions Crown Copyright (c) 2016-2024 Dstl
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
+ * Portions Crown Copyright (c) 2016-2025 Dstl
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -23,7 +23,7 @@ class AccumuloDataStoreFactoryTest extends Specification {
   import scala.collection.JavaConverters._
 
   // we use class name to prevent spillage between unit tests
-  lazy val catalog = s"${AccumuloContainer.Namespace}.${getClass.getSimpleName}"
+  lazy val catalog = s"gm.${getClass.getSimpleName}"
 
   "AccumuloDataStoreFactory" should {
 

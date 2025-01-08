@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -21,33 +21,33 @@ import java.util.ServiceLoader;
  */
 public interface AuditProvider {
 
-    public static final String AUDIT_PROVIDER_SYS_PROPERTY = "geomesa.audit.provider.impl";
+    String AUDIT_PROVIDER_SYS_PROPERTY = "geomesa.audit.provider.impl";
 
     /**
      * Gets the current user.
      *
      * @return
      */
-    public String getCurrentUserId();
+    String getCurrentUserId();
 
     /**
      * Gets user details.
      *
      * @return
      */
-    public Map<Object, Object> getCurrentUserDetails();
+    Map<Object, Object> getCurrentUserDetails();
 
     /**
      * Configures this instance with parameters passed into the DataStoreFinder
      *
      * @param params
      */
-    public void configure(Map<String, ?> params);
+    void configure(Map<String, ?> params);
 
     /**
      * Loader
      */
-    public static class Loader {
+    class Loader {
 
         private static final Logger logger = LoggerFactory.getLogger(Loader.class);
 
@@ -92,6 +92,14 @@ public interface AuditProvider {
             } else {
                 return null;
             }
+        }
+
+        public static AuditProvider loadOrNone(Map<String, ?> params) {
+            AuditProvider provider = load(params);
+            if (provider == null) {
+                provider = NoOpAuditProvider$.MODULE$;
+            }
+            return provider;
         }
     }
 }

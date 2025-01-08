@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -79,7 +79,7 @@ abstract class GeoMesaDataStore[DS <: GeoMesaDataStore[DS]](val config: GeoMesaD
     * @return
     */
   def getAllIndexTableNames(typeName: String): Seq[String] =
-    Option(getSchema(typeName)).toSeq.flatMap(sft => manager.indices(sft).flatMap(_.getTableNames(None)))
+    Option(getSchema(typeName)).toSeq.flatMap(sft => manager.indices(sft).flatMap(_.getTableNames()))
 
   /**
     * Optimized method to delete everything (all tables) associated with this datastore
@@ -115,13 +115,12 @@ abstract class GeoMesaDataStore[DS <: GeoMesaDataStore[DS]](val config: GeoMesaD
 
   @throws(classOf[IllegalArgumentException])
   override protected def preSchemaCreate(sft: SimpleFeatureType): Unit = {
-    import Configs.{TableSplitterClass, TableSplitterOpts}
-    import InternalConfigs.{PartitionSplitterClass, PartitionSplitterOpts}
-
-    // check for old enabled indices and re-map them
-    // noinspection ScalaDeprecation
-    SimpleFeatureTypes.Configs.ENABLED_INDEX_OPTS.drop(1).find(sft.getUserData.containsKey).foreach { key =>
-      sft.getUserData.put(SimpleFeatureTypes.Configs.EnabledIndices, sft.getUserData.remove(key))
+    // check for old user data keys and re-map them
+    InternalConfigs.DeprecatedConfigMappings.foreach { case (from, to) =>
+      val v = sft.getUserData.remove(from)
+      if (v != null) {
+        sft.getUserData.put(to, v)
+      }
     }
 
     // validate column groups
@@ -154,9 +153,14 @@ abstract class GeoMesaDataStore[DS <: GeoMesaDataStore[DS]](val config: GeoMesaD
     sft.getAttributeDescriptors.asScala.foreach(_.getUserData.remove(AttributeOptions.OptIndex))
 
     // for partitioned schemas, persist the table partitioning keys
-    if (TablePartition.partitioned(sft)) {
-      Seq((TableSplitterClass, PartitionSplitterClass), (TableSplitterOpts, PartitionSplitterOpts)).foreach {
-        case (from, to) => Option(sft.getUserData.get(from)).foreach(sft.getUserData.put(to, _))
+    if (sft.isPartitioned) {
+      InternalConfigs.PartitionConfigMappings.foreach { case (from, to) =>
+        Option(sft.getUserData.get(from)).foreach(sft.getUserData.put(to, _))
+      }
+      InternalConfigs.PartitionConfigPrefixMappings.foreach { case (from, to) =>
+        sft.getUserData.asScala.toMap.collect {
+          case (k: String, v) if k.startsWith(from) => sft.getUserData.put(to + k.substring(from.length), v)
+        }
       }
     }
 
@@ -182,11 +186,11 @@ abstract class GeoMesaDataStore[DS <: GeoMesaDataStore[DS]](val config: GeoMesaD
   // create the index tables (if not using partitioned tables)
   override protected def onSchemaCreated(sft: SimpleFeatureType): Unit = {
     val indices = manager.indices(sft)
-    if (TablePartition.partitioned(sft)) {
+    if (sft.isPartitioned) {
       logger.debug(s"Delaying creation of partitioned indices ${indices.map(_.identifier).mkString(", ")}")
     } else {
       logger.debug(s"Creating indices ${indices.map(_.identifier).mkString(", ")}")
-      indices.foreach(index => adapter.createTable(index, None, index.getSplits(None)))
+      indices.toList.map(i => CachedThreadPool.submit(() => adapter.createTable(i, None, i.getSplits(None)))).foreach(_.get)
     }
   }
 
@@ -227,7 +231,7 @@ abstract class GeoMesaDataStore[DS <: GeoMesaDataStore[DS]](val config: GeoMesaD
       logger.debug("Delaying creation of partitioned indices")
     } else {
       logger.debug(s"Ensuring indices ${manager.indices(sft).map(_.identifier).mkString(", ")}")
-      manager.indices(sft).foreach(index => adapter.createTable(index, None, index.getSplits(None)))
+      manager.indices(sft).toList.map(i => CachedThreadPool.submit(() => adapter.createTable(i, None, i.getSplits(None)))).foreach(_.get)
     }
 
     // update stats
@@ -404,7 +408,7 @@ abstract class GeoMesaDataStore[DS <: GeoMesaDataStore[DS]](val config: GeoMesaD
   override def dispose(): Unit = {
     Try(GeoMesaDataStore.liveStores.get(VersionKey(config.catalog, getClass)).remove(this))
     CloseWithLogging(stats)
-    config.audit.foreach { case (writer, _, _) => CloseWithLogging(writer) }
+    CloseWithLogging(config.audit)
     super.dispose()
   }
 

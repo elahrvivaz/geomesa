@@ -88,6 +88,52 @@ Argument                 Description
 
 For a description of index coverage, see :ref:`accumulo_attribute_indices`.
 
+``bulk-copy``
+^^^^^^^^^^^^^
+
+The bulk copy command will directly copy Accumulo RFiles between two feature types, bypassing
+the normal write path. The main use case it to move data between different storage tiers, e.g. ``hdfs`` and ``s3``.
+See `Bulk Ingest <https://accumulo.apache.org/docs/2.x/development/high_speed_ingest#bulk-ingest>`__
+in the Accumulo documentation for additional details.
+
+.. warning::
+
+    The two feature types must be identical.
+
+========================== ==================================================================================================
+Argument                   Description
+========================== ==================================================================================================
+``--from-catalog *``       Catalog table containing the source feature type
+``--from-instance *``      Source Accumulo instance name
+``--from-zookeepers *``    Zookeepers for the source instance (host[:port], comma separated)
+``--from-user *``          User name for the source instance
+``--from-password``        Connection password for the source instance
+``--from-keytab``          Path to Kerberos keytab file for the source instance (instead of using a password)
+``--from-config``          Additional Hadoop configuration file(s) to use for the source instance
+``--to-catalog *``         Catalog table containing the destination feature type
+``--to-instance *``        Destination Accumulo instance name
+``--to-zookeepers *``      Zookeepers for the destination instance (host[:port], comma separated)
+``--to-user *``            User name for the destination instance
+``--to-password``          Connection password for the destination instance
+``--to-keytab``            Path to Kerberos keytab file for the destination instance (instead of using a password)
+``--to-config``            Additional Hadoop configuration file(s) to use for the destination instance
+``-f, --feature-name *``   The name of the schema to copy
+``--export-path *``        HDFS path to used for file export - the scheme and authority (e.g. bucket name) must match the
+                           destination table filesystem
+``--partition``            Partition(s) to copy (if schema is partitioned)
+``--partition-value``      Value(s) used to indicate partitions to copy (e.g. ``2024-01-01T00:00:00.000Z``) (if schema is
+                           partitioned)
+``-t, --threads``          Number of index tables to copy concurrently, default 1
+``--file-threads``         Number of files to copy concurrently, per table, default 2
+``--distcp``               Use Hadoop DistCp to move files from one cluster to the other, instead of normal file copies
+``--resume``               Resume a previously interrupted run from where it left off
+========================== ==================================================================================================
+
+.. note::
+
+    ``--partition`` and/or ``--partition-value`` may be specified multiple times in order to copy multiple partitions, or omitted
+    to copy all existing partitions.
+
 ``bulk-ingest``
 ^^^^^^^^^^^^^^^
 
@@ -117,7 +163,7 @@ Argument                   Description
 ``-q, --cql``              If using a partitioned store, a filter that covers the ingest data
 ``-t, --threads``          Number of parallel threads used
 ``--input-format``         Format of input files (csv, tsv, avro, shp, json, etc)
-```--index``               Specify a particular GeoMesa index to write to, instead of all indices
+``--index``                Specify a particular GeoMesa index to write to, instead of all indices
 ``--temp-path``            A temporary path to write the output. When using Accumulo on S3, it may be faster to write the
                            output to HDFS first using this parameter
 ``--no-tracking``          This application closes when ingest job is submitted. Note that this will require manual import
@@ -263,7 +309,7 @@ The ``--add`` argument will add the stats iterator.
 ``configure-table``
 ^^^^^^^^^^^^^^^^^^^
 
-The command will list and update properties on the Accumulo tables used by GeoMesa. It has two
+This command will list and update properties on the Accumulo tables used by GeoMesa. It has two
 sub-commands:
 
 * ``list`` List the configuration options for a table
@@ -291,6 +337,30 @@ The ``--key`` argument can be used during both list and update. For list, it wil
 only show the one requested. For update, it is required as the property to update.
 
 The ``--value`` argument is only used during update.
+
+``query-audit-logs``
+^^^^^^^^^^^^^^^^^^^^
+
+This command will query the audit logs produced by GeoMesa.
+
+======================== =============================================================
+Argument                 Description
+======================== =============================================================
+``-c, --catalog *``      The catalog table containing schema metadata
+``-f, --feature-name *`` The name of the schema
+``-b, --begin``          Lower bound (inclusive) on the date of log entries to return, in ISO 8601 format
+``-e, --end``            Upper bound (exclusive) on the date of log entries to return, in ISO 8601 format
+``-q, --cql``            CQL predicate used to filter log entries
+``--output-format``      Output format for result, one of either ``csv`` (default) or ``json``
+======================== =============================================================
+
+The ``--begin`` and ``--end`` arguments can be used to filter logs by date (based on when the query completed). For more
+advanced filtering, the ``--cql`` argument accepts GeoTools
+`filter expressions <https://docs.geotools.org/stable/userguide/library/cql/ecql.html>`_. The schema to use for filtering is::
+
+    user:String,filter:String,hints:String:json=true,metadata:String:json=true,start:Date,end:Date,planTimeMillis:Long,scanTimeMillis:Long,hits:Long
+
+The ``--output-format`` argument can be used to return logs as CSV or as JSON (JSON lines).
 
 .. _accumulo_tools_stats_analyze:
 

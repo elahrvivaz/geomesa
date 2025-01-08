@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -81,13 +81,16 @@ class FileSystemFeatureStore(
   }
 
   override def canLimit: Boolean = false
+  override def canLimit(query: Query): Boolean = false
   override def canTransact: Boolean = false
   override def canEvent: Boolean = false
   override def canReproject: Boolean = false
   override def canSort: Boolean = false
-
+  override def canSort(query: Query): Boolean = false
   override def canFilter: Boolean = true
+  override def canFilter(query: Query): Boolean = true
   override def canRetype: Boolean = true
+  override def canRetype(query: Query): Boolean = true
 
   override protected def buildQueryCapabilities(): QueryCapabilities = FileSystemFeatureStore.capabilities
 }

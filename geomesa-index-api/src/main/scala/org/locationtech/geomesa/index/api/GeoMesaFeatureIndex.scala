@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -155,7 +155,23 @@ abstract class GeoMesaFeatureIndex[T, U](val ds: GeoMesaDataStore[_],
   }
 
   /**
-    * Gets the table name for this index
+   * Gets the single table name for this index. If this is a partitioned index, then the partition argument
+   * must be defined. A runtime exception will be thrown if multiple or zero tables are found.
+   *
+   * @param partition get the name for a particular partition, if the index is partitioned
+   * @return
+   */
+  def getTableName(partition: Option[String] = None): String = {
+    val names = getTableNames(partition)
+    if (names.lengthCompare(1) == 0) { names.head } else {
+      val list = if (names.isEmpty) { "" } else { names.mkString(": ", ", ", "") }
+      throw new RuntimeException(
+        s"Expected 1 table but found ${names.length} for index $identifier${partition.fold("")(p => s" partition $p")}$list")
+    }
+  }
+
+  /**
+    * Gets table names for this index
     *
     * @param partition get the name for a particular partition, or all partitions
     * @return
@@ -177,7 +193,7 @@ abstract class GeoMesaFeatureIndex[T, U](val ds: GeoMesaDataStore[_],
     val partitioned = for { f <- filter; tp <- TablePartition(ds, sft); partitions <- tp.partitions(f) } yield {
       partitions.flatMap(p => getTableNames(Some(p)))
     }
-    partitioned.getOrElse(getTableNames(None))
+    partitioned.getOrElse(getTableNames())
   }
 
   /**
@@ -350,8 +366,10 @@ abstract class GeoMesaFeatureIndex[T, U](val ds: GeoMesaDataStore[_],
     */
   protected def generateTableName(partition: Option[String] = None, limit: Option[Int] = None): String = {
     import StringSerialization.alphaNumericSafeString
+    import org.locationtech.geomesa.utils.geotools.RichSimpleFeatureType.RichSimpleFeatureType
 
-    val prefix = (ds.config.catalog +: Seq(sft.getTypeName, name).map(alphaNumericSafeString)).mkString("_")
+    val namespace = sft.getTablePrefix(name).getOrElse(ds.config.catalog)
+    val prefix = (namespace +: Seq(sft.getTypeName, name).map(alphaNumericSafeString)).mkString("_")
     val suffix = s"v$version${partition.map(p => s"_$p").getOrElse("")}"
 
     def build(attrs: Seq[String]): String = (prefix +: attrs :+ suffix).mkString("_")

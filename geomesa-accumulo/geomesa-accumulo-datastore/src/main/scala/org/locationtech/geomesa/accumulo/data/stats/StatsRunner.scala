@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -141,7 +141,7 @@ class StatRunner(ds: AccumuloDataStore, sft: SimpleFeatureType, lockTimeout: Opt
               Instant.now(Clock.systemUTC()).plus(updateInterval, ChronoUnit.MINUTES)
             }
           } finally {
-            lock.release()
+            lock.close()
           }
       }
     }

@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -20,16 +20,17 @@ import org.locationtech.geomesa.index.api.IndexAdapter.{BaseIndexWriter, IndexWr
 import org.locationtech.geomesa.index.api.QueryPlan.{FeatureReducer, ResultsToFeatures}
 import org.locationtech.geomesa.index.api.WritableFeature.FeatureWrapper
 import org.locationtech.geomesa.index.api._
+import org.locationtech.geomesa.index.audit.AuditWriter
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStore
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStoreFactory.{DataStoreQueryConfig, GeoMesaDataStoreConfig}
 import org.locationtech.geomesa.index.metadata.GeoMesaMetadata
-import org.locationtech.geomesa.index.planning.LocalQueryRunner.{ArrowDictionaryHook, LocalTransformReducer}
+import org.locationtech.geomesa.index.planning.LocalQueryRunner.LocalTransformReducer
 import org.locationtech.geomesa.index.stats.MetadataBackedStats.WritableStat
 import org.locationtech.geomesa.index.stats._
+import org.locationtech.geomesa.index.utils.DistributedLocking.LocalLocking
+import org.locationtech.geomesa.index.utils.Explainer
 import org.locationtech.geomesa.index.utils.Reprojection.QueryReferenceSystems
-import org.locationtech.geomesa.index.utils.{Explainer, LocalLocking}
 import org.locationtech.geomesa.security.DefaultAuthorizationsProvider
-import org.locationtech.geomesa.utils.audit.{AuditProvider, AuditWriter}
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.index.ByteArrays
 import org.locationtech.geomesa.utils.stats.Stat
@@ -99,10 +100,7 @@ object TestGeoMesaDataStore {
       val serializer = KryoFeatureSerializer(strategy.index.sft, opts)
       val ecql = strategy.ecql.map(FastFilterFactory.optimize(strategy.index.sft, _))
       val transform = strategy.hints.getTransform
-      val reducer = {
-        val arrowHook = Some(ArrowDictionaryHook(ds.stats, strategy.filter.filter))
-        Some(new LocalTransformReducer(strategy.index.sft, ecql, None, transform, strategy.hints, arrowHook))
-      }
+      val reducer = Some(new LocalTransformReducer(strategy.index.sft, ecql, None, transform, strategy.hints))
       val maxFeatures = strategy.hints.getMaxFeatures
       val sort = strategy.hints.getSortFields
       val project = strategy.hints.getProjection
@@ -116,7 +114,7 @@ object TestGeoMesaDataStore {
         partition: Option[String],
         atomic: Boolean): IndexWriter = {
       require(!atomic, "Test data store does not currently support atomic writes")
-      val tables = indices.map(i => this.tables(i.getTableNames(partition).head))
+      val tables = indices.map(i => this.tables(i.getTableName(partition)))
       val wrapper = WritableFeature.wrapper(sft, groups)
       if (sft.isVisibilityRequired) {
         new TestIndexWriter(indices, wrapper, tables) with RequiredVisibilityWriter
@@ -217,7 +215,7 @@ object TestGeoMesaDataStore {
   case class TestConfig(looseBBox: Boolean) extends GeoMesaDataStoreConfig {
     override val catalog: String = "test"
     override val authProvider = new DefaultAuthorizationsProvider()
-    override val audit: Option[(AuditWriter, AuditProvider, String)] = None
+    override val audit: Option[AuditWriter] = None
     override val generateStats: Boolean = true
     override val queries: DataStoreQueryConfig = new DataStoreQueryConfig() {
       override val threads: Int = 1

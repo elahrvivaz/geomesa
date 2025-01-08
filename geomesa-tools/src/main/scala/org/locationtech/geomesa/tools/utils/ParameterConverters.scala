@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -15,8 +15,8 @@ import org.geotools.filter.text.ecql.ECQL
 import org.locationtech.geomesa.convert.Modes.ErrorMode
 import org.locationtech.geomesa.tools.`export`.ExportFormat
 import org.locationtech.geomesa.utils.geotools.converters.FastConverter
-import org.locationtech.geomesa.utils.text.DurationParsing
 import org.locationtech.geomesa.utils.text.Suffixes.Memory
+import org.locationtech.geomesa.utils.text.{DurationParsing, TextTools}
 
 import java.util.Date
 import scala.concurrent.duration.Duration
@@ -60,13 +60,9 @@ object ParameterConverters {
 
   class ExportFormatConverter(name: String) extends BaseConverter[ExportFormat](name) {
     override def convert(value: String): ExportFormat = {
-      try {
-        ExportFormat(value).getOrElse {
-          throw new ParameterException(s"Invalid format '$value'. Valid values are " +
-            ExportFormat.Formats.flatMap(f => f.extensions +: f.name).distinct.mkString("'", "', '", "'"))
-        }
-      } catch {
-        case NonFatal(e) => throw new ParameterException(getErrorString(value, s"format: $e"))
+      ExportFormat(value).getOrElse {
+        val valid = ExportFormat.Formats.flatMap(f => f.extensions :+ f.name).distinct
+        throw new ParameterException(getErrorString(value, s"an export format. Valid formats are: ${TextTools.wordList(valid)}"))
       }
     }
   }
@@ -79,6 +75,20 @@ object ParameterConverters {
           throw new IllegalArgumentException("key-value pairs must be separated by a single '='")
         }
         (value.substring(0, i), value.substring(i + 1))
+      } catch {
+        case NonFatal(e) => throw new ParameterException(getErrorString(value, s"format: $e"))
+      }
+    }
+  }
+
+  class DateConverter(name: String) extends BaseConverter[Date](name) {
+    override def convert(value: String): Date = {
+      try {
+        val date = FastConverter.convert(value, classOf[Date])
+        if (date == null) {
+          throw new IllegalArgumentException(s"Could not convert $value to date")
+        }
+        date
       } catch {
         case NonFatal(e) => throw new ParameterException(getErrorString(value, s"format: $e"))
       }

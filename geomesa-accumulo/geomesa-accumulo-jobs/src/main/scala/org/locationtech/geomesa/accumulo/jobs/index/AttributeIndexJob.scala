@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -108,7 +108,7 @@ object AttributeIndexJob {
           (i.name == AttributeIndex.name || i.name == JoinIndex.name) &&
               i.attributes.headOption.exists(attributes.contains)
         }
-        wrapper = AccumuloWritableFeature.wrapper(sft, ds.adapter.groups, indices)
+        wrapper = WritableFeature.wrapper(sft, ds.adapter.groups)
         converters = indices.map(_.createConverter()).zipWithIndex
         colFamilyMappings = indices.map(ColumnFamilyMapper.apply).toIndexedSeq
         defaultVis = new ColumnVisibility()
@@ -123,7 +123,7 @@ object AttributeIndexJob {
             }
 
           case None =>
-            val names = indices.map(i => new Text(i.getTableNames(None).head)).toIndexedSeq
+            val names = indices.map(i => new Text(i.getTableName())).toIndexedSeq
             _ => names
         }
       }
@@ -218,13 +218,16 @@ class AttributeIndexJob extends Tool {
       AttributeIndexJob.setAttributes(job.getConfiguration, attributes.toSeq)
       AttributeIndexJob.setTypeName(job.getConfiguration, sft.getTypeName)
 
-      val config = new Properties()
-      config.put(ClientProperty.INSTANCE_NAME.getKey, parsedArgs.inInstanceId)
-      config.put(ClientProperty.INSTANCE_ZOOKEEPERS.getKey, parsedArgs.inZookeepers)
-      config.put(ClientProperty.AUTH_PRINCIPAL.getKey, parsedArgs.inUser)
-      config.put(ClientProperty.AUTH_TOKEN.getKey, parsedArgs.inPassword)
+      val props = AccumuloDataStoreFactory.buildAccumuloClientConfig(
+        java.util.Map.of(
+          AccumuloDataStoreParams.InstanceNameParam.key, parsedArgs.inInstanceId,
+          AccumuloDataStoreParams.ZookeepersParam.key, parsedArgs.inZookeepers,
+          AccumuloDataStoreParams.UserParam.key, parsedArgs.inUser,
+          AccumuloDataStoreParams.PasswordParam.key, parsedArgs.inPassword
+        )
+      )
 
-      AccumuloOutputFormat.configure().clientProperties(config).createTables(true).store(job)
+      AccumuloOutputFormat.configure().clientProperties(props).createTables(true).store(job)
 
       val result = job.waitForCompletion(true)
 

@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -93,7 +93,7 @@ abstract class AbstractFileSystemStorage(
         val baseDir = StorageUtils.baseDirectory(context.root, partition, metadata.leafStorage)
         p.files.flatMap { file =>
           val path = new Path(baseDir, file.name)
-          if (PathCache.exists(context.fc, path)) {
+          if (PathCache.exists(context.fs, path)) {
             Seq(StorageFilePath(file, path))
           } else {
             logger.warn(s"Inconsistent metadata for ${metadata.sft.getTypeName}: $path")
@@ -203,10 +203,10 @@ abstract class AbstractFileSystemStorage(
 
         val failures = ListBuffer.empty[Path]
         toCompact.foreach { file =>
-          if (!context.fc.delete(file.path, false)) {
+          if (!context.fs.delete(file.path, false)) {
             failures.append(file.path)
           }
-          PathCache.invalidate(context.fc, file.path)
+          PathCache.invalidate(context.fs, file.path)
         }
 
         if (failures.nonEmpty) {
@@ -235,7 +235,6 @@ abstract class AbstractFileSystemStorage(
 
     def pathAndObserver: WriterConfig = {
       val path = StorageUtils.nextFile(context.root, partition, metadata.leafStorage, extension, fileType)
-      PathCache.register(context.fc, path)
       val observer = if (observers.lengthCompare(2) < 0) {
         observers.headOption.map(_.apply(path))
       } else {
@@ -281,7 +280,7 @@ abstract class AbstractFileSystemStorage(
         writer.close()
         writer = null
         // adjust our estimate to account for the actual bytes written
-        total += context.fc.getFileStatus(path).getLen
+        total += context.fs.getFileStatus(path).getLen
         estimator.update(total, count)
         remaining = estimator.estimate(0L)
       }

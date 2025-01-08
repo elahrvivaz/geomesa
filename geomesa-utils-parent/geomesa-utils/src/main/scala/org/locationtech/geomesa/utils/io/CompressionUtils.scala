@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -24,7 +24,9 @@ trait CompressionUtils {
   def isCompressedFilename(filename: String): Boolean
   def getUncompressedFilename(filename: String): String
   def getCompressedFilename(filename: String): String
-  def compress(is: InputStream): InputStream
+  @deprecated("misleading name - replaced with decompress")
+  def compress(is: InputStream): InputStream = decompress(is)
+  def decompress(is: InputStream): InputStream
 }
 
 object CompressionUtils {
@@ -59,7 +61,7 @@ object CompressionUtils {
       org.apache.commons.compress.compressors.gzip.GzipUtils.getUncompressedFilename(filename)
     override def getCompressedFilename(filename: String): String =
       org.apache.commons.compress.compressors.gzip.GzipUtils.getCompressedFilename(filename)
-    override def compress(is: InputStream): InputStream = new GZIPInputStream(is)
+    override def decompress(is: InputStream): InputStream = new GZIPInputStream(is)
   }
 
   case object XZUtils extends CompressionUtils {
@@ -69,7 +71,7 @@ object CompressionUtils {
       org.apache.commons.compress.compressors.xz.XZUtils.getUncompressedFilename(filename)
     override def getCompressedFilename(filename: String): String =
       org.apache.commons.compress.compressors.xz.XZUtils.getCompressedFilename(filename)
-    override def compress(is: InputStream): InputStream = new XZCompressorInputStream(is)
+    override def decompress(is: InputStream): InputStream = new XZCompressorInputStream(is)
   }
 
   case object BZip2Utils extends CompressionUtils {
@@ -79,6 +81,6 @@ object CompressionUtils {
       org.apache.commons.compress.compressors.bzip2.BZip2Utils.getUncompressedFilename(filename)
     override def getCompressedFilename(filename: String): String =
       org.apache.commons.compress.compressors.bzip2.BZip2Utils.getCompressedFilename(filename)
-    override def compress(is: InputStream): InputStream = new BZip2CompressorInputStream(is)
+    override def decompress(is: InputStream): InputStream = new BZip2CompressorInputStream(is)
   }
 }

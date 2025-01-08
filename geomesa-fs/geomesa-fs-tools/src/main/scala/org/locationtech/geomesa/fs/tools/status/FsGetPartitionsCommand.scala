@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -21,7 +21,7 @@ class FsGetPartitionsCommand extends FsDataStoreCommand {
 
   override def execute(): Unit = withDataStore { ds =>
     Command.user.info(s"Partitions for type ${params.featureName}:")
-    ds.storage(params.featureName).metadata.getPartitions().map(_.name).sorted.foreach(Command.output.info)
+    ds.storage(params.featureName).metadata.getPartitions().map(_.name).sorted.foreach(p => Command.output.info(p))
   }
 }
 

@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -57,7 +57,7 @@ class GeoMesaParam[T <: AnyRef](
     desc,
     !optional,
     GeoMesaParam.sample(default),
-    GeoMesaParam.metadata(password, largeText, extension, enumerations, supportsNiFiExpressions)
+    GeoMesaParam.metadata(password, largeText, extension, enumerations, supportsNiFiExpressions, deprecatedKeys.contains(_key))
   ) with LazyLogging {
 
   private val deprecated = deprecatedKeys ++ deprecatedParams.map(_.key)
@@ -265,7 +265,8 @@ object GeoMesaParam {
       largeText: Boolean,
       extension: String,
       enumerations: Seq[AnyRef],
-      supportsNiFiExpressions: Boolean): java.util.Map[String, AnyRef] = {
+      supportsNiFiExpressions: Boolean,
+      deprecated: Boolean = false): java.util.Map[String, AnyRef] = {
     var opt: Option[java.util.Map[String, AnyRef]] = None
     lazy val map = {
       val m = new java.util.HashMap[String, AnyRef]
@@ -289,6 +290,9 @@ object GeoMesaParam {
     }
     if (supportsNiFiExpressions) {
       map.put(SupportsNiFiExpressions, java.lang.Boolean.TRUE)
+    }
+    if (deprecated) {
+      map.put(Parameter.DEPRECATED, java.lang.Boolean.TRUE)
     }
     opt.map(Collections.unmodifiableMap[String,AnyRef]).orNull
   }

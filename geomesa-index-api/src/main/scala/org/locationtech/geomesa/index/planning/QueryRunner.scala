@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -8,6 +8,7 @@
 
 package org.locationtech.geomesa.index.planning
 
+import com.google.gson.GsonBuilder
 import com.typesafe.scalalogging.Logger
 import org.geotools.api.data.Query
 import org.geotools.api.feature.simple.{SimpleFeature, SimpleFeatureType}
@@ -138,6 +139,7 @@ trait QueryRunner {
 object QueryRunner {
 
   private val logger = Logger(LoggerFactory.getLogger(classOf[QueryRunner]))
+  private val gson = new GsonBuilder().disableHtmlEscaping().serializeNulls().create()
 
   // used for configuring input queries
   private val default: QueryRunner = new QueryRunner {
@@ -154,6 +156,6 @@ object QueryRunner {
 
   case class QueryResult(schema: SimpleFeatureType, hints: Hints, iterator: () => CloseableIterator[SimpleFeature]) {
     override def toString: String =
-      s"QueryResult(schema=${SimpleFeatureTypes.encodeType(schema)},hints=${ViewParams.getReadableHints(hints)})"
+      s"QueryResult(schema=${SimpleFeatureTypes.encodeType(schema)},hints=${gson.toJson(ViewParams.getReadableHints(hints))})"
   }
 }

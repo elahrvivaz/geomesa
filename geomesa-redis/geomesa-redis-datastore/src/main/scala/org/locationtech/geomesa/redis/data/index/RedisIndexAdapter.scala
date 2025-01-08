@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -18,7 +18,7 @@ import org.locationtech.geomesa.index.api.WritableFeature.FeatureWrapper
 import org.locationtech.geomesa.index.api._
 import org.locationtech.geomesa.index.index.id.IdIndex
 import org.locationtech.geomesa.index.planning.LocalQueryRunner
-import org.locationtech.geomesa.index.planning.LocalQueryRunner.{ArrowDictionaryHook, LocalTransformReducer}
+import org.locationtech.geomesa.index.planning.LocalQueryRunner.LocalTransformReducer
 import org.locationtech.geomesa.redis.data.index.RedisAgeOff.AgeOffWriter
 import org.locationtech.geomesa.redis.data.index.RedisIndexAdapter.{RedisIndexWriter, RedisResultsToFeatures}
 import org.locationtech.geomesa.redis.data.index.RedisQueryPlan.{EmptyPlan, ZLexPlan}
@@ -65,8 +65,7 @@ class RedisIndexAdapter(ds: RedisDataStore) extends IndexAdapter[RedisDataStore]
 
     val reducer = {
       val visible = Some(LocalQueryRunner.visible(Some(ds.config.authProvider)))
-      val hook = Some(ArrowDictionaryHook(ds.stats, filter.filter))
-      Some(new LocalTransformReducer(strategy.index.sft, ecql, visible, hints.getTransform, hints, hook))
+      Some(new LocalTransformReducer(strategy.index.sft, ecql, visible, hints.getTransform, hints))
     }
 
     if (byteRanges.isEmpty) { EmptyPlan(filter, reducer) } else {
@@ -230,10 +229,8 @@ object RedisIndexAdapter extends LazyLogging {
     }
 
     private val tables = indices.toArray.map { index =>
-      index.getTableNames(partition) match {
-        case Seq(t) => t.getBytes(StandardCharsets.UTF_8) // should always be writing to a single table here
-        case names => throw new IllegalStateException(s"Expected a single table but got: ${names.mkString(", ")}")
-      }
+      // should always be writing to a single table here
+      index.getTableName(partition).getBytes(StandardCharsets.UTF_8)
     }
 
     private val inserts = Array.fill[java.util.Map[Array[Byte], java.lang.Double]](tables.length)(new java.util.HashMap[Array[Byte], java.lang.Double]())

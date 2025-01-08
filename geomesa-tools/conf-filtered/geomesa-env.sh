@@ -167,15 +167,14 @@ function get_classpath_version() {
 # find_jars [path] [bool: do not descend into sub directories]
 function find_jars() {
   local home="$1"
-  local jars=()
+  local jars=""
   if [[ -d "${home}" ]]; then
     local find_args
-    find_args=("-type" "f" "-iname" "*.jar" "-not" "-iname" "*-sources.jar" "-not" "-iname" "*-tests.jar" "-print0")
+    find_args=("-type" "f" "-iname" "*.jar" "-not" "-iname" "*-sources.jar" "-not" "-iname" "*-tests.jar")
     if [[ "$2" == "true" ]]; then
-      find_args+=("-maxdepth" "1")
+      find_args=("-maxdepth" "1" "${find_args[@]}")
     fi
-    # read results of find into jars array
-    mapfile -d '' jars < <(find "-L" "$home" "${find_args[@]}")
+    jars="$(find "-L" "$home" "${find_args[@]}" | paste -sd: -)"
     if [[ -d "${home}/native" ]]; then
       # TODO this doesn't export back to the parent shell... fix it
       if [[ -z "${JAVA_LIBRARY_PATH}" ]]; then
@@ -185,8 +184,7 @@ function find_jars() {
       fi
     fi
   fi
-  ret=$(IFS=: ; echo "${jars[*]}")
-  echo "$ret"
+  echo "$jars"
 }
 
 # args: destination for missing jars, current classpath, gavs, '--no-prompt'
@@ -340,17 +338,15 @@ function expand_classpath() {
   local classpath="$1"
   local expanded=""
 
-  for e in ${classpath//:/ }; do
-    if [[ $e = *\* && -d "${e%\*}" ]]; then
-      for f in ls $e; do
-        expanded+=":${e%\*}$f"
-      done
+  for entry in ${classpath//:/ }; do
+    if [[ $entry = *\* && -d "${entry%\*}" ]]; then
+      expanded+=":$(find "-L" "${entry%\*}" "-maxdepth" "1" "-type" "f" "-iname" "*.jar" "-not" "-iname" "*-sources.jar" "-not" "-iname" "*-tests.jar" | paste -sd: -)"
     else
-     expanded+=":$e"
+     expanded+=":$entry"
     fi
   done
 
-  echo "${expanded:1}"
+  fix_classpath_format "${expanded:1}"
 }
 
 # remove leading/trailing/double colons

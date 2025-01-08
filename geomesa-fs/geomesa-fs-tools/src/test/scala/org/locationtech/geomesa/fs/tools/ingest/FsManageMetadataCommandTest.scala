@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -61,7 +61,7 @@ class FsManageMetadataCommandTest extends Specification {
         val files = storage.metadata.getPartitions().flatMap(_.files.map(_.name)).toList
         // move a file - it's not in the right partition so it won't be matched correctly by filters,
         // but it's good enough for a test
-        storage.context.fc.rename(new Path(storage.context.root, "2022"), new Path(storage.context.root, "2019"))
+        storage.context.fs.rename(new Path(storage.context.root, "2022"), new Path(storage.context.root, "2019"))
         // verify we can't retrieve the moved file
         SelfClosingIterator(ds.getFeatureReader(new Query(sft.getTypeName), Transaction.AUTO_COMMIT)).toList must
             containTheSameElementsAs(features.take(2))
@@ -94,7 +94,7 @@ class FsManageMetadataCommandTest extends Specification {
         }
         val storage = ds.storage(sft.getTypeName)
         // delete a file
-        storage.context.fc.delete(new Path(storage.context.root, "2022"), true)
+        storage.context.fs.delete(new Path(storage.context.root, "2022"), true)
         // delete a partition from the metadata
         storage.metadata.getPartition("2021/01/01") match {
           case None => ko("Expected Some for partition but got none")

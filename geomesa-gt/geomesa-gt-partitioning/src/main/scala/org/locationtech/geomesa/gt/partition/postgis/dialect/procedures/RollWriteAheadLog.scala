@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -77,7 +77,7 @@ object RollWriteAheadLog extends SqlProcedure with CronSchedule {
        |        END IF;
        |
        |        -- requires SHARE UPDATE EXCLUSIVE
-       |        EXECUTE 'CREATE TABLE IF NOT EXISTS ${info.schema.quoted}.' || quote_ident(next_partition) || '(' ||
+       |        EXECUTE 'CREATE ${info.walLogSQL} TABLE IF NOT EXISTS ${info.schema.quoted}.' || quote_ident(next_partition) || '(' ||
        |          'CONSTRAINT ' || quote_ident(next_partition || '_pkey') ||
        |          ' PRIMARY KEY (fid, ${info.cols.dtg.quoted})' || index_space || ')' ||
        |          ' INHERITS (${table.name.qualified})${table.storage.opts}' || partition_tablespace;

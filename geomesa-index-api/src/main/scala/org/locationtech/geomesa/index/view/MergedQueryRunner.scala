@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -142,7 +142,7 @@ class MergedQueryRunner(
     val arrowSft = QueryPlanner.extractQueryTransforms(sft, query).map(_._1).getOrElse(sft)
     val sort = hints.getArrowSort
     val batchSize = ArrowScan.getBatchSize(hints)
-    val encoding = SimpleFeatureEncoding.min(hints.isArrowIncludeFid, hints.isArrowProxyFid)
+    val encoding = SimpleFeatureEncoding.min(hints.isArrowIncludeFid, hints.isArrowProxyFid, hints.isFlipAxisOrder)
     val ipcOpts = FormatVersion.options(hints.getArrowFormatVersion.getOrElse(FormatVersion.ArrowFormatVersion.get))
 
     val dictionaryFields = hints.getArrowDictionaryFields
@@ -167,7 +167,7 @@ class MergedQueryRunner(
         val copy = SimpleFeatureTypes.immutable(schema, sft.getUserData) // copy default dtg, etc if necessary
         // note: we don't need to pass in the transform or filter, as the transform should have already been
         // applied and the dictionaries calculated up front (if needed)
-        LocalQueryRunner.transform(copy, CloseableIterator(reader), None, hints, None)
+        LocalQueryRunner.transform(copy, CloseableIterator(reader), None, hints)
       }
     }
 
@@ -185,7 +185,7 @@ class MergedQueryRunner(
       } else {
         // the store just returned regular features, do the density processing here
         val copy = SimpleFeatureTypes.immutable(schema, sft.getUserData) // copy default dtg, etc if necessary
-        LocalQueryRunner.transform(copy, CloseableIterator(reader), None, hints, None)
+        LocalQueryRunner.transform(copy, CloseableIterator(reader), None, hints)
       }
     }
 
@@ -203,7 +203,7 @@ class MergedQueryRunner(
       } else {
         // the store just returned regular features, do the stats processing here
         val copy = SimpleFeatureTypes.immutable(schema, sft.getUserData) // copy default dtg, etc if necessary
-        LocalQueryRunner.transform(copy, CloseableIterator(reader), None, hints, None)
+        LocalQueryRunner.transform(copy, CloseableIterator(reader), None, hints)
       }
     }
 
@@ -224,7 +224,7 @@ class MergedQueryRunner(
       } else {
         // the store just returned regular features, do the bin processing here
         val copy = SimpleFeatureTypes.immutable(schema, sft.getUserData) // copy default dtg, etc if necessary
-        LocalQueryRunner.transform(copy, CloseableIterator(reader), None, hints, None)
+        LocalQueryRunner.transform(copy, CloseableIterator(reader), None, hints)
       }
     }
 

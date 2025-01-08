@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -43,7 +43,8 @@ class DictionaryBuildingWriter(
     dictionaries: Seq[String],
     encoding: SimpleFeatureEncoding,
     ipcOpts: IpcOption,
-    maxSize: Int = Short.MaxValue
+    maxSize: Int = Short.MaxValue,
+    flattenStruct: Boolean = false
   ) extends Closeable {
 
   import org.locationtech.geomesa.utils.geotools.RichAttributeDescriptors.RichAttributeDescriptor
@@ -63,7 +64,13 @@ class DictionaryBuildingWriter(
 
   private val root = {
     val fields = Collections.singletonList[Field](underlying.getField)
-    new VectorSchemaRoot(fields, Collections.singletonList[FieldVector](underlying), 0)
+
+    val potentialRoot = new VectorSchemaRoot(fields, Collections.singletonList[FieldVector](underlying), 0)
+    if(flattenStruct){
+      new VectorSchemaRoot(potentialRoot.getVector(sft.getTypeName))
+    } else {
+      potentialRoot
+    }
   }
 
   private var index = 0

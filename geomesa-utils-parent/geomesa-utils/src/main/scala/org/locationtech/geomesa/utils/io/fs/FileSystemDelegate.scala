@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -43,7 +43,7 @@ trait FileSystemDelegate extends LazyLogging {
   def getUrl(path: String): URL
 }
 
-object FileSystemDelegate {
+object FileSystemDelegate extends LazyLogging {
 
   /**
     * Creation mode for files
@@ -125,10 +125,22 @@ object FileSystemDelegate {
       * Open the file for writing
       *
       * @param mode write mode
-      * @param createParents if the file does not exist, create its parents. Note that this only makes sense
-      *                      with `CreateMode.Create`
       */
-    def write(mode: CreateMode, createParents: Boolean = false): OutputStream
+    def write(mode: CreateMode): OutputStream
+
+    /**
+     * Open the file for writing
+     *
+     * @param mode write mode
+     * @param createParents create parent dirs as necessary
+     */
+    @deprecated("createParents is always true")
+    def write(mode: CreateMode, createParents: Boolean): OutputStream = {
+      if (!createParents) {
+        logger.warn("Call to write with createParents=false, which is not supported")
+      }
+      write(mode)
+    }
 
     /**
       * Delete the file

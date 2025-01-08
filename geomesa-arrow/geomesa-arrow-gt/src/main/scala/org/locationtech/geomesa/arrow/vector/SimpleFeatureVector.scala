@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -132,16 +132,16 @@ object SimpleFeatureVector {
   val DescriptorKey   = "descriptor"
   val OptionsKey      = "options"
 
-  case class SimpleFeatureEncoding(fids: Option[Encoding], geometry: Encoding, date: Encoding)
+  case class SimpleFeatureEncoding(fids: Option[Encoding], geometry: Encoding, date: Encoding, flipAxisOrder: Boolean)
 
   object SimpleFeatureEncoding {
 
-    val Min: SimpleFeatureEncoding = SimpleFeatureEncoding(Some(Encoding.Min), Encoding.Min, Encoding.Min)
-    val Max: SimpleFeatureEncoding = SimpleFeatureEncoding(Some(Encoding.Max), Encoding.Max, Encoding.Max)
+    val Min: SimpleFeatureEncoding = SimpleFeatureEncoding(Some(Encoding.Min), Encoding.Min, Encoding.Min, flipAxisOrder = false)
+    val Max: SimpleFeatureEncoding = SimpleFeatureEncoding(Some(Encoding.Max), Encoding.Max, Encoding.Max, flipAxisOrder = false)
 
-    def min(includeFids: Boolean, proxyFids: Boolean = false): SimpleFeatureEncoding = {
+    def min(includeFids: Boolean, proxyFids: Boolean = false, flipAxisOrder: Boolean = false): SimpleFeatureEncoding = {
       val fids = if (includeFids) { Some(if (proxyFids) { Encoding.Min } else { Encoding.Max }) } else { None }
-      SimpleFeatureEncoding(fids, Encoding.Min, Encoding.Min)
+      SimpleFeatureEncoding(fids, Encoding.Min, Encoding.Min, flipAxisOrder)
     }
 
     object Encoding extends Enumeration {
@@ -245,7 +245,7 @@ object SimpleFeatureVector {
       val isLong = dateVector.exists(_.isInstanceOf[BigIntVector])
       if (isLong) { Encoding.Max } else { Encoding.Min }
     }
-    val encoding = SimpleFeatureEncoding(fidEncoding, geomPrecision, datePrecision)
+    val encoding = SimpleFeatureEncoding(fidEncoding, geomPrecision, datePrecision, flipAxisOrder = false)
 
     (sft, encoding)
   }

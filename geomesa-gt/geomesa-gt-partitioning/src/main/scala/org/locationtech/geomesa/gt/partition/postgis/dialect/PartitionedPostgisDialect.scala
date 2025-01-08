@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -9,6 +9,7 @@
 package org.locationtech.geomesa.gt.partition.postgis.dialect
 
 import com.typesafe.scalalogging.StrictLogging
+import org.geotools.api.data.Query
 import org.geotools.api.feature.`type`.{AttributeDescriptor, GeometryDescriptor}
 import org.geotools.api.feature.simple.SimpleFeatureType
 import org.geotools.api.filter.Filter
@@ -22,8 +23,9 @@ import org.locationtech.geomesa.gt.partition.postgis.dialect.functions.{LogClean
 import org.locationtech.geomesa.gt.partition.postgis.dialect.procedures._
 import org.locationtech.geomesa.gt.partition.postgis.dialect.tables._
 import org.locationtech.geomesa.gt.partition.postgis.dialect.triggers.{DeleteTrigger, InsertTrigger, UpdateTrigger, WriteAheadTrigger}
+import org.locationtech.geomesa.index.planning.QueryInterceptor.QueryInterceptorFactory
 import org.locationtech.geomesa.utils.geotools.{Conversions, SimpleFeatureTypes}
-import org.locationtech.geomesa.utils.io.WithClose
+import org.locationtech.geomesa.utils.io.{CloseWithLogging, WithClose}
 import org.locationtech.jts.geom._
 
 import java.sql.{Connection, DatabaseMetaData, ResultSet, Types}
@@ -53,6 +55,12 @@ class PartitionedPostgisDialect(store: JDBCDataStore) extends PostGISDialect(sto
   // state for checking when we want to use the write_ahead table in place of the main view
   private val dropping = new ThreadLocal[Boolean]() {
     override def initialValue(): Boolean = false
+  }
+
+  private val interceptors = {
+    val factory = QueryInterceptorFactory(store)
+    sys.addShutdownHook(CloseWithLogging(factory)) // we don't have any API hooks to dispose of things...
+    factory
   }
 
   /**
@@ -240,7 +248,10 @@ class PartitionedPostgisDialect(store: JDBCDataStore) extends PostGISDialect(sto
 
   override def splitFilter(filter: Filter, schema: SimpleFeatureType): Array[Filter] = {
     import PartitionedPostgisDialect.Config.ConfigConversions
-    super.splitFilter(SplitFilterVisitor(filter, schema.isFilterWholeWorld), schema)
+    val simplified = SplitFilterVisitor(filter, schema.isFilterWholeWorld)
+    val query = new Query(schema.getTypeName, simplified)
+    interceptors(schema).foreach(_.rewrite(query))
+    super.splitFilter(query.getFilter, schema)
   }
 
   override def registerClassToSqlMappings(mappings: java.util.Map[Class[_], Integer]): Unit = {
@@ -406,6 +417,9 @@ object PartitionedPostgisDialect {
     val WriteAheadTableSpace = "pg.partitions.tablespace.wa"
     val WriteAheadPartitionsTableSpace = "pg.partitions.tablespace.wa-partitions"
     val MainTableSpace = "pg.partitions.tablespace.main"
+
+    // set postgres table wal logging
+    val WalLogEnabled = "pg.wal.enabled"
 
     implicit class ConfigConversions(val sft: SimpleFeatureType) extends AnyVal {
       def getIntervalHours: Int = Option(sft.getUserData.get(IntervalHours)).map(int).getOrElse(6)

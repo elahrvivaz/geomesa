@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -158,7 +158,13 @@ package object dialect {
       tables: Tables,
       cols: Columns,
       partitions: PartitionInfo,
-      userData: Map[String, String] = Map.empty)
+      userData: Map[String, String] = Map.empty) {
+    val walLogSQL: String = if (userData.getOrElse(Config.WalLogEnabled, "true").toBoolean) {
+      ""
+    } else {
+      " UNLOGGED "
+    }
+  }
 
   object TypeInfo {
 

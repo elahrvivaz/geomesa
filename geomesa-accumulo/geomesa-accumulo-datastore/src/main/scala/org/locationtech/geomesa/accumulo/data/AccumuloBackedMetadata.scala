@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -12,7 +12,7 @@ import org.apache.accumulo.core.client.{AccumuloClient, BatchWriter}
 import org.apache.accumulo.core.data.{Mutation, Range, Value}
 import org.apache.accumulo.core.security.Authorizations
 import org.apache.hadoop.io.Text
-import org.locationtech.geomesa.accumulo.util.{GeoMesaBatchWriterConfig, TableUtils}
+import org.locationtech.geomesa.accumulo.util.{GeoMesaBatchWriterConfig, TableManager}
 import org.locationtech.geomesa.index.metadata.{GeoMesaMetadata, KeyValueStoreMetadata, MetadataSerializer}
 import org.locationtech.geomesa.utils.collection.CloseableIterator
 import org.locationtech.geomesa.utils.io.{CloseQuietly, CloseWithLogging}
@@ -32,7 +32,7 @@ class AccumuloBackedMetadata[T](val connector: AccumuloClient, val table: String
 
   override protected def checkIfTableExists: Boolean = connector.tableOperations().exists(table)
 
-  override protected def createTable(): Unit = TableUtils.createTableIfNeeded(connector, table)
+  override protected def createTable(): Unit = new TableManager(connector).ensureTableExists(table)
 
   override protected def createEmptyBackup(timestamp: String): AccumuloBackedMetadata[T] =
     new AccumuloBackedMetadata(connector, s"${table}_${timestamp}_bak", serializer)

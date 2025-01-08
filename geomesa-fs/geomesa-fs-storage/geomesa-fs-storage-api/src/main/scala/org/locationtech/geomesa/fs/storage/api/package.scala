@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -9,7 +9,7 @@
 package org.locationtech.geomesa.fs.storage
 
 import org.apache.hadoop.conf.Configuration
-import org.apache.hadoop.fs.{FileContext, Path}
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.geotools.api.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.geotools.api.filter.Filter
 
@@ -22,11 +22,15 @@ package object api {
   /**
     * Holder for file system references
     *
-    * @param fc file context
+    * @param fs file system
     * @param conf configuration
     * @param root root path
     */
-  case class FileSystemContext(fc: FileContext, conf: Configuration, root: Path, namespace: Option[String] = None)
+  case class FileSystemContext(fs: FileSystem, conf: Configuration, root: Path, namespace: Option[String] = None)
+
+  object FileSystemContext {
+    def apply(root: Path, conf: Configuration): FileSystemContext = FileSystemContext(root.getFileSystem(conf), conf, root)
+  }
 
   /**
     * Identifier plus configuration

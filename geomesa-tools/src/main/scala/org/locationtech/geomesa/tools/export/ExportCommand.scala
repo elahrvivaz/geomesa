@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -601,7 +601,7 @@ object ExportCommand extends LazyLogging {
 
     // lowest level - keep track of the bytes we write
     // do this before any compression, buffering, etc so we get an accurate count
-    private val counter = new CountingOutputStream(out.write(CreateMode.Create, createParents = true))
+    private val counter = new CountingOutputStream(out.write(CreateMode.Create))
     private val stream = {
       val compressed = gzip match {
         case None => counter

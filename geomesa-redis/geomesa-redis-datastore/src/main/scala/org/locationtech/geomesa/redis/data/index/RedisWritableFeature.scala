@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -41,10 +41,11 @@ class RedisWritableFeature(
   lazy val ttl: Double = feature.getUserData.get(RedisAgeOff.TtlUserDataKey).asInstanceOf[java.lang.Long].toDouble
 
   // we don't use column families, column qualifiers or visibilities in the the rows
-  override lazy val values: Seq[KeyValue] =
-    Seq(KeyValue(EmptyBytes, EmptyBytes, EmptyBytes, serializer.serialize(feature)))
+  override lazy val values: Seq[KeyValue] = Seq(KeyValue(EmptyBytes, EmptyBytes, EmptyBytes, serializer.serialize(feature)))
 
   override lazy val id: Array[Byte] = idSerializer(feature.getID)
+
+  override def reducedValues: Seq[KeyValue] = throw new NotImplementedError()
 }
 
 object RedisWritableFeature {

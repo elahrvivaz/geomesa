@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -74,7 +74,7 @@ class HBaseDataStore(con: ConnectionWrapper, override val config: HBaseDataStore
     // just check the first table available
     val versions = getTypeNames.iterator.map(getSchema).flatMap { sft =>
       manager.indices(sft).iterator.flatMap { index =>
-        index.getTableNames(None).flatMap { table =>
+        index.getTableNames().flatMap { table =>
           try {
             val name = TableName.valueOf(table)
             if (connection.getAdmin.tableExists(name)) {

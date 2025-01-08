@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -17,13 +17,11 @@ import org.apache.accumulo.core.security.Authorizations
 import org.apache.hadoop.security.UserGroupInformation
 import org.geotools.api.data.Query
 import org.geotools.api.feature.simple.SimpleFeatureType
-import org.locationtech.geomesa.accumulo.audit.AccumuloAuditService
 import org.locationtech.geomesa.accumulo.data.AccumuloBackedMetadata.SingleRowAccumuloMetadata
 import org.locationtech.geomesa.accumulo.data.AccumuloDataStoreFactory.AccumuloDataStoreConfig
 import org.locationtech.geomesa.accumulo.data.stats._
 import org.locationtech.geomesa.accumulo.index._
 import org.locationtech.geomesa.accumulo.iterators.{AgeOffIterator, DtgAgeOffIterator, ProjectVersionIterator, VisibilityIterator}
-import org.locationtech.geomesa.accumulo.util.TableUtils
 import org.locationtech.geomesa.index.api.GeoMesaFeatureIndex
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStore
 import org.locationtech.geomesa.index.index.attribute.AttributeIndex
@@ -89,16 +87,12 @@ class AccumuloDataStore(val connector: AccumuloClient, override val config: Accu
 
   override def delete(): Unit = {
     // note: don't delete the query audit table
-    val all = getTypeNames.toSeq.flatMap(getAllTableNames).distinct
-    val toDelete = config.audit match {
-      case Some((a: AccumuloAuditService, _, _)) => all.filter(_ != a.table)
-      case _ => all
-    }
+    val toDelete = getTypeNames.toSeq.flatMap(getAllTableNames).distinct.filter(_ != config.auditWriter.table)
     adapter.deleteTables(toDelete)
   }
 
   override def getAllTableNames(typeName: String): Seq[String] = {
-    val others = Seq(stats.metadata.table) ++ config.audit.map(_._1.asInstanceOf[AccumuloAuditService].table).toSeq
+    val others = Seq(stats.metadata.table) :+ config.auditWriter.table
     super.getAllTableNames(typeName) ++ others
   }
 
@@ -158,24 +152,33 @@ class AccumuloDataStore(val connector: AccumuloClient, override val config: Accu
   override protected def preSchemaCreate(sft: SimpleFeatureType): Unit = {
     import org.locationtech.geomesa.index.conf.SchemaProperties.ValidateDistributedClasspath
 
-    // validate that the accumulo runtime is available
-    val namespace = config.catalog.indexOf('.') match {
-      case -1 => ""
-      case i  => config.catalog.substring(0, i)
-    }
-    TableUtils.createNamespaceIfNeeded(connector, namespace)
-    val canLoad = connector.namespaceOperations().testClassLoad(namespace,
-      classOf[ProjectVersionIterator].getName, classOf[SortedKeyValueIterator[_, _]].getName)
+    // call super first so that user data keys are updated
+    super.preSchemaCreate(sft)
 
-    if (!canLoad) {
-      val msg = s"Could not load GeoMesa distributed code from the Accumulo classpath for table '${config.catalog}'"
-      logger.error(msg)
-      if (ValidateDistributedClasspath.toBoolean.contains(true)) {
-        val nsMsg = if (namespace.isEmpty) { "" } else { s" for the namespace '$namespace'" }
-        throw new RuntimeException(s"$msg. You may override this check by setting the system property " +
+    def getNamespace(prefix: String): String = prefix.indexOf('.') match {
+      case -1 => ""
+      case i  => prefix.substring(0, i)
+    }
+
+    val prefixes = Seq(config.catalog) ++ sft.getIndices.flatMap(i => sft.getTablePrefix(i.name))
+    prefixes.map(getNamespace).distinct.foreach { namespace =>
+      if (namespace.nonEmpty) {
+        adapter.ensureNamespaceExists(namespace)
+      }
+      // validate that the accumulo runtime is available
+      val canLoad = connector.namespaceOperations().testClassLoad(namespace,
+        classOf[ProjectVersionIterator].getName, classOf[SortedKeyValueIterator[_, _]].getName)
+
+      if (!canLoad) {
+        val msg = s"Could not load GeoMesa distributed code from the Accumulo classpath"
+        logger.error(s"$msg for catalog ${config.catalog}")
+        if (ValidateDistributedClasspath.toBoolean.contains(true)) {
+          val nsMsg = if (namespace.isEmpty) { "" } else { s" for the namespace '$namespace'" }
+          throw new RuntimeException(s"$msg. You may override this check by setting the system property " +
             s"'${ValidateDistributedClasspath.property}=false'. Otherwise, please verify that the appropriate " +
             s"JARs are installed$nsMsg - see http://www.geomesa.org/documentation/user/accumulo/install.html" +
             "#installing-the-accumulo-distributed-runtime-library")
+        }
       }
     }
 
@@ -183,9 +186,6 @@ class AccumuloDataStore(val connector: AccumuloClient, override val config: Accu
       throw new IllegalArgumentException("Attribute level visibility only supports up to 255 attributes")
     }
 
-    super.preSchemaCreate(sft)
-
-    // note: dtg should be set appropriately before calling this method
     sft.getDtgField.foreach { dtg =>
       if (sft.getIndices.exists(i => i.name == JoinIndex.name && i.attributes.headOption.contains(dtg))) {
         if (!GeoMesaSchemaValidator.declared(sft, OverrideDtgJoin)) {
@@ -204,6 +204,7 @@ class AccumuloDataStore(val connector: AccumuloClient, override val config: Accu
     super.onSchemaCreated(sft)
     if (sft.statsEnabled) {
       // configure the stats combining iterator on the table for this sft
+      adapter.ensureTableExists(stats.metadata.table)
       stats.configureStatCombiner(connector, sft)
     }
     sft.getFeatureExpiration.foreach {
@@ -274,6 +275,7 @@ class AccumuloDataStore(val connector: AccumuloClient, override val config: Accu
       stats.removeStatCombiner(connector, previous)
     }
     if (sft.statsEnabled) {
+      adapter.ensureTableExists(stats.metadata.table)
       stats.configureStatCombiner(connector, sft)
     }
 
@@ -330,7 +332,7 @@ class AccumuloDataStore(val connector: AccumuloClient, override val config: Accu
             new SingleRowAccumuloMetadata[Stat](stats.metadata).migrate(typeName)
           }
         } finally {
-          lock.release()
+          lock.close()
         }
         sft = super.getSchema(typeName)
       }
@@ -376,11 +378,12 @@ class AccumuloDataStore(val connector: AccumuloClient, override val config: Accu
           val lock = acquireCatalogLock()
           try {
             if (!metadata.read(typeName, configuredKey, cache = false).contains("true")) {
+              adapter.ensureTableExists(stats.metadata.table)
               stats.configureStatCombiner(connector, sft)
               metadata.insert(typeName, configuredKey, "true")
             }
           } finally {
-            lock.release()
+            lock.close()
           }
         }
         // kick off asynchronous stats run for the existing data - this will set the stat date

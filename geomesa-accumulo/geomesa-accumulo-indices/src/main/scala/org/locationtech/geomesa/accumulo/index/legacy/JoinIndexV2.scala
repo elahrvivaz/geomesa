@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -12,7 +12,7 @@ import org.locationtech.geomesa.accumulo.index.AttributeJoinIndex
 import org.locationtech.geomesa.utils.index.IndexMode.IndexMode
 import org.geotools.api.feature.simple.SimpleFeatureType
 // noinspection ScalaDeprecation
-import org.locationtech.geomesa.accumulo.index.IndexValueEncoder.IndexValueEncoderImpl
+import org.locationtech.geomesa.features.kryo.serialization.IndexValueSerializer.IndexValueEncoderImpl
 import org.locationtech.geomesa.index.api.{RowKeyValue, WritableFeature}
 import org.locationtech.geomesa.index.geotools.GeoMesaDataStore
 import org.locationtech.geomesa.index.index.attribute.legacy.AttributeIndexV2

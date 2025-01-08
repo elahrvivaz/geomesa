@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -12,13 +12,16 @@ import com.typesafe.scalalogging.LazyLogging
 import org.geotools.api.data._
 import org.geotools.api.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.geotools.api.filter.Filter
+import org.geotools.api.filter.MultiValuedFilter.MatchAction
 import org.geotools.data._
+import org.geotools.factory.CommonFactoryFinder
 import org.geotools.feature.simple.SimpleFeatureBuilder
 import org.geotools.filter.text.ecql.ECQL
 import org.geotools.jdbc.JDBCDataStore
 import org.geotools.referencing.CRS
 import org.junit.runner.RunWith
 import org.locationtech.geomesa.filter.FilterHelper
+import org.locationtech.geomesa.gt.partition.postgis.dialect.PartitionedPostgisDialect.Config.WalLogEnabled
 import org.locationtech.geomesa.gt.partition.postgis.dialect.procedures.{DropAgedOffPartitions, PartitionMaintenance, RollWriteAheadLog}
 import org.locationtech.geomesa.gt.partition.postgis.dialect.tables.{PartitionTablespacesTable, PrimaryKeyTable, SequenceTable, UserDataTable}
 import org.locationtech.geomesa.gt.partition.postgis.dialect.{PartitionedPostgisDialect, PartitionedPostgisPsDialect, TableConfig, TypeInfo}
@@ -67,7 +70,7 @@ class PartitionedPostgisDataStoreTest extends Specification with BeforeAfterAll 
 
   lazy val features = Seq.tabulate(10) { i =>
     val builder = new SimpleFeatureBuilder(sft)
-    builder.set("name", Collections.singletonList(s"name$i"))
+    builder.set("name", java.util.List.of(s"name$i", s"alt$i"))
     builder.set("age", i)
     builder.set("props", s"""["name$i"]""")
     builder.set("dtg", new java.util.Date(now - ((i + 1) * 20 * 60 * 1000))) // 20 minutes
@@ -86,10 +89,33 @@ class PartitionedPostgisDataStoreTest extends Specification with BeforeAfterAll 
     "preparedStatements" -> "true"
   )
 
+  def isTableLoggedQuery(tableName: String, schemaName: String): String =
+    s"""
+      |SELECT
+      |    n.nspname AS schema_name,
+      |    c.relname AS table_name,
+      |    CASE c.relpersistence
+      |        WHEN 'u' THEN 'unlogged'
+      |        WHEN 'p' THEN 'permanent'
+      |        WHEN 't' THEN 'temporary'
+      |        ELSE 'unknown'
+      |    END AS table_type
+      |FROM
+      |    pg_class c
+      |JOIN
+      |    pg_namespace n ON n.oid = c.relnamespace
+      |WHERE
+      |    c.relname = '$tableName'
+      |    AND n.nspname = '$schemaName';
+      |
+      |""".stripMargin
+
   var container: GenericContainer[_] = _
 
   lazy val host = Option(container).map(_.getHost).getOrElse("localhost")
   lazy val port = Option(container).map(_.getFirstMappedPort).getOrElse(5432).toString
+
+  lazy val fif = CommonFactoryFinder.getFilterFactory
 
   override def beforeAll(): Unit = {
     val image =
@@ -109,6 +135,7 @@ class PartitionedPostgisDataStoreTest extends Specification with BeforeAfterAll 
   }
 
   "PartitionedPostgisDataStore" should {
+
     "fail with a useful error message if type name is too long" in {
       val ds = DataStoreFinder.getDataStore(params.asJava)
       ds must not(beNull)
@@ -126,6 +153,77 @@ class PartitionedPostgisDataStoreTest extends Specification with BeforeAfterAll 
         ds.dispose()
       }
       ok
+    }
+
+    "create logged tables" in {
+      val ds = DataStoreFinder.getDataStore(params.asJava)
+      ds must not(beNull)
+
+      try {
+        val sft = SimpleFeatureTypes.renameSft(this.sft, "logged_test")
+
+        ds.createSchema(sft)
+
+        val typeInfo: TypeInfo = TypeInfo(this.schema, sft)
+
+        Seq(
+          typeInfo.tables.mainPartitions.name.raw,
+          typeInfo.tables.writeAheadPartitions.name.raw,
+          typeInfo.tables.spillPartitions.name.raw,
+          typeInfo.tables.analyzeQueue.name.raw,
+          typeInfo.tables.sortQueue.name.raw).forall { tableName =>
+          val sql = isTableLoggedQuery(tableName, "public")
+          // verify that the table is logged
+          WithClose(ds.asInstanceOf[JDBCDataStore].getConnection(Transaction.AUTO_COMMIT)) { cx =>
+            WithClose(cx.createStatement()) { st =>
+              WithClose(st.executeQuery(sql)) { rs =>
+                rs.next() must beTrue
+                logger.info(s"Table ${rs.getString("table_name")} is ${rs.getString("table_name")}")
+                rs.getString("table_type") mustEqual "permanent"
+              }
+            }
+          }
+        }
+      } finally {
+        ds.dispose()
+      }
+    }
+
+    "create unlogged tables" in {
+      val ds = DataStoreFinder.getDataStore(params.asJava)
+      ds must not(beNull)
+
+      try {
+        val sft = SimpleFeatureTypes.renameSft(this.sft, "unlogged_test")
+        sft.getUserData.put(WalLogEnabled, "false")
+
+        ds.createSchema(sft)
+
+        val typeInfo: TypeInfo = TypeInfo(this.schema, sft)
+
+        Seq(
+          typeInfo.tables.mainPartitions.name.raw,
+          typeInfo.tables.writeAheadPartitions.name.raw,
+          //          typeInfo.tables.writeAhead.name.raw, write ahead table is created with PartitionedPostgisDialect#encodePostCreateTable
+          //          which doesnt have access to the user data, should be ok because the write ahead main table doesnt have any data
+          typeInfo.tables.spillPartitions.name.raw,
+          typeInfo.tables.analyzeQueue.name.raw,
+          typeInfo.tables.sortQueue.name.raw).forall { tableName =>
+          val sql = isTableLoggedQuery(tableName, "public")
+          // verify that the table is unlogged
+          WithClose(ds.asInstanceOf[JDBCDataStore].getConnection(Transaction.AUTO_COMMIT)) { cx =>
+            WithClose(cx.createStatement()) { st =>
+              WithClose(st.executeQuery(sql)) { rs =>
+                rs.next() must beTrue
+                logger.info(s"Table ${rs.getString("table_name")} is ${rs.getString("table_name")}")
+                rs.getString("table_type") mustEqual "unlogged"
+              }
+            }
+          }
+        }
+      } finally {
+        ds.dispose()
+      }
     }
 
     "work" in {
@@ -201,7 +299,64 @@ class PartitionedPostgisDataStoreTest extends Specification with BeforeAfterAll 
       } finally {
         ds.dispose()
       }
-      ok
+    }
+
+    "filter on list elements" in {
+      val ds = DataStoreFinder.getDataStore(params.asJava)
+      ds must not(beNull)
+
+      try {
+        ds must beAnInstanceOf[JDBCDataStore]
+
+        val sft = SimpleFeatureTypes.renameSft(this.sft, "list-filters")
+        ds.getTypeNames.toSeq must not(contain(sft.getTypeName))
+        ds.createSchema(sft)
+
+        val schema = Try(ds.getSchema(sft.getTypeName)).getOrElse(null)
+        schema must not(beNull)
+        schema.getUserData.asScala must containAllOf(sft.getUserData.asScala.toSeq)
+        logger.debug(s"Schema: ${SimpleFeatureTypes.encodeType(schema)}")
+
+        // write some data
+        WithClose(new DefaultTransaction()) { tx =>
+          WithClose(ds.getFeatureWriterAppend(sft.getTypeName, tx)) { writer =>
+            features.foreach { feature =>
+              FeatureUtils.write(writer, feature, useProvidedFid = true)
+            }
+          }
+          tx.commit()
+        }
+
+        val filters = Seq(
+          fif.equals(fif.property("name"), fif.literal("name0")),
+          fif.equal(fif.property("name"), fif.literal("name0"), false, MatchAction.ANY),
+          fif.equals(fif.property("name"), fif.literal(Collections.singletonList("name0"))),
+          fif.equal(fif.property("name"), fif.literal(Collections.singletonList("name0")), false, MatchAction.ANY),
+          fif.equal(fif.property("name"), fif.literal(java.util.List.of("name0", "alt0")), false, MatchAction.ANY),
+          fif.equal(fif.property("name"), fif.literal(java.util.List.of("name0", "alt0")), false, MatchAction.ALL),
+          ECQL.toFilter("name = 'name0'"),
+        )
+        foreach(filters) { filter =>
+          WithClose(ds.getFeatureReader(new Query(sft.getTypeName, filter), Transaction.AUTO_COMMIT)) { reader =>
+            val result = SelfClosingIterator(reader).toList
+            result must haveLength(1)
+            compFromDb(result.head) mustEqual compWithFid(features.head, sft)
+          }
+        }
+
+        val nonMatchingFilters = Seq(
+          fif.equal(fif.property("name"), fif.literal("name0"), false, MatchAction.ALL),
+          fif.equal(fif.property("name"), fif.literal(Collections.singletonList("name0")), false, MatchAction.ALL),
+        )
+        foreach(nonMatchingFilters) { filter =>
+          WithClose(ds.getFeatureReader(new Query(sft.getTypeName, filter), Transaction.AUTO_COMMIT)) { reader =>
+            val result = SelfClosingIterator(reader).toList
+            result must beEmpty
+          }
+        }
+      } finally {
+        ds.dispose()
+      }
     }
 
     "age-off" in {
@@ -572,6 +727,48 @@ class PartitionedPostgisDataStoreTest extends Specification with BeforeAfterAll 
         ObjectType.selectType(schema.getDescriptor("props")) mustEqual Seq(ObjectType.STRING, ObjectType.JSON)
         ObjectType.selectType(schema.getDescriptor("dtg")) mustEqual Seq(ObjectType.DATE)
         ObjectType.selectType(schema.getDescriptor("geom")) mustEqual Seq(ObjectType.GEOMETRY, ObjectType.POINT)
+      } finally {
+        ds.dispose()
+      }
+    }
+
+    "support query interceptors" in {
+      val sft = SimpleFeatureTypes.renameSft(this.sft, "interceptor")
+      sft.getUserData.put(SimpleFeatureTypes.Configs.QueryInterceptors, classOf[TestQueryInterceptor].getName)
+
+      val ds = DataStoreFinder.getDataStore(params.asJava)
+      ds must not(beNull)
+
+      try {
+        ds must beAnInstanceOf[JDBCDataStore]
+
+        ds.getTypeNames.toSeq must not(contain(sft.getTypeName))
+        ds.createSchema(sft)
+
+        val schema = Try(ds.getSchema(sft.getTypeName)).getOrElse(null)
+        schema must not(beNull)
+        schema.getUserData.asScala must containAllOf(sft.getUserData.asScala.toSeq)
+        logger.debug(s"Schema: ${SimpleFeatureTypes.encodeType(schema)}")
+
+        val Array(left, right) = ds.asInstanceOf[JDBCDataStore].getSQLDialect.splitFilter(Filter.EXCLUDE, schema)
+        left mustEqual Filter.INCLUDE
+        right mustEqual Filter.INCLUDE
+
+        // write some data
+        WithClose(new DefaultTransaction()) { tx =>
+          WithClose(ds.getFeatureWriterAppend(sft.getTypeName, tx)) { writer =>
+            features.foreach { feature =>
+              FeatureUtils.write(writer, feature, useProvidedFid = true)
+            }
+          }
+          tx.commit()
+        }
+
+        // verify that filter is re-written to be Filter.INCLUDE
+        WithClose(ds.getFeatureReader(new Query(sft.getTypeName, ECQL.toFilter("IN('1')")), Transaction.AUTO_COMMIT)) { reader =>
+          val result = SelfClosingIterator(reader).toList
+          result.map(compFromDb) must containTheSameElementsAs(features.map(compWithFid(_, sft)))
+        }
       } finally {
         ds.dispose()
       }

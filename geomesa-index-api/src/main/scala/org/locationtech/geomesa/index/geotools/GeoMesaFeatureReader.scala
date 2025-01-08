@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -12,13 +12,11 @@ import org.geotools.api.data.{Query, SimpleFeatureReader, Transaction}
 import org.geotools.api.feature.simple.{SimpleFeature, SimpleFeatureType}
 import org.geotools.api.filter.Filter
 import org.geotools.util.factory.Hints
-import org.locationtech.geomesa.filter.filterToString
-import org.locationtech.geomesa.index.audit.QueryEvent
+import org.locationtech.geomesa.index.audit.AuditWriter
 import org.locationtech.geomesa.index.conf.QueryHints.RichHints
-import org.locationtech.geomesa.index.geoserver.ViewParams
+import org.locationtech.geomesa.index.planning.QueryPlanner.QueryPlanResult
 import org.locationtech.geomesa.index.planning.QueryRunner
 import org.locationtech.geomesa.index.planning.QueryRunner.QueryResult
-import org.locationtech.geomesa.utils.audit.{AuditProvider, AuditWriter}
 import org.locationtech.geomesa.utils.bin.BinaryOutputEncoder
 import org.locationtech.geomesa.utils.stats.{MethodProfiling, Timings, TimingsImpl}
 
@@ -48,13 +46,13 @@ object GeoMesaFeatureReader extends MethodProfiling {
       sft: SimpleFeatureType,
       query: Query,
       qp: QueryRunner,
-      audit: Option[(AuditWriter, AuditProvider, String)]): GeoMesaFeatureReader = {
+      audit: Option[AuditWriter]): GeoMesaFeatureReader = {
     audit match {
       case None => new GeoMesaFeatureReader(qp.runQuery(sft, query))
-      case Some((w, p, t)) =>
+      case Some(a) =>
         val timings = new TimingsImpl()
         val result = profile(time => timings.occurrence("planning", time))(qp.runQuery(sft, query))
-        new GeoMesaFeatureReaderWithAudit(result, timings, w, p, t, sft.getTypeName, query.getFilter)
+        new GeoMesaFeatureReaderWithAudit(result, timings, a, sft.getTypeName, query.getFilter)
     }
   }
 
@@ -79,15 +77,16 @@ object GeoMesaFeatureReader extends MethodProfiling {
       result: QueryResult,
       timings: Timings,
       auditWriter: AuditWriter,
-      auditProvider: AuditProvider,
-      storeType: String,
       typeName: String,
-      filter: Filter) extends GeoMesaFeatureReader(result) {
+      filter: Filter
+    ) extends GeoMesaFeatureReader(result) {
 
     override def reader(): SimpleFeatureReader = new ResultReaderWithAudit()
 
     private class ResultReaderWithAudit extends SimpleFeatureReader with MethodProfiling {
 
+      private val start = System.currentTimeMillis()
+      private val user = auditWriter.auditProvider.getCurrentUserId
       private val closed = new AtomicBoolean(false)
       private val count = new AtomicLong(0L)
       private val iter = profile(time => timings.occurrence("planning", time)) {
@@ -111,18 +110,13 @@ object GeoMesaFeatureReader extends MethodProfiling {
       override def close(): Unit = {
         if (closed.compareAndSet(false, true)) {
           try { iter.close() } finally {
-            val stat = QueryEvent(
-              storeType,
-              typeName,
-              System.currentTimeMillis(),
-              auditProvider.getCurrentUserId,
-              filterToString(filter),
-              ViewParams.getReadableHints(result.hints),
-              timings.time("planning"),
-              timings.time("next") + timings.time("hasNext"),
-              count.get
-            )
-            auditWriter.writeEvent(stat) // note: implementations should be asynchronous
+            val plans = result match {
+              case r: QueryPlanResult[_] => r.plans
+              case _ => Seq.empty
+            }
+            // note: implementations should be asynchronous
+            auditWriter.writeQueryEvent(typeName, user, filter, hints, plans, start, System.currentTimeMillis(),
+              timings.time("planning"), timings.time("next") + timings.time("hasNext"), count.get)
           }
         }
       }

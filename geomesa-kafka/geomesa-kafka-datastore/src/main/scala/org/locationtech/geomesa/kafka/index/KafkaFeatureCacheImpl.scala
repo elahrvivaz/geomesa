@@ -1,5 +1,5 @@
 /***********************************************************************
- * Copyright (c) 2013-2024 Commonwealth Computer Research, Inc.
+ * Copyright (c) 2013-2025 Commonwealth Computer Research, Inc.
  * All rights reserved. This program and the accompanying materials
  * are made available under the terms of the Apache License, Version 2.0
  * which accompanies this distribution and is available at
@@ -48,6 +48,10 @@ class KafkaFeatureCacheImpl(sft: SimpleFeatureType, config: IndexConfig, layerVi
     * due to kafka consumer partitioning
     */
   override def put(feature: SimpleFeature): Unit = {
+    if (feature.getDefaultGeometry == null) {
+      logger.warn(s"Null geometry detected for feature ${feature.getID}. Skipping loading into cache.")
+      return
+    }
     val featureState = factory.createState(feature)
     logger.trace(s"${featureState.id} adding feature $featureState")
     val old = state.put(featureState.id, featureState)
