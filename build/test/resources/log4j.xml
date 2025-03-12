@@ -100,6 +100,9 @@
     <category name="org.locationtech.geomesa.convert">
         <priority value="error"/>
     </category>
+    <category name="org.locationtech.geomesa.convert.text">
+        <priority value="debug"/>
+    </category>
     <category name="org.locationtech.geomesa.convert2">
         <priority value="error"/>
     </category>

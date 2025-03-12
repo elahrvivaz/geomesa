@@ -27,6 +27,7 @@ import org.locationtech.geomesa.utils.geotools.converters.StringCollectionConver
 import java.io._
 import java.nio.charset.{Charset, StandardCharsets}
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicInteger
 import scala.annotation.tailrec
 
 class DelimitedTextConverter(
@@ -39,6 +40,14 @@ class DelimitedTextConverter(
 
   private val format = DelimitedTextConverter.createFormat(config.format, options)
 
+  private val opened = new AtomicInteger()
+  private val closed = new AtomicInteger()
+  override def process(is: InputStream, ec: EvaluationContext): CloseableIterator[SimpleFeature] = {
+    val open = opened.getAndIncrement()
+    logger.info(s"Opening: $open")
+    val res = super.process(is, ec)
+    CloseableIterator(res, {val close = closed.getAndIncrement(); logger.debug(s"Closing: $close"); res.close()})
+  }
   override protected def parse(is: InputStream, ec: EvaluationContext): CloseableIterator[CSVRecord] =
     DelimitedTextConverter.iterator(format, is, options.encoding, options.skipLines.getOrElse(0), ec)
 

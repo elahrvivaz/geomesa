@@ -155,15 +155,19 @@ class ConverterDataStoreTest extends Specification with BeforeAfterAll {
           WithClose(new BufferedOutputStream(os)) { buf =>
             WithClose(new GzipCompressorOutputStream(buf)) { gz =>
               WithClose(new TarArchiveOutputStream(gz)) { tar =>
-                val entry = new TarArchiveEntry(file)
-                entry.setSize(contents.length * multiplier)
-                tar.putArchiveEntry(entry)
-                var i = 0
-                while (i < multiplier) {
-                  tar.write(contents)
-                  i += 1
+                Seq(0, 1, 2).foreach { suffix =>
+                  val entry = new TarArchiveEntry(s"$file-$suffix")
+                  // add an empty entry just for fun
+                  val mult = if (suffix == 1) { 0 } else { multiplier }
+                  entry.setSize(contents.length * mult)
+                  tar.putArchiveEntry(entry)
+                  var i = 0
+                  while (i < mult) {
+                    tar.write(contents)
+                    i += 1
+                  }
+                  tar.closeArchiveEntry()
                 }
-                tar.closeArchiveEntry()
                 tar.finish()
               }
             }
@@ -184,7 +188,7 @@ class ConverterDataStoreTest extends Specification with BeforeAfterAll {
 
       val q = new Query("fs-test", Filter.INCLUDE)
       val count = SelfClosingIterator(ds.getFeatureReader(q, Transaction.AUTO_COMMIT)).length
-      count mustEqual multiplier * 4
+      count mustEqual multiplier * 8
     }
 
     "load sft as a string" >> {
