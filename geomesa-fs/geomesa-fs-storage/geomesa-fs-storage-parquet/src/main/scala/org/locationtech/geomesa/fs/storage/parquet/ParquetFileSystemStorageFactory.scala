@@ -20,6 +20,7 @@ class ParquetFileSystemStorageFactory extends FileSystemStorageFactory {
       Option(System.getProperty(ParquetCompressionOpt)).foreach(context.conf.set(ParquetCompressionOpt, _))
     }
     context.conf.set("parquet.filter.dictionary.enabled", "true")
+//    context.conf.set("parquet.hadoop.vectored.io.enabled", "true")
     new ParquetFileSystemStorage(context, metadata)
   }
 }
