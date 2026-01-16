@@ -4,7 +4,7 @@
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
         <artifactId>geomesa-kafka_2.12</artifactId>
-        <version>6.0.0-m.0</version>
+        <version>6.0.0-SNAPSHOT</version>
     </parent>
     <modelVersion>4.0.0</modelVersion>
 
@@ -97,8 +97,4 @@
         </dependency>
     </dependencies>
 
-
-  <scm>
-    <tag>geomesa-6.0.0-m.0</tag>
-  </scm>
 </project>

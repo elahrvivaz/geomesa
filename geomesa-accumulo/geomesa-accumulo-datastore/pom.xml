@@ -5,7 +5,7 @@
     <parent>
         <groupId>org.locationtech.geomesa</groupId>
         <artifactId>geomesa-accumulo_2.12</artifactId>
-        <version>6.0.0-m.0</version>
+        <version>6.0.0-SNAPSHOT</version>
     </parent>
 
     <artifactId>geomesa-accumulo-datastore_2.12</artifactId>
@@ -167,8 +167,4 @@
         </plugins>
     </build>
 
-
-  <scm>
-    <tag>geomesa-6.0.0-m.0</tag>
-  </scm>
 </project>
