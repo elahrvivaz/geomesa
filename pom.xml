@@ -10,7 +10,7 @@
     <groupId>org.locationtech.geomesa</groupId>
     <artifactId>geomesa_2.12</artifactId>
     <packaging>pom</packaging>
-    <version>6.0.0-SNAPSHOT</version>
+    <version>6.0.0-m.0</version>
 
     <licenses>
         <license>
@@ -206,7 +206,7 @@
         <maven.test.memory>-Xms512m -Xmx4g -XX:-UseGCOverheadLimit -XX:MaxJavaStackTraceDepth=1000000</maven.test.memory>
         <!-- arrow and spark -->
         <maven.test.opens>--add-opens=java.base/java.nio=ALL-UNNAMED --add-opens=java.base/sun.nio.ch=ALL-UNNAMED --add-opens=java.base/java.lang.invoke=ALL-UNNAMED --add-opens=java.base/java.util=ALL-UNNAMED</maven.test.opens>
-        <maven.test.debug/>
+        <maven.test.debug />
         <maven.test.jvmargs>${maven.test.memory} ${maven.test.opens}</maven.test.jvmargs>
         <test.fork.count>1</test.fork.count>
         <test.includes>**/*Test.java</test.includes>
@@ -228,7 +228,7 @@
 
         <!-- documentation/readme -->
         <!-- bump version right before performing a release -->
-        <geomesa.release.version>5.4.0</geomesa.release.version>
+        <geomesa.release.version>6.0.0-m.0</geomesa.release.version>
         <copyright.year>2025</copyright.year>
 
         <!-- recommended installation versions - update as necessary if our versions fall behind -->
@@ -3304,7 +3304,7 @@
         <connection>scm:git:git@github.com:locationtech/geomesa.git</connection>
         <developerConnection>scm:git:git@github.com:locationtech/geomesa.git</developerConnection>
         <url>https://github.com/locationtech/geomesa</url>
-        <tag>HEAD</tag>
+        <tag>geomesa-6.0.0-m.0</tag>
     </scm>
 
     <issueManagement>
