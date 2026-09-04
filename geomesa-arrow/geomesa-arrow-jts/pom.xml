@@ -11,6 +11,7 @@
     <name>GeoMesa Arrow JTS Geometry Vectors</name>
     <artifactId>geomesa-arrow-jts</artifactId>
 
+    
     <dependencies>
         <dependency>
             <groupId>org.apache.arrow</groupId>
