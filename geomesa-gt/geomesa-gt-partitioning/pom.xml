@@ -11,6 +11,7 @@
     <artifactId>geomesa-gt-partitioning_2.12</artifactId>
     <name>GeoMesa GeoTools Postgis Partitioning</name>
 
+    
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
     </properties>
